@@ -1,0 +1,12 @@
+{
+  "name": "Graphiti",
+  "short_name": "Graphiti",
+  "description": "Draw and explore mathematical cartesian functions",
+  "start_url": "/graphiti/",
+  "display": "standalone",
+  "background_color": "#1A2F42",
+  "theme_color": "#1A2F42",
+  "orientation": "any",
+  "scope": "/graphiti/",
+  "icons": []
+}

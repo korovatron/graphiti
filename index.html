@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphiti - Mathematical Function Explorer</title>
+    <meta name="description" content="Draw and explore mathematical cartesian functions">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#1A2F42">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Graphiti">
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="./manifest.json">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1A2F42;
+            color: white;
+            touch-action: none;
+        }
+        
+        #app-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #canvas {
+            display: block;
+            background: #1A2F42;
+            touch-action: none;
+        }
+        
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .ui-panel {
+            position: absolute;
+            background: rgba(26, 47, 66, 0.9);
+            border-radius: 8px;
+            padding: 15px;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        button {
+            background: #4A90E2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background: #357ABD;
+        }
+        
+        input[type="text"] {
+            padding: 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #2A3F52;
+            color: white;
+            font-size: 14px;
+        }
+        
+        .title-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            pointer-events: auto;
+        }
+        
+        .title-screen h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            color: #4A90E2;
+        }
+        
+        .title-screen p {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <canvas id="canvas"></canvas>
+        
+        <div id="ui-overlay">
+            <!-- Title Screen -->
+            <div id="title-screen" class="title-screen">
+                <h1>Graphiti</h1>
+                <p>Mathematical Function Explorer</p>
+                <button id="start-button">Start Graphing</button>
+            </div>
+            
+            <!-- Function Input Panel -->
+            <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px;">
+                <label for="function-input">Function: y = </label>
+                <input type="text" id="function-input" placeholder="sin(x), x^2, log(x)" value="x^2">
+                <button id="graph-button">Graph</button>
+                <button id="clear-button">Clear</button>
+            </div>
+            
+            <!-- Controls Panel -->
+            <div id="controls-panel" class="ui-panel hidden" style="bottom: 20px; right: 20px;">
+                <button id="zoom-in">Zoom In</button>
+                <button id="zoom-out">Zoom Out</button>
+                <button id="reset-view">Reset View</button>
+                <button id="menu-button">Menu</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Math.js library for safe mathematical expression evaluation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
