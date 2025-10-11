@@ -353,6 +353,18 @@ class Graphiti {
         this.setupEventListeners();
         this.registerServiceWorker();
         this.startAnimationLoop();
+        
+        // Apply initial state to ensure UI elements are properly shown/hidden
+        this.changeState(this.states.TITLE);
+        
+        // Capture the actual initial viewport state after setup
+        this.initialViewport = {
+            scale: this.viewport.scale,
+            minX: this.viewport.minX,
+            maxX: this.viewport.maxX,
+            minY: this.viewport.minY,
+            maxY: this.viewport.maxY
+        };
     }
     
     setupCanvas() {
@@ -401,7 +413,6 @@ class Graphiti {
         const zoomInButton = document.getElementById('zoom-in');
         const zoomOutButton = document.getElementById('zoom-out');
         const resetViewButton = document.getElementById('reset-view');
-        const menuButton = document.getElementById('menu-button');
         const xMinInput = document.getElementById('x-min');
         const xMaxInput = document.getElementById('x-max');
         const yMinInput = document.getElementById('y-min');
@@ -452,14 +463,18 @@ class Graphiti {
         
         if (resetViewButton) {
             resetViewButton.addEventListener('click', () => {
-                this.viewport.scale = 50;
-                this.updateViewport();
-            });
-        }
-        
-        if (menuButton) {
-            menuButton.addEventListener('click', () => {
-                this.changeState(this.states.TITLE);
+                // Reset to exact initial state
+                this.viewport.scale = this.initialViewport.scale;
+                this.viewport.minX = this.initialViewport.minX;
+                this.viewport.maxX = this.initialViewport.maxX;
+                this.viewport.minY = this.initialViewport.minY;
+                this.viewport.maxY = this.initialViewport.maxY;
+                
+                // Update range inputs to reflect the reset
+                this.updateRangeInputs();
+                
+                // Re-plot all functions with the reset viewport
+                this.replotAllFunctions();
             });
         }
         
@@ -1171,8 +1186,8 @@ class Graphiti {
     // ================================
     
     draw() {
-        // Clear canvas
-        this.ctx.fillStyle = '#1A2F42';
+        // Clear canvas with comfortable light gray background
+        this.ctx.fillStyle = '#606060';
         this.ctx.fillRect(0, 0, this.viewport.width, this.viewport.height);
         
         // State-specific drawing
@@ -1187,11 +1202,8 @@ class Graphiti {
     }
     
     drawTitleScreen() {
-        // Background pattern or animation
-        this.ctx.save();
-        this.ctx.globalAlpha = 0.1;
+        // Background pattern matching the main graph style
         this.drawGrid();
-        this.ctx.restore();
     }
     
     drawGraphingScreen() {
@@ -1411,7 +1423,7 @@ class Graphiti {
         if (!func.points || func.points.length < 2) return;
         
         this.ctx.strokeStyle = func.color;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 3;
         
         let pathStarted = false;
         
@@ -1520,15 +1532,28 @@ class Graphiti {
             // For now, just position it at the left edge
         }
         
-        // Draw background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+        // Draw background to match function panel style (dark blue with transparency)
+        this.ctx.fillStyle = 'rgba(26, 47, 66, 0.9)';
         
-        // Draw border
-        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.8)';
+        // Draw rounded rectangle (fallback for older browsers)
+        const radius = 8;
+        this.ctx.beginPath();
+        this.ctx.moveTo(bgX + radius, bgY);
+        this.ctx.lineTo(bgX + bgWidth - radius, bgY);
+        this.ctx.quadraticCurveTo(bgX + bgWidth, bgY, bgX + bgWidth, bgY + radius);
+        this.ctx.lineTo(bgX + bgWidth, bgY + bgHeight - radius);
+        this.ctx.quadraticCurveTo(bgX + bgWidth, bgY + bgHeight, bgX + bgWidth - radius, bgY + bgHeight);
+        this.ctx.lineTo(bgX + radius, bgY + bgHeight);
+        this.ctx.quadraticCurveTo(bgX, bgY + bgHeight, bgX, bgY + bgHeight - radius);
+        this.ctx.lineTo(bgX, bgY + radius);
+        this.ctx.quadraticCurveTo(bgX, bgY, bgX + radius, bgY);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Optional: Add subtle border to match function panel
+        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.3)';
         this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([]);
-        this.ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
+        this.ctx.stroke();
         
         // Draw text
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';

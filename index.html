@@ -70,7 +70,7 @@
         }
         
         button {
-            background: #4A90E2;
+            background: #2E7BD6;
             color: white;
             border: none;
             padding: 10px 20px;
@@ -78,10 +78,24 @@
             cursor: pointer;
             font-size: 14px;
             transition: background-color 0.2s;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
         }
         
         button:hover {
-            background: #357ABD;
+            background: #1E5BA6;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Icon buttons for zoom controls */
+        #zoom-in, #zoom-out, #reset-view {
+            padding: 0;
+            font-size: 16px;
+            width: 44px;
+            height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            vertical-align: top;
         }
         
         input[type="text"], input[type="number"] {
@@ -106,13 +120,15 @@
         .title-screen h1 {
             font-size: 3em;
             margin-bottom: 20px;
-            color: #4A90E2;
+            color: #2E7BD6;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
         
         .title-screen p {
             font-size: 1.2em;
             margin-bottom: 30px;
-            opacity: 0.8;
+            opacity: 0.95;
+            color: #E8F4FD;
         }
         
         .function-item {
@@ -129,7 +145,7 @@
         .function-item input[type="text"], .function-item input[type="number"] {
             flex: 1;
             min-width: 120px;
-            font-size: 12px;
+            font-size: 14px;
             padding: 4px 6px;
         }
         
@@ -154,7 +170,7 @@
         
         .function-item button {
             padding: 4px 8px;
-            font-size: 11px;
+            font-size: 13px;
             min-width: auto;
         }
         
@@ -213,13 +229,23 @@
         }
         
         #hamburger-menu.active .hamburger-line:nth-child(3) {
-            transform: rotate(-45deg) translate(7px, -6px);
+            transform: rotate(-45deg) translate(6px, -6px);
+        }
+        
+        /* Hide hamburger when explicitly hidden via JavaScript */
+        #hamburger-menu[style*="display: none"] {
+            display: none !important;
         }
         
         /* Mobile Styles */
         @media (max-width: 768px) {
             #hamburger-menu {
                 display: flex;
+            }
+            
+            /* Ensure hamburger can still be hidden when explicitly set via JavaScript */
+            #hamburger-menu[style*="display: none"] {
+                display: none !important;
             }
             
             #function-panel {
@@ -346,7 +372,7 @@
             <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px; min-width: 320px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="margin: 0; color: #4A90E2;">Functions</h3>
-                    <button id="add-function" style="padding: 5px 10px; font-size: 12px;">+ Add Function</button>
+                    <button id="add-function" style="padding: 5px 10px; font-size: 14px;">+ Add Function</button>
                 </div>
                 
                 <div id="functions-container">
@@ -355,33 +381,32 @@
                 
                 <div style="display: flex; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
                     <div style="flex: 1;">
-                        <label for="x-min" style="font-size: 12px; display: block; margin-bottom: 2px;">X min:</label>
-                        <input type="number" id="x-min" value="-10" style="width: 100%; font-size: 12px;">
+                        <label for="x-min" style="font-size: 14px; display: block; margin-bottom: 2px;">X min:</label>
+                        <input type="number" id="x-min" value="-10" style="width: 100%; font-size: 14px;">
                     </div>
                     <div style="flex: 1;">
-                        <label for="x-max" style="font-size: 12px; display: block; margin-bottom: 2px;">X max:</label>
-                        <input type="number" id="x-max" value="10" style="width: 100%; font-size: 12px;">
+                        <label for="x-max" style="font-size: 14px; display: block; margin-bottom: 2px;">X max:</label>
+                        <input type="number" id="x-max" value="10" style="width: 100%; font-size: 14px;">
                     </div>
                 </div>
                 
                 <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                     <div style="flex: 1;">
-                        <label for="y-min" style="font-size: 12px; display: block; margin-bottom: 2px;">Y min:</label>
-                        <input type="number" id="y-min" value="-10" style="width: 100%; font-size: 12px;">
+                        <label for="y-min" style="font-size: 14px; display: block; margin-bottom: 2px;">Y min:</label>
+                        <input type="number" id="y-min" value="-10" style="width: 100%; font-size: 14px;">
                     </div>
                     <div style="flex: 1;">
-                        <label for="y-max" style="font-size: 12px; display: block; margin-bottom: 2px;">Y max:</label>
-                        <input type="number" id="y-max" value="10" style="width: 100%; font-size: 12px;">
+                        <label for="y-max" style="font-size: 14px; display: block; margin-bottom: 2px;">Y max:</label>
+                        <input type="number" id="y-max" value="10" style="width: 100%; font-size: 14px;">
                     </div>
                 </div>
             </div>
             
             <!-- Controls Panel -->
             <div id="controls-panel" class="ui-panel hidden" style="bottom: 20px; right: 20px;">
-                <button id="zoom-in">Zoom In</button>
-                <button id="zoom-out">Zoom Out</button>
-                <button id="reset-view">Reset View</button>
-                <button id="menu-button">Menu</button>
+                <button id="zoom-in" title="Zoom In">🔍+</button>
+                <button id="zoom-out" title="Zoom Out">🔍−</button>
+                <button id="reset-view" title="Reset View">↻</button>
             </div>
         </div>
     </div>
