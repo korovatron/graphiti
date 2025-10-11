@@ -84,7 +84,7 @@
             background: #357ABD;
         }
         
-        input[type="text"] {
+        input[type="text"], input[type="number"] {
             padding: 8px;
             border: 1px solid #555;
             border-radius: 4px;
@@ -114,6 +114,191 @@
             margin-bottom: 30px;
             opacity: 0.8;
         }
+        
+        .function-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(74, 144, 226, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid;
+        }
+        
+        .function-item input[type="text"], .function-item input[type="number"] {
+            flex: 1;
+            min-width: 120px;
+            font-size: 12px;
+            padding: 4px 6px;
+        }
+        
+        .function-item .color-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        
+        .function-item .color-indicator:hover {
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: scale(1.1);
+        }
+        
+        .function-item .color-indicator:active {
+            transform: scale(0.95);
+        }
+        
+        .function-item button {
+            padding: 4px 8px;
+            font-size: 11px;
+            min-width: auto;
+        }
+        
+        .function-item .remove-btn {
+            background: #E74C3C;
+            padding: 2px 6px;
+        }
+        
+        .function-item .remove-btn:hover {
+            background: #C0392B;
+        }
+        
+        .function-item.disabled {
+            opacity: 0.7;
+        }
+        
+        /* Hamburger Menu Styles */
+        #hamburger-menu {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 40px;
+            height: 40px;
+            background: rgba(26, 47, 66, 0.9);
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            transition: all 0.3s ease;
+        }
+        
+        #hamburger-menu:hover {
+            background: rgba(74, 144, 226, 0.9);
+        }
+        
+        .hamburger-line {
+            width: 20px;
+            height: 2px;
+            background: white;
+            margin: 2px 0;
+            transition: all 0.3s ease;
+        }
+        
+        #hamburger-menu.active .hamburger-line:nth-child(1) {
+            transform: rotate(45deg) translate(5px, 5px);
+        }
+        
+        #hamburger-menu.active .hamburger-line:nth-child(2) {
+            opacity: 0;
+        }
+        
+        #hamburger-menu.active .hamburger-line:nth-child(3) {
+            transform: rotate(-45deg) translate(7px, -6px);
+        }
+        
+        /* Mobile Styles */
+        @media (max-width: 768px) {
+            #hamburger-menu {
+                display: flex;
+            }
+            
+            #function-panel {
+                position: fixed !important;
+                top: 0 !important;
+                left: -100% !important;
+                width: 100% !important;
+                max-width: 350px !important;
+                height: 100% !important;
+                z-index: 15;
+                transition: left 0.3s ease;
+                overflow-y: auto;
+                border-radius: 0 !important;
+                padding: 70px 20px 20px 20px !important; /* Extra top padding for hamburger */
+                backdrop-filter: blur(10px);
+                background: rgba(26, 47, 66, 0.95) !important;
+            }
+            
+            #function-panel.mobile-open {
+                left: 0 !important;
+            }
+            
+            #controls-panel {
+                bottom: 20px !important;
+                right: 20px !important;
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            
+            #controls-panel button {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+            
+            /* Keep function items horizontal on mobile */
+            .function-item {
+                flex-wrap: nowrap;
+                gap: 8px;
+                align-items: center;
+            }
+            
+            .function-item input[type="text"] {
+                min-width: 120px;
+                flex: 1;
+            }
+            
+            .function-item input[type="number"] {
+                min-width: 60px;
+                width: 60px;
+                flex: none;
+            }
+            
+            .function-item .color-indicator {
+                flex: none;
+            }
+            
+            .function-item button {
+                flex: none;
+            }
+            
+            /* Range inputs on mobile */
+            #function-panel div[style*="display: flex"] input[type="number"] {
+                min-width: 80px !important;
+            }
+        }
+        
+        /* Overlay for mobile menu */
+        #mobile-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 14;
+            display: none;
+            pointer-events: auto;
+        }
     </style>
 </head>
 <body>
@@ -121,6 +306,16 @@
         <canvas id="canvas"></canvas>
         
         <div id="ui-overlay">
+            <!-- Hamburger Menu Button (Mobile) -->
+            <button id="hamburger-menu">
+                <div class="hamburger-line"></div>
+                <div class="hamburger-line"></div>
+                <div class="hamburger-line"></div>
+            </button>
+            
+            <!-- Mobile Overlay -->
+            <div id="mobile-overlay"></div>
+            
             <!-- Title Screen -->
             <div id="title-screen" class="title-screen">
                 <h1>Graphiti</h1>
@@ -129,11 +324,37 @@
             </div>
             
             <!-- Function Input Panel -->
-            <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px;">
-                <label for="function-input">Function: y = </label>
-                <input type="text" id="function-input" placeholder="sin(x), x^2, log(x)" value="x^2">
-                <button id="graph-button">Graph</button>
-                <button id="clear-button">Clear</button>
+            <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px; min-width: 320px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: #4A90E2;">Functions</h3>
+                    <button id="add-function" style="padding: 5px 10px; font-size: 12px;">+ Add Function</button>
+                </div>
+                
+                <div id="functions-container">
+                    <!-- Functions will be added here dynamically -->
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
+                    <div style="flex: 1;">
+                        <label for="x-min" style="font-size: 12px; display: block; margin-bottom: 2px;">X min:</label>
+                        <input type="number" id="x-min" value="-10" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="x-max" style="font-size: 12px; display: block; margin-bottom: 2px;">X max:</label>
+                        <input type="number" id="x-max" value="10" style="width: 100%; font-size: 12px;">
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <div style="flex: 1;">
+                        <label for="y-min" style="font-size: 12px; display: block; margin-bottom: 2px;">Y min:</label>
+                        <input type="number" id="y-min" value="-10" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="y-max" style="font-size: 12px; display: block; margin-bottom: 2px;">Y max:</label>
+                        <input type="number" id="y-max" value="10" style="width: 100%; font-size: 12px;">
+                    </div>
+                </div>
             </div>
             
             <!-- Controls Panel -->

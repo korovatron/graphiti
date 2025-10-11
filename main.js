@@ -35,12 +35,27 @@ class Graphiti {
             keys: new Set(),
             dragging: false,
             lastX: 0,
-            lastY: 0
+            lastY: 0,
+            // Pinch gesture tracking
+            pinch: {
+                active: false,
+                initialDistance: 0,
+                initialScale: 1,
+                centerX: 0,
+                centerY: 0
+            }
         };
         
         // Mathematical functions
         this.functions = [];
-        this.currentFunction = 'x^2';
+        this.nextFunctionId = 1;
+        this.functionColors = [
+            '#4A90E2', '#E74C3C', '#27AE60', '#F39C12', 
+            '#9B59B6', '#1ABC9C', '#E67E22', '#34495E',
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'
+        ];
+        this.plotTimers = new Map(); // For debouncing auto-plot
+        this.rangeTimer = null; // For debouncing range updates
         
         // Animation
         this.lastFrameTime = 0;
@@ -49,6 +64,278 @@ class Graphiti {
         
         this.init();
     }
+    
+    // ================================
+    // FUNCTION MANAGEMENT METHODS
+    // ================================
+    
+    addFunction(expression = '') {
+        const id = this.nextFunctionId++;
+        const color = this.functionColors[(this.functions.length) % this.functionColors.length];
+        
+        const func = {
+            id: id,
+            expression: expression,
+            points: [],
+            color: color,
+            enabled: true
+        };
+        
+        this.functions.push(func);
+        this.createFunctionUI(func);
+        
+        // If expression is provided, plot it immediately
+        if (expression) {
+            this.plotFunction(func);
+        }
+    }
+    
+    createFunctionUI(func) {
+        const container = document.getElementById('functions-container');
+        const funcDiv = document.createElement('div');
+        funcDiv.className = 'function-item';
+        funcDiv.style.borderLeftColor = func.color;
+        funcDiv.setAttribute('data-function-id', func.id);
+        
+        funcDiv.innerHTML = `
+            <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
+            <input type="text" placeholder="e.g., sin(x), x^2, log(x)" value="${func.expression}">
+            <button class="remove-btn">×</button>
+        `;
+        
+        // Add event listeners
+        const input = funcDiv.querySelector('input');
+        const colorIndicator = funcDiv.querySelector('.color-indicator');
+        const removeBtn = funcDiv.querySelector('.remove-btn');
+        
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                // Force immediate plotting on Enter, bypassing debounce
+                func.expression = input.value;
+                this.plotFunctionWithValidation(func);
+            }
+        });
+        
+        input.addEventListener('input', (e) => {
+            func.expression = e.target.value;
+            // Auto-plot with debouncing to avoid excessive calculations
+            this.debouncePlot(func);
+        });
+        
+        colorIndicator.addEventListener('click', () => {
+            func.enabled = !func.enabled;
+            this.updateFunctionVisualState(func, funcDiv);
+        });
+        
+        removeBtn.addEventListener('click', () => {
+            this.removeFunction(func.id);
+        });
+        
+        container.appendChild(funcDiv);
+        
+        // Set initial visual state
+        this.updateFunctionVisualState(func, funcDiv);
+    }
+    
+    updateFunctionVisualState(func, funcDiv) {
+        const colorIndicator = funcDiv.querySelector('.color-indicator');
+        const input = funcDiv.querySelector('input');
+        
+        if (func.enabled) {
+            // Function is visible
+            colorIndicator.style.opacity = '1';
+            colorIndicator.style.filter = 'none';
+            colorIndicator.title = 'Click to hide function';
+            input.style.opacity = '1';
+            funcDiv.classList.remove('disabled');
+        } else {
+            // Function is hidden
+            colorIndicator.style.opacity = '0.3';
+            colorIndicator.style.filter = 'grayscale(100%)';
+            colorIndicator.title = 'Click to show function';
+            input.style.opacity = '0.6';
+            funcDiv.classList.add('disabled');
+        }
+    }
+    
+    debouncePlot(func) {
+        // Clear existing timer for this function
+        if (this.plotTimers.has(func.id)) {
+            clearTimeout(this.plotTimers.get(func.id));
+        }
+        
+        // Set new timer for delayed plotting
+        const timerId = setTimeout(() => {
+            this.plotFunctionWithValidation(func);
+            this.plotTimers.delete(func.id);
+        }, 300); // 300ms delay
+        
+        this.plotTimers.set(func.id, timerId);
+    }
+    
+    plotFunctionWithValidation(func) {
+        // Don't plot empty expressions
+        if (!func.expression.trim()) {
+            func.points = [];
+            return;
+        }
+        
+        // Check if math.js is available
+        if (typeof math === 'undefined') {
+            console.error('Math.js library not loaded!');
+            return;
+        }
+        
+        try {
+            // Quick validation: try to evaluate at x=0
+            const testResult = this.evaluateFunction(func.expression, 0);
+            
+            // If we get here without throwing, the expression is syntactically valid
+            this.plotFunction(func);
+            
+            // Update UI to show success (remove any error styling)
+            const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
+            if (funcDiv) {
+                const input = funcDiv.querySelector('input');
+                input.style.borderColor = '';
+                input.style.backgroundColor = '';
+            }
+            
+        } catch (error) {
+            // Expression is invalid, clear points and show visual feedback
+            func.points = [];
+            
+            // Update UI to show error (subtle visual feedback)
+            const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
+            if (funcDiv) {
+                const input = funcDiv.querySelector('input');
+                input.style.borderColor = '#E74C3C';
+                input.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+            }
+        }
+    }
+    
+    removeFunction(id) {
+        // Clear any pending plot timer for this function
+        if (this.plotTimers.has(id)) {
+            clearTimeout(this.plotTimers.get(id));
+            this.plotTimers.delete(id);
+        }
+        
+        this.functions = this.functions.filter(f => f.id !== id);
+        const funcDiv = document.querySelector(`[data-function-id="${id}"]`);
+        if (funcDiv) {
+            funcDiv.remove();
+        }
+    }
+    
+    clearAllFunctions() {
+        // Clear all pending plot timers
+        this.plotTimers.forEach((timerId) => {
+            clearTimeout(timerId);
+        });
+        this.plotTimers.clear();
+        
+        this.functions = [];
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+    }
+    
+    replotAllFunctions() {
+        this.functions.forEach(func => {
+            if (func.expression && func.enabled) {
+                this.plotFunction(func);
+            }
+        });
+    }
+    
+    plotFunction(func) {
+        // Check if math.js is available
+        if (typeof math === 'undefined') {
+            console.error('Math.js library not loaded!');
+            alert('Math library not loaded. Please refresh the page.');
+            return;
+        }
+        
+        if (!func.expression.trim()) {
+            func.points = [];
+            return;
+        }
+        
+        try {
+            // Calculate points for the current viewport
+            const points = [];
+            const step = (this.viewport.maxX - this.viewport.minX) / this.viewport.width;
+            
+            for (let x = this.viewport.minX; x <= this.viewport.maxX; x += step) {
+                try {
+                    const y = this.evaluateFunction(func.expression, x);
+                    if (isFinite(y)) {
+                        points.push({ x, y, connected: true });
+                    } else {
+                        // Add a break point for discontinuities
+                        if (points.length > 0) {
+                            points.push({ x, y: NaN, connected: false });
+                        }
+                    }
+                } catch (e) {
+                    // Add a break point for evaluation errors
+                    if (points.length > 0) {
+                        points.push({ x, y: NaN, connected: false });
+                    }
+                }
+            }
+            
+            // Post-process to detect sudden jumps (asymptotes)
+            const processedPoints = [];
+            const viewportHeight = this.viewport.maxY - this.viewport.minY;
+            const jumpThreshold = viewportHeight * 2; // If jump is larger than 2x viewport height
+            
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                
+                if (i === 0 || !isFinite(point.y)) {
+                    processedPoints.push(point);
+                    continue;
+                }
+                
+                const prevPoint = points[i - 1];
+                if (isFinite(prevPoint.y) && isFinite(point.y)) {
+                    const yDiff = Math.abs(point.y - prevPoint.y);
+                    
+                    // If there's a sudden large jump, insert a break
+                    if (yDiff > jumpThreshold) {
+                        processedPoints.push({ x: prevPoint.x, y: NaN, connected: false });
+                        processedPoints.push({ x: point.x, y: point.y, connected: false });
+                    } else {
+                        processedPoints.push(point);
+                    }
+                } else {
+                    processedPoints.push(point);
+                }
+            }
+            
+            func.points = processedPoints;
+        } catch (error) {
+            console.error('Error parsing function:', error);
+            alert(`Invalid function "${func.expression}": ${error.message}`);
+            func.points = [];
+        }
+    }
+    
+    parseAndGraphFunction(functionString) {
+        // Legacy method - redirect to new system
+        if (this.functions.length === 0) {
+            this.addFunction(functionString);
+        } else {
+            this.functions[0].expression = functionString;
+            this.plotFunction(this.functions[0]);
+        }
+    }
+    
+    // ================================
+    // INITIALIZATION AND SETUP
+    // ================================
     
     init() {
         this.setupCanvas();
@@ -80,13 +367,18 @@ class Graphiti {
     setupEventListeners() {
         // Wait for elements to be available
         const startButton = document.getElementById('start-button');
-        const graphButton = document.getElementById('graph-button');
-        const clearButton = document.getElementById('clear-button');
+        const addFunctionButton = document.getElementById('add-function');
         const zoomInButton = document.getElementById('zoom-in');
         const zoomOutButton = document.getElementById('zoom-out');
         const resetViewButton = document.getElementById('reset-view');
         const menuButton = document.getElementById('menu-button');
-        const functionInput = document.getElementById('function-input');
+        const xMinInput = document.getElementById('x-min');
+        const xMaxInput = document.getElementById('x-max');
+        const yMinInput = document.getElementById('y-min');
+        const yMaxInput = document.getElementById('y-max');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const mobileOverlay = document.getElementById('mobile-overlay');
+        const functionPanel = document.getElementById('function-panel');
         
         if (!startButton) {
             console.error('Start button not found!');
@@ -96,33 +388,35 @@ class Graphiti {
         // UI Button Events
         startButton.addEventListener('click', () => {
             this.changeState(this.states.GRAPHING);
+            // Add the first function when starting
+            if (this.functions.length === 0) {
+                this.addFunction('x^2');
+            }
         });
         
-        if (graphButton) {
-            graphButton.addEventListener('click', () => {
-                const input = document.getElementById('function-input');
-                this.currentFunction = input.value;
-                this.parseAndGraphFunction(this.currentFunction);
-            });
-        }
-        
-        if (clearButton) {
-            clearButton.addEventListener('click', () => {
-                this.functions = [];
+        if (addFunctionButton) {
+            addFunctionButton.addEventListener('click', () => {
+                this.addFunction('');
             });
         }
         
         if (zoomInButton) {
             zoomInButton.addEventListener('click', () => {
-                this.viewport.scale *= 1.2;
-                this.updateViewport();
+                const newScale = this.viewport.scale * 1.2;
+                if (newScale <= 10000) {
+                    this.viewport.scale = newScale;
+                    this.updateViewport();
+                }
             });
         }
         
         if (zoomOutButton) {
             zoomOutButton.addEventListener('click', () => {
-                this.viewport.scale /= 1.2;
-                this.updateViewport();
+                const newScale = this.viewport.scale / 1.2;
+                if (newScale >= 0.001) {
+                    this.viewport.scale = newScale;
+                    this.updateViewport();
+                }
             });
         }
         
@@ -139,6 +433,19 @@ class Graphiti {
             });
         }
         
+        // Mobile Menu Events
+        if (hamburgerMenu) {
+            hamburgerMenu.addEventListener('click', () => {
+                this.toggleMobileMenu();
+            });
+        }
+        
+        if (mobileOverlay) {
+            mobileOverlay.addEventListener('click', () => {
+                this.closeMobileMenu();
+            });
+        }
+        
         // Mouse Events
         this.canvas.addEventListener('mousedown', (e) => this.handlePointerStart(e.clientX, e.clientY));
         this.canvas.addEventListener('mousemove', (e) => this.handlePointerMove(e.clientX, e.clientY));
@@ -148,19 +455,17 @@ class Graphiti {
         // Touch Events
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            const touch = e.touches[0];
-            this.handlePointerStart(touch.clientX, touch.clientY);
+            this.handleTouchStart(e);
         }, { passive: false });
         
         this.canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
-            const touch = e.touches[0];
-            this.handlePointerMove(touch.clientX, touch.clientY);
+            this.handleTouchMove(e);
         }, { passive: false });
         
         this.canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
-            this.handlePointerEnd();
+            this.handleTouchEnd(e);
         }, { passive: false });
         
         // Keyboard Events
@@ -173,15 +478,24 @@ class Graphiti {
             this.input.keys.delete(e.key.toLowerCase());
         });
         
-        // Function input enter key
-        if (functionInput) {
-            functionInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    const graphBtn = document.getElementById('graph-button');
-                    if (graphBtn) graphBtn.click();
-                }
-            });
-        }
+        // Range inputs real-time updates
+        [xMinInput, xMaxInput, yMinInput, yMaxInput].forEach(input => {
+            if (input) {
+                input.addEventListener('input', () => {
+                    this.debounceRangeUpdate();
+                });
+                
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        // Force immediate update on Enter, bypassing debounce
+                        this.validateAndSetRange();
+                    } else if (e.key === '-') {
+                        // Handle minus key to maintain cursor position
+                        this.handleMinusKey(e, input);
+                    }
+                });
+            }
+        });
     }
     
     handlePointerStart(x, y) {
@@ -201,11 +515,22 @@ class Graphiti {
             if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
                 this.input.dragging = true;
                 
+                // Convert screen delta to world delta
+                const worldRange = this.viewport.maxX - this.viewport.minX;
+                const worldDeltaX = -(deltaX / this.viewport.width) * worldRange;
+                const worldDeltaY = (deltaY / this.viewport.height) * (this.viewport.maxY - this.viewport.minY);
+                
                 // Pan the viewport
-                this.viewport.minX -= deltaX / this.viewport.scale;
-                this.viewport.maxX -= deltaX / this.viewport.scale;
-                this.viewport.minY += deltaY / this.viewport.scale;
-                this.viewport.maxY += deltaY / this.viewport.scale;
+                this.viewport.minX += worldDeltaX;
+                this.viewport.maxX += worldDeltaX;
+                this.viewport.minY += worldDeltaY;
+                this.viewport.maxY += worldDeltaY;
+                
+                // Update range inputs to reflect the pan
+                this.updateRangeInputs();
+                
+                // Re-plot all functions with new viewport
+                this.replotAllFunctions();
             }
             
             this.input.lastX = x;
@@ -221,38 +546,306 @@ class Graphiti {
         this.input.dragging = false;
     }
     
+    // Touch handling methods for pinch-to-zoom
+    handleTouchStart(e) {
+        if (e.touches.length === 1) {
+            // Single touch - handle as pan
+            const touch = e.touches[0];
+            this.handlePointerStart(touch.clientX, touch.clientY);
+            this.input.pinch.active = false;
+        } else if (e.touches.length === 2) {
+            // Two touches - start pinch gesture
+            this.input.pinch.active = true;
+            this.input.mouse.down = false; // Disable panning during pinch
+            
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            
+            // Calculate initial distance between touches
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            this.input.pinch.initialDistance = Math.sqrt(dx * dx + dy * dy);
+            this.input.pinch.initialScale = this.viewport.scale;
+            
+            // Calculate center point between touches
+            this.input.pinch.centerX = (touch1.clientX + touch2.clientX) / 2;
+            this.input.pinch.centerY = (touch1.clientY + touch2.clientY) / 2;
+        }
+    }
+    
+    handleTouchMove(e) {
+        if (e.touches.length === 1 && !this.input.pinch.active) {
+            // Single touch - handle as pan
+            const touch = e.touches[0];
+            this.handlePointerMove(touch.clientX, touch.clientY);
+        } else if (e.touches.length === 2 && this.input.pinch.active) {
+            // Two touches - handle pinch zoom
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            
+            // Calculate current distance between touches
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            const currentDistance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Calculate zoom factor based on distance change
+            const zoomFactor = currentDistance / this.input.pinch.initialDistance;
+            const newScale = this.input.pinch.initialScale * zoomFactor;
+            
+            // Apply scale limits
+            const minScale = 0.001;
+            const maxScale = 10000;
+            
+            if (newScale >= minScale && newScale <= maxScale) {
+                this.viewport.scale = newScale;
+                this.updateViewport();
+            }
+        }
+    }
+    
+    handleTouchEnd(e) {
+        if (e.touches.length === 0) {
+            // All touches ended
+            this.handlePointerEnd();
+            this.input.pinch.active = false;
+        } else if (e.touches.length === 1 && this.input.pinch.active) {
+            // Went from pinch to single touch
+            this.input.pinch.active = false;
+            const touch = e.touches[0];
+            this.handlePointerStart(touch.clientX, touch.clientY);
+        }
+    }
+    
     handleWheel(e) {
         e.preventDefault();
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        this.viewport.scale *= zoomFactor;
-        this.updateViewport();
+        const newScale = this.viewport.scale * zoomFactor;
+        
+        // Limit scale to prevent crashes and maintain usability
+        const minScale = 0.001;  // Maximum zoom out: 1000 units per screen width
+        const maxScale = 10000;  // Maximum zoom in: 0.0001 units per pixel
+        
+        if (newScale >= minScale && newScale <= maxScale) {
+            this.viewport.scale = newScale;
+            this.updateViewport();
+        }
     }
     
     handleKeyboard(e) {
+        // Check if any input field is currently focused
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+            activeElement.tagName === 'INPUT' || 
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.isContentEditable
+        );
+        
+        // If an input is focused, don't handle navigation keys
+        if (isInputFocused && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+            return; // Let the input handle the arrow keys normally
+        }
+        
         switch(e.key.toLowerCase()) {
             case 'escape':
                 this.changeState(this.states.TITLE);
                 break;
             case '=':
             case '+':
-                this.viewport.scale *= 1.1;
-                this.updateViewport();
+                const newScaleUp = this.viewport.scale * 1.1;
+                if (newScaleUp <= 10000) {
+                    this.viewport.scale = newScaleUp;
+                    this.updateViewport();
+                }
                 break;
             case '-':
-                this.viewport.scale /= 1.1;
-                this.updateViewport();
+                // Only handle minus for zoom if not in an input field
+                if (!isInputFocused) {
+                    const newScaleDown = this.viewport.scale / 1.1;
+                    if (newScaleDown >= 0.001) {
+                        this.viewport.scale = newScaleDown;
+                        this.updateViewport();
+                    }
+                }
                 break;
         }
     }
     
     updateViewport() {
-        const halfWidth = this.viewport.width / (2 * this.viewport.scale);
-        const halfHeight = this.viewport.height / (2 * this.viewport.scale);
+        // When called from zoom operations, we need to maintain the center point
+        // and adjust the bounds based on the scale
+        if (this.viewport.scale) {
+            const halfWidth = this.viewport.width / (2 * this.viewport.scale);
+            const halfHeight = this.viewport.height / (2 * this.viewport.scale);
+            
+            // Calculate current center
+            const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+            const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+            
+            // Update bounds around center
+            this.viewport.minX = centerX - halfWidth;
+            this.viewport.maxX = centerX + halfWidth;
+            this.viewport.minY = centerY - halfHeight;
+            this.viewport.maxY = centerY + halfHeight;
+        }
         
-        this.viewport.minX = -halfWidth;
-        this.viewport.maxX = halfWidth;
-        this.viewport.minY = -halfHeight;
-        this.viewport.maxY = halfHeight;
+        // Update the range input fields to reflect current viewport
+        this.updateRangeInputs();
+        
+        // Re-plot all functions when viewport changes
+        this.replotAllFunctions();
+    }
+    
+    handleMinusKey(e, input) {
+        const cursorPosition = input.selectionStart;
+        const currentValue = input.value;
+        
+        // If we're at the beginning or the value is empty, handle minus specially
+        if (cursorPosition === 0 || currentValue === '') {
+            e.preventDefault();
+            
+            if (currentValue.startsWith('-')) {
+                // Remove existing minus sign
+                input.value = currentValue.substring(1);
+                input.setSelectionRange(0, 0);
+            } else {
+                // Add minus sign at the beginning
+                input.value = '-' + currentValue;
+                input.setSelectionRange(1, 1);
+            }
+            
+            // Trigger input event to update the graph
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        // If cursor is not at the beginning, let default behavior handle it
+    }
+    
+    debounceRangeUpdate() {
+        // Clear existing timer
+        if (this.rangeTimer) {
+            clearTimeout(this.rangeTimer);
+        }
+        
+        // Set new timer for delayed range update
+        this.rangeTimer = setTimeout(() => {
+            this.validateAndSetRange();
+            this.rangeTimer = null;
+        }, 400); // Slightly longer delay for range (400ms)
+    }
+    
+    validateAndSetRange() {
+        const xMinInput = document.getElementById('x-min');
+        const xMaxInput = document.getElementById('x-max');
+        const yMinInput = document.getElementById('y-min');
+        const yMaxInput = document.getElementById('y-max');
+        
+        if (!xMinInput || !xMaxInput || !yMinInput || !yMaxInput) return;
+        
+        // Parse values
+        const xMin = parseFloat(xMinInput.value);
+        const xMax = parseFloat(xMaxInput.value);
+        const yMin = parseFloat(yMinInput.value);
+        const yMax = parseFloat(yMaxInput.value);
+        
+        // Validate all inputs
+        const inputs = [
+            { input: xMinInput, value: xMin, name: 'X min' },
+            { input: xMaxInput, value: xMax, name: 'X max' },
+            { input: yMinInput, value: yMin, name: 'Y min' },
+            { input: yMaxInput, value: yMax, name: 'Y max' }
+        ];
+        
+        let allValid = true;
+        
+        // Check for NaN values
+        inputs.forEach(({ input, value }) => {
+            if (isNaN(value)) {
+                this.setInputError(input, true);
+                allValid = false;
+            } else {
+                this.setInputError(input, false);
+            }
+        });
+        
+        // Check logical constraints if all numbers are valid
+        if (allValid) {
+            if (xMin >= xMax) {
+                this.setInputError(xMinInput, true);
+                this.setInputError(xMaxInput, true);
+                allValid = false;
+            }
+            
+            if (yMin >= yMax) {
+                this.setInputError(yMinInput, true);
+                this.setInputError(yMaxInput, true);
+                allValid = false;
+            }
+        }
+        
+        // If all valid, apply the range
+        if (allValid) {
+            this.applyCustomRange(xMin, xMax, yMin, yMax);
+        }
+    }
+    
+    setInputError(input, hasError) {
+        if (hasError) {
+            input.style.borderColor = '#E74C3C';
+            input.style.backgroundColor = 'rgba(231, 76, 60, 0.15)';
+            input.style.boxShadow = '0 0 0 1px rgba(231, 76, 60, 0.3)';
+        } else {
+            input.style.borderColor = '';
+            input.style.backgroundColor = '';
+            input.style.boxShadow = '';
+        }
+    }
+    
+    applyCustomRange(xMin, xMax, yMin, yMax) {
+        // Set the viewport ranges
+        this.viewport.minX = xMin;
+        this.viewport.maxX = xMax;
+        this.viewport.minY = yMin;
+        this.viewport.maxY = yMax;
+        
+        // Calculate the appropriate scale to fit the range
+        const xRange = xMax - xMin;
+        const yRange = yMax - yMin;
+        const xScale = this.viewport.width / xRange;
+        const yScale = this.viewport.height / yRange;
+        
+        // Use the smaller scale to ensure both axes fit
+        this.viewport.scale = Math.min(xScale, yScale);
+        
+        // Re-plot all functions with new range
+        this.replotAllFunctions();
+    }
+    
+    setCustomRange() {
+        // Legacy method - redirect to new validation system
+        this.validateAndSetRange();
+    }
+    
+    updateRangeInputs() {
+        const xMinInput = document.getElementById('x-min');
+        const xMaxInput = document.getElementById('x-max');
+        const yMinInput = document.getElementById('y-min');
+        const yMaxInput = document.getElementById('y-max');
+        
+        if (xMinInput) {
+            xMinInput.value = this.viewport.minX.toFixed(2);
+            this.setInputError(xMinInput, false);
+        }
+        if (xMaxInput) {
+            xMaxInput.value = this.viewport.maxX.toFixed(2);
+            this.setInputError(xMaxInput, false);
+        }
+        if (yMinInput) {
+            yMinInput.value = this.viewport.minY.toFixed(2);
+            this.setInputError(yMinInput, false);
+        }
+        if (yMaxInput) {
+            yMaxInput.value = this.viewport.maxY.toFixed(2);
+            this.setInputError(yMaxInput, false);
+        }
     }
     
     changeState(newState) {
@@ -263,59 +856,56 @@ class Graphiti {
         const titleScreen = document.getElementById('title-screen');
         const functionPanel = document.getElementById('function-panel');
         const controlsPanel = document.getElementById('controls-panel');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
         
         switch(newState) {
             case this.states.TITLE:
                 if (titleScreen) titleScreen.classList.remove('hidden');
                 if (functionPanel) functionPanel.classList.add('hidden');
                 if (controlsPanel) controlsPanel.classList.add('hidden');
+                if (hamburgerMenu) hamburgerMenu.style.display = 'none';
+                this.closeMobileMenu();
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
                 if (functionPanel) functionPanel.classList.remove('hidden');
                 if (controlsPanel) controlsPanel.classList.remove('hidden');
+                if (hamburgerMenu) hamburgerMenu.style.display = '';
                 break;
         }
     }
     
-    parseAndGraphFunction(functionString) {
-        console.log('Parsing function:', functionString);
+    // Mobile Menu Methods
+    toggleMobileMenu() {
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const functionPanel = document.getElementById('function-panel');
+        const mobileOverlay = document.getElementById('mobile-overlay');
         
-        // Check if math.js is available
-        if (typeof math === 'undefined') {
-            console.error('Math.js library not loaded!');
-            alert('Math library not loaded. Please refresh the page.');
-            return;
+        if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+            this.closeMobileMenu();
+        } else {
+            this.openMobileMenu();
         }
+    }
+    
+    openMobileMenu() {
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const functionPanel = document.getElementById('function-panel');
+        const mobileOverlay = document.getElementById('mobile-overlay');
         
-        try {
-            // Simple function parser - you can expand this
-            const points = [];
-            const step = (this.viewport.maxX - this.viewport.minX) / this.viewport.width;
-            
-            console.log('Graphing range:', this.viewport.minX, 'to', this.viewport.maxX, 'step:', step);
-            
-            for (let x = this.viewport.minX; x <= this.viewport.maxX; x += step) {
-                try {
-                    const y = this.evaluateFunction(functionString, x);
-                    if (isFinite(y)) {
-                        points.push({ x, y });
-                    }
-                } catch (e) {
-                    // Skip invalid points
-                }
-            }
-            
-            console.log('Generated points:', points.length);
-            if (points.length > 0) {
-                console.log('Sample points:', points.slice(0, 5));
-            }
-            
-            this.functions = [{ expression: functionString, points, color: '#4A90E2' }];
-        } catch (error) {
-            console.error('Error parsing function:', error);
-            alert('Invalid function: ' + error.message);
-        }
+        if (hamburgerMenu) hamburgerMenu.classList.add('active');
+        if (functionPanel) functionPanel.classList.add('mobile-open');
+        if (mobileOverlay) mobileOverlay.style.display = 'block';
+    }
+    
+    closeMobileMenu() {
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const functionPanel = document.getElementById('function-panel');
+        const mobileOverlay = document.getElementById('mobile-overlay');
+        
+        if (hamburgerMenu) hamburgerMenu.classList.remove('active');
+        if (functionPanel) functionPanel.classList.remove('mobile-open');
+        if (mobileOverlay) mobileOverlay.style.display = 'none';
     }
     
     evaluateFunction(expression, x) {
@@ -328,11 +918,9 @@ class Graphiti {
             if (typeof result === 'number' && isFinite(result)) {
                 return result;
             } else {
-                console.warn('Non-finite result for x =', x, 'result =', result);
                 return NaN;
             }
         } catch (error) {
-            console.warn('Evaluation error for x =', x, ':', error.message);
             // Return NaN for invalid expressions or points
             // This allows the graphing to skip invalid points gracefully
             return NaN;
@@ -340,14 +928,23 @@ class Graphiti {
     }
     
     worldToScreen(worldX, worldY) {
-        const screenX = this.viewport.centerX + (worldX * this.viewport.scale);
-        const screenY = this.viewport.centerY - (worldY * this.viewport.scale);
+        // Calculate position based on viewport bounds
+        const xRatio = (worldX - this.viewport.minX) / (this.viewport.maxX - this.viewport.minX);
+        const yRatio = (worldY - this.viewport.minY) / (this.viewport.maxY - this.viewport.minY);
+        
+        const screenX = xRatio * this.viewport.width;
+        const screenY = this.viewport.height - (yRatio * this.viewport.height); // Flip Y axis
+        
         return { x: screenX, y: screenY };
     }
     
     screenToWorld(screenX, screenY) {
-        const worldX = (screenX - this.viewport.centerX) / this.viewport.scale;
-        const worldY = -(screenY - this.viewport.centerY) / this.viewport.scale;
+        const xRatio = screenX / this.viewport.width;
+        const yRatio = (this.viewport.height - screenY) / this.viewport.height; // Flip Y axis
+        
+        const worldX = this.viewport.minX + (xRatio * (this.viewport.maxX - this.viewport.minX));
+        const worldY = this.viewport.minY + (yRatio * (this.viewport.maxY - this.viewport.minY));
+        
         return { x: worldX, y: worldY };
     }
     
@@ -399,6 +996,17 @@ class Graphiti {
     
     handleContinuousInput(deltaTime) {
         if (this.currentState !== this.states.GRAPHING) return;
+        
+        // Check if any input field is currently focused
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+            activeElement.tagName === 'INPUT' || 
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.isContentEditable
+        );
+        
+        // Don't handle keyboard panning if an input is focused
+        if (isInputFocused) return;
         
         const panSpeed = 200 / this.viewport.scale; // Adjust for zoom level
         
@@ -453,10 +1061,13 @@ class Graphiti {
         // Draw coordinate system
         this.drawGrid();
         this.drawAxes();
+        this.drawAxisLabels();
         
         // Draw functions
         this.functions.forEach(func => {
-            this.drawFunction(func);
+            if (func.enabled && func.points && func.points.length > 0) {
+                this.drawFunction(func);
+            }
         });
         
         // Draw UI overlays
@@ -512,30 +1123,197 @@ class Graphiti {
         this.ctx.stroke();
     }
     
-    drawFunction(func) {
-        if (func.points.length < 2) return;
+    drawAxisLabels() {
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
         
-        this.ctx.strokeStyle = func.color;
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
+        const labelSpacing = this.getLabelSpacing();
         
-        let first = true;
-        for (const point of func.points) {
-            const screenPos = this.worldToScreen(point.x, point.y);
+        // X-axis labels
+        if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
+            const axisY = this.worldToScreen(0, 0).y;
+            const startX = Math.floor(this.viewport.minX / labelSpacing) * labelSpacing;
             
-            if (screenPos.x >= -10 && screenPos.x <= this.viewport.width + 10 &&
-                screenPos.y >= -10 && screenPos.y <= this.viewport.height + 10) {
+            for (let x = startX; x <= this.viewport.maxX; x += labelSpacing) {
+                if (Math.abs(x) < 0.0001) continue; // Skip zero label
                 
-                if (first) {
-                    this.ctx.moveTo(screenPos.x, screenPos.y);
-                    first = false;
-                } else {
-                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                const screenPos = this.worldToScreen(x, 0);
+                if (screenPos.x >= 20 && screenPos.x <= this.viewport.width - 20) {
+                    const label = this.formatNumber(x);
+                    const labelY = axisY + 5;
+                    
+                    // Don't draw labels too close to the bottom
+                    if (labelY < this.viewport.height - 15) {
+                        this.ctx.fillText(label, screenPos.x, labelY);
+                    }
                 }
             }
         }
         
-        this.ctx.stroke();
+        // Y-axis labels
+        if (this.viewport.minX <= 0 && this.viewport.maxX >= 0) {
+            const axisX = this.worldToScreen(0, 0).x;
+            const startY = Math.floor(this.viewport.minY / labelSpacing) * labelSpacing;
+            
+            this.ctx.textAlign = 'right';
+            this.ctx.textBaseline = 'middle';
+            
+            for (let y = startY; y <= this.viewport.maxY; y += labelSpacing) {
+                if (Math.abs(y) < 0.0001) continue; // Skip zero label
+                
+                const screenPos = this.worldToScreen(0, y);
+                if (screenPos.y >= 20 && screenPos.y <= this.viewport.height - 20) {
+                    const label = this.formatNumber(y);
+                    const labelX = axisX - 5;
+                    
+                    // Don't draw labels too close to the left edge
+                    if (labelX > 15) {
+                        this.ctx.fillText(label, labelX, screenPos.y);
+                    }
+                }
+            }
+        }
+        
+        // Draw origin label
+        if (this.viewport.minX <= 0 && this.viewport.maxX >= 0 && 
+            this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
+            const origin = this.worldToScreen(0, 0);
+            this.ctx.textAlign = 'right';
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillText('0', origin.x - 5, origin.y + 5);
+        }
+    }
+    
+    getLabelSpacing() {
+        // Get appropriate spacing for axis labels based on zoom level
+        const pixelsPerUnit = this.viewport.scale;
+        
+        // Target label spacing: 40-120 pixels apart for optimal readability
+        const minPixelSpacing = 40;
+        const maxPixelSpacing = 120;
+        const idealPixelSpacing = 80;
+        
+        // Calculate ideal world spacing
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnit;
+        
+        // Generate list of "nice" spacing values
+        const niceSpacings = [];
+        
+        // Add very small spacings for extreme zoom-in
+        for (let exp = -6; exp <= 6; exp++) {
+            const base = Math.pow(10, exp);
+            niceSpacings.push(base, 2 * base, 5 * base);
+        }
+        
+        // Sort the nice spacings
+        niceSpacings.sort((a, b) => a - b);
+        
+        // Find the best spacing that keeps labels between min and max pixel spacing
+        let bestSpacing = niceSpacings[0];
+        let bestPixelSpacing = bestSpacing * pixelsPerUnit;
+        
+        for (const spacing of niceSpacings) {
+            const pixelSpacing = spacing * pixelsPerUnit;
+            
+            // If this spacing is too small (labels too close), skip it
+            if (pixelSpacing < minPixelSpacing) continue;
+            
+            // If this spacing is too large (labels too far apart), break
+            if (pixelSpacing > maxPixelSpacing) break;
+            
+            // This spacing is in the acceptable range
+            bestSpacing = spacing;
+            bestPixelSpacing = pixelSpacing;
+            
+            // If we're close to ideal, use this one
+            if (Math.abs(pixelSpacing - idealPixelSpacing) < Math.abs(bestPixelSpacing - idealPixelSpacing)) {
+                bestSpacing = spacing;
+                bestPixelSpacing = pixelSpacing;
+            }
+        }
+        
+        return bestSpacing;
+    }
+    
+    formatNumber(num) {
+        // Format numbers for axis labels
+        if (Math.abs(num) < 0.0001) return '0';
+        
+        if (Math.abs(num) >= 1000000) {
+            return (num / 1000000).toFixed(1) + 'M';
+        }
+        if (Math.abs(num) >= 1000) {
+            return (num / 1000).toFixed(1) + 'k';
+        }
+        if (Math.abs(num) >= 100) {
+            return num.toFixed(0);
+        }
+        if (Math.abs(num) >= 10) {
+            return num.toFixed(1);
+        }
+        if (Math.abs(num) >= 1) {
+            return num.toFixed(1);
+        }
+        if (Math.abs(num) >= 0.1) {
+            return num.toFixed(2);
+        }
+        if (Math.abs(num) >= 0.01) {
+            return num.toFixed(3);
+        }
+        
+        // For very small numbers, use scientific notation
+        return num.toExponential(1);
+    }
+    
+    drawFunction(func) {
+        if (!func.points || func.points.length < 2) return;
+        
+        this.ctx.strokeStyle = func.color;
+        this.ctx.lineWidth = 2;
+        
+        let pathStarted = false;
+        
+        for (let i = 0; i < func.points.length; i++) {
+            const point = func.points[i];
+            
+            // Skip NaN points (discontinuities)
+            if (!isFinite(point.y)) {
+                // End current path if one was started
+                if (pathStarted) {
+                    this.ctx.stroke();
+                    pathStarted = false;
+                }
+                continue;
+            }
+            
+            const screenPos = this.worldToScreen(point.x, point.y);
+            
+            // Only draw points that are reasonably close to the viewport
+            if (screenPos.x >= -50 && screenPos.x <= this.viewport.width + 50 &&
+                screenPos.y >= -50 && screenPos.y <= this.viewport.height + 50) {
+                
+                if (!pathStarted || point.connected === false) {
+                    // Start a new path
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(screenPos.x, screenPos.y);
+                    pathStarted = true;
+                } else {
+                    // Continue the current path
+                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                }
+            } else if (pathStarted) {
+                // Point is outside viewport, end current path
+                this.ctx.stroke();
+                pathStarted = false;
+            }
+        }
+        
+        // Stroke the final path if one was started
+        if (pathStarted) {
+            this.ctx.stroke();
+        }
     }
     
     drawCrosshair() {
@@ -556,17 +1334,130 @@ class Graphiti {
         
         this.ctx.stroke();
         this.ctx.setLineDash([]);
+        
+        // Draw coordinate display
+        this.drawCoordinateDisplay();
+    }
+    
+    drawCoordinateDisplay() {
+        // Convert mouse position to world coordinates
+        const worldPos = this.screenToWorld(this.input.mouse.x, this.input.mouse.y);
+        
+        // Format coordinates
+        const xCoord = this.formatCoordinate(worldPos.x);
+        const yCoord = this.formatCoordinate(worldPos.y);
+        const coordText = `(${xCoord}, ${yCoord})`;
+        
+        // Set up text styling
+        this.ctx.font = '14px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        
+        // Measure text for background sizing
+        const textMetrics = this.ctx.measureText(coordText);
+        const textWidth = textMetrics.width;
+        const textHeight = 16;
+        const padding = 8;
+        
+        // Position in top-right corner
+        const bgX = this.viewport.width - textWidth - padding * 2 - 10;
+        const bgY = 10;
+        const bgWidth = textWidth + padding * 2;
+        const bgHeight = textHeight + padding * 2;
+        
+        // Draw background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+        
+        // Draw border
+        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.8)';
+        this.ctx.lineWidth = 1;
+        this.ctx.setLineDash([]);
+        this.ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
+        
+        // Draw text
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.fillText(coordText, bgX + padding, bgY + padding);
+    }
+    
+    formatCoordinate(value) {
+        // Format coordinate values for display
+        if (Math.abs(value) < 0.000001) return '0';
+        
+        if (Math.abs(value) >= 1000000) {
+            return (value / 1000000).toFixed(2) + 'M';
+        }
+        if (Math.abs(value) >= 1000) {
+            return (value / 1000).toFixed(2) + 'k';
+        }
+        if (Math.abs(value) >= 100) {
+            return value.toFixed(1);
+        }
+        if (Math.abs(value) >= 10) {
+            return value.toFixed(2);
+        }
+        if (Math.abs(value) >= 1) {
+            return value.toFixed(3);
+        }
+        if (Math.abs(value) >= 0.1) {
+            return value.toFixed(4);
+        }
+        if (Math.abs(value) >= 0.01) {
+            return value.toFixed(5);
+        }
+        
+        // For very small numbers, use scientific notation
+        return value.toExponential(2);
     }
     
     getGridSpacing() {
         const pixelsPerUnit = this.viewport.scale;
         
-        if (pixelsPerUnit > 100) return 0.1;
-        if (pixelsPerUnit > 50) return 0.5;
-        if (pixelsPerUnit > 20) return 1;
-        if (pixelsPerUnit > 10) return 2;
-        if (pixelsPerUnit > 5) return 5;
-        return 10;
+        // Target grid spacing: 20-80 pixels apart for optimal visibility
+        const minPixelSpacing = 20;
+        const maxPixelSpacing = 80;
+        const idealPixelSpacing = 40;
+        
+        // Calculate ideal world spacing
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnit;
+        
+        // Generate list of "nice" spacing values
+        const niceSpacings = [];
+        
+        // Add very small spacings for extreme zoom-in
+        for (let exp = -6; exp <= 6; exp++) {
+            const base = Math.pow(10, exp);
+            niceSpacings.push(base, 2 * base, 5 * base);
+        }
+        
+        // Sort the nice spacings
+        niceSpacings.sort((a, b) => a - b);
+        
+        // Find the best spacing that keeps grid lines between min and max pixel spacing
+        let bestSpacing = niceSpacings[0];
+        let bestPixelSpacing = bestSpacing * pixelsPerUnit;
+        
+        for (const spacing of niceSpacings) {
+            const pixelSpacing = spacing * pixelsPerUnit;
+            
+            // If this spacing is too small (lines too close), skip it
+            if (pixelSpacing < minPixelSpacing) continue;
+            
+            // If this spacing is too large (lines too far apart), break
+            if (pixelSpacing > maxPixelSpacing) break;
+            
+            // This spacing is in the acceptable range
+            bestSpacing = spacing;
+            bestPixelSpacing = pixelSpacing;
+            
+            // If we're close to ideal, use this one
+            if (Math.abs(pixelSpacing - idealPixelSpacing) < Math.abs(bestPixelSpacing - idealPixelSpacing)) {
+                bestSpacing = spacing;
+                bestPixelSpacing = pixelSpacing;
+            }
+        }
+        
+        return bestSpacing;
     }
     
     // ================================
