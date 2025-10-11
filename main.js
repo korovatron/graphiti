@@ -50,7 +50,10 @@ class Graphiti {
                 initialMinX: 0,
                 initialMaxX: 0,
                 initialMinY: 0,
-                initialMaxY: 0
+                initialMaxY: 0,
+                // Fixed center points for directional zoom
+                fixedCenterWorldX: 0,
+                fixedCenterWorldY: 0
             }
         };
         
@@ -615,6 +618,10 @@ class Graphiti {
             this.input.pinch.initialMinY = this.viewport.minY;
             this.input.pinch.initialMaxY = this.viewport.maxY;
             
+            // Calculate and store fixed center points to prevent panning during directional zoom
+            this.input.pinch.fixedCenterWorldX = (this.viewport.minX + this.viewport.maxX) / 2;
+            this.input.pinch.fixedCenterWorldY = (this.viewport.minY + this.viewport.maxY) / 2;
+            
             // Calculate center point between touches
             this.input.pinch.centerX = (touch1.clientX + touch2.clientX) / 2;
             this.input.pinch.centerY = (touch1.clientY + touch2.clientY) / 2;
@@ -643,35 +650,39 @@ class Graphiti {
             const maxScale = 10000;
             
             if (this.input.pinch.direction === 'horizontal') {
-                // Horizontal pinch - zoom X axis only
+                // Horizontal pinch - zoom X axis only, keep Y axis unchanged
                 const xZoomFactor = currentDx / this.input.pinch.initialDx;
-                const centerWorldX = this.screenToWorld(this.input.pinch.centerX, this.input.pinch.centerY).x;
                 
                 const newXRange = (this.input.pinch.initialMaxX - this.input.pinch.initialMinX) / xZoomFactor;
-                const newMinX = centerWorldX - (newXRange / 2);
-                const newMaxX = centerWorldX + (newXRange / 2);
+                const newMinX = this.input.pinch.fixedCenterWorldX - (newXRange / 2);
+                const newMaxX = this.input.pinch.fixedCenterWorldX + (newXRange / 2);
                 
                 // Check reasonable bounds
                 if (newXRange > 0.0001 && newXRange < 100000) {
                     this.viewport.minX = newMinX;
                     this.viewport.maxX = newMaxX;
+                    // Keep Y bounds exactly the same to prevent any shift
+                    this.viewport.minY = this.input.pinch.initialMinY;
+                    this.viewport.maxY = this.input.pinch.initialMaxY;
                     this.updateRangeInputs();
                     this.replotAllFunctions();
                 }
                 
             } else if (this.input.pinch.direction === 'vertical') {
-                // Vertical pinch - zoom Y axis only
+                // Vertical pinch - zoom Y axis only, keep X axis unchanged
                 const yZoomFactor = currentDy / this.input.pinch.initialDy;
-                const centerWorldY = this.screenToWorld(this.input.pinch.centerX, this.input.pinch.centerY).y;
                 
                 const newYRange = (this.input.pinch.initialMaxY - this.input.pinch.initialMinY) / yZoomFactor;
-                const newMinY = centerWorldY - (newYRange / 2);
-                const newMaxY = centerWorldY + (newYRange / 2);
+                const newMinY = this.input.pinch.fixedCenterWorldY - (newYRange / 2);
+                const newMaxY = this.input.pinch.fixedCenterWorldY + (newYRange / 2);
                 
                 // Check reasonable bounds
                 if (newYRange > 0.0001 && newYRange < 100000) {
                     this.viewport.minY = newMinY;
                     this.viewport.maxY = newMaxY;
+                    // Keep X bounds exactly the same to prevent any shift
+                    this.viewport.minX = this.input.pinch.initialMinX;
+                    this.viewport.maxX = this.input.pinch.initialMaxX;
                     this.updateRangeInputs();
                     this.replotAllFunctions();
                 }
