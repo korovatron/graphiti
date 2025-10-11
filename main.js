@@ -36,6 +36,14 @@ class Graphiti {
             dragging: false,
             lastX: 0,
             lastY: 0,
+            // Tap detection for closing hamburger menu
+            tap: {
+                startX: 0,
+                startY: 0,
+                startTime: 0,
+                maxMoveDistance: 10, // pixels
+                maxTapDuration: 300 // milliseconds
+            },
             // Pinch gesture tracking
             pinch: {
                 active: false,
@@ -433,6 +441,8 @@ class Graphiti {
             if (this.functions.length === 0) {
                 this.addFunction('x^2');
             }
+            // Open the function panel by default so users can start immediately
+            this.openMobileMenu();
         });
         
         if (addFunctionButton) {
@@ -497,6 +507,17 @@ class Graphiti {
         this.canvas.addEventListener('mouseup', () => this.handlePointerEnd());
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
         
+        // Click on canvas to close hamburger menu (desktop only)
+        this.canvas.addEventListener('click', (e) => {
+            // Only close on desktop, not mobile (to avoid interfering with touch gestures)
+            if (window.innerWidth > 768) {
+                const functionPanel = document.getElementById('function-panel');
+                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                    this.closeMobileMenu();
+                }
+            }
+        });
+        
         // Touch Events
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
@@ -522,6 +543,59 @@ class Graphiti {
         document.addEventListener('keyup', (e) => {
             this.input.keys.delete(e.key.toLowerCase());
         });
+        
+        // Document-level touch events for hamburger menu closure
+        document.addEventListener('touchstart', (e) => {
+            // Only handle if not on canvas (canvas has its own handlers)
+            if (e.target !== this.canvas) {
+                const touch = e.touches[0];
+                this.input.startX = touch.clientX;
+                this.input.startY = touch.clientY;
+                this.input.startTime = Date.now();
+                this.input.maxMoveDistance = 0;
+            }
+        }, { passive: true });
+        
+        document.addEventListener('touchmove', (e) => {
+            // Only handle if not on canvas and we have start coordinates
+            if (e.target !== this.canvas && this.input.startX !== null && this.input.startY !== null) {
+                const touch = e.touches[0];
+                const moveDistance = Math.sqrt(
+                    Math.pow(touch.clientX - this.input.startX, 2) + 
+                    Math.pow(touch.clientY - this.input.startY, 2)
+                );
+                this.input.maxMoveDistance = Math.max(this.input.maxMoveDistance, moveDistance);
+            }
+        }, { passive: true });
+        
+        document.addEventListener('touchend', (e) => {
+            // Only handle if not on canvas and we have start coordinates
+            if (e.target !== this.canvas && this.input.startX !== null && this.input.startY !== null) {
+                const tapDuration = Date.now() - this.input.startTime;
+                const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
+                
+                if (isTap) {
+                    const functionPanel = document.getElementById('function-panel');
+                    if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                        const rect = functionPanel.getBoundingClientRect();
+                        const tapX = this.input.startX;
+                        const tapY = this.input.startY;
+                        
+                        // If tap is outside the function panel, close it
+                        if (tapX < rect.left || tapX > rect.right || 
+                            tapY < rect.top || tapY > rect.bottom) {
+                            this.closeMobileMenu();
+                        }
+                    }
+                }
+                
+                // Reset tap tracking
+                this.input.startX = null;
+                this.input.startY = null;
+                this.input.startTime = null;
+                this.input.maxMoveDistance = 0;
+            }
+        }, { passive: true });
         
         // Range inputs real-time updates
         [xMinInput, xMaxInput, yMinInput, yMaxInput].forEach(input => {
@@ -594,14 +668,25 @@ class Graphiti {
     // Touch handling methods for pinch-to-zoom
     handleTouchStart(e) {
         if (e.touches.length === 1) {
-            // Single touch - handle as pan
+            // Single touch - handle as pan and track potential tap
             const touch = e.touches[0];
             this.handlePointerStart(touch.clientX, touch.clientY);
             this.input.pinch.active = false;
+            
+            // Record tap start information
+            this.input.startX = touch.clientX;
+            this.input.startY = touch.clientY;
+            this.input.startTime = Date.now();
         } else if (e.touches.length === 2) {
             // Two touches - start pinch gesture
             this.input.pinch.active = true;
             this.input.mouse.down = false; // Disable panning during pinch
+            
+            // Reset tap tracking since this is now a pinch gesture
+            this.input.startX = null;
+            this.input.startY = null;
+            this.input.startTime = null;
+            this.input.maxMoveDistance = 0;
             
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
@@ -645,8 +730,18 @@ class Graphiti {
     
     handleTouchMove(e) {
         if (e.touches.length === 1 && !this.input.pinch.active) {
-            // Single touch - handle as pan
+            // Single touch - handle as pan and track movement
             const touch = e.touches[0];
+            
+            // Update maximum movement distance for tap detection
+            if (this.input.startX !== null && this.input.startY !== null) {
+                const moveDistance = Math.sqrt(
+                    Math.pow(touch.clientX - this.input.startX, 2) + 
+                    Math.pow(touch.clientY - this.input.startY, 2)
+                );
+                this.input.maxMoveDistance = Math.max(this.input.maxMoveDistance, moveDistance);
+            }
+            
             this.handlePointerMove(touch.clientX, touch.clientY);
         } else if (e.touches.length === 2 && this.input.pinch.active) {
             // Two touches - handle directional pinch zoom
@@ -723,7 +818,32 @@ class Graphiti {
     
     handleTouchEnd(e) {
         if (e.touches.length === 0) {
-            // All touches ended
+            // All touches ended - check for tap
+            const tapDuration = Date.now() - this.input.startTime;
+            const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
+            
+            if (isTap && this.input.startX !== null && this.input.startY !== null) {
+                // This was a tap - check if it's outside the function panel to close hamburger
+                const functionPanel = document.getElementById('function-panel');
+                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                    const rect = functionPanel.getBoundingClientRect();
+                    const tapX = this.input.startX;
+                    const tapY = this.input.startY;
+                    
+                    // If tap is outside the function panel, close it
+                    if (tapX < rect.left || tapX > rect.right || 
+                        tapY < rect.top || tapY > rect.bottom) {
+                        this.closeMobileMenu();
+                    }
+                }
+            }
+            
+            // Reset tap tracking
+            this.input.startX = null;
+            this.input.startY = null;
+            this.input.startTime = null;
+            this.input.maxMoveDistance = 0;
+            
             this.handlePointerEnd();
             this.input.pinch.active = false;
         } else if (e.touches.length === 1 && this.input.pinch.active) {
@@ -1012,6 +1132,7 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
         
+        // Both mobile and desktop now use the same sliding animation
         if (functionPanel && functionPanel.classList.contains('mobile-open')) {
             this.closeMobileMenu();
         } else {
@@ -1026,7 +1147,11 @@ class Graphiti {
         
         if (hamburgerMenu) hamburgerMenu.classList.add('active');
         if (functionPanel) functionPanel.classList.add('mobile-open');
-        if (mobileOverlay) mobileOverlay.style.display = 'block';
+        
+        // Only show overlay on actual mobile devices
+        if (window.innerWidth <= 768 && mobileOverlay) {
+            mobileOverlay.style.display = 'block';
+        }
     }
     
     closeMobileMenu() {

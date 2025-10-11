@@ -200,7 +200,7 @@
             cursor: pointer;
             pointer-events: auto;
             backdrop-filter: blur(5px);
-            display: none;
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -237,44 +237,46 @@
             display: none !important;
         }
         
+        /* Function panel sliding animation for all devices */
+        #function-panel {
+            position: fixed !important;
+            top: 0 !important; /* Full height for all devices */
+            left: -100% !important;
+            width: 100% !important;
+            max-width: min(350px, 90vw) !important;
+            height: 100% !important; /* Full height for consistency */
+            z-index: 15;
+            transition: left 0.3s ease;
+            overflow-y: auto;
+            border-radius: 0 !important;
+            padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
+            backdrop-filter: blur(10px);
+            background: rgba(26, 47, 66, 0.95) !important;
+        }
+        
+        #function-panel.mobile-open {
+            left: 0 !important;
+        }
+        
         /* Mobile Styles */
         @media (max-width: 768px) {
-            #hamburger-menu {
-                display: flex;
-            }
-            
             /* Ensure hamburger can still be hidden when explicitly set via JavaScript */
             #hamburger-menu[style*="display: none"] {
                 display: none !important;
             }
             
-            #function-panel {
-                position: fixed !important;
-                top: 0 !important;
-                left: -100% !important;
-                width: 100% !important;
-                max-width: min(350px, 90vw) !important; /* Responsive to screen width */
-                height: 100% !important;
-                z-index: 15;
-                transition: left 0.3s ease;
-                overflow-y: auto;
-                border-radius: 0 !important;
-                padding: 70px 20px 20px 20px !important; /* Extra top padding for hamburger */
-                backdrop-filter: blur(10px);
-                background: rgba(26, 47, 66, 0.95) !important;
-            }
-            
-            #function-panel.mobile-open {
-                left: 0 !important;
-            }
-            
             #controls-panel {
-                bottom: 20px !important;
+                bottom: 60px !important; /* Higher up to avoid clipping */
                 right: 20px !important;
                 display: flex;
                 gap: 10px;
                 flex-wrap: wrap;
                 max-width: calc(100vw - 40px); /* Prevent overflow */
+            }
+            
+            /* Hide zoom buttons on mobile - pinch-to-zoom is better */
+            #zoom-in, #zoom-out {
+                display: none;
             }
             
             #controls-panel button {
@@ -322,7 +324,7 @@
             }
             
             #controls-panel {
-                bottom: 10px !important;
+                bottom: 50px !important; /* Adjust for landscape */
                 right: 10px !important;
             }
             
