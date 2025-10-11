@@ -664,6 +664,9 @@ class Graphiti {
                     // Keep Y bounds exactly the same to prevent any shift
                     this.viewport.minY = this.input.pinch.initialMinY;
                     this.viewport.maxY = this.input.pinch.initialMaxY;
+                    
+                    // Update viewport scale based on new X range for proper grid/label spacing
+                    this.updateViewportScale();
                     this.updateRangeInputs();
                     this.replotAllFunctions();
                 }
@@ -683,6 +686,9 @@ class Graphiti {
                     // Keep X bounds exactly the same to prevent any shift
                     this.viewport.minX = this.input.pinch.initialMinX;
                     this.viewport.maxX = this.input.pinch.initialMaxX;
+                    
+                    // Update viewport scale based on new Y range for proper grid/label spacing
+                    this.updateViewportScale();
                     this.updateRangeInputs();
                     this.replotAllFunctions();
                 }
@@ -790,6 +796,19 @@ class Graphiti {
         
         // Re-plot all functions when viewport changes
         this.replotAllFunctions();
+    }
+    
+    updateViewportScale() {
+        // Calculate appropriate scale based on current viewport ranges
+        // This ensures grid and label spacing work correctly after directional zoom
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        const xScale = this.viewport.width / xRange;
+        const yScale = this.viewport.height / yRange;
+        
+        // Use the smaller scale to ensure both axes fit properly
+        // This gives priority to the axis that needs more space
+        this.viewport.scale = Math.min(xScale, yScale);
     }
     
     handleMinusKey(e, input) {
