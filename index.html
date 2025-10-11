@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Graphiti - Mathematical Function Explorer</title>
     <meta name="description" content="Draw and explore mathematical cartesian functions">
     
@@ -227,7 +227,7 @@
                 top: 0 !important;
                 left: -100% !important;
                 width: 100% !important;
-                max-width: 350px !important;
+                max-width: min(350px, 90vw) !important; /* Responsive to screen width */
                 height: 100% !important;
                 z-index: 15;
                 transition: left 0.3s ease;
@@ -248,11 +248,13 @@
                 display: flex;
                 gap: 10px;
                 flex-wrap: wrap;
+                max-width: calc(100vw - 40px); /* Prevent overflow */
             }
             
             #controls-panel button {
                 padding: 8px 12px;
                 font-size: 12px;
+                min-width: 60px; /* Ensure buttons are touch-friendly */
             }
             
             /* Keep function items horizontal on mobile */
@@ -284,6 +286,23 @@
             /* Range inputs on mobile */
             #function-panel div[style*="display: flex"] input[type="number"] {
                 min-width: 80px !important;
+            }
+        }
+        
+        /* Landscape orientation adjustments */
+        @media (max-width: 768px) and (orientation: landscape) {
+            #function-panel {
+                max-width: min(350px, 50vw) !important; /* Smaller panel in landscape */
+            }
+            
+            #controls-panel {
+                bottom: 10px !important;
+                right: 10px !important;
+            }
+            
+            #hamburger-menu {
+                top: 10px !important;
+                left: 10px !important;
             }
         }
         

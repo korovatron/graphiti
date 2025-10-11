@@ -360,8 +360,27 @@ class Graphiti {
             this.updateViewport();
         };
         
+        // Initial resize
         resizeCanvas();
+        
+        // Handle window resize (desktop) and orientation change (mobile)
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => {
+            // Add a small delay for orientation change to complete
+            setTimeout(resizeCanvas, 100);
+        });
+        
+        // Additional mobile-specific resize handling
+        if ('screen' in window && 'orientation' in window.screen) {
+            window.screen.orientation.addEventListener('change', () => {
+                setTimeout(resizeCanvas, 100);
+            });
+        }
+        
+        // Handle visual viewport changes (mobile keyboard, etc.)
+        if ('visualViewport' in window) {
+            window.visualViewport.addEventListener('resize', resizeCanvas);
+        }
     }
     
     setupEventListeners() {
@@ -910,9 +929,30 @@ class Graphiti {
     
     evaluateFunction(expression, x) {
         try {
+            // Make function names case-insensitive for mobile compatibility
+            // Convert common function names to lowercase
+            const caseInsensitiveExpression = expression
+                .replace(/\bSin\b/g, 'sin')
+                .replace(/\bCos\b/g, 'cos')
+                .replace(/\bTan\b/g, 'tan')
+                .replace(/\bLog\b/g, 'log')
+                .replace(/\bLn\b/g, 'ln')
+                .replace(/\bSqrt\b/g, 'sqrt')
+                .replace(/\bAbs\b/g, 'abs')
+                .replace(/\bExp\b/g, 'exp')
+                .replace(/\bFloor\b/g, 'floor')
+                .replace(/\bCeil\b/g, 'ceil')
+                .replace(/\bRound\b/g, 'round')
+                .replace(/\bAsin\b/g, 'asin')
+                .replace(/\bAcos\b/g, 'acos')
+                .replace(/\bAtan\b/g, 'atan')
+                .replace(/\bSinh\b/g, 'sinh')
+                .replace(/\bCosh\b/g, 'cosh')
+                .replace(/\bTanh\b/g, 'tanh');
+            
             // Use math.js for safe mathematical expression evaluation
             // math.js automatically handles x substitution and mathematical functions
-            const result = math.evaluate(expression, { x: x });
+            const result = math.evaluate(caseInsensitiveExpression, { x: x });
             
             // Ensure the result is a finite number
             if (typeof result === 'number' && isFinite(result)) {
@@ -1358,12 +1398,27 @@ class Graphiti {
         const textWidth = textMetrics.width;
         const textHeight = 16;
         const padding = 8;
+        const margin = 10;
         
-        // Position in top-right corner
-        const bgX = this.viewport.width - textWidth - padding * 2 - 10;
-        const bgY = 10;
+        // Calculate background dimensions
         const bgWidth = textWidth + padding * 2;
         const bgHeight = textHeight + padding * 2;
+        
+        // Position in top-right corner, but ensure it stays within screen bounds
+        let bgX = this.viewport.width - bgWidth - margin;
+        let bgY = margin;
+        
+        // Ensure it doesn't go off the right edge (safety check)
+        if (bgX + bgWidth > this.viewport.width) {
+            bgX = this.viewport.width - bgWidth - 5;
+        }
+        
+        // Ensure it doesn't go off the left edge (for very wide coordinate text)
+        if (bgX < 5) {
+            bgX = 5;
+            // If the text is still too wide, we might need to truncate or use smaller font
+            // For now, just position it at the left edge
+        }
         
         // Draw background
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
