@@ -1216,20 +1216,21 @@ class Graphiti {
         this.ctx.lineWidth = 1;
         this.ctx.beginPath();
         
-        // Vertical lines
-        const gridSpacing = this.getGridSpacing();
-        const startX = Math.floor(this.viewport.minX / gridSpacing) * gridSpacing;
+        // Vertical lines - use X-axis specific spacing
+        const xGridSpacing = this.getXGridSpacing();
+        const startX = Math.floor(this.viewport.minX / xGridSpacing) * xGridSpacing;
         
-        for (let x = startX; x <= this.viewport.maxX; x += gridSpacing) {
+        for (let x = startX; x <= this.viewport.maxX; x += xGridSpacing) {
             const screenPos = this.worldToScreen(x, 0);
             this.ctx.moveTo(screenPos.x, 0);
             this.ctx.lineTo(screenPos.x, this.viewport.height);
         }
         
-        // Horizontal lines
-        const startY = Math.floor(this.viewport.minY / gridSpacing) * gridSpacing;
+        // Horizontal lines - use Y-axis specific spacing
+        const yGridSpacing = this.getYGridSpacing();
+        const startY = Math.floor(this.viewport.minY / yGridSpacing) * yGridSpacing;
         
-        for (let y = startY; y <= this.viewport.maxY; y += gridSpacing) {
+        for (let y = startY; y <= this.viewport.maxY; y += yGridSpacing) {
             const screenPos = this.worldToScreen(0, y);
             this.ctx.moveTo(0, screenPos.y);
             this.ctx.lineTo(this.viewport.width, screenPos.y);
@@ -1266,14 +1267,16 @@ class Graphiti {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         
-        const labelSpacing = this.getLabelSpacing();
+        // Use axis-specific label spacing for directional zoom compatibility
+        const xLabelSpacing = this.getXLabelSpacing();
+        const yLabelSpacing = this.getYLabelSpacing();
         
         // X-axis labels
         if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
             const axisY = this.worldToScreen(0, 0).y;
-            const startX = Math.floor(this.viewport.minX / labelSpacing) * labelSpacing;
+            const startX = Math.floor(this.viewport.minX / xLabelSpacing) * xLabelSpacing;
             
-            for (let x = startX; x <= this.viewport.maxX; x += labelSpacing) {
+            for (let x = startX; x <= this.viewport.maxX; x += xLabelSpacing) {
                 if (Math.abs(x) < 0.0001) continue; // Skip zero label
                 
                 const screenPos = this.worldToScreen(x, 0);
@@ -1292,12 +1295,12 @@ class Graphiti {
         // Y-axis labels
         if (this.viewport.minX <= 0 && this.viewport.maxX >= 0) {
             const axisX = this.worldToScreen(0, 0).x;
-            const startY = Math.floor(this.viewport.minY / labelSpacing) * labelSpacing;
+            const startY = Math.floor(this.viewport.minY / yLabelSpacing) * yLabelSpacing;
             
             this.ctx.textAlign = 'right';
             this.ctx.textBaseline = 'middle';
             
-            for (let y = startY; y <= this.viewport.maxY; y += labelSpacing) {
+            for (let y = startY; y <= this.viewport.maxY; y += yLabelSpacing) {
                 if (Math.abs(y) < 0.0001) continue; // Skip zero label
                 
                 const screenPos = this.worldToScreen(0, y);
@@ -1610,6 +1613,110 @@ class Graphiti {
         }
         
         return bestSpacing;
+    }
+    
+    getXGridSpacing() {
+        // Calculate grid spacing specifically for X-axis based on X range
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const pixelsPerUnitX = this.viewport.width / xRange;
+        
+        // Target grid spacing: 20-80 pixels apart for optimal visibility
+        const minPixelSpacing = 20;
+        const maxPixelSpacing = 80;
+        const idealPixelSpacing = 40;
+        
+        // Calculate ideal world spacing for X-axis
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnitX;
+        
+        return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitX, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
+    }
+    
+    getYGridSpacing() {
+        // Calculate grid spacing specifically for Y-axis based on Y range
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        const pixelsPerUnitY = this.viewport.height / yRange;
+        
+        // Target grid spacing: 20-80 pixels apart for optimal visibility
+        const minPixelSpacing = 20;
+        const maxPixelSpacing = 80;
+        const idealPixelSpacing = 40;
+        
+        // Calculate ideal world spacing for Y-axis
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnitY;
+        
+        return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitY, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
+    }
+    
+    findBestGridSpacing(idealWorldSpacing, pixelsPerUnit, minPixelSpacing, maxPixelSpacing, idealPixelSpacing) {
+        // Generate list of "nice" spacing values
+        const niceSpacings = [];
+        
+        // Add very small spacings for extreme zoom-in
+        for (let exp = -6; exp <= 6; exp++) {
+            const base = Math.pow(10, exp);
+            niceSpacings.push(base, 2 * base, 5 * base);
+        }
+        
+        // Sort the nice spacings
+        niceSpacings.sort((a, b) => a - b);
+        
+        // Find the best spacing that keeps grid lines between min and max pixel spacing
+        let bestSpacing = niceSpacings[0];
+        let bestPixelSpacing = bestSpacing * pixelsPerUnit;
+        
+        for (const spacing of niceSpacings) {
+            const pixelSpacing = spacing * pixelsPerUnit;
+            
+            // If this spacing is too small (lines too close), skip it
+            if (pixelSpacing < minPixelSpacing) continue;
+            
+            // If this spacing is too large (lines too far apart), break
+            if (pixelSpacing > maxPixelSpacing) break;
+            
+            // This spacing is in the acceptable range
+            bestSpacing = spacing;
+            bestPixelSpacing = pixelSpacing;
+            
+            // If we're close to ideal, use this one
+            if (Math.abs(pixelSpacing - idealPixelSpacing) < Math.abs(bestPixelSpacing - idealPixelSpacing)) {
+                bestSpacing = spacing;
+                bestPixelSpacing = pixelSpacing;
+            }
+        }
+        
+        return bestSpacing;
+    }
+    
+    getXLabelSpacing() {
+        // Calculate label spacing specifically for X-axis based on X range
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const pixelsPerUnitX = this.viewport.width / xRange;
+        
+        // Target label spacing: 40-120 pixels apart for optimal readability
+        const minPixelSpacing = 40;
+        const maxPixelSpacing = 120;
+        const idealPixelSpacing = 80;
+        
+        // Calculate ideal world spacing for X-axis
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnitX;
+        
+        return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitX, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
+    }
+    
+    getYLabelSpacing() {
+        // Calculate label spacing specifically for Y-axis based on Y range
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        const pixelsPerUnitY = this.viewport.height / yRange;
+        
+        // Target label spacing: 40-120 pixels apart for optimal readability
+        const minPixelSpacing = 40;
+        const maxPixelSpacing = 120;
+        const idealPixelSpacing = 80;
+        
+        // Calculate ideal world spacing for Y-axis
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnitY;
+        
+        return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitY, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
     }
     
     // ================================
