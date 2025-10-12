@@ -321,6 +321,21 @@
         #function-panel.mobile-open {
             left: 0 !important;
         }
+
+        /* Adjust hamburger position when mobile menu is open to avoid overlapping title */
+        #hamburger-menu.panel-open {
+            left: calc(280px + var(--safe-area-left, 0px)) !important; /* Position within panel but not over title */
+            background: transparent !important; /* Make background transparent when over panel */
+        }
+
+        /* On very small screens, move hamburger further right or make smaller */
+        @media (max-width: 320px) {
+            #hamburger-menu.panel-open {
+                left: calc(260px + var(--safe-area-left, 0px)) !important;
+                width: 30px !important;
+                height: 30px !important;
+            }
+        }
         
         /* Mobile Styles - Use more specific targeting */
         @media (max-width: 500px), (max-height: 500px) {

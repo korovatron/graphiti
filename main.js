@@ -1237,7 +1237,10 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
         
-        if (hamburgerMenu) hamburgerMenu.classList.add('active');
+        if (hamburgerMenu) {
+            hamburgerMenu.classList.add('active');
+            hamburgerMenu.classList.add('panel-open'); // Move hamburger to avoid title overlap
+        }
         if (functionPanel) {
             functionPanel.style.display = 'block'; // Ensure it's visible
             functionPanel.classList.add('mobile-open');
@@ -1254,7 +1257,10 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
         
-        if (hamburgerMenu) hamburgerMenu.classList.remove('active');
+        if (hamburgerMenu) {
+            hamburgerMenu.classList.remove('active');
+            hamburgerMenu.classList.remove('panel-open'); // Return hamburger to original position
+        }
         if (functionPanel) {
             functionPanel.classList.remove('mobile-open');
             // On mobile, hide the panel when closing
