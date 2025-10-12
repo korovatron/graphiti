@@ -443,7 +443,6 @@ class Graphiti {
     
     setupEventListeners() {
         // Wait for elements to be available
-        const startButton = document.getElementById('start-button');
         const addFunctionButton = document.getElementById('add-function');
         const resetViewButton = document.getElementById('reset-view');
         const xMinInput = document.getElementById('x-min');
@@ -453,22 +452,43 @@ class Graphiti {
         const hamburgerMenu = document.getElementById('hamburger-menu');
         const mobileOverlay = document.getElementById('mobile-overlay');
         const functionPanel = document.getElementById('function-panel');
+        const titleScreen = document.getElementById('title-screen');
         
-        if (!startButton) {
-            console.error('Start button not found!');
-            return;
+        // Title screen start listeners - click, touch, or keyboard
+        if (titleScreen) {
+            // Mouse click to start
+            titleScreen.addEventListener('click', (e) => {
+                if (this.currentState === this.states.TITLE) {
+                    // Don't trigger on link clicks
+                    if (e.target.tagName !== 'A') {
+                        this.startGraphing();
+                    }
+                }
+            });
+            
+            // Touch tap to start (separate from click to avoid double triggering)
+            titleScreen.addEventListener('touchend', (e) => {
+                if (this.currentState === this.states.TITLE) {
+                    // Don't trigger on link taps
+                    if (e.target.tagName !== 'A') {
+                        e.preventDefault(); // Prevent click event
+                        this.startGraphing();
+                    }
+                }
+            });
         }
         
-        // UI Button Events
-        startButton.addEventListener('click', () => {
-            this.changeState(this.states.GRAPHING);
-            // Add the first function when starting
-            if (this.functions.length === 0) {
-                this.addFunction('x^2');
+        // Keyboard listeners for Space and Enter
+        document.addEventListener('keydown', (e) => {
+            if (this.currentState === this.states.TITLE) {
+                if (e.code === 'Space' || e.code === 'Enter') {
+                    e.preventDefault();
+                    this.startGraphing();
+                }
             }
-            // Open the function panel by default so users can start immediately
-            this.openMobileMenu();
         });
+
+        // UI Button Events
         
         if (addFunctionButton) {
             addFunctionButton.addEventListener('click', () => {
@@ -1246,6 +1266,16 @@ class Graphiti {
             yMaxInput.value = this.viewport.maxY.toFixed(2);
             this.setInputError(yMaxInput, false);
         }
+    }
+    
+    startGraphing() {
+        this.changeState(this.states.GRAPHING);
+        // Add the first function when starting
+        if (this.functions.length === 0) {
+            this.addFunction('x^2');
+        }
+        // Open the function panel by default so users can start immediately
+        this.openMobileMenu();
     }
     
     changeState(newState) {

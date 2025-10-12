@@ -1,9 +1,11 @@
-const CACHE_NAME = 'graphiti-v1.61';
+const CACHE_NAME = 'graphiti-v1.63';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
     './manifest.json',
     './sw.js',
+    './logo.png',
+    './images/graphitiTitle.png',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js'
 ];
 
