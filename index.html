@@ -403,9 +403,14 @@
             transition: left 0.3s ease;
             overflow-y: auto;
             border-radius: 0 !important;
-            padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
+            padding: 20px 20px 20px 20px !important; /* Default padding - no extra top space */
             backdrop-filter: blur(10px);
             background: rgba(26, 47, 66, 0.95) !important;
+        }
+        
+        /* PWA mode - add safe area padding when app can render behind notch/status bar */
+        body.pwa-mode #function-panel {
+            padding-top: calc(70px + var(--safe-area-top, 0px)) !important;
         }
         
         #function-panel.mobile-open {
