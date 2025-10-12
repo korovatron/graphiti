@@ -472,6 +472,7 @@ class Graphiti {
                     // Don't trigger on link taps
                     if (e.target.tagName !== 'A') {
                         e.preventDefault(); // Prevent click event
+                        e.stopPropagation(); // Prevent event bubbling to document handlers
                         this.startGraphing();
                     }
                 }
@@ -1275,7 +1276,14 @@ class Graphiti {
             this.addFunction('x^2');
         }
         // Open the function panel by default so users can start immediately
-        this.openMobileMenu();
+        // Add a small delay on mobile to prevent touch event conflicts
+        if (this.isTrueMobile()) {
+            setTimeout(() => {
+                this.openMobileMenu();
+            }, 100);
+        } else {
+            this.openMobileMenu();
+        }
     }
     
     changeState(newState) {
