@@ -58,6 +58,14 @@ class Graphiti {
                     touch: 20  // pixels (larger for touch)
                 }
             },
+            // Persistent tracing display for educational use
+            persistentTracing: {
+                visible: false,
+                functionId: null,
+                worldX: 0,
+                worldY: 0,
+                functionColor: '#4A90E2'
+            },
             // Pinch gesture tracking
             pinch: {
                 active: false,
@@ -149,17 +157,23 @@ class Graphiti {
         });
         
         input.addEventListener('input', (e) => {
+            // Clear persistent tracing when editing functions
+            this.input.persistentTracing.visible = false;
             func.expression = e.target.value;
             // Auto-plot with debouncing to avoid excessive calculations
             this.debouncePlot(func);
         });
         
         colorIndicator.addEventListener('click', () => {
+            // Clear persistent tracing when toggling function visibility
+            this.input.persistentTracing.visible = false;
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
         });
         
         removeBtn.addEventListener('click', () => {
+            // Clear persistent tracing when removing functions
+            this.input.persistentTracing.visible = false;
             this.removeFunction(func.id);
         });
         
@@ -528,12 +542,16 @@ class Graphiti {
         
         if (addFunctionButton) {
             addFunctionButton.addEventListener('click', () => {
+                // Clear persistent tracing when adding functions
+                this.input.persistentTracing.visible = false;
                 this.addFunction('');
             });
         }
 
         if (resetViewButton) {
             resetViewButton.addEventListener('click', () => {
+                // Clear persistent tracing when resetting view
+                this.input.persistentTracing.visible = false;
                 // Use smart reset based on current functions
                 const smartViewport = this.getSmartResetViewport();
                 
@@ -555,6 +573,8 @@ class Graphiti {
         const themeToggle = document.getElementById('theme-toggle');
         if (themeToggle) {
             themeToggle.addEventListener('click', () => {
+                // Clear persistent tracing when changing theme
+                this.input.persistentTracing.visible = false;
                 this.toggleTheme();
             });
         }
@@ -563,6 +583,8 @@ class Graphiti {
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
             angleModeToggle.addEventListener('click', () => {
+                // Clear persistent tracing when changing angle mode
+                this.input.persistentTracing.visible = false;
                 this.toggleAngleMode();
             });
         }
@@ -688,10 +710,12 @@ class Graphiti {
         [xMinInput, xMaxInput, yMinInput, yMaxInput].forEach(input => {
             if (input) {
                 input.addEventListener('input', () => {
+                    this.input.persistentTracing.visible = false;
                     this.debounceRangeUpdate();
                 });
                 
                 input.addEventListener('keydown', (e) => {
+                    this.input.persistentTracing.visible = false;
                     if (e.key === 'Enter') {
                         // Force immediate update on Enter, bypassing debounce
                         this.validateAndSetRange();
@@ -722,6 +746,9 @@ class Graphiti {
             const curvePoint = this.findClosestCurvePoint(x, y, tolerance);
             
             if (curvePoint) {
+                // Clear persistent tracing only when starting a new trace
+                this.input.persistentTracing.visible = false;
+                
                 // Enter tracing mode
                 this.input.tracing.active = true;
                 this.input.tracing.functionId = curvePoint.function.id;
@@ -817,7 +844,19 @@ class Graphiti {
             }
         }
         
-        // Exit tracing mode
+        // Exit tracing mode - save state for persistent display
+        if (this.input.tracing.active) {
+            // Save current tracing state for persistent display
+            this.input.persistentTracing.visible = true;
+            this.input.persistentTracing.functionId = this.input.tracing.functionId;
+            this.input.persistentTracing.worldX = this.input.tracing.worldX;
+            this.input.persistentTracing.worldY = this.input.tracing.worldY;
+            
+            // Get function color for persistent display
+            const tracingFunction = this.functions.find(f => f.id === this.input.tracing.functionId);
+            this.input.persistentTracing.functionColor = tracingFunction ? tracingFunction.color : '#4A90E2';
+        }
+        
         this.input.tracing.active = false;
         this.input.tracing.functionId = null;
         
@@ -1388,6 +1427,9 @@ class Graphiti {
     
     // Mobile Menu Methods
     toggleMobileMenu() {
+        // Clear persistent tracing when menu is toggled
+        this.input.persistentTracing.visible = false;
+        
         const hamburgerMenu = document.getElementById('hamburger-menu');
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
@@ -1852,8 +1894,8 @@ class Graphiti {
             }
         });
         
-        // Draw tracing indicator if active
-        if (this.input.tracing.active) {
+        // Draw tracing indicator if active or persistent
+        if (this.input.tracing.active || this.input.persistentTracing.visible) {
             this.drawTracingIndicator();
         }
         
@@ -2205,14 +2247,24 @@ class Graphiti {
     }
 
     drawTracingIndicator() {
-        if (!this.input.tracing.active) return;
+        let tracingData, tracingFunction;
         
-        // Get the function being traced
-        const tracingFunction = this.functions.find(f => f.id === this.input.tracing.functionId);
+        if (this.input.tracing.active) {
+            // Use active tracing data
+            tracingData = this.input.tracing;
+            tracingFunction = this.functions.find(f => f.id === tracingData.functionId);
+        } else if (this.input.persistentTracing.visible) {
+            // Use persistent tracing data
+            tracingData = this.input.persistentTracing;
+            tracingFunction = { color: tracingData.functionColor }; // Simplified function object
+        } else {
+            return;
+        }
+        
         if (!tracingFunction) return;
         
         // Convert world coordinates to screen coordinates
-        const screenPos = this.worldToScreen(this.input.tracing.worldX, this.input.tracing.worldY);
+        const screenPos = this.worldToScreen(tracingData.worldX, tracingData.worldY);
         
         // Skip drawing if point is outside the visible canvas
         if (screenPos.x < -20 || screenPos.x > this.viewport.width + 20 ||
@@ -2239,8 +2291,8 @@ class Graphiti {
         this.ctx.fill();
         
         // Coordinate display
-        const x = this.input.tracing.worldX;
-        const y = this.input.tracing.worldY;
+        const x = tracingData.worldX;
+        const y = tracingData.worldY;
         const coordText = `(${this.formatCoordinate(x)}, ${this.formatCoordinate(y)})`;
         
         // Position text to avoid going off screen
