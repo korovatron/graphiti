@@ -969,13 +969,36 @@ class Graphiti {
                 }
                 
             } else {
-                // Uniform pinch - zoom both axes (original behavior)
+                // Uniform pinch - zoom both axes
+                // Use current viewport state, not initial bounds, to allow smooth transition from directional zoom
                 const zoomFactor = currentDistance / this.input.pinch.initialDistance;
-                const newScale = this.input.pinch.initialScale * zoomFactor;
                 
-                if (newScale >= minScale && newScale <= maxScale) {
-                    this.viewport.scale = newScale;
-                    this.updateViewport();
+                // Calculate new ranges based on current viewport, not initial
+                const currentXRange = this.viewport.maxX - this.viewport.minX;
+                const currentYRange = this.viewport.maxY - this.viewport.minY;
+                
+                const newXRange = currentXRange / zoomFactor;
+                const newYRange = currentYRange / zoomFactor;
+                
+                // Use current center of viewport for zoom center
+                const currentCenterX = (this.viewport.minX + this.viewport.maxX) / 2;
+                const currentCenterY = (this.viewport.minY + this.viewport.maxY) / 2;
+                
+                const newMinX = currentCenterX - (newXRange / 2);
+                const newMaxX = currentCenterX + (newXRange / 2);
+                const newMinY = currentCenterY - (newYRange / 2);
+                const newMaxY = currentCenterY + (newYRange / 2);
+                
+                // Check reasonable bounds
+                if (newXRange > 0.0001 && newXRange < 100000 && newYRange > 0.0001 && newYRange < 100000) {
+                    this.viewport.minX = newMinX;
+                    this.viewport.maxX = newMaxX;
+                    this.viewport.minY = newMinY;
+                    this.viewport.maxY = newMaxY;
+                    
+                    this.updateViewportScale();
+                    this.updateRangeInputs();
+                    this.replotAllFunctions();
                 }
             }
         }
