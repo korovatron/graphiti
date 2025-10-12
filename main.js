@@ -301,7 +301,25 @@ class Graphiti {
             const points = [];
             const step = (this.viewport.maxX - this.viewport.minX) / this.viewport.width;
             
-            for (let x = this.viewport.minX; x <= this.viewport.maxX; x += step) {
+            // Use a more precise approach to ensure we include the endpoint
+            const numSteps = Math.ceil((this.viewport.maxX - this.viewport.minX) / step);
+            
+            // Collect critical points that must be included (domain boundaries)
+            const criticalPoints = [];
+            if (func.expression.toLowerCase().includes('asin') || func.expression.toLowerCase().includes('acos')) {
+                // For inverse trig functions, ensure we include x = ±1 if they're in viewport
+                if (this.viewport.minX <= 1 && this.viewport.maxX >= 1) criticalPoints.push(1);
+                if (this.viewport.minX <= -1 && this.viewport.maxX >= -1) criticalPoints.push(-1);
+            }
+            
+            for (let i = 0; i <= numSteps; i++) {
+                let x = this.viewport.minX + (i * step);
+                
+                // Ensure we hit the exact endpoint on the last iteration
+                if (i === numSteps) {
+                    x = this.viewport.maxX;
+                }
+                
                 try {
                     const y = this.evaluateFunction(func.expression, x);
                     if (isFinite(y)) {
@@ -319,6 +337,25 @@ class Graphiti {
                     }
                 }
             }
+            
+            // Add critical points that might have been missed due to step size
+            for (const criticalX of criticalPoints) {
+                // Check if this critical point is already very close to an existing point
+                const existsAlready = points.some(p => Math.abs(p.x - criticalX) < step * 0.1);
+                if (!existsAlready) {
+                    try {
+                        const y = this.evaluateFunction(func.expression, criticalX);
+                        if (isFinite(y)) {
+                            points.push({ x: criticalX, y, connected: true });
+                        }
+                    } catch (e) {
+                        // Critical point evaluation failed, skip it
+                    }
+                }
+            }
+            
+            // Sort points by x-coordinate to maintain proper order
+            points.sort((a, b) => a.x - b.x);
             
             // Post-process to detect sudden jumps (asymptotes)
             const processedPoints = [];
@@ -499,12 +536,14 @@ class Graphiti {
 
         if (resetViewButton) {
             resetViewButton.addEventListener('click', () => {
-                // Reset to exact initial state
-                this.viewport.scale = this.initialViewport.scale;
-                this.viewport.minX = this.initialViewport.minX;
-                this.viewport.maxX = this.initialViewport.maxX;
-                this.viewport.minY = this.initialViewport.minY;
-                this.viewport.maxY = this.initialViewport.maxY;
+                // Use smart reset based on current functions
+                const smartViewport = this.getSmartResetViewport();
+                
+                this.viewport.scale = smartViewport.scale;
+                this.viewport.minX = smartViewport.minX;
+                this.viewport.maxX = smartViewport.maxX;
+                this.viewport.minY = smartViewport.minY;
+                this.viewport.maxY = smartViewport.maxY;
                 
                 // Update range inputs to reflect the reset
                 this.updateRangeInputs();
@@ -1274,6 +1313,17 @@ class Graphiti {
         // Add the first function when starting
         if (this.functions.length === 0) {
             this.addFunction('x^2');
+            
+            // Use smart reset viewport to ensure consistency with reset button
+            const smartViewport = this.getSmartResetViewport();
+            this.viewport.minX = smartViewport.minX;
+            this.viewport.maxX = smartViewport.maxX;
+            this.viewport.minY = smartViewport.minY;
+            this.viewport.maxY = smartViewport.maxY;
+            this.viewport.scale = smartViewport.scale;
+            
+            // Update range inputs to reflect the smart viewport
+            this.updateRangeInputs();
         }
         // Open the function panel by default so users can start immediately
         // Add a small delay on mobile to prevent touch event conflicts
@@ -1428,31 +1478,30 @@ class Graphiti {
             this.angleMode = 'radians';
             if (angleModeToggle) angleModeToggle.textContent = 'RAD';
             localStorage.setItem('graphiti-angle-mode', 'radians');
-            
-            // Set appropriate ranges for radians: -2π to 2π for X, -2 to 2 for Y
-            this.viewport.minX = -2 * Math.PI;
-            this.viewport.maxX = 2 * Math.PI;
-            this.viewport.minY = -2;
-            this.viewport.maxY = 2;
         } else {
             this.angleMode = 'degrees';
             if (angleModeToggle) angleModeToggle.textContent = 'DEG';
             localStorage.setItem('graphiti-angle-mode', 'degrees');
-            
-            // Set appropriate ranges for degrees: -360° to 360° for X, -2 to 2 for Y
-            this.viewport.minX = -360;
-            this.viewport.maxX = 360;
-            this.viewport.minY = -2;
-            this.viewport.maxY = 2;
         }
         
-        // Update scale for consistent grid/label spacing
-        this.updateViewportScale();
+        // Only adjust viewport if there are trig functions that would be affected
+        if (this.containsTrigFunctions()) {
+            // Use the same smart viewport logic as the reset button for consistency
+            const smartViewport = this.getSmartResetViewport();
+            this.viewport.minX = smartViewport.minX;
+            this.viewport.maxX = smartViewport.maxX;
+            this.viewport.minY = smartViewport.minY;
+            this.viewport.maxY = smartViewport.maxY;
+            
+            // Update scale for consistent grid/label spacing
+            this.updateViewportScale();
+            
+            // Update range inputs to reflect the new ranges
+            this.updateRangeInputs();
+        }
         
-        // Update range inputs to reflect the new ranges
-        this.updateRangeInputs();
-        
-        // Re-plot all functions since angle mode affects trig functions
+        // Always replot functions since angle mode affects trig function evaluation
+        // But axis labels will only change if trig functions are present
         this.replotAllFunctions();
     }
     
@@ -1493,26 +1542,35 @@ class Graphiti {
                 .replace(/\bCosh\b/g, 'cosh')
                 .replace(/\bTanh\b/g, 'tanh');
             
-            // Handle degrees mode by converting degree arguments to radians
+            // Convert input for regular trig functions if in degree mode
+            let evaluationX = x;
             if (this.angleMode === 'degrees') {
-                // Simple regex replacement to multiply trig function arguments by pi/180
-                processedExpression = processedExpression
-                    .replace(/sin\(([^)]+)\)/g, 'sin(($1) * pi / 180)')
-                    .replace(/cos\(([^)]+)\)/g, 'cos(($1) * pi / 180)')
-                    .replace(/tan\(([^)]+)\)/g, 'tan(($1) * pi / 180)');
+                // Check if THIS specific expression contains regular trig functions that need x converted
+                const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(processedExpression);
+                // Check if THIS specific expression contains inverse trig functions (which use regular number inputs)
+                const hasInverseTrigWithX = /\b(asin|acos|atan)\s*\(\s*[^)]*x[^)]*\)/i.test(processedExpression);
                 
-                // For inverse trig functions, multiply the result by 180/pi
-                processedExpression = processedExpression
-                    .replace(/asin\(([^)]+)\)/g, 'asin($1) * 180 / pi')
-                    .replace(/acos\(([^)]+)\)/g, 'acos($1) * 180 / pi')
-                    .replace(/atan\(([^)]+)\)/g, 'atan($1) * 180 / pi');
+                // Convert input x from degrees to radians for regular trig functions
+                if (hasRegularTrigWithX) {
+                    evaluationX = x * Math.PI / 180;
+                } else {
+                    // Keep x as-is for inverse trig and other functions
+                }
             }
             
             // Use math.js for safe mathematical expression evaluation
-            const result = math.evaluate(processedExpression, { x: x });
+            const result = math.evaluate(processedExpression, { x: evaluationX });
             
             // Ensure the result is a finite number
             if (typeof result === 'number' && isFinite(result)) {
+                // Convert result for inverse trig functions if in degree mode
+                if (this.angleMode === 'degrees') {
+                    const hasInverseTrig = /\b(asin|acos|atan)\s*\(/i.test(processedExpression);
+                    if (hasInverseTrig) {
+                        const convertedResult = result * 180 / Math.PI; // Convert radians to degrees
+                        return convertedResult;
+                    }
+                }
                 return result;
             } else {
                 return NaN;
@@ -1562,7 +1620,11 @@ class Graphiti {
             
             try {
                 // Sample points around the click position
-                const sampleRange = (this.viewport.maxX - this.viewport.minX) * 0.01; // 1% of viewport width
+                // Use a minimum sample range to ensure we don't miss curves in narrow viewports
+                const viewportRange = this.viewport.maxX - this.viewport.minX;
+                const baseSampleRange = viewportRange * 0.01; // 1% of viewport width
+                const minSampleRange = 0.1; // Minimum absolute range
+                const sampleRange = Math.max(baseSampleRange, minSampleRange);
                 const samples = 20;
                 
                 for (let i = 0; i < samples; i++) {
@@ -1611,16 +1673,30 @@ class Graphiti {
     
     traceFunction(func, worldX) {
         try {
-            // Clamp X to viewport bounds
-            worldX = Math.max(this.viewport.minX, Math.min(this.viewport.maxX, worldX));
+            // Allow tracing to mathematical domain endpoints for inverse trig functions
+            let clampedX = worldX;
             
-            const worldY = this.evaluateFunction(func.expression, worldX);
+            // For inverse trig functions, allow tracing to their exact domain boundaries
+            if (func.expression.toLowerCase().includes('asin') || func.expression.toLowerCase().includes('acos')) {
+                // Domain is [-1, 1], allow reaching exactly ±1 even if slightly outside viewport
+                clampedX = Math.max(-1, Math.min(1, worldX));
+                
+                // But still respect viewport for other values
+                if (clampedX > -1 && clampedX < 1) {
+                    clampedX = Math.max(this.viewport.minX, Math.min(this.viewport.maxX, clampedX));
+                }
+            } else {
+                // For other functions, use normal viewport clamping
+                clampedX = Math.max(this.viewport.minX, Math.min(this.viewport.maxX, worldX));
+            }
+            
+            const worldY = this.evaluateFunction(func.expression, clampedX);
             
             if (isNaN(worldY) || !isFinite(worldY)) {
                 return null;
             }
             
-            return { x: worldX, y: worldY };
+            return { x: clampedX, y: worldY };
         } catch (error) {
             return null;
         }
@@ -1848,7 +1924,13 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(x, 0);
                 if (screenPos.x >= 20 && screenPos.x <= this.viewport.width - 20) {
-                    const label = this.containsRegularTrigFunctions() ? this.formatTrigNumber(x) : this.formatNumber(x);
+                    // Use angle formatting only for pure regular trig functions
+                    // If mixed with inverse trig, use regular numbers to avoid confusion
+                    const hasRegularTrig = this.containsRegularTrigFunctions();
+                    const hasInverseTrig = this.containsInverseTrigFunctions();
+                    const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
+                    
+                    const label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
                     const labelY = axisY + 5;
                     
                     // Don't draw labels too close to the bottom
@@ -1872,7 +1954,13 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(0, y);
                 if (screenPos.y >= 20 && screenPos.y <= this.viewport.height - 20) {
-                    const label = this.containsInverseTrigFunctions() ? this.formatTrigNumber(y) : this.formatNumber(y);
+                    // Use angle formatting only for pure inverse trig functions
+                    // If mixed with regular trig, use regular numbers to avoid confusion
+                    const hasRegularTrig = this.containsRegularTrigFunctions();
+                    const hasInverseTrig = this.containsInverseTrigFunctions();
+                    const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
+                    
+                    const label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
                     const labelX = axisX - 5;
                     
                     // Don't draw labels too close to the left edge
@@ -2070,9 +2158,11 @@ class Graphiti {
             
             const screenPos = this.worldToScreen(point.x, point.y);
             
-            // Only draw points that are reasonably close to the viewport
-            if (screenPos.x >= -50 && screenPos.x <= this.viewport.width + 50 &&
-                screenPos.y >= -50 && screenPos.y <= this.viewport.height + 50) {
+            // Be more inclusive for drawing points, especially for function boundaries
+            // Allow points that are slightly outside the viewport to be drawn
+            const buffer = 100; // Increased buffer for better boundary visibility
+            if (screenPos.x >= -buffer && screenPos.x <= this.viewport.width + buffer &&
+                screenPos.y >= -buffer && screenPos.y <= this.viewport.height + buffer) {
                 
                 if (!pathStarted || point.connected === false) {
                     // Start a new path
@@ -2330,6 +2420,81 @@ class Graphiti {
             func.expression && 
             regularTrigRegex.test(func.expression)
         );
+    }
+    
+    getSmartResetViewport() {
+        // Analyze current functions to determine optimal viewport ranges
+        const enabledFunctions = this.functions.filter(func => func.enabled && func.expression.trim());
+        
+        if (enabledFunctions.length === 0) {
+            // No functions enabled, use default ranges
+            return {
+                minX: -10, maxX: 10,
+                minY: -10, maxY: 10,
+                scale: 50
+            };
+        }
+        
+        const hasRegularTrig = this.containsRegularTrigFunctions();
+        const hasInverseTrig = this.containsInverseTrigFunctions();
+        const isDegreesMode = this.angleMode === 'degrees';
+        
+        if (hasInverseTrig && !hasRegularTrig) {
+            // Pure inverse trig functions
+            if (isDegreesMode) {
+                return {
+                    minX: -1.5, maxX: 1.5,
+                    minY: -180, maxY: 180,
+                    scale: 50
+                };
+            } else {
+                return {
+                    minX: -1.5, maxX: 1.5,
+                    minY: -Math.PI, maxY: Math.PI,
+                    scale: 50
+                };
+            }
+        } else if (hasRegularTrig && !hasInverseTrig) {
+            // Pure regular trig functions
+            if (isDegreesMode) {
+                return {
+                    minX: -360, maxX: 360,
+                    minY: -3, maxY: 3,
+                    scale: 50
+                };
+            } else {
+                return {
+                    minX: -2 * Math.PI, maxX: 2 * Math.PI,
+                    minY: -3, maxY: 3,
+                    scale: 50
+                };
+            }
+        } else {
+            // Mixed functions or other types - provide ranges that work for both
+            if (hasRegularTrig && hasInverseTrig) {
+                // Both regular and inverse trig functions present
+                if (isDegreesMode) {
+                    return {
+                        minX: -10, maxX: 10,    // Use a general range that works for both function types
+                        minY: -180, maxY: 180,  // Cover degree outputs for inverse trig and regular range for sin/cos
+                        scale: 50
+                    };
+                } else {
+                    return {
+                        minX: -10, maxX: 10,    // General range that accommodates both types
+                        minY: -Math.PI, maxY: Math.PI,   // Cover radian outputs and regular range
+                        scale: 50
+                    };
+                }
+            } else {
+                // Other function types, use default ranges
+                return {
+                    minX: -10, maxX: 10,
+                    minY: -10, maxY: 10,
+                    scale: 50
+                };
+            }
+        }
     }
     
     getTrigAwareXGridSpacing() {
