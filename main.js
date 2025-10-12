@@ -16,7 +16,7 @@ class Graphiti {
         this.previousState = null;
         
         // Angle mode for trigonometric functions
-        this.angleMode = 'degrees'; // 'degrees' or 'radians'
+        this.angleMode = 'radians'; // 'degrees' or 'radians'
         
         // Canvas and viewport properties
         this.viewport = {
@@ -130,14 +130,12 @@ class Graphiti {
         funcDiv.className = 'function-item';
         funcDiv.style.borderLeftColor = func.color;
         funcDiv.setAttribute('data-function-id', func.id);
-        
+
         funcDiv.innerHTML = `
             <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
             <input type="text" spellcheck="false" placeholder="e.g., sin(x), x^2, log(x)" value="${func.expression}">
             <button class="remove-btn">×</button>
-        `;
-        
-        // Add event listeners
+        `;        // Add event listeners
         const input = funcDiv.querySelector('input');
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const removeBtn = funcDiv.querySelector('.remove-btn');
@@ -1333,11 +1331,13 @@ class Graphiti {
     
     startGraphing() {
         this.changeState(this.states.GRAPHING);
-        // Add the first function when starting
+        // Add three initial function boxes when starting to show multiple plot capability
         if (this.functions.length === 0) {
-            this.addFunction('x^2');
+            this.addFunction('sin(2x + pi)');
+            this.addFunction('e^(-x^2)');
+            this.addFunction(''); // Empty function to show placeholder example text
             
-            // Use smart reset viewport to ensure consistency with reset button
+            // Use the same smart reset viewport logic as the reset button for consistency
             const smartViewport = this.getSmartResetViewport();
             this.viewport.minX = smartViewport.minX;
             this.viewport.maxX = smartViewport.maxX;
@@ -1347,6 +1347,13 @@ class Graphiti {
             
             // Update range inputs to reflect the smart viewport
             this.updateRangeInputs();
+            
+            // Plot all functions after setting viewport
+            this.functions.forEach(func => {
+                if (func.expression) {
+                    this.plotFunction(func);
+                }
+            });
         }
         // Open the function panel by default so users can start immediately
         // Add a small delay on mobile to prevent touch event conflicts
@@ -1500,11 +1507,9 @@ class Graphiti {
         if (this.angleMode === 'degrees') {
             this.angleMode = 'radians';
             if (angleModeToggle) angleModeToggle.textContent = 'RAD';
-            localStorage.setItem('graphiti-angle-mode', 'radians');
         } else {
             this.angleMode = 'degrees';
             if (angleModeToggle) angleModeToggle.textContent = 'DEG';
-            localStorage.setItem('graphiti-angle-mode', 'degrees');
         }
         
         // Only adjust viewport if there are trig functions that would be affected
@@ -1529,17 +1534,11 @@ class Graphiti {
     }
     
     initializeAngleMode() {
-        // Load saved angle mode from localStorage
-        const savedAngleMode = localStorage.getItem('graphiti-angle-mode');
+        // Always default to radians mode
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         
-        if (savedAngleMode === 'radians') {
-            this.angleMode = 'radians';
-            if (angleModeToggle) angleModeToggle.textContent = 'RAD';
-        } else {
-            this.angleMode = 'degrees';
-            if (angleModeToggle) angleModeToggle.textContent = 'DEG';
-        }
+        this.angleMode = 'radians';
+        if (angleModeToggle) angleModeToggle.textContent = 'RAD';
     }
     
     evaluateFunction(expression, x) {
