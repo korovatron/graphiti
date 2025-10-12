@@ -47,6 +47,17 @@ class Graphiti {
                 maxMoveDistance: 10, // pixels
                 maxTapDuration: 300 // milliseconds
             },
+            // Curve tracing mode
+            tracing: {
+                active: false,
+                functionId: null,
+                worldX: 0,
+                worldY: 0,
+                tolerance: {
+                    mouse: 10, // pixels
+                    touch: 20  // pixels (larger for touch)
+                }
+            },
             // Pinch gesture tracking
             pinch: {
                 active: false,
@@ -434,8 +445,6 @@ class Graphiti {
         // Wait for elements to be available
         const startButton = document.getElementById('start-button');
         const addFunctionButton = document.getElementById('add-function');
-        const zoomInButton = document.getElementById('zoom-in');
-        const zoomOutButton = document.getElementById('zoom-out');
         const resetViewButton = document.getElementById('reset-view');
         const xMinInput = document.getElementById('x-min');
         const xMaxInput = document.getElementById('x-max');
@@ -466,19 +475,7 @@ class Graphiti {
                 this.addFunction('');
             });
         }
-        
-        if (zoomInButton) {
-            zoomInButton.addEventListener('click', () => {
-                this.zoomIn();
-            });
-        }
-        
-        if (zoomOutButton) {
-            zoomOutButton.addEventListener('click', () => {
-                this.zoomOut();
-            });
-        }
-        
+
         if (resetViewButton) {
             resetViewButton.addEventListener('click', () => {
                 // Reset to exact initial state
@@ -656,6 +653,27 @@ class Graphiti {
         this.input.lastX = x;
         this.input.lastY = y;
         this.input.dragging = false;
+        
+        // Check if we should enter tracing mode
+        if (this.currentState === this.states.GRAPHING) {
+            // Determine tolerance based on input type (mouse vs touch)
+            const tolerance = this.input.touch.active ? 
+                this.input.tracing.tolerance.touch : 
+                this.input.tracing.tolerance.mouse;
+            
+            const curvePoint = this.findClosestCurvePoint(x, y, tolerance);
+            
+            if (curvePoint) {
+                // Enter tracing mode
+                this.input.tracing.active = true;
+                this.input.tracing.functionId = curvePoint.function.id;
+                this.input.tracing.worldX = curvePoint.worldX;
+                this.input.tracing.worldY = curvePoint.worldY;
+            } else {
+                // Normal panning mode
+                this.input.tracing.active = false;
+            }
+        }
     }
     
     handlePointerMove(x, y) {
@@ -663,25 +681,47 @@ class Graphiti {
             const deltaX = x - this.input.lastX;
             const deltaY = y - this.input.lastY;
             
-            if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
-                this.input.dragging = true;
+            if (this.input.tracing.active) {
+                // Tracing mode - update on every movement for smooth tracing
+                const currentWorldPos = this.screenToWorld(x, y);
+                const tracingFunction = this.functions.find(f => f.id === this.input.tracing.functionId);
                 
-                // Convert screen delta to world delta
-                const worldRange = this.viewport.maxX - this.viewport.minX;
-                const worldDeltaX = -(deltaX / this.viewport.width) * worldRange;
-                const worldDeltaY = (deltaY / this.viewport.height) * (this.viewport.maxY - this.viewport.minY);
+                if (tracingFunction) {
+                    // Trace the function at the new X position
+                    const tracePoint = this.traceFunction(tracingFunction, currentWorldPos.x);
+                    
+                    if (tracePoint) {
+                        this.input.tracing.worldX = tracePoint.x;
+                        this.input.tracing.worldY = tracePoint.y;
+                    }
+                }
                 
-                // Pan the viewport
-                this.viewport.minX += worldDeltaX;
-                this.viewport.maxX += worldDeltaX;
-                this.viewport.minY += worldDeltaY;
-                this.viewport.maxY += worldDeltaY;
-                
-                // Update range inputs to reflect the pan (immediate for responsiveness)
-                this.updateRangeInputs();
-                
-                // Debounce the expensive function re-plotting
-                this.debouncePanReplot();
+                // Mark as dragging for any movement in tracing mode
+                if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+                    this.input.dragging = true;
+                }
+            } else {
+                // Normal panning mode - use threshold to prevent jittery panning
+                if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+                    this.input.dragging = true;
+                    
+                    // Convert screen delta to world delta
+                    const worldRange = this.viewport.maxX - this.viewport.minX;
+                    const worldDeltaX = -(deltaX / this.viewport.width) * worldRange;
+                    const worldDeltaY = (deltaY / this.viewport.height) * (this.viewport.maxY - this.viewport.minY);
+                    
+                    // Pan the viewport
+                    this.viewport.minX += worldDeltaX;
+                    this.viewport.maxX += worldDeltaX;
+                    this.viewport.minY += worldDeltaY;
+                    this.viewport.maxY += worldDeltaY;
+                    
+                    // Update range inputs to reflect the pan (immediate for responsiveness)
+                    this.updateRangeInputs();
+                    
+                    // Debounce the expensive function re-plotting
+                    this.debouncePanReplot();
+                }
             }
             
             this.input.lastX = x;
@@ -713,9 +753,15 @@ class Graphiti {
                 clearTimeout(this.panTimer);
                 this.panTimer = null;
             }
-            // Do immediate final replot
-            this.replotAllFunctions();
+            // Do immediate final replot if not tracing
+            if (!this.input.tracing.active) {
+                this.replotAllFunctions();
+            }
         }
+        
+        // Exit tracing mode
+        this.input.tracing.active = false;
+        this.input.tracing.functionId = null;
         
         this.input.mouse.down = false;
         this.input.dragging = false;
@@ -723,6 +769,9 @@ class Graphiti {
     
     // Touch handling methods for pinch-to-zoom
     handleTouchStart(e) {
+        // Set touch flag for tolerance detection
+        this.input.touch.active = true;
+        
         if (e.touches.length === 1) {
             // Single touch - handle as pan and track potential tap
             const touch = e.touches[0];
@@ -891,6 +940,9 @@ class Graphiti {
             this.input.startY = null;
             this.input.startTime = null;
             this.input.maxMoveDistance = 0;
+            
+            // Reset touch flag
+            this.input.touch.active = false;
             
             this.handlePointerEnd();
             this.input.pinch.active = false;
@@ -1203,21 +1255,18 @@ class Graphiti {
         // Show/hide UI elements based on state
         const titleScreen = document.getElementById('title-screen');
         const functionPanel = document.getElementById('function-panel');
-        const controlsPanel = document.getElementById('controls-panel');
         const hamburgerMenu = document.getElementById('hamburger-menu');
         
         switch(newState) {
             case this.states.TITLE:
                 if (titleScreen) titleScreen.classList.remove('hidden');
                 if (functionPanel) functionPanel.classList.add('hidden');
-                if (controlsPanel) controlsPanel.classList.add('hidden');
                 if (hamburgerMenu) hamburgerMenu.style.display = 'none';
                 this.closeMobileMenu();
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
                 if (functionPanel) functionPanel.classList.remove('hidden');
-                if (controlsPanel) controlsPanel.classList.remove('hidden');
                 if (hamburgerMenu) hamburgerMenu.style.display = '';
                 break;
         }
@@ -1284,12 +1333,12 @@ class Graphiti {
         if (currentTheme === 'light') {
             // Switch to dark mode
             html.removeAttribute('data-theme');
-            if (themeToggle) themeToggle.textContent = '🌙 Dark Mode';
+            if (themeToggle) themeToggle.textContent = '🌙';
             localStorage.setItem('graphiti-theme', 'dark');
         } else {
             // Switch to light mode
             html.setAttribute('data-theme', 'light');
-            if (themeToggle) themeToggle.textContent = '☀️ Light Mode';
+            if (themeToggle) themeToggle.textContent = '☀️';
             localStorage.setItem('graphiti-theme', 'light');
         }
         
@@ -1316,10 +1365,10 @@ class Graphiti {
         
         if (savedTheme === 'light') {
             document.documentElement.setAttribute('data-theme', 'light');
-            if (themeToggle) themeToggle.textContent = '☀️ Light Mode';
+            if (themeToggle) themeToggle.textContent = '☀️';
         } else {
             document.documentElement.removeAttribute('data-theme');
-            if (themeToggle) themeToggle.textContent = '🌙 Dark Mode';
+            if (themeToggle) themeToggle.textContent = '🌙';
         }
         
         this.updateCanvasBackground();
@@ -1330,7 +1379,7 @@ class Graphiti {
         
         if (this.angleMode === 'degrees') {
             this.angleMode = 'radians';
-            if (angleModeToggle) angleModeToggle.textContent = '📐 Radians';
+            if (angleModeToggle) angleModeToggle.textContent = 'RAD';
             localStorage.setItem('graphiti-angle-mode', 'radians');
             
             // Set appropriate ranges for radians: -2π to 2π for X, -2 to 2 for Y
@@ -1340,7 +1389,7 @@ class Graphiti {
             this.viewport.maxY = 2;
         } else {
             this.angleMode = 'degrees';
-            if (angleModeToggle) angleModeToggle.textContent = '📐 Degrees';
+            if (angleModeToggle) angleModeToggle.textContent = 'DEG';
             localStorage.setItem('graphiti-angle-mode', 'degrees');
             
             // Set appropriate ranges for degrees: -360° to 360° for X, -2 to 2 for Y
@@ -1367,10 +1416,10 @@ class Graphiti {
         
         if (savedAngleMode === 'radians') {
             this.angleMode = 'radians';
-            if (angleModeToggle) angleModeToggle.textContent = '📐 Radians';
+            if (angleModeToggle) angleModeToggle.textContent = 'RAD';
         } else {
             this.angleMode = 'degrees';
-            if (angleModeToggle) angleModeToggle.textContent = '📐 Degrees';
+            if (angleModeToggle) angleModeToggle.textContent = 'DEG';
         }
     }
     
@@ -1447,6 +1496,87 @@ class Graphiti {
         const worldY = this.viewport.minY + (yRatio * (this.viewport.maxY - this.viewport.minY));
         
         return { x: worldX, y: worldY };
+    }
+    
+    // ================================
+    // CURVE TRACING UTILITIES
+    // ================================
+    
+    findClosestCurvePoint(screenX, screenY, tolerance) {
+        const worldPos = this.screenToWorld(screenX, screenY);
+        let closestFunction = null;
+        let closestDistance = Infinity;
+        let closestWorldX = worldPos.x;
+        let closestWorldY = worldPos.y;
+        
+        // Check each active function
+        for (const func of this.functions) {
+            if (!func.enabled || !func.expression.trim()) continue;
+            
+            try {
+                // Sample points around the click position
+                const sampleRange = (this.viewport.maxX - this.viewport.minX) * 0.01; // 1% of viewport width
+                const samples = 20;
+                
+                for (let i = 0; i < samples; i++) {
+                    const testX = worldPos.x + (i - samples/2) * (sampleRange / samples);
+                    
+                    // Skip if outside viewport
+                    if (testX < this.viewport.minX || testX > this.viewport.maxX) continue;
+                    
+                    // Evaluate function at this X position
+                    const scope = { x: testX };
+                    const testY = this.evaluateFunction(func.expression, testX);
+                    
+                    if (isNaN(testY) || !isFinite(testY)) continue;
+                    
+                    // Convert to screen coordinates to check distance
+                    const testScreenPos = this.worldToScreen(testX, testY);
+                    const distance = Math.sqrt(
+                        Math.pow(testScreenPos.x - screenX, 2) + 
+                        Math.pow(testScreenPos.y - screenY, 2)
+                    );
+                    
+                    if (distance < tolerance && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestFunction = func;
+                        closestWorldX = testX;
+                        closestWorldY = testY;
+                    }
+                }
+            } catch (error) {
+                // Skip functions that can't be evaluated
+                continue;
+            }
+        }
+        
+        if (closestFunction) {
+            return {
+                function: closestFunction,
+                worldX: closestWorldX,
+                worldY: closestWorldY,
+                distance: closestDistance
+            };
+        }
+        
+        return null;
+    }
+    
+    traceFunction(func, worldX) {
+        try {
+            // Clamp X to viewport bounds
+            worldX = Math.max(this.viewport.minX, Math.min(this.viewport.maxX, worldX));
+            
+            const worldY = this.evaluateFunction(func.expression, worldX);
+            
+            if (isNaN(worldY) || !isFinite(worldY)) {
+                return null;
+            }
+            
+            return { x: worldX, y: worldY };
+        } catch (error) {
+            return null;
+        }
     }
     
     // ================================
@@ -1580,6 +1710,11 @@ class Graphiti {
                 this.drawFunction(func);
             }
         });
+        
+        // Draw tracing indicator if active
+        if (this.input.tracing.active) {
+            this.drawTracingIndicator();
+        }
         
         // UI overlays removed - cleaner interface
     }
@@ -1912,6 +2047,115 @@ class Graphiti {
         if (pathStarted) {
             this.ctx.stroke();
         }
+    }
+
+    drawTracingIndicator() {
+        if (!this.input.tracing.active) return;
+        
+        // Get the function being traced
+        const tracingFunction = this.functions.find(f => f.id === this.input.tracing.functionId);
+        if (!tracingFunction) return;
+        
+        // Convert world coordinates to screen coordinates
+        const screenPos = this.worldToScreen(this.input.tracing.worldX, this.input.tracing.worldY);
+        
+        // Skip drawing if point is outside the visible canvas
+        if (screenPos.x < -20 || screenPos.x > this.viewport.width + 20 ||
+            screenPos.y < -20 || screenPos.y > this.viewport.height + 20) {
+            return;
+        }
+        
+        // Draw the circle indicator
+        this.ctx.save();
+        
+        // Circle - use function color
+        this.ctx.strokeStyle = '#FFFFFF';
+        this.ctx.fillStyle = tracingFunction.color;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.arc(screenPos.x, screenPos.y, 8, 0, 2 * Math.PI);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        // Inner dot
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.beginPath();
+        this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        // Coordinate display
+        const x = this.input.tracing.worldX;
+        const y = this.input.tracing.worldY;
+        const coordText = `(${this.formatCoordinate(x)}, ${this.formatCoordinate(y)})`;
+        
+        // Position text to avoid going off screen
+        let textX = screenPos.x + 15;
+        let textY = screenPos.y - 15;
+        
+        // Measure text to adjust position
+        this.ctx.font = '14px Arial';
+        const textMetrics = this.ctx.measureText(coordText);
+        const textWidth = textMetrics.width;
+        const textHeight = 16;
+        
+        // Adjust if text would go off screen
+        if (textX + textWidth > this.viewport.width - 10) {
+            textX = screenPos.x - textWidth - 15;
+        }
+        if (textY - textHeight < 10) {
+            textY = screenPos.y + textHeight + 15;
+        }
+        
+        // Draw text background using function color
+        this.ctx.fillStyle = tracingFunction.color;
+        this.ctx.fillRect(textX - 5, textY - textHeight, textWidth + 10, textHeight + 4);
+        
+        // Draw text with contrasting color
+        this.ctx.fillStyle = this.getContrastingTextColor(tracingFunction.color);
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(coordText, textX, textY - textHeight + 2);
+        
+        this.ctx.restore();
+    }
+
+    getContrastingTextColor(backgroundColor) {
+        // Convert hex color to RGB
+        let r, g, b;
+        
+        // Handle different color formats
+        if (backgroundColor.startsWith('#')) {
+            // Hex format
+            const hex = backgroundColor.substring(1);
+            if (hex.length === 3) {
+                r = parseInt(hex[0] + hex[0], 16);
+                g = parseInt(hex[1] + hex[1], 16);
+                b = parseInt(hex[2] + hex[2], 16);
+            } else if (hex.length === 6) {
+                r = parseInt(hex.substring(0, 2), 16);
+                g = parseInt(hex.substring(2, 4), 16);
+                b = parseInt(hex.substring(4, 6), 16);
+            }
+        } else if (backgroundColor.startsWith('rgb')) {
+            // RGB format
+            const matches = backgroundColor.match(/\d+/g);
+            if (matches && matches.length >= 3) {
+                r = parseInt(matches[0]);
+                g = parseInt(matches[1]);
+                b = parseInt(matches[2]);
+            }
+        }
+        
+        // If we couldn't parse the color, default to white text
+        if (r === undefined || g === undefined || b === undefined) {
+            return '#FFFFFF';
+        }
+        
+        // Calculate relative luminance
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        
+        // Return white text for dark backgrounds, black text for light backgrounds
+        return luminance > 0.5 ? '#000000' : '#FFFFFF';
     }
 
     formatCoordinate(value) {

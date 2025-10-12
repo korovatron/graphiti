@@ -126,18 +126,6 @@
             box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
         }
         
-        /* Icon buttons for zoom controls */
-        #zoom-in, #zoom-out, #reset-view {
-            padding: 0;
-            font-size: 16px;
-            width: 44px;
-            height: 44px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            vertical-align: top;
-        }
-        
         input[type="text"], input[type="number"] {
             padding: 8px;
             border: 1px solid var(--border-color);
@@ -160,11 +148,12 @@
             z-index: 10;
         }
         
-        .title-screen h1 {
-            font-size: 3em;
+        .title-screen .logo {
+            max-width: 90vw;
+            max-height: 120px;
+            width: auto;
+            height: auto;
             margin-bottom: 20px;
-            color: #4A90E2; /* Fixed blue color */
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
         
         .title-screen p {
@@ -185,7 +174,7 @@
         
         .copyright {
             position: absolute;
-            bottom: 20px;
+            bottom: calc(20px + var(--safe-area-bottom, 0px));
             left: 50%;
             transform: translateX(-50%);
             font-size: 0.85em;
@@ -338,27 +327,6 @@
                 display: none !important;
             }
             
-            #controls-panel {
-                bottom: calc(60px + var(--safe-area-bottom, 0px)) !important; /* Higher up to avoid clipping + safe area */
-                right: calc(20px + var(--safe-area-right, 0px)) !important;
-                display: flex;
-                gap: 10px;
-                flex-wrap: wrap;
-                max-width: calc(100vw - 40px - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)); /* Prevent overflow */
-            }
-            
-            /* Hide zoom buttons on mobile - pinch-to-zoom is better */
-            #zoom-in, #zoom-out {
-                display: none;
-            }
-            
-            #controls-panel button {
-                padding: 8px 12px;
-                font-size: 12px;
-                min-width: 60px; /* Ensure buttons are touch-friendly */
-                touch-action: manipulation; /* Improve touch responsiveness */
-            }
-            
             /* Keep function items horizontal on mobile */
             .function-item {
                 flex-wrap: nowrap;
@@ -396,11 +364,6 @@
                (max-height: 500px) and (orientation: landscape) {
             #function-panel {
                 max-width: min(350px, 50vw) !important; /* Smaller panel in landscape */
-            }
-            
-            #controls-panel {
-                bottom: calc(40px + var(--safe-area-bottom, 0px)) !important; /* Adjust for landscape + safe area */
-                right: calc(10px + var(--safe-area-right, 0px)) !important;
             }
             
             #hamburger-menu {
@@ -448,7 +411,7 @@
             
             <!-- Title Screen -->
             <div id="title-screen" class="title-screen">
-                <h1>Graphiti</h1>
+                <img src="images/graphitiTitle.png" alt="Graphiti" class="logo" />
                 <p>Mathematical Function Explorer</p>
                 
                 <button id="start-button">Start Graphing</button>
@@ -489,23 +452,12 @@
                     </div>
                 </div>
                 
-                <!-- Angle Mode Toggle -->
-                <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 15px; text-align: center;">
-                    <label style="font-size: 14px; display: block; margin-bottom: 5px;">Angle Mode:</label>
-                    <button id="angle-mode-toggle" style="padding: 8px 16px; font-size: 12px;">📐 Degrees</button>
+                <!-- Control Buttons Row -->
+                <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 15px; display: flex; gap: 10px; align-items: center;">
+                    <button id="angle-mode-toggle" style="padding: 8px; font-size: 12px; flex: 1; height: 40px;">DEG</button>
+                    <button id="reset-view" style="padding: 8px; font-size: 16px; flex: 1; height: 40px;" title="Reset View">↻</button>
+                    <button id="theme-toggle" style="padding: 8px; font-size: 16px; flex: 1; height: 40px;" title="Toggle Theme">🌙</button>
                 </div>
-                
-                <!-- Theme Toggle -->
-                <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 15px; text-align: center;">
-                    <button id="theme-toggle" style="padding: 8px 16px; font-size: 12px;">🌙 Dark Mode</button>
-                </div>
-            </div>
-            
-            <!-- Controls Panel -->
-            <div id="controls-panel" class="ui-panel hidden" style="bottom: 20px; right: 20px;">
-                <button id="zoom-in" title="Zoom In">🔍+</button>
-                <button id="zoom-out" title="Zoom Out">🔍−</button>
-                <button id="reset-view" title="Reset View">↻</button>
             </div>
         </div>
     </div>
