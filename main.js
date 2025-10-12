@@ -491,11 +491,6 @@ class Graphiti {
     }
     
     setupEventListeners() {
-        // Apply PWA-specific styling if running in PWA mode
-        if (this.isPWAMode()) {
-            document.body.classList.add('pwa-mode');
-        }
-        
         // Wait for elements to be available
         const addFunctionButton = document.getElementById('add-function');
         const resetViewButton = document.getElementById('reset-view');
@@ -2852,49 +2847,10 @@ class Graphiti {
     }
 
     isTrueMobile() {
-        // Method 1: User Agent detection for mobile devices
-        const userAgent = navigator.userAgent.toLowerCase();
-        const mobileKeywords = [
-            'android', 'iphone', 'ipod', 'ipad', 'blackberry', 
-            'windows phone', 'mobile', 'opera mini'
-        ];
-        const isMobileUserAgent = mobileKeywords.some(keyword => userAgent.includes(keyword));
-        
-        // Method 2: Touch capability (most mobile devices support touch)
-        const hasTouchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        
-        // Method 3: Screen dimensions (fallback)
+        // Simplified mobile detection - just check screen dimensions
+        // Use the narrower dimension to determine if we should be in mobile mode
         const narrowDimension = Math.min(window.innerWidth, window.innerHeight);
-        const isNarrowScreen = narrowDimension <= 500;
-        
-        // Method 4: Check for mobile-specific APIs
-        const hasMobileAPIs = 'orientation' in window || 'DeviceOrientationEvent' in window;
-        
-        // Combine methods: prioritize user agent, but use other indicators
-        return isMobileUserAgent || (hasTouchSupport && (isNarrowScreen || hasMobileAPIs));
-    }
-
-    isPWAMode() {
-        // Detect if running in PWA (standalone) mode where we can render behind notch/status bar
-        
-        // Method 1: Check display mode
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-        
-        // Method 2: Check if running as installed PWA
-        const isInWebAppiOS = ('standalone' in window.navigator) && (window.navigator.standalone);
-        
-        // Method 3: Check for PWA-specific window properties
-        const isPWAAndroid = window.matchMedia('(display-mode: standalone)').matches || 
-                           window.navigator.standalone === true;
-        
-        // Method 4: Check if we have safe area insets (available in PWA mode)
-        const hasSafeAreaSupport = CSS.supports('padding: env(safe-area-inset-top)');
-        
-        // Method 5: Check viewport meta for PWA characteristics
-        const viewportMeta = document.querySelector('meta[name="viewport"]');
-        const hasViewportFit = viewportMeta && viewportMeta.content.includes('viewport-fit=cover');
-        
-        return isStandalone || isInWebAppiOS || (hasSafeAreaSupport && hasViewportFit && this.isTrueMobile());
+        return narrowDimension <= 500;
     }
 
     handleMobileLayout(forceUpdate = false) {
