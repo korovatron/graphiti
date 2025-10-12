@@ -967,25 +967,21 @@ class Graphiti {
                 }
                 
             } else {
-                // Uniform pinch - zoom both axes
-                // Use current viewport state, not initial bounds, to allow smooth transition from directional zoom
+                // Uniform pinch - zoom both axes using original logic that worked perfectly
                 const zoomFactor = currentDistance / this.input.pinch.initialDistance;
                 
-                // Calculate new ranges based on current viewport, not initial
-                const currentXRange = this.viewport.maxX - this.viewport.minX;
-                const currentYRange = this.viewport.maxY - this.viewport.minY;
+                // Use initial bounds like the original working version
+                const initialXRange = this.input.pinch.initialMaxX - this.input.pinch.initialMinX;
+                const initialYRange = this.input.pinch.initialMaxY - this.input.pinch.initialMinY;
                 
-                const newXRange = currentXRange / zoomFactor;
-                const newYRange = currentYRange / zoomFactor;
+                const newXRange = initialXRange / zoomFactor;
+                const newYRange = initialYRange / zoomFactor;
                 
-                // Use current center of viewport for zoom center
-                const currentCenterX = (this.viewport.minX + this.viewport.maxX) / 2;
-                const currentCenterY = (this.viewport.minY + this.viewport.maxY) / 2;
-                
-                const newMinX = currentCenterX - (newXRange / 2);
-                const newMaxX = currentCenterX + (newXRange / 2);
-                const newMinY = currentCenterY - (newYRange / 2);
-                const newMaxY = currentCenterY + (newYRange / 2);
+                // Use fixed world center like the directional pinches (restores original behavior)
+                const newMinX = this.input.pinch.fixedCenterWorldX - (newXRange / 2);
+                const newMaxX = this.input.pinch.fixedCenterWorldX + (newXRange / 2);
+                const newMinY = this.input.pinch.fixedCenterWorldY - (newYRange / 2);
+                const newMaxY = this.input.pinch.fixedCenterWorldY + (newYRange / 2);
                 
                 // Check reasonable bounds
                 if (newXRange > 0.0001 && newXRange < 100000 && newYRange > 0.0001 && newYRange < 100000) {
