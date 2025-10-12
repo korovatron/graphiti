@@ -15,6 +15,9 @@ class Graphiti {
         this.currentState = this.states.TITLE;
         this.previousState = null;
         
+        // Angle mode for trigonometric functions
+        this.angleMode = 'degrees'; // 'degrees' or 'radians'
+        
         // Canvas and viewport properties
         this.viewport = {
             width: 0,
@@ -75,6 +78,7 @@ class Graphiti {
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.rangeTimer = null; // For debouncing range updates
+        this.panTimer = null; // For debouncing pan replotting
         
         // Animation
         this.lastFrameTime = 0;
@@ -360,6 +364,8 @@ class Graphiti {
         this.setupCanvas();
         this.setupEventListeners();
         this.registerServiceWorker();
+        this.initializeTheme();
+        this.initializeAngleMode();
         this.startAnimationLoop();
         
         // Apply initial state to ensure UI elements are properly shown/hidden
@@ -453,21 +459,13 @@ class Graphiti {
         
         if (zoomInButton) {
             zoomInButton.addEventListener('click', () => {
-                const newScale = this.viewport.scale * 1.2;
-                if (newScale <= 10000) {
-                    this.viewport.scale = newScale;
-                    this.updateViewport();
-                }
+                this.zoomIn();
             });
         }
         
         if (zoomOutButton) {
             zoomOutButton.addEventListener('click', () => {
-                const newScale = this.viewport.scale / 1.2;
-                if (newScale >= 0.001) {
-                    this.viewport.scale = newScale;
-                    this.updateViewport();
-                }
+                this.zoomOut();
             });
         }
         
@@ -485,6 +483,22 @@ class Graphiti {
                 
                 // Re-plot all functions with the reset viewport
                 this.replotAllFunctions();
+            });
+        }
+        
+        // Theme Toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                this.toggleTheme();
+            });
+        }
+        
+        // Angle Mode Toggle
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        if (angleModeToggle) {
+            angleModeToggle.addEventListener('click', () => {
+                this.toggleAngleMode();
             });
         }
         
@@ -645,11 +659,11 @@ class Graphiti {
                 this.viewport.minY += worldDeltaY;
                 this.viewport.maxY += worldDeltaY;
                 
-                // Update range inputs to reflect the pan
+                // Update range inputs to reflect the pan (immediate for responsiveness)
                 this.updateRangeInputs();
                 
-                // Re-plot all functions with new viewport
-                this.replotAllFunctions();
+                // Debounce the expensive function re-plotting
+                this.debouncePanReplot();
             }
             
             this.input.lastX = x;
@@ -660,7 +674,31 @@ class Graphiti {
         this.input.mouse.y = y;
     }
     
+    debouncePanReplot() {
+        // Clear existing timer
+        if (this.panTimer) {
+            clearTimeout(this.panTimer);
+        }
+        
+        // Set new timer for delayed re-plotting
+        this.panTimer = setTimeout(() => {
+            this.replotAllFunctions();
+            this.panTimer = null;
+        }, 100); // 100ms delay - responsive but not overwhelming
+    }
+    
     handlePointerEnd() {
+        // If we were dragging, ensure final replot happens immediately
+        if (this.input.dragging) {
+            // Clear any pending debounced replot
+            if (this.panTimer) {
+                clearTimeout(this.panTimer);
+                this.panTimer = null;
+            }
+            // Do immediate final replot
+            this.replotAllFunctions();
+        }
+        
         this.input.mouse.down = false;
         this.input.dragging = false;
     }
@@ -856,16 +894,13 @@ class Graphiti {
     
     handleWheel(e) {
         e.preventDefault();
-        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = this.viewport.scale * zoomFactor;
         
-        // Limit scale to prevent crashes and maintain usability
-        const minScale = 0.001;  // Maximum zoom out: 1000 units per screen width
-        const maxScale = 10000;  // Maximum zoom in: 0.0001 units per pixel
-        
-        if (newScale >= minScale && newScale <= maxScale) {
-            this.viewport.scale = newScale;
-            this.updateViewport();
+        if (e.deltaY > 0) {
+            // Zoom out
+            this.zoomOut();
+        } else {
+            // Zoom in
+            this.zoomIn();
         }
     }
     
@@ -944,6 +979,58 @@ class Graphiti {
         // Use the smaller scale to ensure both axes fit properly
         // This gives priority to the axis that needs more space
         this.viewport.scale = Math.min(xScale, yScale);
+    }
+    
+    zoomIn() {
+        // Zoom in by shrinking the ranges around the center
+        const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+        const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+        
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        
+        const zoomFactor = 1.2;
+        const newXRange = xRange / zoomFactor;
+        const newYRange = yRange / zoomFactor;
+        
+        // Check reasonable bounds
+        if (newXRange > 0.0001 && newYRange > 0.0001) {
+            this.viewport.minX = centerX - newXRange / 2;
+            this.viewport.maxX = centerX + newXRange / 2;
+            this.viewport.minY = centerY - newYRange / 2;
+            this.viewport.maxY = centerY + newYRange / 2;
+            
+            // Update scale for consistent grid/label spacing
+            this.updateViewportScale();
+            this.updateRangeInputs();
+            this.replotAllFunctions();
+        }
+    }
+    
+    zoomOut() {
+        // Zoom out by expanding the ranges around the center
+        const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+        const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+        
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        
+        const zoomFactor = 1.2;
+        const newXRange = xRange * zoomFactor;
+        const newYRange = yRange * zoomFactor;
+        
+        // Check reasonable bounds
+        if (newXRange < 100000 && newYRange < 100000) {
+            this.viewport.minX = centerX - newXRange / 2;
+            this.viewport.maxX = centerX + newXRange / 2;
+            this.viewport.minY = centerY - newYRange / 2;
+            this.viewport.maxY = centerY + newYRange / 2;
+            
+            // Update scale for consistent grid/label spacing
+            this.updateViewportScale();
+            this.updateRangeInputs();
+            this.replotAllFunctions();
+        }
     }
     
     handleMinusKey(e, input) {
@@ -1164,11 +1251,109 @@ class Graphiti {
         if (mobileOverlay) mobileOverlay.style.display = 'none';
     }
     
+    toggleTheme() {
+        const html = document.documentElement;
+        const themeToggle = document.getElementById('theme-toggle');
+        const currentTheme = html.getAttribute('data-theme');
+        
+        if (currentTheme === 'light') {
+            // Switch to dark mode
+            html.removeAttribute('data-theme');
+            if (themeToggle) themeToggle.textContent = '🌙 Dark Mode';
+            localStorage.setItem('graphiti-theme', 'dark');
+        } else {
+            // Switch to light mode
+            html.setAttribute('data-theme', 'light');
+            if (themeToggle) themeToggle.textContent = '☀️ Light Mode';
+            localStorage.setItem('graphiti-theme', 'light');
+        }
+        
+        // Update canvas background color
+        this.updateCanvasBackground();
+        
+        // Force a redraw after a small delay to ensure CSS has updated
+        setTimeout(() => {
+            this.draw();
+        }, 50);
+    }
+    
+    updateCanvasBackground() {
+        // Get computed CSS variable value
+        const canvasBg = getComputedStyle(document.documentElement)
+            .getPropertyValue('--canvas-bg').trim();
+        this.canvas.style.background = canvasBg;
+    }
+    
+    initializeTheme() {
+        // Load saved theme from localStorage
+        const savedTheme = localStorage.getItem('graphiti-theme');
+        const themeToggle = document.getElementById('theme-toggle');
+        
+        if (savedTheme === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+            if (themeToggle) themeToggle.textContent = '☀️ Light Mode';
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+            if (themeToggle) themeToggle.textContent = '🌙 Dark Mode';
+        }
+        
+        this.updateCanvasBackground();
+    }
+    
+    toggleAngleMode() {
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        
+        if (this.angleMode === 'degrees') {
+            this.angleMode = 'radians';
+            if (angleModeToggle) angleModeToggle.textContent = '📐 Radians';
+            localStorage.setItem('graphiti-angle-mode', 'radians');
+            
+            // Set appropriate ranges for radians: -2π to 2π for X, -2 to 2 for Y
+            this.viewport.minX = -2 * Math.PI;
+            this.viewport.maxX = 2 * Math.PI;
+            this.viewport.minY = -2;
+            this.viewport.maxY = 2;
+        } else {
+            this.angleMode = 'degrees';
+            if (angleModeToggle) angleModeToggle.textContent = '📐 Degrees';
+            localStorage.setItem('graphiti-angle-mode', 'degrees');
+            
+            // Set appropriate ranges for degrees: -360° to 360° for X, -2 to 2 for Y
+            this.viewport.minX = -360;
+            this.viewport.maxX = 360;
+            this.viewport.minY = -2;
+            this.viewport.maxY = 2;
+        }
+        
+        // Update scale for consistent grid/label spacing
+        this.updateViewportScale();
+        
+        // Update range inputs to reflect the new ranges
+        this.updateRangeInputs();
+        
+        // Re-plot all functions since angle mode affects trig functions
+        this.replotAllFunctions();
+    }
+    
+    initializeAngleMode() {
+        // Load saved angle mode from localStorage
+        const savedAngleMode = localStorage.getItem('graphiti-angle-mode');
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        
+        if (savedAngleMode === 'radians') {
+            this.angleMode = 'radians';
+            if (angleModeToggle) angleModeToggle.textContent = '📐 Radians';
+        } else {
+            this.angleMode = 'degrees';
+            if (angleModeToggle) angleModeToggle.textContent = '📐 Degrees';
+        }
+    }
+    
     evaluateFunction(expression, x) {
         try {
             // Make function names case-insensitive for mobile compatibility
             // Convert common function names to lowercase
-            const caseInsensitiveExpression = expression
+            let processedExpression = expression
                 .replace(/\bSin\b/g, 'sin')
                 .replace(/\bCos\b/g, 'cos')
                 .replace(/\bTan\b/g, 'tan')
@@ -1187,9 +1372,23 @@ class Graphiti {
                 .replace(/\bCosh\b/g, 'cosh')
                 .replace(/\bTanh\b/g, 'tanh');
             
+            // Handle degrees mode by converting degree arguments to radians
+            if (this.angleMode === 'degrees') {
+                // Simple regex replacement to multiply trig function arguments by pi/180
+                processedExpression = processedExpression
+                    .replace(/sin\(([^)]+)\)/g, 'sin(($1) * pi / 180)')
+                    .replace(/cos\(([^)]+)\)/g, 'cos(($1) * pi / 180)')
+                    .replace(/tan\(([^)]+)\)/g, 'tan(($1) * pi / 180)');
+                
+                // For inverse trig functions, multiply the result by 180/pi
+                processedExpression = processedExpression
+                    .replace(/asin\(([^)]+)\)/g, 'asin($1) * 180 / pi')
+                    .replace(/acos\(([^)]+)\)/g, 'acos($1) * 180 / pi')
+                    .replace(/atan\(([^)]+)\)/g, 'atan($1) * 180 / pi');
+            }
+            
             // Use math.js for safe mathematical expression evaluation
-            // math.js automatically handles x substitution and mathematical functions
-            const result = math.evaluate(caseInsensitiveExpression, { x: x });
+            const result = math.evaluate(processedExpression, { x: x });
             
             // Ensure the result is a finite number
             if (typeof result === 'number' && isFinite(result)) {
@@ -1286,23 +1485,34 @@ class Graphiti {
         if (isInputFocused) return;
         
         const panSpeed = 200 / this.viewport.scale; // Adjust for zoom level
+        let hasPanned = false;
         
         // Keyboard panning
         if (this.input.keys.has('arrowleft') || this.input.keys.has('a')) {
             this.viewport.minX -= panSpeed * deltaTime * 0.001;
             this.viewport.maxX -= panSpeed * deltaTime * 0.001;
+            hasPanned = true;
         }
         if (this.input.keys.has('arrowright') || this.input.keys.has('d')) {
             this.viewport.minX += panSpeed * deltaTime * 0.001;
             this.viewport.maxX += panSpeed * deltaTime * 0.001;
+            hasPanned = true;
         }
         if (this.input.keys.has('arrowup') || this.input.keys.has('w')) {
             this.viewport.minY += panSpeed * deltaTime * 0.001;
             this.viewport.maxY += panSpeed * deltaTime * 0.001;
+            hasPanned = true;
         }
         if (this.input.keys.has('arrowdown') || this.input.keys.has('s')) {
             this.viewport.minY -= panSpeed * deltaTime * 0.001;
             this.viewport.maxY -= panSpeed * deltaTime * 0.001;
+            hasPanned = true;
+        }
+        
+        // If panning occurred, update range inputs and re-plot functions
+        if (hasPanned) {
+            this.updateRangeInputs();
+            this.replotAllFunctions();
         }
     }
     
@@ -1311,8 +1521,10 @@ class Graphiti {
     // ================================
     
     draw() {
-        // Clear canvas with comfortable light gray background
-        this.ctx.fillStyle = '#606060';
+        // Clear canvas with theme-appropriate background color
+        const canvasBg = getComputedStyle(document.documentElement)
+            .getPropertyValue('--canvas-bg').trim();
+        this.ctx.fillStyle = canvasBg;
         this.ctx.fillRect(0, 0, this.viewport.width, this.viewport.height);
         
         // State-specific drawing
@@ -1349,12 +1561,16 @@ class Graphiti {
     }
     
     drawGrid() {
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        // Get grid color from CSS variable (adapts to light/dark theme)
+        const gridColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--grid-color').trim();
+        
+        this.ctx.strokeStyle = gridColor;
         this.ctx.lineWidth = 1;
         this.ctx.beginPath();
         
-        // Vertical lines - use X-axis specific spacing
-        const xGridSpacing = this.getXGridSpacing();
+        // Vertical lines - use trig-aware X-axis spacing
+        const xGridSpacing = this.getTrigAwareXGridSpacing();
         const startX = Math.floor(this.viewport.minX / xGridSpacing) * xGridSpacing;
         
         for (let x = startX; x <= this.viewport.maxX; x += xGridSpacing) {
@@ -1377,7 +1593,11 @@ class Graphiti {
     }
     
     drawAxes() {
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        // Get axes color from CSS variable (adapts to light/dark theme)
+        const axesColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--axes-color').trim();
+            
+        this.ctx.strokeStyle = axesColor;
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         
@@ -1399,13 +1619,17 @@ class Graphiti {
     }
     
     drawAxisLabels() {
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        // Get label color from CSS variable (adapts to light/dark theme)
+        const labelColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--label-color').trim();
+            
+        this.ctx.fillStyle = labelColor;
         this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         
         // Use axis-specific label spacing for directional zoom compatibility
-        const xLabelSpacing = this.getXLabelSpacing();
+        const xLabelSpacing = this.getTrigAwareXLabelSpacing();
         const yLabelSpacing = this.getYLabelSpacing();
         
         // X-axis labels
@@ -1418,7 +1642,7 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(x, 0);
                 if (screenPos.x >= 20 && screenPos.x <= this.viewport.width - 20) {
-                    const label = this.formatNumber(x);
+                    const label = this.containsTrigFunctions() ? this.formatTrigNumber(x) : this.formatNumber(x);
                     const labelY = axisY + 5;
                     
                     // Don't draw labels too close to the bottom
@@ -1544,6 +1768,79 @@ class Graphiti {
         return num.toExponential(1);
     }
     
+    formatTrigNumber(num) {
+        // Special formatting for trigonometric values
+        if (Math.abs(num) < 0.0001) return '0';
+        
+        if (this.angleMode === 'radians') {
+            // Format common radian values nicely
+            const piRatio = num / Math.PI;
+            
+            // Check for exact fractions of π
+            if (Math.abs(piRatio - Math.round(piRatio)) < 0.001) {
+                const rounded = Math.round(piRatio);
+                if (rounded === 0) return '0';
+                if (rounded === 1) return 'π';
+                if (rounded === -1) return '-π';
+                return rounded + 'π';
+            }
+            
+            // Check for common fractions
+            const commonFractions = [
+                { ratio: 1/48, label: 'π/48' },
+                { ratio: 1/24, label: 'π/24' },
+                { ratio: 1/16, label: 'π/16' },
+                { ratio: 1/12, label: 'π/12' },
+                { ratio: 1/8, label: 'π/8' },
+                { ratio: 1/6, label: 'π/6' },
+                { ratio: 1/5, label: 'π/5' },
+                { ratio: 1/4, label: 'π/4' },
+                { ratio: 1/3, label: 'π/3' },
+                { ratio: 5/12, label: '5π/12' },
+                { ratio: 1/2, label: 'π/2' },
+                { ratio: 7/12, label: '7π/12' },
+                { ratio: 2/3, label: '2π/3' },
+                { ratio: 3/4, label: '3π/4' },
+                { ratio: 4/5, label: '4π/5' },
+                { ratio: 5/6, label: '5π/6' },
+                { ratio: 7/8, label: '7π/8' },
+                { ratio: 11/12, label: '11π/12' },
+                { ratio: 15/16, label: '15π/16' },
+                { ratio: 23/24, label: '23π/24' },
+                { ratio: 47/48, label: '47π/48' },
+                { ratio: 2, label: '2π' },
+                { ratio: 3/2, label: '3π/2' },
+                { ratio: 4/3, label: '4π/3' },
+                { ratio: 5/4, label: '5π/4' },
+                { ratio: 5/3, label: '5π/3' },
+                { ratio: 7/4, label: '7π/4' },
+                { ratio: 11/6, label: '11π/6' }
+            ];
+            
+            for (let frac of commonFractions) {
+                if (Math.abs(piRatio - frac.ratio) < 0.001) {
+                    return frac.label;
+                }
+                if (Math.abs(piRatio + frac.ratio) < 0.001) {
+                    return '-' + frac.label;
+                }
+            }
+            
+            // Fall back to decimal with π
+            if (Math.abs(piRatio) > 0.1) {
+                return piRatio.toFixed(1) + 'π';
+            }
+        } else {
+            // Degrees mode - just show the number with ° symbol for clarity
+            if (Math.abs(num) >= 1) {
+                return Math.round(num) + '°';
+            }
+        }
+        
+        // Fall back to normal formatting
+        return this.formatNumber(num);
+    }
+    
     drawFunction(func) {
         if (!func.points || func.points.length < 2) return;
         
@@ -1657,8 +1954,8 @@ class Graphiti {
             // For now, just position it at the left edge
         }
         
-        // Draw background to match function panel style (dark blue with transparency)
-        this.ctx.fillStyle = 'rgba(26, 47, 66, 0.9)';
+        // Draw background to match function panel style (fixed colors)
+        this.ctx.fillStyle = 'rgba(42, 63, 90, 0.95)'; // Exact same as other panels
         
         // Draw rounded rectangle (fallback for older browsers)
         const radius = 8;
@@ -1675,13 +1972,13 @@ class Graphiti {
         this.ctx.closePath();
         this.ctx.fill();
         
-        // Optional: Add subtle border to match function panel
-        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.3)';
+        // Optional: Add subtle border to match function panel (fixed color)
+        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.3)'; // Same as function panel
         this.ctx.lineWidth = 1;
         this.ctx.stroke();
         
-        // Draw text
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        // Draw text (fixed color)
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White text like other panels
         this.ctx.fillText(coordText, bgX + padding, bgY + padding);
     }
     
@@ -1781,6 +2078,95 @@ class Graphiti {
         return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitX, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
     }
     
+    containsTrigFunctions() {
+        // Check if any enabled function contains trigonometric functions
+        // Include all trig functions: basic, reciprocal, inverse, and hyperbolic
+        const trigRegex = /\b(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)\s*\(/i;
+        return this.functions.some(func => 
+            func.enabled && 
+            func.expression && 
+            trigRegex.test(func.expression)
+        );
+    }
+    
+    getTrigAwareXGridSpacing() {
+        if (!this.containsTrigFunctions()) {
+            return this.getXGridSpacing(); // Use normal spacing if no trig functions
+        }
+        
+        if (this.angleMode === 'degrees') {
+            // Use degree-based spacing: 30°, 45°, 60°, 90°, etc.
+            const degreeIntervals = [3.75, 7.5, 11.25, 15, 22.5, 30, 45, 60, 90, 180, 360];
+            return this.chooseBestTrigSpacing(degreeIntervals);
+        } else {
+            // Use radian-based spacing: π/6, π/4, π/3, π/2, π, etc.
+            const radianIntervals = [
+                Math.PI / 48,  // π/48 ≈ 0.065 (3.75°)
+                Math.PI / 24,  // π/24 ≈ 0.13 (7.5°)
+                Math.PI / 16,  // π/16 ≈ 0.20 (11.25°)
+                Math.PI / 12,  // π/12 ≈ 0.26 (15°)
+                Math.PI / 8,   // π/8 ≈ 0.39 (22.5°)
+                Math.PI / 6,   // π/6 ≈ 0.52 (30°)
+                Math.PI / 4,   // π/4 ≈ 0.79 (45°)
+                Math.PI / 3,   // π/3 ≈ 1.05 (60°)
+                Math.PI / 2,   // π/2 ≈ 1.57 (90°)
+                Math.PI,       // π ≈ 3.14 (180°)
+                2 * Math.PI    // 2π ≈ 6.28 (360°)
+            ];
+            return this.chooseBestTrigSpacing(radianIntervals);
+        }
+    }
+    
+    chooseBestTrigSpacing(intervals) {
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const pixelsPerUnitX = this.viewport.width / xRange;
+        
+        // Target: 30-100 pixels between grid lines for trig functions
+        const minPixelSpacing = 30;
+        const maxPixelSpacing = 100;
+        
+        // Find the best interval that gives good pixel spacing
+        for (let interval of intervals) {
+            const pixelSpacing = interval * pixelsPerUnitX;
+            if (pixelSpacing >= minPixelSpacing && pixelSpacing <= maxPixelSpacing) {
+                return interval;
+            }
+        }
+        
+        // Check if we're zoomed out too far (largest interval too small)
+        const largestInterval = intervals[intervals.length - 1];
+        const largestPixelSpacing = largestInterval * pixelsPerUnitX;
+        
+        if (largestPixelSpacing < minPixelSpacing) {
+            // Too zoomed out for trig intervals, use normal spacing
+            return this.getXGridSpacing();
+        }
+        
+        // Check if we're zoomed in too far (smallest interval too large)
+        const smallestInterval = intervals[0];
+        const smallestPixelSpacing = smallestInterval * pixelsPerUnitX;
+        
+        if (smallestPixelSpacing > maxPixelSpacing * 2) {
+            // Too zoomed in for trig intervals, use normal spacing
+            return this.getXGridSpacing();
+        }
+        
+        // Otherwise use the closest trigonometric interval
+        let bestInterval = intervals[0];
+        let bestPixelSpacing = Math.abs(intervals[0] * pixelsPerUnitX - 50); // Target 50px
+        
+        for (let interval of intervals) {
+            const pixelSpacing = interval * pixelsPerUnitX;
+            const distanceFromTarget = Math.abs(pixelSpacing - 50);
+            if (distanceFromTarget < bestPixelSpacing) {
+                bestInterval = interval;
+                bestPixelSpacing = distanceFromTarget;
+            }
+        }
+        
+        return bestInterval;
+    }
+    
     getYGridSpacing() {
         // Calculate grid spacing specifically for Y-axis based on Y range
         const yRange = this.viewport.maxY - this.viewport.minY;
@@ -1835,6 +2221,15 @@ class Graphiti {
         }
         
         return bestSpacing;
+    }
+    
+    getTrigAwareXLabelSpacing() {
+        if (!this.containsTrigFunctions()) {
+            return this.getXLabelSpacing(); // Use normal spacing if no trig functions
+        }
+        
+        // For trig functions, use the same spacing as grid lines for alignment
+        return this.getTrigAwareXGridSpacing();
     }
     
     getXLabelSpacing() {

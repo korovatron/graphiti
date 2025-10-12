@@ -23,12 +23,45 @@
             box-sizing: border-box;
         }
         
+        /* Theme Variables */
+        :root {
+            /* Dark Mode (Default) */
+            --bg-primary: #1A2F42;
+            --bg-secondary: #2A3F5A;
+            --canvas-bg: #606060;
+            --text-primary: #E8F4FD;
+            --text-secondary: #888;
+            --accent-color: #4A90E2;
+            --accent-hover: #6BA3E8;
+            --panel-bg: rgba(42, 63, 90, 0.95);
+            --border-color: #555;
+            --input-bg: #3A4F6A;
+            --button-bg: #4A90E2;
+            --grid-color: rgba(255, 255, 255, 0.2);
+            --axes-color: rgba(255, 255, 255, 0.5);
+            --label-color: rgba(255, 255, 255, 0.8);
+            --coord-bg: rgba(74, 144, 226, 0.1);
+            --coord-border: rgba(74, 144, 226, 0.3);
+            --coord-text: rgba(255, 255, 255, 0.9);
+        }
+        
+        html[data-theme="light"] {
+            /* Light Mode - Only canvas/graph paper changes */
+            --canvas-bg: #FDFDFD;
+            --grid-color: rgba(0, 0, 0, 0.08);
+            --axes-color: rgba(0, 0, 0, 0.25);
+            --label-color: rgba(0, 0, 0, 0.55);
+            --coord-bg: rgba(252, 252, 252, 0.92);
+            --coord-border: rgba(52, 152, 219, 0.25);
+            --coord-text: rgba(44, 62, 80, 0.85);
+        }
+        
         html, body {
             height: 100%;
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1A2F42;
-            color: white;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             touch-action: none;
         }
         
@@ -42,7 +75,7 @@
         
         #canvas {
             display: block;
-            background: #1A2F42;
+            background: var(--canvas-bg);
             touch-action: none;
         }
         
@@ -58,11 +91,12 @@
         
         .ui-panel {
             position: absolute;
-            background: rgba(26, 47, 66, 0.9);
+            background: var(--panel-bg);
             border-radius: 8px;
             padding: 15px;
             pointer-events: auto;
             backdrop-filter: blur(5px);
+            border: 1px solid var(--border-color);
         }
         
         .hidden {
@@ -70,8 +104,8 @@
         }
         
         button {
-            background: #2E7BD6;
-            color: white;
+            background: var(--button-bg);
+            color: var(--text-primary);
             border: none;
             padding: 10px 20px;
             border-radius: 5px;
@@ -82,7 +116,7 @@
         }
         
         button:hover {
-            background: #1E5BA6;
+            background: var(--accent-hover);
             box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
         }
         
@@ -100,10 +134,10 @@
         
         input[type="text"], input[type="number"] {
             padding: 8px;
-            border: 1px solid #555;
+            border: 1px solid var(--border-color);
             border-radius: 4px;
-            background: #2A3F52;
-            color: white;
+            background: var(--input-bg);
+            color: var(--text-primary);
             font-size: 14px;
         }
         
@@ -115,12 +149,15 @@
             height: 100%;
             text-align: center;
             pointer-events: auto;
+            background: #1A2F42; /* Fixed dark background */
+            position: relative;
+            z-index: 10;
         }
         
         .title-screen h1 {
             font-size: 3em;
             margin-bottom: 20px;
-            color: #2E7BD6;
+            color: #4A90E2; /* Fixed blue color */
             text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
         
@@ -128,16 +165,16 @@
             font-size: 1.2em;
             margin-bottom: 30px;
             opacity: 0.95;
-            color: #E8F4FD;
+            color: #FFFFFF; /* Fixed white text */
         }
         
         .title-screen a {
-            color: #4A90E2;
+            color: #4A90E2; /* Fixed blue color */
             text-decoration: underline;
         }
         
         .title-screen a:hover {
-            color: #6BA3E8;
+            color: #357ABD; /* Fixed hover blue */
         }
         
         .copyright {
@@ -146,7 +183,7 @@
             left: 50%;
             transform: translateX(-50%);
             font-size: 0.85em;
-            color: #888;
+            color: var(--text-secondary);
             margin: 0;
         }
         
@@ -213,7 +250,7 @@
             left: 20px;
             width: 40px;
             height: 40px;
-            background: rgba(26, 47, 66, 0.9);
+            background: rgba(42, 63, 90, 0.95); /* Same as other panels */
             border-radius: 8px;
             border: none;
             cursor: pointer;
@@ -228,13 +265,13 @@
         }
         
         #hamburger-menu:hover {
-            background: rgba(74, 144, 226, 0.9);
+            background: rgba(74, 144, 226, 0.9); /* Same blue hover as other elements */
         }
         
         .hamburger-line {
             width: 20px;
             height: 2px;
-            background: white;
+            background: rgba(255, 255, 255, 0.9); /* Fixed white lines */
             margin: 2px 0;
             transition: all 0.3s ease;
         }
@@ -423,6 +460,17 @@
                         <label for="y-max" style="font-size: 14px; display: block; margin-bottom: 2px;">Y max:</label>
                         <input type="number" id="y-max" value="10" style="width: 100%; font-size: 14px;">
                     </div>
+                </div>
+                
+                <!-- Angle Mode Toggle -->
+                <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 15px; text-align: center;">
+                    <label style="font-size: 14px; display: block; margin-bottom: 5px;">Angle Mode:</label>
+                    <button id="angle-mode-toggle" style="padding: 8px 16px; font-size: 12px;">📐 Degrees</button>
+                </div>
+                
+                <!-- Theme Toggle -->
+                <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 15px; text-align: center;">
+                    <button id="theme-toggle" style="padding: 8px 16px; font-size: 12px;">🌙 Dark Mode</button>
                 </div>
             </div>
             
