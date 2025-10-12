@@ -553,8 +553,10 @@ class Graphiti {
                 // Clear persistent tracing when resetting view
                 this.input.persistentTracing.visible = false;
                 
-                // Close the function panel
-                this.closeMobileMenu();
+                // Close the function panel only on mobile devices
+                if (this.isTrueMobile()) {
+                    this.closeMobileMenu();
+                }
                 
                 // Use smart reset based on current functions
                 const smartViewport = this.getSmartResetViewport();
