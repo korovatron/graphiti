@@ -1326,7 +1326,10 @@ class Graphiti {
             hamburgerMenu.classList.add('panel-open'); // Move hamburger to avoid title overlap
         }
         if (functionPanel) {
-            functionPanel.style.display = 'block'; // Ensure it's visible
+            // Always remove hidden class and add mobile-open for smooth transition
+            functionPanel.classList.remove('hidden');
+            // Force a reflow to ensure the element is visible before starting transition
+            functionPanel.offsetHeight;
             functionPanel.classList.add('mobile-open');
         }
         
@@ -1347,9 +1350,15 @@ class Graphiti {
         }
         if (functionPanel) {
             functionPanel.classList.remove('mobile-open');
-            // On mobile, hide the panel when closing
+            
+            // On mobile, wait for the transition to complete before hiding
             if (this.isTrueMobile()) {
-                functionPanel.style.display = 'none';
+                // Wait for CSS transition to complete (0.3s) before hiding
+                setTimeout(() => {
+                    if (!functionPanel.classList.contains('mobile-open')) {
+                        functionPanel.classList.add('hidden');
+                    }
+                }, 300);
             }
         }
         if (mobileOverlay) mobileOverlay.style.display = 'none';
@@ -2608,6 +2617,13 @@ class Graphiti {
             return;
         }
         
+        // Don't show hamburger on title screen regardless of mobile/desktop
+        if (this.currentState === this.states.TITLE) {
+            hamburgerMenu.style.display = 'none';
+            functionPanel.classList.add('hidden');
+            return;
+        }
+        
         // Determine current state more reliably
         const hamburgerVisible = hamburgerMenu.style.display === 'flex' || 
                                  (hamburgerMenu.style.display === '' && shouldBeMobile);
@@ -2619,14 +2635,14 @@ class Graphiti {
         // Only update if we need to switch modes or if forced
         if (forceUpdate || (shouldBeMobile !== currentlyMobile)) {
             if (shouldBeMobile) {
-                // Switch to mobile mode
+                // Switch to mobile mode (only if not on title screen)
                 hamburgerMenu.style.display = 'flex';
-                functionPanel.style.display = 'none';
+                functionPanel.classList.add('hidden');
                 functionPanel.classList.remove('mobile-open');
             } else {
                 // Switch to desktop mode
                 hamburgerMenu.style.display = 'none';
-                functionPanel.style.display = 'block';
+                functionPanel.classList.remove('hidden');
                 functionPanel.classList.remove('mobile-open');
             }
         }

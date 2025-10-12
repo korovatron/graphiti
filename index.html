@@ -185,6 +185,55 @@
             font-size: 0.85em;
             color: var(--text-secondary);
             margin: 0;
+            text-align: center;
+            line-height: 1.3;
+            max-width: 90%;
+            word-wrap: break-word;
+            hyphens: auto;
+        }
+        
+        .copyright a {
+            white-space: nowrap; /* Keep URL from breaking */
+        }
+        
+        .break-mobile {
+            display: inline; /* Show break on mobile by default */
+        }
+        
+        .space-desktop {
+            display: none; /* Hide space on mobile by default */
+        }
+        
+        /* On wider screens, try to keep copyright more compact */
+        @media (min-width: 800px) {
+            .break-mobile {
+                display: none; /* Hide break on desktop */
+            }
+            .space-desktop {
+                display: inline; /* Show space on desktop */
+            }
+            .copyright {
+                max-width: 70%;
+            }
+            .copyright .projects-text {
+                white-space: nowrap; /* Keep "Check out my other projects at" together on wide screens */
+            }
+        }
+        
+        /* On medium screens, show strategic breaks */
+        @media (min-width: 400px) and (max-width: 599px) {
+            .copyright {
+                max-width: 85%;
+            }
+        }
+        
+        /* On very narrow screens, ensure readability */
+        @media (max-width: 399px) {
+            .copyright {
+                font-size: 0.75em;
+                max-width: 95%;
+                line-height: 1.4;
+            }
         }
         
         .function-item {
@@ -375,6 +424,31 @@
                 top: calc(10px + var(--safe-area-top, 0px)) !important;
                 right: calc(10px + var(--safe-area-right, 0px)) !important;
             }
+            
+            /* Reduce logo size in landscape to save vertical space */
+            .title-screen .logo {
+                max-height: 70px !important; /* Reduced from 120px */
+                margin-bottom: 10px !important; /* Reduced from 20px */
+            }
+            
+            /* Reduce text spacing in landscape */
+            .title-screen p {
+                font-size: 1em !important; /* Reduced from 1.2em */
+                margin-bottom: 15px !important; /* Reduced from 30px */
+            }
+            
+            /* Adjust instruction text spacing to avoid copyright overlap */
+            .title-screen p[style*="margin-top: 30px"] {
+                margin-top: 10px !important; /* Reduced from 30px */
+                margin-bottom: 5px !important; /* Reduced to create space */
+            }
+            
+            /* Make copyright smaller and less prominent in landscape */
+            .copyright {
+                font-size: 0.7em !important; /* Smaller text */
+                bottom: calc(10px + var(--safe-area-bottom, 0px)) !important; /* Closer to bottom */
+                opacity: 0.7 !important; /* Less prominent */
+            }
         }
 
         /* Force mobile mode for narrow screens regardless of landscape */
@@ -418,9 +492,8 @@
             <div id="title-screen" class="title-screen">
                 <img src="images/graphitiTitle.png" alt="Graphiti" class="logo" />
                 <p>Mathematical Function Explorer</p>
-                <p style="font-size: 0.9em; opacity: 0.8; margin-top: 30px;">Click anywhere, tap, or press Space/Enter to start</p>
                 
-                <p class="copyright">© 2025 Neil Kendall. Check out my other projects at <a href="https://www.korovatron.co.uk/?mode=serious" target="_blank">www.korovatron.co.uk</a></p>
+                <p class="copyright">© 2025 Neil Kendall<span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">Check out my other projects @ </span><a href="https://www.korovatron.co.uk/?mode=serious" target="_blank">www.korovatron.co.uk</a></p>
             </div>
             
             <!-- Function Input Panel -->
