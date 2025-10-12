@@ -43,6 +43,12 @@
             --coord-bg: rgba(74, 144, 226, 0.1);
             --coord-border: rgba(74, 144, 226, 0.3);
             --coord-text: rgba(255, 255, 255, 0.9);
+
+            /* Safe area support for iOS */
+            --safe-area-top: env(safe-area-inset-top);
+            --safe-area-bottom: env(safe-area-inset-bottom);
+            --safe-area-left: env(safe-area-inset-left);
+            --safe-area-right: env(safe-area-inset-right);
         }
         
         html[data-theme="light"] {
@@ -246,8 +252,8 @@
         /* Hamburger Menu Styles */
         #hamburger-menu {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: calc(20px + var(--safe-area-top, 0px));
+            left: calc(20px + var(--safe-area-left, 0px));
             width: 40px;
             height: 40px;
             background: rgba(42, 63, 90, 0.95); /* Same as other panels */
@@ -260,6 +266,8 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            z-index: 1000; /* Ensure it's above other elements */
+            touch-action: manipulation; /* Improve touch responsiveness */
             z-index: 20;
             transition: all 0.3s ease;
         }
@@ -314,20 +322,20 @@
             left: 0 !important;
         }
         
-        /* Mobile Styles */
-        @media (max-width: 768px) {
+        /* Mobile Styles - Use more specific targeting */
+        @media (max-width: 500px), (max-height: 500px) {
             /* Ensure hamburger can still be hidden when explicitly set via JavaScript */
             #hamburger-menu[style*="display: none"] {
                 display: none !important;
             }
             
             #controls-panel {
-                bottom: 60px !important; /* Higher up to avoid clipping */
-                right: 20px !important;
+                bottom: calc(60px + var(--safe-area-bottom, 0px)) !important; /* Higher up to avoid clipping + safe area */
+                right: calc(20px + var(--safe-area-right, 0px)) !important;
                 display: flex;
                 gap: 10px;
                 flex-wrap: wrap;
-                max-width: calc(100vw - 40px); /* Prevent overflow */
+                max-width: calc(100vw - 40px - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)); /* Prevent overflow */
             }
             
             /* Hide zoom buttons on mobile - pinch-to-zoom is better */
@@ -339,6 +347,7 @@
                 padding: 8px 12px;
                 font-size: 12px;
                 min-width: 60px; /* Ensure buttons are touch-friendly */
+                touch-action: manipulation; /* Improve touch responsiveness */
             }
             
             /* Keep function items horizontal on mobile */
@@ -373,20 +382,29 @@
             }
         }
         
-        /* Landscape orientation adjustments */
-        @media (max-width: 768px) and (orientation: landscape) {
+        /* Landscape orientation adjustments - More specific mobile detection */
+        @media (max-width: 500px) and (orientation: landscape),
+               (max-height: 500px) and (orientation: landscape) {
             #function-panel {
                 max-width: min(350px, 50vw) !important; /* Smaller panel in landscape */
             }
             
             #controls-panel {
-                bottom: 50px !important; /* Adjust for landscape */
-                right: 10px !important;
+                bottom: calc(40px + var(--safe-area-bottom, 0px)) !important; /* Adjust for landscape + safe area */
+                right: calc(10px + var(--safe-area-right, 0px)) !important;
             }
             
             #hamburger-menu {
-                top: 10px !important;
-                left: 10px !important;
+                top: calc(10px + var(--safe-area-top, 0px)) !important;
+                left: calc(10px + var(--safe-area-left, 0px)) !important;
+            }
+        }
+
+        /* Force mobile mode for narrow screens regardless of landscape */
+        @media (max-width: 500px) {
+            /* This ensures phones in landscape don't trigger desktop mode */
+            #function-panel {
+                max-width: 90vw !important;
             }
         }
         

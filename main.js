@@ -366,6 +366,7 @@ class Graphiti {
         this.registerServiceWorker();
         this.initializeTheme();
         this.initializeAngleMode();
+        this.handleMobileLayout(true); // Force initial layout
         this.startAnimationLoop();
         
         // Apply initial state to ensure UI elements are properly shown/hidden
@@ -401,16 +402,25 @@ class Graphiti {
         resizeCanvas();
         
         // Handle window resize (desktop) and orientation change (mobile)
-        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            this.handleMobileLayout(false); // Don't force layout changes on simple resize
+        });
         window.addEventListener('orientationchange', () => {
             // Add a small delay for orientation change to complete
-            setTimeout(resizeCanvas, 100);
+            setTimeout(() => {
+                resizeCanvas();
+                this.handleMobileLayout(true); // Force layout re-evaluation on orientation change
+            }, 100);
         });
         
         // Additional mobile-specific resize handling
         if ('screen' in window && 'orientation' in window.screen) {
             window.screen.orientation.addEventListener('change', () => {
-                setTimeout(resizeCanvas, 100);
+                setTimeout(() => {
+                    resizeCanvas();
+                    this.handleMobileLayout(true); // Force layout re-evaluation on screen orientation change
+                }, 100);
             });
         }
         
@@ -523,8 +533,8 @@ class Graphiti {
         
         // Click on canvas to close hamburger menu (desktop only)
         this.canvas.addEventListener('click', (e) => {
-            // Only close on desktop, not mobile (to avoid interfering with touch gestures)
-            if (window.innerWidth > 768) {
+            // Only close mobile menu on mobile devices when tapping the graph
+            if (this.isTrueMobile()) {
                 const functionPanel = document.getElementById('function-panel');
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                     this.closeMobileMenu();
@@ -583,6 +593,9 @@ class Graphiti {
         }, { passive: true });
         
         document.addEventListener('touchend', (e) => {
+            // Only handle mobile menu closing on mobile devices
+            if (!this.isTrueMobile()) return;
+            
             // Only handle if not on canvas and we have start coordinates
             if (e.target !== this.canvas && this.input.startX !== null && this.input.startY !== null) {
                 const tapDuration = Date.now() - this.input.startTime;
@@ -860,19 +873,11 @@ class Graphiti {
             const tapDuration = Date.now() - this.input.startTime;
             const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
             
-            if (isTap && this.input.startX !== null && this.input.startY !== null) {
-                // This was a tap - check if it's outside the function panel to close hamburger
+            if (isTap) {
+                // Since this touch event is on the canvas, close mobile menu if open
                 const functionPanel = document.getElementById('function-panel');
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
-                    const rect = functionPanel.getBoundingClientRect();
-                    const tapX = this.input.startX;
-                    const tapY = this.input.startY;
-                    
-                    // If tap is outside the function panel, close it
-                    if (tapX < rect.left || tapX > rect.right || 
-                        tapY < rect.top || tapY > rect.bottom) {
-                        this.closeMobileMenu();
-                    }
+                    this.closeMobileMenu();
                 }
             }
             
@@ -1233,10 +1238,13 @@ class Graphiti {
         const mobileOverlay = document.getElementById('mobile-overlay');
         
         if (hamburgerMenu) hamburgerMenu.classList.add('active');
-        if (functionPanel) functionPanel.classList.add('mobile-open');
+        if (functionPanel) {
+            functionPanel.style.display = 'block'; // Ensure it's visible
+            functionPanel.classList.add('mobile-open');
+        }
         
         // Only show overlay on actual mobile devices
-        if (window.innerWidth <= 768 && mobileOverlay) {
+        if (this.isTrueMobile() && mobileOverlay) {
             mobileOverlay.style.display = 'block';
         }
     }
@@ -1247,7 +1255,13 @@ class Graphiti {
         const mobileOverlay = document.getElementById('mobile-overlay');
         
         if (hamburgerMenu) hamburgerMenu.classList.remove('active');
-        if (functionPanel) functionPanel.classList.remove('mobile-open');
+        if (functionPanel) {
+            functionPanel.classList.remove('mobile-open');
+            // On mobile, hide the panel when closing
+            if (this.isTrueMobile()) {
+                functionPanel.style.display = 'none';
+            }
+        }
         if (mobileOverlay) mobileOverlay.style.display = 'none';
     }
     
@@ -1580,7 +1594,7 @@ class Graphiti {
         }
         
         // Horizontal lines - use Y-axis specific spacing
-        const yGridSpacing = this.getYGridSpacing();
+        const yGridSpacing = this.getTrigAwareYGridSpacing();
         const startY = Math.floor(this.viewport.minY / yGridSpacing) * yGridSpacing;
         
         for (let y = startY; y <= this.viewport.maxY; y += yGridSpacing) {
@@ -1630,7 +1644,7 @@ class Graphiti {
         
         // Use axis-specific label spacing for directional zoom compatibility
         const xLabelSpacing = this.getTrigAwareXLabelSpacing();
-        const yLabelSpacing = this.getYLabelSpacing();
+        const yLabelSpacing = this.getTrigAwareYLabelSpacing();
         
         // X-axis labels
         if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
@@ -1642,7 +1656,7 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(x, 0);
                 if (screenPos.x >= 20 && screenPos.x <= this.viewport.width - 20) {
-                    const label = this.containsTrigFunctions() ? this.formatTrigNumber(x) : this.formatNumber(x);
+                    const label = this.containsRegularTrigFunctions() ? this.formatTrigNumber(x) : this.formatNumber(x);
                     const labelY = axisY + 5;
                     
                     // Don't draw labels too close to the bottom
@@ -1666,7 +1680,7 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(0, y);
                 if (screenPos.y >= 20 && screenPos.y <= this.viewport.height - 20) {
-                    const label = this.formatNumber(y);
+                    const label = this.containsInverseTrigFunctions() ? this.formatTrigNumber(y) : this.formatNumber(y);
                     const labelX = axisX - 5;
                     
                     // Don't draw labels too close to the left edge
@@ -1938,9 +1952,11 @@ class Graphiti {
         const bgWidth = textWidth + padding * 2;
         const bgHeight = textHeight + padding * 2;
         
-        // Position in top-right corner, but ensure it stays within screen bounds
-        let bgX = this.viewport.width - bgWidth - margin;
-        let bgY = margin;
+        // Position in top-right corner with safe area support
+        const safeAreaTop = this.getSafeAreaInset('top');
+        const safeAreaRight = this.getSafeAreaInset('right');
+        let bgX = this.viewport.width - bgWidth - margin - safeAreaRight;
+        let bgY = margin + safeAreaTop;
         
         // Ensure it doesn't go off the right edge (safety check)
         if (bgX + bgWidth > this.viewport.width) {
@@ -2088,10 +2104,30 @@ class Graphiti {
             trigRegex.test(func.expression)
         );
     }
+
+    containsInverseTrigFunctions() {
+        // Check if any enabled function contains inverse trigonometric functions
+        const inverseTrigRegex = /\b(asin|acos|atan|asec|acsc|acot)\s*\(/i;
+        return this.functions.some(func => 
+            func.enabled && 
+            func.expression && 
+            inverseTrigRegex.test(func.expression)
+        );
+    }
+
+    containsRegularTrigFunctions() {
+        // Check if any enabled function contains regular (non-inverse) trigonometric functions
+        const regularTrigRegex = /\b(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)\s*\(/i;
+        return this.functions.some(func => 
+            func.enabled && 
+            func.expression && 
+            regularTrigRegex.test(func.expression)
+        );
+    }
     
     getTrigAwareXGridSpacing() {
-        if (!this.containsTrigFunctions()) {
-            return this.getXGridSpacing(); // Use normal spacing if no trig functions
+        if (!this.containsRegularTrigFunctions()) {
+            return this.getXGridSpacing(); // Use normal spacing if no regular trig functions
         }
         
         if (this.angleMode === 'degrees') {
@@ -2166,6 +2202,84 @@ class Graphiti {
         
         return bestInterval;
     }
+
+    getTrigAwareYGridSpacing() {
+        if (!this.containsInverseTrigFunctions()) {
+            return this.getYGridSpacing(); // Use normal spacing if no inverse trig functions
+        }
+        
+        if (this.angleMode === 'degrees') {
+            // Use degree-based spacing for Y-axis: 30°, 45°, 60°, 90°, etc.
+            const degreeIntervals = [3.75, 7.5, 11.25, 15, 22.5, 30, 45, 60, 90, 180, 360];
+            return this.chooseBestTrigSpacingY(degreeIntervals);
+        } else {
+            // Use radian-based spacing for Y-axis: π/6, π/4, π/3, π/2, π, etc.
+            const radianIntervals = [
+                Math.PI / 48,  // π/48 ≈ 0.065 (3.75°)
+                Math.PI / 24,  // π/24 ≈ 0.13 (7.5°)
+                Math.PI / 16,  // π/16 ≈ 0.20 (11.25°)
+                Math.PI / 12,  // π/12 ≈ 0.26 (15°)
+                Math.PI / 8,   // π/8 ≈ 0.39 (22.5°)
+                Math.PI / 6,   // π/6 ≈ 0.52 (30°)
+                Math.PI / 4,   // π/4 ≈ 0.79 (45°)
+                Math.PI / 3,   // π/3 ≈ 1.05 (60°)
+                Math.PI / 2,   // π/2 ≈ 1.57 (90°)
+                Math.PI,       // π ≈ 3.14 (180°)
+                2 * Math.PI    // 2π ≈ 6.28 (360°)
+            ];
+            return this.chooseBestTrigSpacingY(radianIntervals);
+        }
+    }
+
+    chooseBestTrigSpacingY(intervals) {
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        const pixelsPerUnitY = this.viewport.height / yRange;
+        
+        // Target: 30-100 pixels between grid lines for trig functions on Y-axis
+        const minPixelSpacing = 30;
+        const maxPixelSpacing = 100;
+        
+        // Find the best interval that gives good pixel spacing
+        for (let interval of intervals) {
+            const pixelSpacing = interval * pixelsPerUnitY;
+            if (pixelSpacing >= minPixelSpacing && pixelSpacing <= maxPixelSpacing) {
+                return interval;
+            }
+        }
+        
+        // Check if we're zoomed out too far (largest interval too small)
+        const largestInterval = intervals[intervals.length - 1];
+        const largestPixelSpacing = largestInterval * pixelsPerUnitY;
+        
+        if (largestPixelSpacing < minPixelSpacing) {
+            // Too zoomed out for trig intervals, use normal spacing
+            return this.getYGridSpacing();
+        }
+        
+        // Check if we're zoomed in too far (smallest interval too large)
+        const smallestInterval = intervals[0];
+        const smallestPixelSpacing = smallestInterval * pixelsPerUnitY;
+        
+        if (smallestPixelSpacing > maxPixelSpacing * 2) {
+            // Too zoomed in for trig intervals, use normal spacing
+            return this.getYGridSpacing();
+        }
+        
+        // Otherwise use the closest trigonometric interval
+        let bestInterval = intervals[0];
+        let bestPixelSpacing = Math.abs(intervals[0] * pixelsPerUnitY - 50); // Target 50px
+        
+        for (let interval of intervals) {
+            const pixelSpacing = interval * pixelsPerUnitY;
+            const distanceFromTarget = Math.abs(pixelSpacing - 50);
+            if (distanceFromTarget < bestPixelSpacing) {
+                bestInterval = interval;
+                bestPixelSpacing = distanceFromTarget;
+            }
+        }
+        
+        return bestInterval;
+    }
     
     getYGridSpacing() {
         // Calculate grid spacing specifically for Y-axis based on Y range
@@ -2224,11 +2338,11 @@ class Graphiti {
     }
     
     getTrigAwareXLabelSpacing() {
-        if (!this.containsTrigFunctions()) {
-            return this.getXLabelSpacing(); // Use normal spacing if no trig functions
+        if (!this.containsRegularTrigFunctions()) {
+            return this.getXLabelSpacing(); // Use normal spacing if no regular trig functions
         }
         
-        // For trig functions, use the same spacing as grid lines for alignment
+        // For regular trig functions, use the same spacing as grid lines for alignment
         return this.getTrigAwareXGridSpacing();
     }
     
@@ -2248,6 +2362,15 @@ class Graphiti {
         return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitX, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
     }
     
+    getTrigAwareYLabelSpacing() {
+        if (!this.containsInverseTrigFunctions()) {
+            return this.getYLabelSpacing(); // Use normal spacing if no inverse trig functions
+        }
+        
+        // For inverse trig functions, use the same spacing as grid lines
+        return this.getTrigAwareYGridSpacing();
+    }
+
     getYLabelSpacing() {
         // Calculate label spacing specifically for Y-axis based on Y range
         const yRange = this.viewport.maxY - this.viewport.minY;
@@ -2262,6 +2385,61 @@ class Graphiti {
         const idealWorldSpacing = idealPixelSpacing / pixelsPerUnitY;
         
         return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnitY, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
+    }
+    
+    // ================================
+    // MOBILE & SAFE AREA UTILITIES
+    // ================================
+    
+    getSafeAreaInset(side) {
+        // Get safe area insets for iOS devices
+        const style = getComputedStyle(document.documentElement);
+        const inset = style.getPropertyValue(`--safe-area-${side}`);
+        return inset ? parseInt(inset.replace('px', '')) || 0 : 0;
+    }
+
+    isTrueMobile() {
+        // Simplified mobile detection - just check screen dimensions
+        // Use the narrower dimension to determine if we should be in mobile mode
+        const narrowDimension = Math.min(window.innerWidth, window.innerHeight);
+        return narrowDimension <= 500;
+    }
+
+    handleMobileLayout(forceUpdate = false) {
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const functionPanel = document.getElementById('function-panel');
+        
+        if (!hamburgerMenu || !functionPanel) return;
+        
+        const shouldBeMobile = this.isTrueMobile();
+        
+        // Don't interfere if mobile menu is currently open (user is actively using it)
+        if (!forceUpdate && functionPanel.classList.contains('mobile-open')) {
+            return;
+        }
+        
+        // Determine current state more reliably
+        const hamburgerVisible = hamburgerMenu.style.display === 'flex' || 
+                                 (hamburgerMenu.style.display === '' && shouldBeMobile);
+        const panelVisible = functionPanel.style.display === 'block' || 
+                            (functionPanel.style.display === '' && !shouldBeMobile);
+        
+        const currentlyMobile = hamburgerVisible && !panelVisible;
+        
+        // Only update if we need to switch modes or if forced
+        if (forceUpdate || (shouldBeMobile !== currentlyMobile)) {
+            if (shouldBeMobile) {
+                // Switch to mobile mode
+                hamburgerMenu.style.display = 'flex';
+                functionPanel.style.display = 'none';
+                functionPanel.classList.remove('mobile-open');
+            } else {
+                // Switch to desktop mode
+                hamburgerMenu.style.display = 'none';
+                functionPanel.style.display = 'block';
+                functionPanel.classList.remove('mobile-open');
+            }
+        }
     }
     
     // ================================
