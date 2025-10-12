@@ -249,11 +249,11 @@
             opacity: 0.7;
         }
         
-        /* Hamburger Menu Styles */
+        /* Hamburger Menu Styles - Always top-right for consistency */
         #hamburger-menu {
             position: absolute;
             top: calc(20px + var(--safe-area-top, 0px));
-            left: calc(20px + var(--safe-area-left, 0px));
+            right: calc(20px + var(--safe-area-right, 0px));
             width: 40px;
             height: 40px;
             background: rgba(42, 63, 90, 0.95); /* Same as other panels */
@@ -322,19 +322,13 @@
             left: 0 !important;
         }
 
-        /* Adjust hamburger position when mobile menu is open to avoid overlapping title */
+        /* Hamburger color change when panel is open for visual feedback */
         #hamburger-menu.panel-open {
-            left: calc(280px + var(--safe-area-left, 0px)) !important; /* Position within panel but not over title */
-            background: transparent !important; /* Make background transparent when over panel */
+            background: rgba(231, 76, 60, 0.9) !important; /* Red to indicate close action */
         }
 
-        /* On very small screens, move hamburger further right or make smaller */
-        @media (max-width: 320px) {
-            #hamburger-menu.panel-open {
-                left: calc(260px + var(--safe-area-left, 0px)) !important;
-                width: 30px !important;
-                height: 30px !important;
-            }
+        #hamburger-menu.panel-open:hover {
+            background: rgba(192, 57, 43, 0.95) !important; /* Darker red on hover */
         }
         
         /* Mobile Styles - Use more specific targeting */
@@ -411,7 +405,7 @@
             
             #hamburger-menu {
                 top: calc(10px + var(--safe-area-top, 0px)) !important;
-                left: calc(10px + var(--safe-area-left, 0px)) !important;
+                right: calc(10px + var(--safe-area-right, 0px)) !important;
             }
         }
 

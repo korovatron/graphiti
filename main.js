@@ -1576,8 +1576,7 @@ class Graphiti {
             }
         });
         
-        // Draw UI overlays
-        this.drawCrosshair();
+        // UI overlays removed - cleaner interface
     }
     
     drawGrid() {
@@ -1909,101 +1908,7 @@ class Graphiti {
             this.ctx.stroke();
         }
     }
-    
-    drawCrosshair() {
-        if (this.currentState !== this.states.GRAPHING) return;
-        
-        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.5)';
-        this.ctx.lineWidth = 1;
-        this.ctx.setLineDash([5, 5]);
-        this.ctx.beginPath();
-        
-        // Vertical line at mouse
-        this.ctx.moveTo(this.input.mouse.x, 0);
-        this.ctx.lineTo(this.input.mouse.x, this.viewport.height);
-        
-        // Horizontal line at mouse
-        this.ctx.moveTo(0, this.input.mouse.y);
-        this.ctx.lineTo(this.viewport.width, this.input.mouse.y);
-        
-        this.ctx.stroke();
-        this.ctx.setLineDash([]);
-        
-        // Draw coordinate display
-        this.drawCoordinateDisplay();
-    }
-    
-    drawCoordinateDisplay() {
-        // Convert mouse position to world coordinates
-        const worldPos = this.screenToWorld(this.input.mouse.x, this.input.mouse.y);
-        
-        // Format coordinates
-        const xCoord = this.formatCoordinate(worldPos.x);
-        const yCoord = this.formatCoordinate(worldPos.y);
-        const coordText = `(${xCoord}, ${yCoord})`;
-        
-        // Set up text styling
-        this.ctx.font = '14px monospace';
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
-        
-        // Measure text for background sizing
-        const textMetrics = this.ctx.measureText(coordText);
-        const textWidth = textMetrics.width;
-        const textHeight = 16;
-        const padding = 8;
-        const margin = 10;
-        
-        // Calculate background dimensions
-        const bgWidth = textWidth + padding * 2;
-        const bgHeight = textHeight + padding * 2;
-        
-        // Position in top-right corner with safe area support
-        const safeAreaTop = this.getSafeAreaInset('top');
-        const safeAreaRight = this.getSafeAreaInset('right');
-        let bgX = this.viewport.width - bgWidth - margin - safeAreaRight;
-        let bgY = margin + safeAreaTop;
-        
-        // Ensure it doesn't go off the right edge (safety check)
-        if (bgX + bgWidth > this.viewport.width) {
-            bgX = this.viewport.width - bgWidth - 5;
-        }
-        
-        // Ensure it doesn't go off the left edge (for very wide coordinate text)
-        if (bgX < 5) {
-            bgX = 5;
-            // If the text is still too wide, we might need to truncate or use smaller font
-            // For now, just position it at the left edge
-        }
-        
-        // Draw background to match function panel style (fixed colors)
-        this.ctx.fillStyle = 'rgba(42, 63, 90, 0.95)'; // Exact same as other panels
-        
-        // Draw rounded rectangle (fallback for older browsers)
-        const radius = 8;
-        this.ctx.beginPath();
-        this.ctx.moveTo(bgX + radius, bgY);
-        this.ctx.lineTo(bgX + bgWidth - radius, bgY);
-        this.ctx.quadraticCurveTo(bgX + bgWidth, bgY, bgX + bgWidth, bgY + radius);
-        this.ctx.lineTo(bgX + bgWidth, bgY + bgHeight - radius);
-        this.ctx.quadraticCurveTo(bgX + bgWidth, bgY + bgHeight, bgX + bgWidth - radius, bgY + bgHeight);
-        this.ctx.lineTo(bgX + radius, bgY + bgHeight);
-        this.ctx.quadraticCurveTo(bgX, bgY + bgHeight, bgX, bgY + bgHeight - radius);
-        this.ctx.lineTo(bgX, bgY + radius);
-        this.ctx.quadraticCurveTo(bgX, bgY, bgX + radius, bgY);
-        this.ctx.closePath();
-        this.ctx.fill();
-        
-        // Optional: Add subtle border to match function panel (fixed color)
-        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.3)'; // Same as function panel
-        this.ctx.lineWidth = 1;
-        this.ctx.stroke();
-        
-        // Draw text (fixed color)
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White text like other panels
-        this.ctx.fillText(coordText, bgX + padding, bgY + padding);
-    }
-    
+
     formatCoordinate(value) {
         // Format coordinate values for display
         if (Math.abs(value) < 0.000001) return '0';
@@ -2458,17 +2363,30 @@ class Graphiti {
                 const registration = await navigator.serviceWorker.register('./sw.js');
                 console.log('Service Worker registered:', registration);
                 
-                // Handle updates
+                // Handle updates quietly
                 registration.addEventListener('updatefound', () => {
                     const newWorker = registration.installing;
                     newWorker.addEventListener('statechange', () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            // New update available
-                            if (confirm('New version available! Reload to update?')) {
+                            // New update available - install quietly without user interruption
+                            console.log('New version available - updating automatically...');
+                            
+                            // Skip waiting to activate immediately
+                            newWorker.postMessage({ type: 'SKIP_WAITING' });
+                            
+                            // Auto-reload after a short delay to allow clean completion
+                            setTimeout(() => {
                                 window.location.reload();
-                            }
+                            }, 1000);
                         }
                     });
+                });
+
+                // Handle service worker activation (when new version becomes controlling)
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    // Service worker has been updated and is now controlling the page
+                    console.log('Service Worker updated and activated');
+                    // No need to reload here as it will happen from the updatefound handler
                 });
                 
             } catch (error) {
