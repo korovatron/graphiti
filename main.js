@@ -122,7 +122,7 @@ class Graphiti {
         
         funcDiv.innerHTML = `
             <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
-            <input type="text" placeholder="e.g., sin(x), x^2, log(x)" value="${func.expression}">
+            <input type="text" spellcheck="false" placeholder="e.g., sin(x), x^2, log(x)" value="${func.expression}">
             <button class="remove-btn">×</button>
         `;
         
@@ -570,8 +570,9 @@ class Graphiti {
         
         // Document-level touch events for hamburger menu closure
         document.addEventListener('touchstart', (e) => {
-            // Only handle if not on canvas (canvas has its own handlers)
-            if (e.target !== this.canvas) {
+            // Only handle if not on canvas or hamburger menu (they have their own handlers)
+            const hamburgerMenu = document.getElementById('hamburger-menu');
+            if (e.target !== this.canvas && e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target)) {
                 const touch = e.touches[0];
                 this.input.startX = touch.clientX;
                 this.input.startY = touch.clientY;
@@ -581,8 +582,10 @@ class Graphiti {
         }, { passive: true });
         
         document.addEventListener('touchmove', (e) => {
-            // Only handle if not on canvas and we have start coordinates
-            if (e.target !== this.canvas && this.input.startX !== null && this.input.startY !== null) {
+            // Only handle if not on canvas or hamburger menu and we have start coordinates
+            const hamburgerMenu = document.getElementById('hamburger-menu');
+            if (e.target !== this.canvas && e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) && 
+                this.input.startX !== null && this.input.startY !== null) {
                 const touch = e.touches[0];
                 const moveDistance = Math.sqrt(
                     Math.pow(touch.clientX - this.input.startX, 2) + 
@@ -596,8 +599,10 @@ class Graphiti {
             // Only handle mobile menu closing on mobile devices
             if (!this.isTrueMobile()) return;
             
-            // Only handle if not on canvas and we have start coordinates
-            if (e.target !== this.canvas && this.input.startX !== null && this.input.startY !== null) {
+            // Only handle if not on canvas or hamburger menu and we have start coordinates
+            const hamburgerMenu = document.getElementById('hamburger-menu');
+            if (e.target !== this.canvas && e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) && 
+                this.input.startX !== null && this.input.startY !== null) {
                 const tapDuration = Date.now() - this.input.startTime;
                 const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
                 
