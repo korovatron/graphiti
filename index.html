@@ -518,6 +518,13 @@
             display: none;
             pointer-events: auto;
         }
+        
+        /* Hide Graphiti title on mobile landscape to save vertical space */
+        @media (max-width: 900px) and (orientation: landscape) {
+            #graphiti-title {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -545,9 +552,13 @@
             
             <!-- Function Input Panel -->
             <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px; min-width: 320px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0; color: #4A90E2;">Functions</h3>
-                    <button id="add-function" style="padding: 5px 10px; font-size: 14px;">+ Add Function</button>
+                <!-- Graphiti Title Image -->
+                <div id="graphiti-title" style="text-align: center; margin-bottom: 15px;">
+                    <img src="./images/graphitiTitle.png" alt="Graphiti" style="width: 90%; height: auto; max-height: 60px;">
+                </div>
+                
+                <div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 15px;">
+                    <button id="add-function" style="padding: 5px 10px; font-size: 14px;">+ New Function</button>
                 </div>
                 
                 <div id="functions-container">

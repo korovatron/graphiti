@@ -552,6 +552,10 @@ class Graphiti {
             resetViewButton.addEventListener('click', () => {
                 // Clear persistent tracing when resetting view
                 this.input.persistentTracing.visible = false;
+                
+                // Close the function panel
+                this.closeMobileMenu();
+                
                 // Use smart reset based on current functions
                 const smartViewport = this.getSmartResetViewport();
                 
