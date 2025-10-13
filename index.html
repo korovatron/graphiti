@@ -408,11 +408,18 @@
             height: 100vh !important; /* Fixed viewport height to prevent extension */
             z-index: 15;
             transition: left 0.3s ease;
-            overflow-y: scroll;
+            overflow-y: auto; /* Default for desktop */
             border-radius: 0 !important;
             padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
             backdrop-filter: blur(10px);
             background: rgba(26, 47, 66, 0.95) !important;
+        }
+        
+        /* Force scroll behavior on mobile/touch devices to prevent touch fall-through */
+        @media (max-width: 768px), (hover: none), (pointer: coarse) {
+            #function-panel {
+                overflow-y: scroll;
+            }
         }
         
         #function-panel.mobile-open {
