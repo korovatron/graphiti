@@ -121,7 +121,7 @@
         
         html, body {
             height: 100%;
-            height: calc(100vh + env(safe-area-inset-bottom)); /* Match app-container calculation */
+            height: calc(100% + env(safe-area-inset-bottom)); /* Back to original, but let's remove from app-container */
             overflow: hidden;
             overscroll-behavior: none; /* Prevent iOS rubber band scrolling */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -132,8 +132,7 @@
         
         #app-container {
             width: 100vw;
-            height: 100vh;
-            height: calc(100vh + env(safe-area-inset-bottom)); /* Match body extension */
+            height: 100vh; /* No safe area extension - let body handle it */
             position: relative;
             display: flex;
             flex-direction: column;
