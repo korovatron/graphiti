@@ -131,6 +131,7 @@
         #app-container {
             width: 100vw;
             height: 100vh;
+            height: calc(100vh + env(safe-area-inset-bottom)); /* Extend into bottom safe area only */
             position: relative;
             display: flex;
             flex-direction: column;
