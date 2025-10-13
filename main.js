@@ -3,6 +3,9 @@
 
 class Graphiti {
     constructor() {
+        // Fix iOS PWA 9-pixel viewport bug
+        this.fixIOSViewportBug();
+        
         this.canvas = document.getElementById('canvas');
         this.ctx = this.canvas.getContext('2d');
         
@@ -3042,6 +3045,31 @@ class Graphiti {
                 Safe Bottom: ${safeBottom}
             `;
         }
+    }
+
+    fixIOSViewportBug() {
+        // Fix iOS PWA 9-pixel viewport bug by using actual window dimensions
+        const setActualViewportHeight = () => {
+            const actualHeight = window.innerHeight;
+            document.documentElement.style.setProperty('--actual-vh', `${actualHeight}px`);
+            
+            // Debug info
+            console.log('iOS PWA Fix:', {
+                innerHeight: actualHeight,
+                cssVH: window.innerHeight,
+                difference: actualHeight - (window.innerHeight * 0.01 * 100)
+            });
+        };
+
+        // Set initial value
+        setActualViewportHeight();
+
+        // Update on resize/orientation change
+        window.addEventListener('resize', setActualViewportHeight);
+        window.addEventListener('orientationchange', () => {
+            // iOS needs a delay after orientation change
+            setTimeout(setActualViewportHeight, 100);
+        });
     }
 }
 
