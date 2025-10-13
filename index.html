@@ -126,6 +126,7 @@
         #app-container {
             width: 100vw;
             height: 100vh;
+            height: calc(100vh + env(safe-area-inset-bottom)); /* Extend into iOS safe area */
             position: relative;
             display: flex;
             flex-direction: column;
@@ -405,7 +406,7 @@
             border-radius: 0 !important;
             padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
             backdrop-filter: blur(10px);
-            background: rgba(255, 0, 255, 0.95) !important; /* Bright magenta for debugging */
+            background: rgba(26, 47, 66, 0.95) !important;
         }
         
         #function-panel.mobile-open {
