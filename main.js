@@ -611,14 +611,17 @@ class Graphiti {
         // Function Panel Touch Events - prevent touch events from bubbling to canvas
         if (functionPanel) {
             functionPanel.addEventListener('touchstart', (e) => {
+                this.showDebugMessage('PANEL TOUCH START');
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
             
             functionPanel.addEventListener('touchmove', (e) => {
+                this.showDebugMessage('PANEL TOUCH MOVE');
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
             
             functionPanel.addEventListener('touchend', (e) => {
+                this.showDebugMessage('PANEL TOUCH END');
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
         }
@@ -642,16 +645,19 @@ class Graphiti {
         
         // Touch Events
         this.canvas.addEventListener('touchstart', (e) => {
+            this.showDebugMessage('CANVAS TOUCH START');
             e.preventDefault();
             this.handleTouchStart(e);
         }, { passive: false });
         
         this.canvas.addEventListener('touchmove', (e) => {
+            this.showDebugMessage('CANVAS TOUCH MOVE');
             e.preventDefault();
             this.handleTouchMove(e);
         }, { passive: false });
         
         this.canvas.addEventListener('touchend', (e) => {
+            this.showDebugMessage('CANVAS TOUCH END');
             e.preventDefault();
             this.handleTouchEnd(e);
         }, { passive: false });
@@ -2961,6 +2967,39 @@ class Graphiti {
                 console.log('Service Worker registration failed:', error);
             }
         }
+    }
+
+    showDebugMessage(message) {
+        // Create a debug overlay that shows on screen for mobile debugging
+        let debugDiv = document.getElementById('debug-overlay');
+        if (!debugDiv) {
+            debugDiv = document.createElement('div');
+            debugDiv.id = 'debug-overlay';
+            debugDiv.style.cssText = `
+                position: fixed;
+                top: 50px;
+                right: 10px;
+                background: rgba(255, 0, 0, 0.8);
+                color: white;
+                padding: 10px;
+                border-radius: 5px;
+                font-size: 14px;
+                z-index: 9999;
+                max-width: 200px;
+                word-wrap: break-word;
+            `;
+            document.body.appendChild(debugDiv);
+        }
+        
+        debugDiv.textContent = message + ' - ' + new Date().toLocaleTimeString();
+        
+        // Auto-hide after 2 seconds
+        clearTimeout(this.debugTimeout);
+        this.debugTimeout = setTimeout(() => {
+            if (debugDiv) {
+                debugDiv.style.opacity = '0.3';
+            }
+        }, 2000);
     }
 }
 
