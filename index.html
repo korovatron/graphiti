@@ -121,7 +121,7 @@
         
         html, body {
             height: 100%;
-            height: calc(100% + env(safe-area-inset-bottom)); /* Back to original, but let's remove from app-container */
+            height: calc(100% + env(safe-area-inset-top) + env(safe-area-inset-bottom)); /* Extend into both safe areas */
             overflow: hidden;
             overscroll-behavior: none; /* Prevent iOS rubber band scrolling */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -142,6 +142,8 @@
             display: block;
             background: var(--canvas-bg);
             touch-action: none;
+            margin: 0;
+            padding: 0;
         }
         
         #ui-overlay {
