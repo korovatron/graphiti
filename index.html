@@ -121,7 +121,7 @@
         
         html, body {
             height: 100%;
-            height: calc(100% + env(safe-area-inset-bottom)); /* Extend to fill safe area */
+            height: calc(100vh + env(safe-area-inset-bottom)); /* Match app-container calculation */
             overflow: hidden;
             overscroll-behavior: none; /* Prevent iOS rubber band scrolling */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -409,7 +409,7 @@
             height: 100vh !important; /* Fixed viewport height to prevent extension */
             z-index: 15;
             transition: left 0.3s ease;
-            overflow-y: auto; /* Default for desktop */
+            overflow-y: scroll; /* Always scroll to prevent iOS PWA touch fall-through */
             border-radius: 0 !important;
             padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
             backdrop-filter: blur(10px);
