@@ -116,6 +116,7 @@
         
         html, body {
             height: 100%;
+            height: calc(100% + env(safe-area-inset-bottom)); /* Match app container extension */
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--bg-primary);
