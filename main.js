@@ -668,9 +668,12 @@ class Graphiti {
         
         // Document-level touch events for hamburger menu closure
         document.addEventListener('touchstart', (e) => {
-            // Only handle if not on canvas or hamburger menu (they have their own handlers)
+            // Only handle if not on canvas, hamburger menu, or function panel (they have their own handlers)
             const hamburgerMenu = document.getElementById('hamburger-menu');
-            if (e.target !== this.canvas && e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target)) {
+            const functionPanel = document.getElementById('function-panel');
+            if (e.target !== this.canvas && 
+                e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) &&
+                e.target !== functionPanel && !functionPanel?.contains(e.target)) {
                 const touch = e.touches[0];
                 this.input.startX = touch.clientX;
                 this.input.startY = touch.clientY;
@@ -680,9 +683,12 @@ class Graphiti {
         }, { passive: true });
         
         document.addEventListener('touchmove', (e) => {
-            // Only handle if not on canvas or hamburger menu and we have start coordinates
+            // Only handle if not on canvas, hamburger menu, or function panel and we have start coordinates
             const hamburgerMenu = document.getElementById('hamburger-menu');
-            if (e.target !== this.canvas && e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) && 
+            const functionPanel = document.getElementById('function-panel');
+            if (e.target !== this.canvas && 
+                e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) &&
+                e.target !== functionPanel && !functionPanel?.contains(e.target) && 
                 this.input.startX !== null && this.input.startY !== null) {
                 const touch = e.touches[0];
                 const moveDistance = Math.sqrt(
@@ -697,9 +703,12 @@ class Graphiti {
             // Only handle mobile menu closing on mobile devices
             if (!this.isTrueMobile()) return;
             
-            // Only handle if not on canvas or hamburger menu and we have start coordinates
+            // Only handle if not on canvas, hamburger menu, or function panel and we have start coordinates
             const hamburgerMenu = document.getElementById('hamburger-menu');
-            if (e.target !== this.canvas && e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) && 
+            const functionPanel = document.getElementById('function-panel');
+            if (e.target !== this.canvas && 
+                e.target !== hamburgerMenu && !hamburgerMenu?.contains(e.target) &&
+                e.target !== functionPanel && !functionPanel?.contains(e.target) && 
                 this.input.startX !== null && this.input.startY !== null) {
                 const tapDuration = Date.now() - this.input.startTime;
                 const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
