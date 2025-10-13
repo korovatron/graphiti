@@ -121,7 +121,6 @@
         
         html, body {
             height: 100%;
-            height: calc(100% + env(safe-area-inset-bottom)); /* Extend to fill safe area */
             overflow: hidden;
             overscroll-behavior: none; /* Prevent iOS rubber band scrolling */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -414,7 +413,6 @@
             padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
             backdrop-filter: blur(10px);
             background: rgba(26, 47, 66, 0.95) !important;
-            touch-action: none;
         }
         
         #function-panel.mobile-open {
