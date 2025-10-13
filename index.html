@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Graphiti">
     <title>Graphiti - Interactive Function Graphing Tool | Mathematical Visualization</title>
     <meta name="description" content="Interactive mathematical function graphing tool. Plot, explore, and visualise mathematical functions with real-time graphing, curve tracing, and mathematical analysis. Perfect for students, teachers, and math enthusiasts.">
     <meta name="keywords" content="function graphing, mathematical functions, interactive graphs, math visualization, curve plotting, mathematical analysis, graphing calculator, online graphing tool">
@@ -116,7 +121,6 @@
         
         html, body {
             height: 100%;
-            height: calc(100% + env(safe-area-inset-bottom)); /* Match app container extension */
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--bg-primary);
@@ -127,7 +131,6 @@
         #app-container {
             width: 100vw;
             height: 100vh;
-            height: calc(100vh + env(safe-area-inset-bottom)); /* Extend into iOS safe area */
             position: relative;
             display: flex;
             flex-direction: column;
