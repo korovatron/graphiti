@@ -3029,10 +3029,17 @@ class Graphiti {
                 document.body.appendChild(positionDiv);
             }
             
+            // Get computed safe area values
+            const computedStyle = getComputedStyle(document.documentElement);
+            const safeTop = computedStyle.getPropertyValue('--safe-area-top') || 'undefined';
+            const safeBottom = computedStyle.getPropertyValue('--safe-area-bottom') || 'undefined';
+            
             positionDiv.innerHTML = `
                 Hamburger Y: ${Math.round(rect.top)}px<br>
                 Scroll Y: ${Math.round(window.scrollY)}px<br>
-                Viewport: ${window.innerHeight}px
+                Viewport: ${window.innerHeight}px<br>
+                Safe Top: ${safeTop}<br>
+                Safe Bottom: ${safeBottom}
             `;
         }
     }
