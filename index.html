@@ -121,7 +121,7 @@
         
         html, body {
             height: 100%;
-            height: calc(var(--actual-vh, 100vh) + env(safe-area-inset-bottom)); /* JS viewport + safe area extension */
+            height: var(--actual-vh, 100vh); /* Match app-container height exactly - no safe area extension */
             overflow: hidden;
             overscroll-behavior: none; /* Prevent iOS rubber band scrolling */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
