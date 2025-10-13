@@ -133,6 +133,7 @@
         #app-container {
             width: 100vw;
             height: 100vh;
+            height: calc(100vh + env(safe-area-inset-bottom)); /* Match body extension */
             position: relative;
             display: flex;
             flex-direction: column;
@@ -415,12 +416,7 @@
             background: rgba(26, 47, 66, 0.95) !important;
         }
         
-        /* Force scroll behavior on mobile/touch devices to prevent touch fall-through */
-        @media (max-width: 768px), (hover: none), (pointer: coarse) {
-            #function-panel {
-                overflow-y: scroll;
-            }
-        }
+
         
         #function-panel.mobile-open {
             left: 0 !important;
