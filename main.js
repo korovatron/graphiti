@@ -608,6 +608,21 @@ class Graphiti {
             });
         }
         
+        // Function Panel Touch Events - prevent touch events from bubbling to canvas
+        if (functionPanel) {
+            functionPanel.addEventListener('touchstart', (e) => {
+                e.stopPropagation(); // Prevent bubbling to document/canvas handlers
+            }, { passive: true });
+            
+            functionPanel.addEventListener('touchmove', (e) => {
+                e.stopPropagation(); // Prevent bubbling to document/canvas handlers
+            }, { passive: true });
+            
+            functionPanel.addEventListener('touchend', (e) => {
+                e.stopPropagation(); // Prevent bubbling to document/canvas handlers
+            }, { passive: true });
+        }
+        
         // Mouse Events
         this.canvas.addEventListener('mousedown', (e) => this.handlePointerStart(e.clientX, e.clientY));
         this.canvas.addEventListener('mousemove', (e) => this.handlePointerMove(e.clientX, e.clientY));
