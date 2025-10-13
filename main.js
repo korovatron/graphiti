@@ -612,11 +612,13 @@ class Graphiti {
         if (functionPanel) {
             functionPanel.addEventListener('touchstart', (e) => {
                 this.showDebugMessage('PANEL TOUCH START');
+                this.showHamburgerPosition();
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
             
             functionPanel.addEventListener('touchmove', (e) => {
                 this.showDebugMessage('PANEL TOUCH MOVE');
+                this.showHamburgerPosition();
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
             
@@ -3000,6 +3002,39 @@ class Graphiti {
                 debugDiv.style.opacity = '0.3';
             }
         }, 2000);
+    }
+
+    showHamburgerPosition() {
+        // Show hamburger's exact vertical position for scroll debugging
+        const hamburger = document.getElementById('hamburger-menu');
+        if (hamburger) {
+            const rect = hamburger.getBoundingClientRect();
+            let positionDiv = document.getElementById('position-overlay');
+            if (!positionDiv) {
+                positionDiv = document.createElement('div');
+                positionDiv.id = 'position-overlay';
+                positionDiv.style.cssText = `
+                    position: fixed;
+                    top: 10px;
+                    left: 10px;
+                    background: rgba(0, 255, 0, 0.8);
+                    color: white;
+                    padding: 8px;
+                    border-radius: 5px;
+                    font-size: 12px;
+                    font-family: monospace;
+                    z-index: 9999;
+                    line-height: 1.2;
+                `;
+                document.body.appendChild(positionDiv);
+            }
+            
+            positionDiv.innerHTML = `
+                Hamburger Y: ${Math.round(rect.top)}px<br>
+                Scroll Y: ${Math.round(window.scrollY)}px<br>
+                Viewport: ${window.innerHeight}px
+            `;
+        }
     }
 }
 
