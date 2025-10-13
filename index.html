@@ -121,7 +121,7 @@
         
         html, body {
             height: 100%;
-            height: var(--actual-vh, 100vh); /* Match app-container height exactly - no safe area extension */
+            height: var(--actual-vh, 100vh); /* Mobile: JS-calculated height for iOS PWA fix */
             overflow: hidden;
             overscroll-behavior: none; /* Prevent iOS rubber band scrolling */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -132,10 +132,33 @@
         
         #app-container {
             width: 100vw;
-            height: var(--actual-vh, 100vh); /* Use JS-calculated height to fix iOS PWA bug */
+            height: var(--actual-vh, 100vh); /* Mobile: JS-calculated height for iOS PWA fix */
             position: relative;
             display: flex;
             flex-direction: column;
+        }
+        
+        /* Desktop: Hide scroll bars */
+        @media (min-width: 501px) and (min-height: 501px) {
+            html, body {
+                overflow: hidden; /* Force hide scroll bar on desktop */
+                scrollbar-width: none; /* Firefox */
+                -ms-overflow-style: none; /* IE/Edge */
+            }
+            
+            html::-webkit-scrollbar, body::-webkit-scrollbar {
+                display: none; /* Chrome/Safari/Webkit */
+            }
+            
+            /* Hide function panel scroll bar on desktop */
+            #function-panel {
+                scrollbar-width: none; /* Firefox */
+                -ms-overflow-style: none; /* IE/Edge */
+            }
+            
+            #function-panel::-webkit-scrollbar {
+                display: none; /* Chrome/Safari/Webkit */
+            }
         }
         
         #canvas {
