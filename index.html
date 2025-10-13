@@ -121,6 +121,7 @@
         
         html, body {
             height: 100%;
+            height: calc(100% + env(safe-area-inset-bottom)); /* Extend body to match container */
             overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--bg-primary);
@@ -404,7 +405,7 @@
             left: -100% !important;
             width: 100% !important;
             max-width: min(350px, 90vw) !important;
-            height: 100% !important; /* Full height for consistency */
+            height: 100vh !important; /* Fixed viewport height to prevent extension */
             z-index: 15;
             transition: left 0.3s ease;
             overflow-y: auto;
