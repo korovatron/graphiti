@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-restore-point-14-10-2025-16:56';
+const CACHE_NAME = 'graphiti-restore-point-14-10-2025-17:11';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

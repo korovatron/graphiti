@@ -328,7 +328,7 @@
         
         .function-item input[type="text"], .function-item input[type="number"] {
             flex: 1;
-            min-width: 120px;
+            min-width: 100px;
             font-size: 14px;
             padding: 4px 6px;
         }
@@ -429,7 +429,7 @@
             top: 0 !important; /* Full height for all devices */
             left: -100% !important;
             width: 100% !important;
-            max-width: min(350px, 90vw) !important;
+            max-width: min(330px, 90vw) !important;
             height: 100vh !important; /* Fixed viewport height to prevent extension */
             z-index: 15;
             transition: left 0.3s ease;
@@ -470,7 +470,7 @@
             }
             
             .function-item input[type="text"] {
-                min-width: 120px;
+                min-width: 100px;
                 flex: 1;
             }
             
@@ -498,7 +498,7 @@
         @media (max-width: 500px) and (orientation: landscape),
                (max-height: 500px) and (orientation: landscape) {
             #function-panel {
-                max-width: min(350px, 50vw) !important; /* Smaller panel in landscape */
+                max-width: min(330px, 50vw) !important; /* Smaller panel in landscape */
             }
             
             #hamburger-menu {
@@ -585,7 +585,7 @@
             </div>
             
             <!-- Function Input Panel -->
-            <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px; min-width: 320px;">
+            <div id="function-panel" class="ui-panel hidden" style="top: 20px; left: 20px; min-width: 300px;">
                 <!-- Graphiti Title Image -->
                 <div id="graphiti-title" style="text-align: center; margin-bottom: 10px;">
                     <img src="./images/graphitiTitle.png" alt="Graphiti" style="width: 90%; max-height: 50px; height: auto;">
