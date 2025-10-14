@@ -1902,8 +1902,8 @@ class Graphiti {
         let closestWorldX = worldPos.x;
         let closestWorldY = worldPos.y;
         
-        // Check each active function
-        for (const func of this.functions) {
+        // Check each active function in current mode
+        for (const func of this.getCurrentFunctions()) {
             if (!func.enabled || !func.expression.trim()) continue;
             
             try {
@@ -1961,6 +1961,12 @@ class Graphiti {
     
     traceFunction(func, worldX) {
         try {
+            // Handle polar functions differently
+            if (func.mode === 'polar') {
+                return this.tracePolarFunction(func, worldX);
+            }
+            
+            // Cartesian function tracing (existing logic)
             // Allow tracing to mathematical domain endpoints for inverse trig functions
             let clampedX = worldX;
             
@@ -1985,6 +1991,51 @@ class Graphiti {
             }
             
             return { x: clampedX, y: worldY };
+        } catch (error) {
+            return null;
+        }
+    }
+    
+    tracePolarFunction(func, worldX) {
+        // For polar functions, find the closest point on the curve to the given x coordinate
+        try {
+            let closestPoint = null;
+            let closestDistance = Infinity;
+            
+            const thetaStep = this.polarSettings.step;
+            const thetaMin = this.polarSettings.thetaMin;
+            const thetaMax = this.polarSettings.thetaMax;
+            
+            // Sample the polar function and find closest point to worldX
+            for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
+                try {
+                    let processedExpression = func.expression.toLowerCase();
+                    const compiled = math.compile(processedExpression);
+                    const scope = { theta: theta, t: theta, pi: Math.PI, e: Math.E };
+                    
+                    let r = compiled.evaluate(scope);
+                    
+                    if (r < 0 && this.polarSettings.plotNegativeR) {
+                        r = Math.abs(r);
+                        theta += Math.PI;
+                    } else if (r < 0) {
+                        continue;
+                    }
+                    
+                    const x = r * Math.cos(theta);
+                    const y = r * Math.sin(theta);
+                    
+                    const distance = Math.abs(x - worldX);
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestPoint = { x, y };
+                    }
+                } catch (e) {
+                    // Skip invalid points
+                }
+            }
+            
+            return closestPoint;
         } catch (error) {
             return null;
         }

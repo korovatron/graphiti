@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-separate-functions-14-10-2025-18:30';
+const CACHE_NAME = 'graphiti-fix-tracing-14-10-2025-18:35';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
