@@ -21,6 +21,15 @@ class Graphiti {
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
         
+        // Plotting mode
+        this.plotMode = 'cartesian'; // 'cartesian' or 'polar'
+        this.polarSettings = {
+            thetaMin: 0,
+            thetaMax: 2 * Math.PI,
+            plotNegativeR: true,
+            step: 0.01 // theta increment
+        };
+        
         // Canvas and viewport properties
         this.viewport = {
             width: 0,
@@ -311,6 +320,13 @@ class Graphiti {
             return;
         }
         
+        // Route to appropriate plotting method based on mode
+        if (this.plotMode === 'polar') {
+            this.plotPolarFunction(func);
+            return;
+        }
+        
+        // Cartesian plotting (existing code)
         try {
             // Calculate points for the current viewport
             const points = [];
@@ -405,6 +421,65 @@ class Graphiti {
         } catch (error) {
             console.error('Error parsing function:', error);
             alert(`Invalid function "${func.expression}": ${error.message}`);
+            func.points = [];
+        }
+    }
+    
+    plotPolarFunction(func) {
+        try {
+            // Prepare the expression for evaluation
+            let processedExpression = func.expression.toLowerCase();
+            
+            // Create a compiled expression with math.js
+            const compiledExpression = math.compile(processedExpression);
+            
+            const points = [];
+            const thetaStep = this.polarSettings.step;
+            const thetaMin = this.polarSettings.thetaMin;
+            const thetaMax = this.polarSettings.thetaMax;
+            
+            for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
+                try {
+                    // Support both 'theta' and 't' as variable names
+                    const scope = { 
+                        theta: theta, 
+                        t: theta,
+                        pi: Math.PI,
+                        e: Math.E
+                    };
+                    
+                    let r = compiledExpression.evaluate(scope);
+                    
+                    // Handle negative r values based on setting
+                    if (r < 0 && this.polarSettings.plotNegativeR) {
+                        // Plot negative r at opposite angle
+                        r = Math.abs(r);
+                        theta += Math.PI;
+                    } else if (r < 0) {
+                        // Skip negative r values
+                        continue;
+                    }
+                    
+                    // Convert polar to cartesian
+                    const x = r * Math.cos(theta);
+                    const y = r * Math.sin(theta);
+                    
+                    // Check if point is within reasonable bounds
+                    if (isFinite(x) && isFinite(y)) {
+                        points.push({ x, y, connected: true });
+                    } else {
+                        points.push({ x: NaN, y: NaN, connected: false });
+                    }
+                } catch (e) {
+                    // Skip points that can't be evaluated
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+            }
+            
+            func.points = points;
+        } catch (error) {
+            console.error('Error parsing polar function:', error);
+            alert(`Invalid polar function "${func.expression}": ${error.message}`);
             func.points = [];
         }
     }
@@ -548,6 +623,40 @@ class Graphiti {
                 // Clear persistent tracing when adding functions
                 this.input.persistentTracing.visible = false;
                 this.addFunction('');
+            });
+        }
+
+        // Mode toggle button
+        const modeToggle = document.getElementById('mode-toggle');
+        if (modeToggle) {
+            modeToggle.addEventListener('click', () => {
+                this.togglePlotMode();
+            });
+        }
+
+        // Polar range inputs
+        const thetaMinInput = document.getElementById('theta-min');
+        const thetaMaxInput = document.getElementById('theta-max');
+        const negativeRToggle = document.getElementById('negative-r-toggle');
+        
+        if (thetaMinInput) {
+            thetaMinInput.addEventListener('input', () => {
+                this.polarSettings.thetaMin = parseFloat(thetaMinInput.value) || 0;
+                this.replotAllFunctions();
+            });
+        }
+        
+        if (thetaMaxInput) {
+            thetaMaxInput.addEventListener('input', () => {
+                this.polarSettings.thetaMax = parseFloat(thetaMaxInput.value) || 2 * Math.PI;
+                this.replotAllFunctions();
+            });
+        }
+        
+        if (negativeRToggle) {
+            negativeRToggle.addEventListener('change', () => {
+                this.polarSettings.plotNegativeR = negativeRToggle.checked;
+                this.replotAllFunctions();
             });
         }
 
@@ -1395,6 +1504,58 @@ class Graphiti {
             yMaxInput.value = this.viewport.maxY.toFixed(2);
             this.setInputError(yMaxInput, false);
         }
+    }
+    
+    togglePlotMode() {
+        this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
+        
+        // Update UI
+        const modeToggle = document.getElementById('mode-toggle');
+        const cartesianRanges = document.getElementById('cartesian-ranges');
+        const cartesianRangesY = document.getElementById('cartesian-ranges-y');
+        const polarRanges = document.getElementById('polar-ranges');
+        const polarOptions = document.getElementById('polar-options');
+        
+        if (modeToggle) {
+            modeToggle.textContent = this.plotMode === 'cartesian' ? 'Cartesian' : 'Polar';
+            modeToggle.style.background = this.plotMode === 'polar' ? '#4A90E2' : '#2A3F5A';
+        }
+        
+        if (cartesianRanges && cartesianRangesY) {
+            cartesianRanges.style.display = this.plotMode === 'cartesian' ? 'flex' : 'none';
+            cartesianRangesY.style.display = this.plotMode === 'cartesian' ? 'flex' : 'none';
+        }
+        
+        if (polarRanges && polarOptions) {
+            polarRanges.style.display = this.plotMode === 'polar' ? 'flex' : 'none';
+            polarOptions.style.display = this.plotMode === 'polar' ? 'block' : 'none';
+        }
+        
+        // Update function placeholders
+        this.updateFunctionPlaceholders();
+        
+        // Replot all functions
+        this.replotAllFunctions();
+    }
+    
+    updateFunctionPlaceholders() {
+        const functionInputs = document.querySelectorAll('.function-item input[type="text"]');
+        functionInputs.forEach(input => {
+            if (this.plotMode === 'polar') {
+                input.placeholder = 'e.g., 1 + cos(theta), 2*sin(3*t)';
+            } else {
+                input.placeholder = 'e.g., sin(x), x^2, log(x)';
+            }
+        });
+    }
+    
+    replotAllFunctions() {
+        this.functions.forEach(func => {
+            if (func.expression && func.enabled) {
+                this.plotFunction(func);
+            }
+        });
+        this.draw();
     }
     
     startGraphing() {

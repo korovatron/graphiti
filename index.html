@@ -598,15 +598,17 @@
                     <img src="./images/graphitiTitle.png" alt="Graphiti" style="width: 90%; max-height: 50px; height: auto;">
                 </div>
                 
-                <div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 10px; gap: 10px;">
                     <button id="add-function" style="padding: 5px 10px; font-size: 14px;">+ New Function</button>
+                    <button id="mode-toggle" style="padding: 5px 10px; font-size: 12px; background: #2A3F5A; border: 1px solid #555;">Cartesian</button>
                 </div>
                 
                 <div id="functions-container">
                     <!-- Functions will be added here dynamically -->
                 </div>
                 
-                <div style="display: flex; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
+                <!-- Cartesian Range Controls -->
+                <div id="cartesian-ranges" style="display: flex; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
                     <div style="flex: 1;">
                         <label for="x-min" style="font-size: 14px; display: block; margin-bottom: 2px;">X min:</label>
                         <input type="number" id="x-min" value="-10" style="width: 100%; font-size: 14px;">
@@ -617,7 +619,7 @@
                     </div>
                 </div>
                 
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <div id="cartesian-ranges-y" style="display: flex; gap: 10px; margin-bottom: 10px;">
                     <div style="flex: 1;">
                         <label for="y-min" style="font-size: 14px; display: block; margin-bottom: 2px;">Y min:</label>
                         <input type="number" id="y-min" value="-10" style="width: 100%; font-size: 14px;">
@@ -626,6 +628,25 @@
                         <label for="y-max" style="font-size: 14px; display: block; margin-bottom: 2px;">Y max:</label>
                         <input type="number" id="y-max" value="10" style="width: 100%; font-size: 14px;">
                     </div>
+                </div>
+                
+                <!-- Polar Range Controls (hidden initially) -->
+                <div id="polar-ranges" style="display: none; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
+                    <div style="flex: 1;">
+                        <label for="theta-min" style="font-size: 14px; display: block; margin-bottom: 2px;">θ min:</label>
+                        <input type="number" id="theta-min" value="0" step="0.1" style="width: 100%; font-size: 14px;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label for="theta-max" style="font-size: 14px; display: block; margin-bottom: 2px;">θ max:</label>
+                        <input type="number" id="theta-max" value="6.28" step="0.1" style="width: 100%; font-size: 14px;">
+                    </div>
+                </div>
+                
+                <div id="polar-options" style="display: none; margin-bottom: 10px;">
+                    <label style="font-size: 14px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="negative-r-toggle" checked style="margin: 0;">
+                        <span>Plot negative r values</span>
+                    </label>
                 </div>
                 
                 <!-- Control Buttons Row -->

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-restore-point-14-10-2025-17:31';
+const CACHE_NAME = 'graphiti-polar-mode-14-10-2025-18:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
