@@ -99,8 +99,9 @@ class Graphiti {
             }
         };
         
-        // Mathematical functions
-        this.functions = [];
+        // Mathematical functions - separate collections for each mode
+        this.cartesianFunctions = [];
+        this.polarFunctions = [];
         this.nextFunctionId = 1;
         this.functionColors = [
             '#4A90E2', '#E74C3C', '#27AE60', '#F39C12', 
@@ -122,20 +123,44 @@ class Graphiti {
     // ================================
     // FUNCTION MANAGEMENT METHODS
     // ================================
+    // FUNCTION MANAGEMENT
+    // ================================
+    
+    // Helper method to get current function array based on plot mode
+    getCurrentFunctions() {
+        return this.plotMode === 'polar' ? this.polarFunctions : this.cartesianFunctions;
+    }
+    
+    // Helper method to get current function array length for color selection
+    getCurrentFunctionCount() {
+        return this.getCurrentFunctions().length;
+    }
+    
+    // Helper method to find a function by ID across all arrays
+    findFunctionById(id) {
+        return this.cartesianFunctions.find(f => f.id === id) || 
+               this.polarFunctions.find(f => f.id === id);
+    }
+    
+    // Helper method to get all functions across both modes
+    getAllFunctions() {
+        return [...this.cartesianFunctions, ...this.polarFunctions];
+    }
     
     addFunction(expression = '') {
         const id = this.nextFunctionId++;
-        const color = this.functionColors[(this.functions.length) % this.functionColors.length];
+        const color = this.functionColors[this.getCurrentFunctionCount() % this.functionColors.length];
         
         const func = {
             id: id,
             expression: expression,
             points: [],
             color: color,
-            enabled: true
+            enabled: true,
+            mode: this.plotMode // Store which mode this function belongs to
         };
         
-        this.functions.push(func);
+        this.getCurrentFunctions().push(func);
         this.createFunctionUI(func);
         
         // If expression is provided, plot it immediately
@@ -280,7 +305,10 @@ class Graphiti {
             this.plotTimers.delete(id);
         }
         
-        this.functions = this.functions.filter(f => f.id !== id);
+        // Remove from the appropriate function array
+        this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
+        this.polarFunctions = this.polarFunctions.filter(f => f.id !== id);
+        
         const funcDiv = document.querySelector(`[data-function-id="${id}"]`);
         if (funcDiv) {
             funcDiv.remove();
@@ -294,7 +322,7 @@ class Graphiti {
         });
         this.plotTimers.clear();
         
-        this.functions = [];
+        this.getCurrentFunctions().length = 0; // Clear current mode functions
         const container = document.getElementById('functions-container');
         container.innerHTML = '';
     }
@@ -911,7 +939,7 @@ class Graphiti {
             if (this.input.tracing.active) {
                 // Tracing mode - update on every movement for smooth tracing
                 const currentWorldPos = this.screenToWorld(x, y);
-                const tracingFunction = this.functions.find(f => f.id === this.input.tracing.functionId);
+                const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
                 
                 if (tracingFunction) {
                     // Trace the function at the new X position
@@ -995,7 +1023,7 @@ class Graphiti {
             this.input.persistentTracing.worldY = this.input.tracing.worldY;
             
             // Get function color for persistent display
-            const tracingFunction = this.functions.find(f => f.id === this.input.tracing.functionId);
+            const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
             this.input.persistentTracing.functionColor = tracingFunction ? tracingFunction.color : '#4A90E2';
         }
         
@@ -1531,11 +1559,28 @@ class Graphiti {
             polarOptions.style.display = this.plotMode === 'polar' ? 'block' : 'none';
         }
         
+        // Clear existing function UI and recreate for current mode
+        this.refreshFunctionUI();
+        
         // Update function placeholders
         this.updateFunctionPlaceholders();
         
-        // Replot all functions
+        // Replot all functions in current mode
         this.replotAllFunctions();
+    }
+    
+    refreshFunctionUI() {
+        // Clear all function UI elements
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+        
+        // Recreate UI for current mode functions
+        const currentFunctions = this.getCurrentFunctions();
+        currentFunctions.forEach(func => {
+            this.createFunctionUI(func);
+        });
     }
     
     updateFunctionPlaceholders() {
@@ -1550,7 +1595,7 @@ class Graphiti {
     }
     
     replotAllFunctions() {
-        this.functions.forEach(func => {
+        this.getCurrentFunctions().forEach(func => {
             if (func.expression && func.enabled) {
                 this.plotFunction(func);
             }
@@ -1561,10 +1606,16 @@ class Graphiti {
     startGraphing() {
         this.changeState(this.states.GRAPHING);
         // Add three initial function boxes when starting to show multiple plot capability
-        if (this.functions.length === 0) {
-            this.addFunction('sin(2x + pi)');
-            this.addFunction('e^(-x^2)');
-            this.addFunction(''); // Empty function to show placeholder example text
+        if (this.getCurrentFunctions().length === 0) {
+            if (this.plotMode === 'cartesian') {
+                this.addFunction('sin(2x + pi)');
+                this.addFunction('e^(-x^2)');
+                this.addFunction(''); // Empty function to show placeholder example text
+            } else {
+                this.addFunction('1 + cos(theta)');
+                this.addFunction('cos(3*theta)');
+                this.addFunction(''); // Empty function to show placeholder example text
+            }
             
             // Use the same smart reset viewport logic as the reset button for consistency
             const smartViewport = this.getSmartResetViewport();
@@ -1578,7 +1629,7 @@ class Graphiti {
             this.updateRangeInputs();
             
             // Plot all functions after setting viewport
-            this.functions.forEach(func => {
+            this.getCurrentFunctions().forEach(func => {
                 if (func.expression) {
                     this.plotFunction(func);
                 }
@@ -2064,8 +2115,8 @@ class Graphiti {
         this.drawAxes();
         this.drawAxisLabels();
         
-        // Draw functions
-        this.functions.forEach(func => {
+        // Draw functions from current mode only
+        this.getCurrentFunctions().forEach(func => {
             if (func.enabled && func.points && func.points.length > 0) {
                 this.drawFunction(func);
             }
@@ -2429,7 +2480,7 @@ class Graphiti {
         if (this.input.tracing.active) {
             // Use active tracing data
             tracingData = this.input.tracing;
-            tracingFunction = this.functions.find(f => f.id === tracingData.functionId);
+            tracingFunction = this.findFunctionById(tracingData.functionId);
         } else if (this.input.persistentTracing.visible) {
             // Use persistent tracing data
             tracingData = this.input.persistentTracing;
@@ -2642,7 +2693,7 @@ class Graphiti {
         // Check if any enabled function contains trigonometric functions
         // Include all trig functions: basic, reciprocal, inverse, and hyperbolic
         const trigRegex = /\b(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)\s*\(/i;
-        return this.functions.some(func => 
+        return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
             trigRegex.test(func.expression)
@@ -2652,7 +2703,7 @@ class Graphiti {
     containsInverseTrigFunctions() {
         // Check if any enabled function contains inverse trigonometric functions
         const inverseTrigRegex = /\b(asin|acos|atan|asec|acsc|acot)\s*\(/i;
-        return this.functions.some(func => 
+        return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
             inverseTrigRegex.test(func.expression)
@@ -2662,7 +2713,7 @@ class Graphiti {
     containsRegularTrigFunctions() {
         // Check if any enabled function contains regular (non-inverse) trigonometric functions
         const regularTrigRegex = /\b(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)\s*\(/i;
-        return this.functions.some(func => 
+        return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
             regularTrigRegex.test(func.expression)
@@ -2671,7 +2722,7 @@ class Graphiti {
     
     getSmartResetViewport() {
         // Analyze current functions to determine optimal viewport ranges
-        const enabledFunctions = this.functions.filter(func => func.enabled && func.expression.trim());
+        const enabledFunctions = this.getCurrentFunctions().filter(func => func.enabled && func.expression.trim());
         
         if (enabledFunctions.length === 0) {
             // No functions enabled, use default ranges
