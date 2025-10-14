@@ -420,7 +420,7 @@ class Graphiti {
             func.points = processedPoints;
         } catch (error) {
             console.error('Error parsing function:', error);
-            alert(`Invalid function "${func.expression}": ${error.message}`);
+            // Silent error for better UX during typing - no alert popup
             func.points = [];
         }
     }
@@ -479,7 +479,7 @@ class Graphiti {
             func.points = points;
         } catch (error) {
             console.error('Error parsing polar function:', error);
-            alert(`Invalid polar function "${func.expression}": ${error.message}`);
+            // Silent error for better UX during typing - no alert popup
             func.points = [];
         }
     }
