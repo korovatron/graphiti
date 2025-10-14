@@ -1565,6 +1565,12 @@ class Graphiti {
         // Update function placeholders
         this.updateFunctionPlaceholders();
         
+        // Force complete viewport recalculation
+        this.updateViewport();
+        
+        // Force a complete redraw to ensure viewport is current
+        this.draw();
+        
         // Replot all functions in current mode
         this.replotAllFunctions();
     }
@@ -2306,7 +2312,13 @@ class Graphiti {
         // Find the center of the viewport in screen coordinates
         const center = this.worldToScreen(0, 0);
         
+        // Ensure viewport is properly initialized - force update if needed
+        if (!this.viewport || this.viewport.width <= 0 || this.viewport.height <= 0) {
+            this.updateViewport();
+        }
+        
         // Calculate maximum radius needed to cover the viewport
+        // Use the distance from center to the farthest corner
         const maxViewportRadius = Math.max(
             Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.minY * this.viewport.minY),
             Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.minY * this.viewport.minY),
@@ -2314,10 +2326,20 @@ class Graphiti {
             Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.maxY * this.viewport.maxY)
         );
         
+        // Fallback: if maxViewportRadius is suspiciously small, recalculate based on current zoom
+        const fallbackRadius = Math.max(
+            Math.abs(this.viewport.maxX - this.viewport.minX) / 2,
+            Math.abs(this.viewport.maxY - this.viewport.minY) / 2
+        ) * 1.5; // Add some margin
+        
+        const finalMaxRadius = Math.max(maxViewportRadius, fallbackRadius);
+        
+        // Calculate spacing with fresh viewport data - force recalculation
+        const rSpacing = this.calculateFreshPolarSpacing();
+        
         // Draw concentric circles (constant r values)
         this.ctx.beginPath();
-        const rSpacing = this.getPolarRadiusSpacing();
-        for (let r = rSpacing; r <= maxViewportRadius; r += rSpacing) {
+        for (let r = rSpacing; r <= finalMaxRadius; r += rSpacing) {
             const screenRadius = r * this.viewport.scale;
             this.ctx.moveTo(center.x + screenRadius, center.y);
             this.ctx.arc(center.x, center.y, screenRadius, 0, 2 * Math.PI);
@@ -2327,7 +2349,7 @@ class Graphiti {
         // Draw radial lines (constant θ values)
         this.ctx.beginPath();
         const thetaSpacing = this.getPolarAngleSpacing();
-        const maxScreenRadius = maxViewportRadius * this.viewport.scale;
+        const maxScreenRadius = finalMaxRadius * this.viewport.scale;
         
         for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
             const endX = center.x + maxScreenRadius * Math.cos(theta);
@@ -2338,7 +2360,24 @@ class Graphiti {
         this.ctx.stroke();
         
         // Draw angle labels on radial lines
-        this.drawPolarAngleLabels(center, maxViewportRadius, thetaSpacing);
+        this.drawPolarAngleLabels(center, finalMaxRadius, thetaSpacing);
+    }
+    
+    calculateFreshPolarSpacing() {
+        // Force fresh calculation with current viewport - don't rely on cached values
+        const viewportRange = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY);
+        const pixelsPerUnit = Math.min(this.viewport.width, this.viewport.height) / viewportRange;
+        
+        // Target: 30-80 pixels between concentric circles for optimal readability
+        const minPixelSpacing = 30;
+        const maxPixelSpacing = 80;
+        const idealPixelSpacing = 50;
+        
+        // Calculate ideal world spacing
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnit;
+        
+        // Find the best "nice" spacing value
+        return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnit, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
     }
     
     drawPolarAngleLabels(center, maxViewportRadius, thetaSpacing) {
@@ -2351,17 +2390,17 @@ class Graphiti {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
-        for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
-            // Skip 0° to avoid overlapping with axis labels
-            if (Math.abs(theta) < 0.001) continue;
-            
-            // Find the farthest point along this radial line that's still visible
-            const labelRadius = this.findMaxVisibleRadius(center, theta);
-            
-            if (labelRadius > 20) { // Only show if we have reasonable space
-                // Calculate label position
-                const labelX = center.x + labelRadius * Math.cos(theta);
-                const labelY = center.y - labelRadius * Math.sin(theta); // Negative because screen Y is flipped
+        // Find the largest radius that keeps ALL labels visible
+        const uniformRadius = this.findUniformLabelRadius(center, thetaSpacing);
+        
+        if (uniformRadius > 20) { // Only show if we have reasonable space
+            for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
+                // Skip 0° to avoid overlapping with axis labels
+                if (Math.abs(theta) < 0.001) continue;
+                
+                // Calculate label position using uniform radius
+                const labelX = center.x + uniformRadius * Math.cos(theta);
+                const labelY = center.y - uniformRadius * Math.sin(theta); // Negative because screen Y is flipped
                 
                 // Format angle based on current angle mode
                 const label = this.formatPolarAngle(theta);
@@ -2373,6 +2412,21 @@ class Graphiti {
                 this.ctx.fillText(label, adjustedX, adjustedY);
             }
         }
+    }
+    
+    findUniformLabelRadius(center, thetaSpacing) {
+        // Find the minimum safe radius across all angles
+        let minSafeRadius = Infinity;
+        
+        for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
+            // Skip 0° since we don't draw that label anyway
+            if (Math.abs(theta) < 0.001) continue;
+            
+            const maxRadiusForThisAngle = this.findMaxVisibleRadius(center, theta);
+            minSafeRadius = Math.min(minSafeRadius, maxRadiusForThisAngle);
+        }
+        
+        return minSafeRadius === Infinity ? 0 : minSafeRadius;
     }
     
     findMaxVisibleRadius(center, theta) {
@@ -2465,14 +2519,20 @@ class Graphiti {
     }
     
     getPolarRadiusSpacing() {
-        // Smart radius spacing based on zoom level
+        // Use similar logic to cartesian grid spacing for smooth transitions
         const viewportRange = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY);
+        const pixelsPerUnit = Math.min(this.viewport.width, this.viewport.height) / viewportRange;
         
-        if (viewportRange > 50) return 5;
-        if (viewportRange > 20) return 2;
-        if (viewportRange > 10) return 1;
-        if (viewportRange > 5) return 0.5;
-        return 0.25;
+        // Target: 30-80 pixels between concentric circles for optimal readability
+        const minPixelSpacing = 30;
+        const maxPixelSpacing = 80;
+        const idealPixelSpacing = 50;
+        
+        // Calculate ideal world spacing
+        const idealWorldSpacing = idealPixelSpacing / pixelsPerUnit;
+        
+        // Find the best "nice" spacing value
+        return this.findBestGridSpacing(idealWorldSpacing, pixelsPerUnit, minPixelSpacing, maxPixelSpacing, idealPixelSpacing);
     }
     
     getPolarAngleSpacing() {
