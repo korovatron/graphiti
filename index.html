@@ -432,7 +432,7 @@
             top: 0 !important; /* Full height for all devices */
             left: -100% !important;
             width: 100% !important;
-            max-width: min(330px, 90vw) !important;
+            max-width: 330px !important; /* Simplified for iOS compatibility */
             height: 100vh !important; /* Fixed viewport height to prevent extension */
             z-index: 15;
             transition: left 0.3s ease;
@@ -460,6 +460,10 @@
         
         /* Mobile Styles - Use more specific targeting */
         @media (max-width: 500px), (max-height: 500px) {
+            #function-panel {
+                max-width: 330px !important; /* Force narrow width on mobile */
+            }
+            
             /* Ensure hamburger can still be hidden when explicitly set via JavaScript */
             #hamburger-menu[style*="display: none"] {
                 display: none !important;
@@ -501,7 +505,7 @@
         @media (max-width: 500px) and (orientation: landscape),
                (max-height: 500px) and (orientation: landscape) {
             #function-panel {
-                max-width: min(330px, 50vw) !important; /* Smaller panel in landscape */
+                max-width: 280px !important; /* Simplified for iOS compatibility */
             }
             
             #hamburger-menu {
