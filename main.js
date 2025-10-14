@@ -1907,38 +1907,50 @@ class Graphiti {
             if (!func.enabled || !func.expression.trim()) continue;
             
             try {
-                // Sample points around the click position
-                // Use a minimum sample range to ensure we don't miss curves in narrow viewports
-                const viewportRange = this.viewport.maxX - this.viewport.minX;
-                const baseSampleRange = viewportRange * 0.01; // 1% of viewport width
-                const minSampleRange = 0.1; // Minimum absolute range
-                const sampleRange = Math.max(baseSampleRange, minSampleRange);
-                const samples = 20;
-                
-                for (let i = 0; i < samples; i++) {
-                    const testX = worldPos.x + (i - samples/2) * (sampleRange / samples);
-                    
-                    // Skip if outside viewport
-                    if (testX < this.viewport.minX || testX > this.viewport.maxX) continue;
-                    
-                    // Evaluate function at this X position
-                    const scope = { x: testX };
-                    const testY = this.evaluateFunction(func.expression, testX);
-                    
-                    if (isNaN(testY) || !isFinite(testY)) continue;
-                    
-                    // Convert to screen coordinates to check distance
-                    const testScreenPos = this.worldToScreen(testX, testY);
-                    const distance = Math.sqrt(
-                        Math.pow(testScreenPos.x - screenX, 2) + 
-                        Math.pow(testScreenPos.y - screenY, 2)
-                    );
-                    
-                    if (distance < tolerance && distance < closestDistance) {
-                        closestDistance = distance;
+                if (func.mode === 'polar') {
+                    // Special handling for polar functions
+                    const result = this.findClosestPolarPoint(func, screenX, screenY, tolerance);
+                    if (result && result.distance < closestDistance) {
+                        closestDistance = result.distance;
                         closestFunction = func;
-                        closestWorldX = testX;
-                        closestWorldY = testY;
+                        closestWorldX = result.worldX;
+                        closestWorldY = result.worldY;
+                    }
+                } else {
+                    // Cartesian function detection (existing logic)
+                    // Sample points around the click position
+                    // Use a minimum sample range to ensure we don't miss curves in narrow viewports
+                    const viewportRange = this.viewport.maxX - this.viewport.minX;
+                    const baseSampleRange = viewportRange * 0.01; // 1% of viewport width
+                    const minSampleRange = 0.1; // Minimum absolute range
+                    const sampleRange = Math.max(baseSampleRange, minSampleRange);
+                    const samples = 20;
+                    
+                    for (let i = 0; i < samples; i++) {
+                        const testX = worldPos.x + (i - samples/2) * (sampleRange / samples);
+                        
+                        // Skip if outside viewport
+                        if (testX < this.viewport.minX || testX > this.viewport.maxX) continue;
+                        
+                        // Evaluate function at this X position
+                        const scope = { x: testX };
+                        const testY = this.evaluateFunction(func.expression, testX);
+                        
+                        if (isNaN(testY) || !isFinite(testY)) continue;
+                        
+                        // Convert to screen coordinates to check distance
+                        const testScreenPos = this.worldToScreen(testX, testY);
+                        const distance = Math.sqrt(
+                            Math.pow(testScreenPos.x - screenX, 2) + 
+                            Math.pow(testScreenPos.y - screenY, 2)
+                        );
+                        
+                        if (distance < tolerance && distance < closestDistance) {
+                            closestDistance = distance;
+                            closestFunction = func;
+                            closestWorldX = testX;
+                            closestWorldY = testY;
+                        }
                     }
                 }
             } catch (error) {
@@ -1957,6 +1969,68 @@ class Graphiti {
         }
         
         return null;
+    }
+    
+    findClosestPolarPoint(func, screenX, screenY, tolerance) {
+        try {
+            let closestDistance = Infinity;
+            let closestWorldX = 0;
+            let closestWorldY = 0;
+            
+            const processedExpression = func.expression.toLowerCase();
+            const compiled = math.compile(processedExpression);
+            
+            // Sample more densely for better detection
+            const thetaStep = this.polarSettings.step / 2; // Higher resolution
+            const thetaMin = this.polarSettings.thetaMin;
+            const thetaMax = this.polarSettings.thetaMax;
+            
+            for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
+                try {
+                    const scope = { theta: theta, t: theta, pi: Math.PI, e: Math.E };
+                    let r = compiled.evaluate(scope);
+                    
+                    if (r < 0 && this.polarSettings.plotNegativeR) {
+                        r = Math.abs(r);
+                        theta += Math.PI;
+                    } else if (r < 0) {
+                        continue;
+                    }
+                    
+                    const worldX = r * Math.cos(theta);
+                    const worldY = r * Math.sin(theta);
+                    
+                    if (!isFinite(worldX) || !isFinite(worldY)) continue;
+                    
+                    // Convert to screen coordinates and check distance
+                    const screenPos = this.worldToScreen(worldX, worldY);
+                    const distance = Math.sqrt(
+                        Math.pow(screenPos.x - screenX, 2) + 
+                        Math.pow(screenPos.y - screenY, 2)
+                    );
+                    
+                    if (distance < tolerance && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestWorldX = worldX;
+                        closestWorldY = worldY;
+                    }
+                } catch (e) {
+                    // Skip invalid points
+                }
+            }
+            
+            if (closestDistance < tolerance) {
+                return {
+                    distance: closestDistance,
+                    worldX: closestWorldX,
+                    worldY: closestWorldY
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            return null;
+        }
     }
     
     traceFunction(func, worldX) {
