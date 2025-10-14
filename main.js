@@ -1662,9 +1662,9 @@ class Graphiti {
                 this.addFunction('e^(-x^2)');
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
-                this.addFunction('1 + cos(theta)'); // Cardioid
-                this.addFunction('2*cos(3*theta)'); // Three-petaled rose  
-                this.addFunction('sin(2*theta)'); // Four-petaled rose
+                this.addFunction('1 + cos(t)'); // Cardioid
+                this.addFunction('2*cos(3*t)'); // Three-petaled rose  
+                this.addFunction('sin(2*t)'); // Four-petaled rose
                 this.addFunction(''); // Empty function to show placeholder example text
             }
         }
@@ -1734,7 +1734,7 @@ class Graphiti {
         const functionInputs = document.querySelectorAll('.function-item input[type="text"]');
         functionInputs.forEach(input => {
             if (this.plotMode === 'polar') {
-                input.placeholder = 'e.g., 1 + cos(theta), 2*sin(3*t)';
+                input.placeholder = 'e.g., 1 + cos(t), 2*sin(3*t)';
             } else {
                 input.placeholder = 'e.g., sin(x), x^2, log(x)';
             }
@@ -1759,8 +1759,8 @@ class Graphiti {
                 this.addFunction('e^(-x^2)');
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
-                this.addFunction('1 + cos(theta)');
-                this.addFunction('cos(3*theta)');
+                this.addFunction('1 + cos(t)');
+                this.addFunction('cos(3*t)');
                 this.addFunction(''); // Empty function to show placeholder example text
             }
             
