@@ -1615,25 +1615,8 @@ class Graphiti {
     evaluateFunction(expression, x) {
         try {
             // Make function names case-insensitive for mobile compatibility
-            // Convert common function names to lowercase
-            let processedExpression = expression
-                .replace(/\bSin\b/g, 'sin')
-                .replace(/\bCos\b/g, 'cos')
-                .replace(/\bTan\b/g, 'tan')
-                .replace(/\bLog\b/g, 'log')
-                .replace(/\bLn\b/g, 'ln')
-                .replace(/\bSqrt\b/g, 'sqrt')
-                .replace(/\bAbs\b/g, 'abs')
-                .replace(/\bExp\b/g, 'exp')
-                .replace(/\bFloor\b/g, 'floor')
-                .replace(/\bCeil\b/g, 'ceil')
-                .replace(/\bRound\b/g, 'round')
-                .replace(/\bAsin\b/g, 'asin')
-                .replace(/\bAcos\b/g, 'acos')
-                .replace(/\bAtan\b/g, 'atan')
-                .replace(/\bSinh\b/g, 'sinh')
-                .replace(/\bCosh\b/g, 'cosh')
-                .replace(/\bTanh\b/g, 'tanh');
+            // Simply convert the entire expression to lowercase
+            let processedExpression = expression.toLowerCase();
             
             // Convert input for regular trig functions if in degree mode
             let evaluationX = x;
