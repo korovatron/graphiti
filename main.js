@@ -747,6 +747,9 @@ class Graphiti {
                 // Force recalculation of scale based on current viewport dimensions
                 this.updateViewportScale();
                 
+                // For polar mode, enforce 1:1 aspect ratio for proper circular display
+                this.enforcePolarAspectRatio();
+                
                 // Update range inputs to reflect the reset
                 this.updateRangeInputs();
 
@@ -1367,15 +1370,25 @@ class Graphiti {
         const xScale = this.viewport.width / xRange;
         const yScale = this.viewport.height / yRange;
         
+        // Use the smaller scale to ensure both axes fit properly
+        // This gives priority to the axis that needs more space
+        this.viewport.scale = Math.min(xScale, yScale);
+    }
+
+    enforcePolarAspectRatio() {
+        // Force 1:1 aspect ratio for polar mode during initial setup only
+        // This keeps circles circular for reset/mode switch but allows user zoom flexibility
         if (this.plotMode === 'polar') {
-            // For polar mode, maintain 1:1 aspect ratio to keep circles circular
-            // Use the smaller scale but adjust ranges to maintain aspect ratio
-            const targetScale = Math.min(xScale, yScale);
-            this.viewport.scale = targetScale;
-            
-            // Adjust ranges to maintain 1:1 aspect ratio
             const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
             const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+            
+            // Calculate what the ranges should be for 1:1 aspect ratio
+            const xRange = this.viewport.maxX - this.viewport.minX;
+            const yRange = this.viewport.maxY - this.viewport.minY;
+            const xScale = this.viewport.width / xRange;
+            const yScale = this.viewport.height / yRange;
+            const targetScale = Math.min(xScale, yScale);
+            
             const halfRangeX = this.viewport.width / (2 * targetScale);
             const halfRangeY = this.viewport.height / (2 * targetScale);
             
@@ -1383,10 +1396,7 @@ class Graphiti {
             this.viewport.maxX = centerX + halfRangeX;
             this.viewport.minY = centerY - halfRangeY;
             this.viewport.maxY = centerY + halfRangeY;
-        } else {
-            // For cartesian mode, use the smaller scale to ensure both axes fit properly
-            // This gives priority to the axis that needs more space
-            this.viewport.scale = Math.min(xScale, yScale);
+            this.viewport.scale = targetScale;
         }
     }
     
@@ -1676,8 +1686,8 @@ class Graphiti {
                 this.polarViewport.maxY = polarReset.maxY;
                 this.polarViewport.scale = polarReset.scale;
 
-                // Force recalculation of scale based on current viewport dimensions
-                this.updateViewportScale();
+                // Force 1:1 aspect ratio for proper polar display
+                this.enforcePolarAspectRatio();
             }
         } else {
             this.cartesianViewport.width = this.polarViewport.width;
