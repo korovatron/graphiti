@@ -1673,40 +1673,39 @@ class Graphiti {
         this.updateFunctionPlaceholders();
 
         // Synchronize canvas dimensions between viewports
-        const currentViewport = this.viewport;
         if (this.plotMode === 'polar') {
+            // Switching TO polar mode
             this.polarViewport.width = this.cartesianViewport.width;
             this.polarViewport.height = this.cartesianViewport.height;
             this.polarViewport.centerX = this.cartesianViewport.centerX;
             this.polarViewport.centerY = this.cartesianViewport.centerY;
 
-            // Initialize polar viewport ranges if not set up
+            // Initialize polar viewport ranges if not set up (first time switching to polar)
             if (this.polarViewport.scale === 80 && this.polarViewport.minX === -3) {
                 const polarReset = this.getPolarResetViewport();
                 this.polarViewport.minX = polarReset.minX;
                 this.polarViewport.maxX = polarReset.maxX;
                 this.polarViewport.minY = polarReset.minY;
                 this.polarViewport.maxY = polarReset.maxY;
-                this.polarViewport.scale = polarReset.scale;
 
                 // Force 1:1 aspect ratio for proper polar display
                 this.enforcePolarAspectRatio();
             }
         } else {
+            // Switching TO cartesian mode
             this.cartesianViewport.width = this.polarViewport.width;
             this.cartesianViewport.height = this.polarViewport.height;
             this.cartesianViewport.centerX = this.polarViewport.centerX;
             this.cartesianViewport.centerY = this.polarViewport.centerY;
+            
+            // Don't modify cartesian ranges - they should remain as they were
         }
         
         // Clear all function points since we're switching coordinate systems
         this.cartesianFunctions.forEach(func => func.points = []);
         this.polarFunctions.forEach(func => func.points = []);
         
-        // Force complete viewport recalculation
-        this.updateViewport();
-
-        // Update range inputs to reflect the correct viewport values
+        // Update range inputs to reflect the current viewport values (no recalculation)
         this.updateRangeInputs();
 
         // Force a complete redraw to ensure viewport is current
