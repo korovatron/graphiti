@@ -599,8 +599,34 @@
                 </div>
                 
                 <div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 10px; gap: 10px;">
-                    <button id="add-function" style="padding: 5px 10px; font-size: 14px;">+ New Function</button>
-                    <button id="mode-toggle" style="padding: 5px 10px; font-size: 12px; background: #2A3F5A; border: 1px solid #555;">Cartesian</button>
+                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; width: 80px; justify-content: center;">+ f(x)</button>     
+
+                    <!-- Coordinate System Toggle Button with Icons -->
+                    <button id="mode-toggle" style="padding: 8px 12px; font-size: 12px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; gap: 8px; height: 40px;" title="Toggle between Cartesian and Polar coordinate systems">
+                        <!-- Cartesian Icon -->
+                        <svg id="cartesian-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 1;">
+                            <!-- Simple X-Y axes -->
+                            <line x1="12" y1="2" x2="12" y2="22"></line>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <!-- Arrow heads for axes -->
+                            <polyline points="18,8 22,12 18,16"></polyline>
+                            <polyline points="8,6 12,2 16,6"></polyline>
+                        </svg>
+
+                        <!-- Separator -->
+                        <div style="width: 1px; height: 16px; background: #666;"></div>
+
+                        <!-- Polar Icon -->
+                        <svg id="polar-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.3;">
+                            <!-- Concentric circles for polar -->
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <circle cx="12" cy="12" r="6"></circle>
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <!-- Radial lines -->
+                            <line x1="12" y1="3" x2="12" y2="21"></line>
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                        </svg>
+                    </button>
                 </div>
                 
                 <div id="functions-container">

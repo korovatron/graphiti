@@ -26,12 +26,12 @@ class Graphiti {
         this.polarSettings = {
             thetaMin: 0,
             thetaMax: 2 * Math.PI,
-            plotNegativeR: true,
+            plotNegativeR: false,  // Default to not plotting negative r
             step: 0.01 // theta increment
         };
         
-        // Canvas and viewport properties
-        this.viewport = {
+        // Canvas and viewport properties - separate for each mode
+        this.cartesianViewport = {
             width: 0,
             height: 0,
             centerX: 0,
@@ -41,6 +41,18 @@ class Graphiti {
             maxX: 10,
             minY: -10,
             maxY: 10
+        };
+
+        this.polarViewport = {
+            width: 0,
+            height: 0,
+            centerX: 0,
+            centerY: 0,
+            scale: 80, // pixels per unit - higher for polar
+            minX: -3,
+            maxX: 3,
+            minY: -3,
+            maxY: 3
         };
         
         // Input handling
@@ -129,6 +141,20 @@ class Graphiti {
     // Helper method to get current function array based on plot mode
     getCurrentFunctions() {
         return this.plotMode === 'polar' ? this.polarFunctions : this.cartesianFunctions;
+    }
+
+    get viewport() {
+        const current = this.plotMode === 'polar' ? this.polarViewport : this.cartesianViewport;
+        
+        // Ensure viewport has current canvas dimensions
+        if (this.canvas) {
+            current.width = this.canvas.width;
+            current.height = this.canvas.height;
+            current.centerX = current.width / 2;
+            current.centerY = current.height / 2;
+        }
+        
+        return current;
     }
     
     // Helper method to get current function array length for color selection
@@ -479,13 +505,15 @@ class Graphiti {
                     let r = compiledExpression.evaluate(scope);
                     
                     // Handle negative r values based on setting
-                    if (r < 0 && this.polarSettings.plotNegativeR) {
-                        // Plot negative r at opposite angle
-                        r = Math.abs(r);
-                        theta += Math.PI;
-                    } else if (r < 0) {
-                        // Skip negative r values
-                        continue;
+                    if (r < 0) {
+                        if (this.polarSettings.plotNegativeR) {
+                            // Plot negative r at opposite angle
+                            r = Math.abs(r);
+                            theta += Math.PI;
+                        } else {
+                            // Skip negative r values
+                            continue;
+                        }
                     }
                     
                     // Convert polar to cartesian
@@ -555,12 +583,18 @@ class Graphiti {
             
             this.canvas.width = rect.width;
             this.canvas.height = rect.height;
-            
-            this.viewport.width = rect.width;
-            this.viewport.height = rect.height;
-            this.viewport.centerX = rect.width / 2;
-            this.viewport.centerY = rect.height / 2;
-            
+
+            // Update both viewports with new canvas dimensions
+            this.cartesianViewport.width = rect.width;
+            this.cartesianViewport.height = rect.height;
+            this.cartesianViewport.centerX = rect.width / 2;
+            this.cartesianViewport.centerY = rect.height / 2;
+
+            this.polarViewport.width = rect.width;
+            this.polarViewport.height = rect.height;
+            this.polarViewport.centerX = rect.width / 2;
+            this.polarViewport.centerY = rect.height / 2;
+
             this.updateViewport();
         };
         
@@ -683,7 +717,7 @@ class Graphiti {
         
         if (negativeRToggle) {
             negativeRToggle.addEventListener('change', () => {
-                this.polarSettings.plotNegativeR = negativeRToggle.checked;
+                this.polarSettings.plotNegativeR = !negativeRToggle.checked;  // Invert checkbox state
                 this.replotAllFunctions();
             });
         }
@@ -701,14 +735,23 @@ class Graphiti {
                 // Use smart reset based on current functions
                 const smartViewport = this.getSmartResetViewport();
                 
-                this.viewport.scale = smartViewport.scale;
+                // Set scale only if provided (cartesian mode), polar mode will calculate it
+                if (smartViewport.scale !== undefined) {
+                    this.viewport.scale = smartViewport.scale;
+                }
                 this.viewport.minX = smartViewport.minX;
                 this.viewport.maxX = smartViewport.maxX;
                 this.viewport.minY = smartViewport.minY;
                 this.viewport.maxY = smartViewport.maxY;
+
+                // Force recalculation of scale based on current viewport dimensions
+                this.updateViewportScale();
                 
                 // Update range inputs to reflect the reset
                 this.updateRangeInputs();
+
+                // Force a complete redraw to ensure viewport is current
+                this.draw();
                 
                 // Re-plot all functions with the reset viewport
                 this.replotAllFunctions();
@@ -1324,9 +1367,27 @@ class Graphiti {
         const xScale = this.viewport.width / xRange;
         const yScale = this.viewport.height / yRange;
         
-        // Use the smaller scale to ensure both axes fit properly
-        // This gives priority to the axis that needs more space
-        this.viewport.scale = Math.min(xScale, yScale);
+        if (this.plotMode === 'polar') {
+            // For polar mode, maintain 1:1 aspect ratio to keep circles circular
+            // Use the smaller scale but adjust ranges to maintain aspect ratio
+            const targetScale = Math.min(xScale, yScale);
+            this.viewport.scale = targetScale;
+            
+            // Adjust ranges to maintain 1:1 aspect ratio
+            const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+            const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+            const halfRangeX = this.viewport.width / (2 * targetScale);
+            const halfRangeY = this.viewport.height / (2 * targetScale);
+            
+            this.viewport.minX = centerX - halfRangeX;
+            this.viewport.maxX = centerX + halfRangeX;
+            this.viewport.minY = centerY - halfRangeY;
+            this.viewport.maxY = centerY + halfRangeY;
+        } else {
+            // For cartesian mode, use the smaller scale to ensure both axes fit properly
+            // This gives priority to the axis that needs more space
+            this.viewport.scale = Math.min(xScale, yScale);
+        }
     }
     
     zoomIn() {
@@ -1545,8 +1606,27 @@ class Graphiti {
         const polarOptions = document.getElementById('polar-options');
         
         if (modeToggle) {
-            modeToggle.textContent = this.plotMode === 'cartesian' ? 'Cartesian' : 'Polar';
-            modeToggle.style.background = this.plotMode === 'polar' ? '#4A90E2' : '#2A3F5A';
+            // Update icon opacity instead of text
+            const cartesianIcon = document.getElementById('cartesian-icon');
+            const polarIcon = document.getElementById('polar-icon');
+
+            if (cartesianIcon && polarIcon) {
+                if (this.plotMode === 'cartesian') {
+                    cartesianIcon.style.opacity = '1';        // Bright
+                    polarIcon.style.opacity = '0.3';         // Dim
+                } else {
+                    cartesianIcon.style.opacity = '0.3';     // Dim
+                    polarIcon.style.opacity = '1';           // Bright
+                }
+            }
+
+            // Keep button background consistent - don't change color
+        }
+        
+        // Update Add Function button text based on coordinate system
+        const addFunctionBtn = document.getElementById('add-function');
+        if (addFunctionBtn) {
+            addFunctionBtn.textContent = this.plotMode === 'cartesian' ? '+ f(x)' : '+ f(θ)';
         }
         
         if (cartesianRanges && cartesianRangesY) {
@@ -1561,13 +1641,61 @@ class Graphiti {
         
         // Clear existing function UI and recreate for current mode
         this.refreshFunctionUI();
+
+        // Add pre-populated functions if the current mode has no functions
+        if (this.getCurrentFunctions().length === 0) {
+            if (this.plotMode === 'cartesian') {
+                this.addFunction('sin(2x + pi)');
+                this.addFunction('e^(-x^2)');
+                this.addFunction(''); // Empty function to show placeholder example text
+            } else {
+                this.addFunction('1 + cos(theta)'); // Cardioid
+                this.addFunction('2*cos(3*theta)'); // Three-petaled rose  
+                this.addFunction('sin(2*theta)'); // Four-petaled rose
+                this.addFunction(''); // Empty function to show placeholder example text
+            }
+        }
         
         // Update function placeholders
         this.updateFunctionPlaceholders();
+
+        // Synchronize canvas dimensions between viewports
+        const currentViewport = this.viewport;
+        if (this.plotMode === 'polar') {
+            this.polarViewport.width = this.cartesianViewport.width;
+            this.polarViewport.height = this.cartesianViewport.height;
+            this.polarViewport.centerX = this.cartesianViewport.centerX;
+            this.polarViewport.centerY = this.cartesianViewport.centerY;
+
+            // Initialize polar viewport ranges if not set up
+            if (this.polarViewport.scale === 80 && this.polarViewport.minX === -3) {
+                const polarReset = this.getPolarResetViewport();
+                this.polarViewport.minX = polarReset.minX;
+                this.polarViewport.maxX = polarReset.maxX;
+                this.polarViewport.minY = polarReset.minY;
+                this.polarViewport.maxY = polarReset.maxY;
+                this.polarViewport.scale = polarReset.scale;
+
+                // Force recalculation of scale based on current viewport dimensions
+                this.updateViewportScale();
+            }
+        } else {
+            this.cartesianViewport.width = this.polarViewport.width;
+            this.cartesianViewport.height = this.polarViewport.height;
+            this.cartesianViewport.centerX = this.polarViewport.centerX;
+            this.cartesianViewport.centerY = this.polarViewport.centerY;
+        }
+        
+        // Clear all function points since we're switching coordinate systems
+        this.cartesianFunctions.forEach(func => func.points = []);
+        this.polarFunctions.forEach(func => func.points = []);
         
         // Force complete viewport recalculation
         this.updateViewport();
-        
+
+        // Update range inputs to reflect the correct viewport values
+        this.updateRangeInputs();
+
         // Force a complete redraw to ensure viewport is current
         this.draw();
         
@@ -2381,11 +2509,11 @@ class Graphiti {
     }
     
     drawPolarAngleLabels(center, maxViewportRadius, thetaSpacing) {
-        // Get label color from CSS variable (adapts to light/dark theme)
-        const labelColor = getComputedStyle(document.documentElement)
-            .getPropertyValue('--label-color').trim();
-        
-        this.ctx.fillStyle = labelColor;
+        // Use yellow for angle labels to differentiate from axis labels and provide good contrast
+        const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+        const angleColor = isDarkMode ? '#FFD700' : '#B8860B'; // Gold in dark mode, dark goldenrod in light mode
+
+        this.ctx.fillStyle = angleColor;
         this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
@@ -3129,7 +3257,26 @@ class Graphiti {
     }
     
     getSmartResetViewport() {
-        // Analyze current functions to determine optimal viewport ranges
+        // Use different logic for polar vs cartesian modes
+        if (this.plotMode === 'polar') {
+            return this.getPolarResetViewport();
+        } else {
+            return this.getCartesianResetViewport();
+        }
+    }
+    
+    getPolarResetViewport() {
+        // For polar mode, we want a symmetric view centered on origin
+        // That shows a good range for typical polar functions like cardioids and roses
+        // Scale will be calculated by updateViewportScale() based on canvas dimensions
+        return {
+            minX: -3, maxX: 3,
+            minY: -3, maxY: 3
+        };
+    }
+    
+    getCartesianResetViewport() {
+        // Analyze current CARTESIAN functions to determine optimal viewport ranges
         const enabledFunctions = this.getCurrentFunctions().filter(func => func.enabled && func.expression.trim());
         
         if (enabledFunctions.length === 0) {
@@ -3137,7 +3284,7 @@ class Graphiti {
             return {
                 minX: -10, maxX: 10,
                 minY: -10, maxY: 10,
-                scale: 50
+                scale: 80
             };
         }
         
@@ -3151,13 +3298,13 @@ class Graphiti {
                 return {
                     minX: -1.5, maxX: 1.5,
                     minY: -180, maxY: 180,
-                    scale: 50
+                    scale: 80
                 };
             } else {
                 return {
                     minX: -1.5, maxX: 1.5,
                     minY: -Math.PI, maxY: Math.PI,
-                    scale: 50
+                    scale: 80
                 };
             }
         } else if (hasRegularTrig && !hasInverseTrig) {
@@ -3166,13 +3313,13 @@ class Graphiti {
                 return {
                     minX: -360, maxX: 360,
                     minY: -3, maxY: 3,
-                    scale: 50
+                    scale: 80
                 };
             } else {
                 return {
                     minX: -2 * Math.PI, maxX: 2 * Math.PI,
                     minY: -3, maxY: 3,
-                    scale: 50
+                    scale: 80
                 };
             }
         } else {
@@ -3183,13 +3330,13 @@ class Graphiti {
                     return {
                         minX: -10, maxX: 10,    // Use a general range that works for both function types
                         minY: -180, maxY: 180,  // Cover degree outputs for inverse trig and regular range for sin/cos
-                        scale: 50
+                        scale: 80
                     };
                 } else {
                     return {
                         minX: -10, maxX: 10,    // General range that accommodates both types
                         minY: -Math.PI, maxY: Math.PI,   // Cover radian outputs and regular range
-                        scale: 50
+                        scale: 80
                     };
                 }
             } else {
@@ -3197,7 +3344,7 @@ class Graphiti {
                 return {
                     minX: -10, maxX: 10,
                     minY: -10, maxY: 10,
-                    scale: 50
+                    scale: 80
                 };
             }
         }
