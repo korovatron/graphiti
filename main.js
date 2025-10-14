@@ -2256,6 +2256,14 @@ class Graphiti {
     }
     
     drawGrid() {
+        if (this.plotMode === 'polar') {
+            this.drawPolarGrid();
+        } else {
+            this.drawCartesianGrid();
+        }
+    }
+    
+    drawCartesianGrid() {
         // Get grid color from CSS variable (adapts to light/dark theme)
         const gridColor = getComputedStyle(document.documentElement)
             .getPropertyValue('--grid-color').trim();
@@ -2285,6 +2293,203 @@ class Graphiti {
         }
         
         this.ctx.stroke();
+    }
+    
+    drawPolarGrid() {
+        // Get grid color from CSS variable (adapts to light/dark theme)
+        const gridColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--grid-color').trim();
+        
+        this.ctx.strokeStyle = gridColor;
+        this.ctx.lineWidth = 1;
+        
+        // Find the center of the viewport in screen coordinates
+        const center = this.worldToScreen(0, 0);
+        
+        // Calculate maximum radius needed to cover the viewport
+        const maxViewportRadius = Math.max(
+            Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.minY * this.viewport.minY),
+            Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.minY * this.viewport.minY),
+            Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.maxY * this.viewport.maxY),
+            Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.maxY * this.viewport.maxY)
+        );
+        
+        // Draw concentric circles (constant r values)
+        this.ctx.beginPath();
+        const rSpacing = this.getPolarRadiusSpacing();
+        for (let r = rSpacing; r <= maxViewportRadius; r += rSpacing) {
+            const screenRadius = r * this.viewport.scale;
+            this.ctx.moveTo(center.x + screenRadius, center.y);
+            this.ctx.arc(center.x, center.y, screenRadius, 0, 2 * Math.PI);
+        }
+        this.ctx.stroke();
+        
+        // Draw radial lines (constant θ values)
+        this.ctx.beginPath();
+        const thetaSpacing = this.getPolarAngleSpacing();
+        const maxScreenRadius = maxViewportRadius * this.viewport.scale;
+        
+        for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
+            const endX = center.x + maxScreenRadius * Math.cos(theta);
+            const endY = center.y - maxScreenRadius * Math.sin(theta); // Negative because screen Y is flipped
+            this.ctx.moveTo(center.x, center.y);
+            this.ctx.lineTo(endX, endY);
+        }
+        this.ctx.stroke();
+        
+        // Draw angle labels on radial lines
+        this.drawPolarAngleLabels(center, maxViewportRadius, thetaSpacing);
+    }
+    
+    drawPolarAngleLabels(center, maxViewportRadius, thetaSpacing) {
+        // Get label color from CSS variable (adapts to light/dark theme)
+        const labelColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--label-color').trim();
+        
+        this.ctx.fillStyle = labelColor;
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
+            // Skip 0° to avoid overlapping with axis labels
+            if (Math.abs(theta) < 0.001) continue;
+            
+            // Find the farthest point along this radial line that's still visible
+            const labelRadius = this.findMaxVisibleRadius(center, theta);
+            
+            if (labelRadius > 20) { // Only show if we have reasonable space
+                // Calculate label position
+                const labelX = center.x + labelRadius * Math.cos(theta);
+                const labelY = center.y - labelRadius * Math.sin(theta); // Negative because screen Y is flipped
+                
+                // Format angle based on current angle mode
+                const label = this.formatPolarAngle(theta);
+                
+                // Adjust text alignment based on quadrant for better readability
+                const adjustedX = labelX + this.getPolarLabelOffset(theta).x;
+                const adjustedY = labelY + this.getPolarLabelOffset(theta).y;
+                
+                this.ctx.fillText(label, adjustedX, adjustedY);
+            }
+        }
+    }
+    
+    findMaxVisibleRadius(center, theta) {
+        // Calculate how far we can go in this direction before hitting viewport edge
+        const cos_theta = Math.cos(theta);
+        const sin_theta = Math.sin(theta);
+        
+        // Calculate intersection with viewport boundaries
+        let maxRadius = Infinity;
+        
+        // Check intersection with right edge (x = viewport.width)
+        if (cos_theta > 0) {
+            const radiusToRightEdge = (this.viewport.width - 20 - center.x) / cos_theta;
+            maxRadius = Math.min(maxRadius, radiusToRightEdge);
+        }
+        
+        // Check intersection with left edge (x = 0)
+        if (cos_theta < 0) {
+            const radiusToLeftEdge = (20 - center.x) / cos_theta;
+            maxRadius = Math.min(maxRadius, radiusToLeftEdge);
+        }
+        
+        // Check intersection with bottom edge (y = viewport.height)
+        if (-sin_theta > 0) { // Note: screen Y is flipped
+            const radiusToBottomEdge = (this.viewport.height - 20 - center.y) / (-sin_theta);
+            maxRadius = Math.min(maxRadius, radiusToBottomEdge);
+        }
+        
+        // Check intersection with top edge (y = 0)
+        if (-sin_theta < 0) { // Note: screen Y is flipped
+            const radiusToTopEdge = (20 - center.y) / (-sin_theta);
+            maxRadius = Math.min(maxRadius, radiusToTopEdge);
+        }
+        
+        // Reduce by a small margin to ensure text doesn't get clipped
+        return Math.max(0, maxRadius - 15);
+    }
+    
+    formatPolarAngle(theta) {
+        if (this.angleMode === 'degrees') {
+            const degrees = (theta * 180 / Math.PI) % 360;
+            return Math.round(degrees) + '°';
+        } else {
+            // Format in terms of π for common angles
+            const piMultiple = theta / Math.PI;
+            
+            // Handle common fractions of π
+            if (Math.abs(piMultiple - Math.round(piMultiple)) < 0.001) {
+                const rounded = Math.round(piMultiple);
+                if (rounded === 0) return '0';
+                if (rounded === 1) return 'π';
+                if (rounded === -1) return '-π';
+                return rounded + 'π';
+            }
+            
+            // Handle common fractions like π/2, π/3, π/4, π/6
+            const commonFractions = [
+                { value: 1/6, label: 'π/6' },
+                { value: 1/4, label: 'π/4' },
+                { value: 1/3, label: 'π/3' },
+                { value: 1/2, label: 'π/2' },
+                { value: 2/3, label: '2π/3' },
+                { value: 3/4, label: '3π/4' },
+                { value: 5/6, label: '5π/6' },
+                { value: 4/3, label: '4π/3' },
+                { value: 3/2, label: '3π/2' },
+                { value: 5/3, label: '5π/3' },
+                { value: 7/4, label: '7π/4' },
+                { value: 11/6, label: '11π/6' }
+            ];
+            
+            for (let fraction of commonFractions) {
+                if (Math.abs(piMultiple - fraction.value) < 0.01) {
+                    return fraction.label;
+                }
+            }
+            
+            // For other values, show as decimal with π
+            return (piMultiple).toFixed(2) + 'π';
+        }
+    }
+    
+    getPolarLabelOffset(theta) {
+        // Adjust label position slightly based on angle to avoid overlapping with grid lines
+        const offsetDistance = 8;
+        return {
+            x: offsetDistance * Math.cos(theta + Math.PI/2),
+            y: -offsetDistance * Math.sin(theta + Math.PI/2)
+        };
+    }
+    
+    getPolarRadiusSpacing() {
+        // Smart radius spacing based on zoom level
+        const viewportRange = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY);
+        
+        if (viewportRange > 50) return 5;
+        if (viewportRange > 20) return 2;
+        if (viewportRange > 10) return 1;
+        if (viewportRange > 5) return 0.5;
+        return 0.25;
+    }
+    
+    getPolarAngleSpacing() {
+        // Angle spacing based on angle mode and zoom level
+        const viewportRange = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY);
+        
+        if (this.angleMode === 'degrees') {
+            // Use common degree increments
+            if (viewportRange > 20) return Math.PI / 6; // 30°
+            if (viewportRange > 10) return Math.PI / 8; // 22.5°
+            return Math.PI / 12; // 15°
+        } else {
+            // Use radian increments
+            if (viewportRange > 20) return Math.PI / 4; // π/4
+            if (viewportRange > 10) return Math.PI / 6; // π/6
+            return Math.PI / 8; // π/8
+        }
     }
     
     drawAxes() {
@@ -2323,9 +2528,17 @@ class Graphiti {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         
-        // Use axis-specific label spacing for directional zoom compatibility
-        const xLabelSpacing = this.getTrigAwareXLabelSpacing();
-        const yLabelSpacing = this.getTrigAwareYLabelSpacing();
+        // Use different spacing logic for polar vs cartesian modes
+        let xLabelSpacing, yLabelSpacing;
+        if (this.plotMode === 'polar') {
+            // In polar mode, use consistent spacing for both axes (they represent radius values)
+            xLabelSpacing = this.getXLabelSpacing();
+            yLabelSpacing = this.getYLabelSpacing();
+        } else {
+            // In cartesian mode, use trig-aware spacing for axis-specific functions
+            xLabelSpacing = this.getTrigAwareXLabelSpacing();
+            yLabelSpacing = this.getTrigAwareYLabelSpacing();
+        }
         
         // X-axis labels
         if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
@@ -2337,13 +2550,18 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(x, 0);
                 if (screenPos.x >= 20 && screenPos.x <= this.viewport.width - 20) {
-                    // Use angle formatting only for pure regular trig functions
-                    // If mixed with inverse trig, use regular numbers to avoid confusion
-                    const hasRegularTrig = this.containsRegularTrigFunctions();
-                    const hasInverseTrig = this.containsInverseTrigFunctions();
-                    const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
+                    // In polar mode, always use regular numbers (axes represent radius values)
+                    // In cartesian mode, use angle formatting only for pure regular trig functions
+                    let label;
+                    if (this.plotMode === 'polar') {
+                        label = this.formatNumber(x);
+                    } else {
+                        const hasRegularTrig = this.containsRegularTrigFunctions();
+                        const hasInverseTrig = this.containsInverseTrigFunctions();
+                        const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
+                        label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
+                    }
                     
-                    const label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
                     const labelY = axisY + 5;
                     
                     // Don't draw labels too close to the bottom
@@ -2367,13 +2585,18 @@ class Graphiti {
                 
                 const screenPos = this.worldToScreen(0, y);
                 if (screenPos.y >= 20 && screenPos.y <= this.viewport.height - 20) {
-                    // Use angle formatting only for pure inverse trig functions
-                    // If mixed with regular trig, use regular numbers to avoid confusion
-                    const hasRegularTrig = this.containsRegularTrigFunctions();
-                    const hasInverseTrig = this.containsInverseTrigFunctions();
-                    const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
+                    // In polar mode, always use regular numbers (axes represent radius values)
+                    // In cartesian mode, use angle formatting only for pure inverse trig functions
+                    let label;
+                    if (this.plotMode === 'polar') {
+                        label = this.formatNumber(y);
+                    } else {
+                        const hasRegularTrig = this.containsRegularTrigFunctions();
+                        const hasInverseTrig = this.containsInverseTrigFunctions();
+                        const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
+                        label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
+                    }
                     
-                    const label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
                     const labelX = axisX - 5;
                     
                     // Don't draw labels too close to the left edge

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-improved-polar-tracing-14-10-2025-18:40';
+const CACHE_NAME = 'graphiti-polar-grid-angle-labels-14-10-2025-19:15';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
