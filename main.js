@@ -2975,4 +2975,20 @@ class Graphiti {
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.graphiti = new Graphiti();
+    
+    // Debug panel width display
+    function updateDebugWidth() {
+        const panel = document.getElementById('function-panel');
+        const debugWidth = document.getElementById('debug-width');
+        if (panel && debugWidth) {
+            const computedStyle = window.getComputedStyle(panel);
+            const width = Math.round(parseFloat(computedStyle.width));
+            debugWidth.textContent = width;
+        }
+    }
+    
+    // Update debug width periodically and on resize
+    setInterval(updateDebugWidth, 1000);
+    window.addEventListener('resize', updateDebugWidth);
+    setTimeout(updateDebugWidth, 500); // Initial update after load
 });
