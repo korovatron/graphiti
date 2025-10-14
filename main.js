@@ -1606,6 +1606,9 @@ class Graphiti {
     }
     
     togglePlotMode() {
+        // Clear persistent tracing when switching modes since functions are mode-specific
+        this.input.persistentTracing.visible = false;
+        
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
         // Update UI
