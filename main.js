@@ -3067,10 +3067,30 @@ class Graphiti {
         this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
         this.ctx.fill();
         
-        // Coordinate display
+        // Coordinate display - show polar coordinates (r, θ) in polar mode
         const x = tracingData.worldX;
         const y = tracingData.worldY;
-        const coordText = `(${this.formatCoordinate(x)}, ${this.formatCoordinate(y)})`;
+        
+        let coordText;
+        if (this.plotMode === 'polar') {
+            // Convert cartesian coordinates back to polar for display
+            const r = Math.sqrt(x * x + y * y);
+            let theta = Math.atan2(y, x);
+            
+            // Normalize theta to 0-2π range
+            if (theta < 0) theta += 2 * Math.PI;
+            
+            // Format based on angle mode
+            if (this.angleMode === 'degrees') {
+                const thetaDegrees = theta * 180 / Math.PI;
+                coordText = `(${this.formatCoordinate(r)}, ${this.formatCoordinate(thetaDegrees)}°)`;
+            } else {
+                coordText = `(${this.formatCoordinate(r)}, ${this.formatCoordinate(theta)})`;
+            }
+        } else {
+            // Cartesian mode - show (x, y)
+            coordText = `(${this.formatCoordinate(x)}, ${this.formatCoordinate(y)})`;
+        }
         
         // Position text to avoid going off screen
         let textX = screenPos.x + 15;
