@@ -1663,8 +1663,8 @@ class Graphiti {
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)'); // Cardioid
-                this.addFunction('2*cos(3*t)'); // Three-petaled rose  
-                this.addFunction('sin(2*t)'); // Four-petaled rose
+                this.addFunction('2cos(3t)'); // Three-petaled rose  
+                this.addFunction('sin(2t)'); // Four-petaled rose
                 this.addFunction(''); // Empty function to show placeholder example text
             }
         }
@@ -1733,7 +1733,7 @@ class Graphiti {
         const functionInputs = document.querySelectorAll('.function-item input[type="text"]');
         functionInputs.forEach(input => {
             if (this.plotMode === 'polar') {
-                input.placeholder = 'e.g., 1 + cos(t), 2*sin(3*t)';
+                input.placeholder = 'e.g., 1 + cos(t), 2sin(3t)';
             } else {
                 input.placeholder = 'e.g., sin(x), x^2, log(x)';
             }
@@ -1759,7 +1759,7 @@ class Graphiti {
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)');
-                this.addFunction('cos(3*t)');
+                this.addFunction('cos(3t)');
                 this.addFunction(''); // Empty function to show placeholder example text
             }
             
@@ -1883,18 +1883,25 @@ class Graphiti {
     
     toggleTheme() {
         const html = document.documentElement;
-        const themeToggle = document.getElementById('theme-toggle');
+        const lightIcon = document.getElementById('light-icon');
+        const darkIcon = document.getElementById('dark-icon');
         const currentTheme = html.getAttribute('data-theme');
         
         if (currentTheme === 'light') {
             // Switch to dark mode
             html.removeAttribute('data-theme');
-            if (themeToggle) themeToggle.textContent = '🌙';
+            if (lightIcon && darkIcon) {
+                lightIcon.style.opacity = '0.3';  // Dim light icon
+                darkIcon.style.opacity = '1';     // Bright dark icon
+            }
             localStorage.setItem('graphiti-theme', 'dark');
         } else {
             // Switch to light mode
             html.setAttribute('data-theme', 'light');
-            if (themeToggle) themeToggle.textContent = '☀️';
+            if (lightIcon && darkIcon) {
+                lightIcon.style.opacity = '1';    // Bright light icon
+                darkIcon.style.opacity = '0.3';   // Dim dark icon
+            }
             localStorage.setItem('graphiti-theme', 'light');
         }
         
@@ -1917,28 +1924,42 @@ class Graphiti {
     initializeTheme() {
         // Load saved theme from localStorage
         const savedTheme = localStorage.getItem('graphiti-theme');
-        const themeToggle = document.getElementById('theme-toggle');
+        const lightIcon = document.getElementById('light-icon');
+        const darkIcon = document.getElementById('dark-icon');
         
         if (savedTheme === 'light') {
             document.documentElement.setAttribute('data-theme', 'light');
-            if (themeToggle) themeToggle.textContent = '☀️';
+            if (lightIcon && darkIcon) {
+                lightIcon.style.opacity = '1';    // Bright light icon
+                darkIcon.style.opacity = '0.3';   // Dim dark icon
+            }
         } else {
             document.documentElement.removeAttribute('data-theme');
-            if (themeToggle) themeToggle.textContent = '🌙';
+            if (lightIcon && darkIcon) {
+                lightIcon.style.opacity = '0.3';  // Dim light icon
+                darkIcon.style.opacity = '1';     // Bright dark icon
+            }
         }
         
         this.updateCanvasBackground();
     }
     
     toggleAngleMode() {
-        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        const degreesIcon = document.getElementById('degrees-icon');
+        const radiansIcon = document.getElementById('radians-icon');
         
         if (this.angleMode === 'degrees') {
             this.angleMode = 'radians';
-            if (angleModeToggle) angleModeToggle.textContent = 'RAD';
+            if (degreesIcon && radiansIcon) {
+                degreesIcon.style.opacity = '0.3';  // Dim degrees icon
+                radiansIcon.style.opacity = '1';    // Bright radians icon
+            }
         } else {
             this.angleMode = 'degrees';
-            if (angleModeToggle) angleModeToggle.textContent = 'DEG';
+            if (degreesIcon && radiansIcon) {
+                degreesIcon.style.opacity = '1';    // Bright degrees icon
+                radiansIcon.style.opacity = '0.3';  // Dim radians icon
+            }
         }
         
         // Only adjust viewport if there are trig functions that would be affected
@@ -1964,10 +1985,14 @@ class Graphiti {
     
     initializeAngleMode() {
         // Always default to radians mode
-        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        const degreesIcon = document.getElementById('degrees-icon');
+        const radiansIcon = document.getElementById('radians-icon');
         
         this.angleMode = 'radians';
-        if (angleModeToggle) angleModeToggle.textContent = 'RAD';
+        if (degreesIcon && radiansIcon) {
+            degreesIcon.style.opacity = '0.3';  // Dim degrees icon
+            radiansIcon.style.opacity = '1';    // Bright radians icon
+        }
     }
     
     evaluateFunction(expression, x) {

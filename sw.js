@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-polar-grid-initialization-fix-14-10-2025-23:08';
+const CACHE_NAME = 'graphiti-polar-grid-initialization-fix-15-10-2025-17:05';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

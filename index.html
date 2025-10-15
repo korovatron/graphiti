@@ -599,7 +599,9 @@
                 </div>
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px;">
-                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; width: 80px; justify-content: center;">+ f(x)</button>     
+                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; width: 80px; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+ f(x)</button>     
+
+                    <button id="reset-view" style="padding: 8px; font-size: 10px; height: 40px; line-height: 1.2; background: #2A3F5A; border: 1px solid #555; width: 80px;" title="Reset View">RESET<br>AXES</button>
 
                     <!-- Coordinate System Toggle Button with Icons -->
                     <button id="mode-toggle" style="padding: 8px 12px; font-size: 12px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; gap: 8px; height: 40px;" title="Toggle between Cartesian and Polar coordinate systems">
@@ -628,6 +630,9 @@
                         </svg>
                     </button>
                 </div>
+                
+                <!-- Divider -->
+                <div style="border-top: 1px solid #555; margin: 15px 0 10px 0;"></div>
                 
                 <div id="functions-container">
                     <!-- Functions will be added here dynamically -->
@@ -677,9 +682,42 @@
                 
                 <!-- Control Buttons Row -->
                 <div style="border-top: 1px solid var(--border-color); padding-top: 10px; margin-top: 15px; display: flex; gap: 10px; align-items: center;">
-                    <button id="angle-mode-toggle" style="padding: 8px; font-size: 12px; flex: 1; height: 40px;">DEG</button>
-                    <button id="reset-view" style="padding: 8px; font-size: 10px; flex: 1; height: 40px; line-height: 1.2;" title="Reset View">RESET<br>AXES</button>
-                    <button id="theme-toggle" style="padding: 8px; font-size: 16px; flex: 1; height: 40px;" title="Toggle Theme">🌙</button>
+                    <button id="angle-mode-toggle" style="padding: 8px 12px; font-size: 12px; flex: 1; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Toggle Angle Mode">
+                        <!-- Degrees Text -->
+                        <svg id="degrees-icon" width="30" height="20" viewBox="0 0 30 20" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.3;">
+                            <text x="15" y="14" font-family="Arial" font-size="12" font-weight="bold" fill="currentColor" stroke="none" text-anchor="middle">DEG</text>
+                        </svg>
+
+                        <!-- Separator -->
+                        <div style="width: 1px; height: 12px; background: #666;"></div>
+
+                        <!-- Radians Text -->
+                        <svg id="radians-icon" width="30" height="20" viewBox="0 0 30 20" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 1;">
+                            <text x="15" y="14" font-family="Arial" font-size="12" font-weight="bold" fill="currentColor" stroke="none" text-anchor="middle">RAD</text>
+                        </svg>
+                    </button>
+                    <button id="theme-toggle" style="padding: 8px 12px; font-size: 16px; flex: 1; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Toggle Theme">
+                        <!-- Light Mode Icon (Sun) -->
+                        <svg id="light-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.3;">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+
+                        <!-- Separator -->
+                        <div style="width: 1px; height: 12px; background: #666;"></div>
+
+                        <!-- Dark Mode Icon (Moon) -->
+                        <svg id="dark-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 1;">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
