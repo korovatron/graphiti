@@ -612,9 +612,10 @@ class Graphiti {
                 resizeCanvas();
                 this.handleMobileLayout(true); // Force layout re-evaluation on orientation change
                 
-                // iPad Safari bug fix: UI elements disappear after orientation change
-                if (this.isIpad() && !this.isStandalonePWA()) {
-                    this.fixIpadElementsVisibility();
+                // iOS Safari browser bug fix: UI elements disappear after orientation change
+                // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
+                if (this.isIOSSafari() && !this.isStandalonePWA()) {
+                    this.fixIOSSafariElementsVisibility();
                 }
             }, 100);
         });
@@ -626,9 +627,10 @@ class Graphiti {
                     resizeCanvas();
                     this.handleMobileLayout(true); // Force layout re-evaluation on screen orientation change
                     
-                    // iPad Safari bug fix: UI elements disappear after orientation change
-                    if (this.isIpad() && !this.isStandalonePWA()) {
-                        this.fixIpadElementsVisibility();
+                    // iOS Safari browser bug fix: UI elements disappear after orientation change
+                    // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
+                    if (this.isIOSSafari() && !this.isStandalonePWA()) {
+                        this.fixIOSSafariElementsVisibility();
                     }
                 }, 100);
             });
@@ -3697,13 +3699,18 @@ class Graphiti {
         return narrowDimension <= 500;
     }
 
+    isIOSSafari() {
+        // Detect iOS devices (iPhone and iPad) running in Safari browser mode
+        // This affects both iPhone and iPad when NOT in PWA mode
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isSafari = /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+        return isIOS && isSafari;
+    }
+
     isIpad() {
-        // Modern iPad detection that works even when Safari is in "desktop mode"
-        return (
-            navigator.maxTouchPoints > 1 &&
-            /iPad|Macintosh/.test(navigator.userAgent) &&
-            'ontouchend' in document
-        );
+        // Keep for backward compatibility - now calls the more general method
+        return this.isIOSSafari();
     }
 
     isStandalonePWA() {
@@ -3711,9 +3718,10 @@ class Graphiti {
         return window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
     }
 
-    fixIpadElementsVisibility() {
-        // iPad Safari bug fix: UI elements can disappear during orientation changes
-        if (this.isIpad() && !this.isStandalonePWA()) {
+    fixIOSSafariElementsVisibility() {
+        // iOS Safari browser bug fix: UI elements can disappear during orientation changes
+        // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
+        if (this.isIOSSafari() && !this.isStandalonePWA()) {
             // Use multiple attempts with different timings to ensure fix takes effect
             const attemptFix = () => {
                 const hamburgerMenu = document.getElementById('hamburger-menu');
@@ -3731,25 +3739,51 @@ class Graphiti {
                     hamburgerMenu.offsetHeight;
                 }
                 
-                // Fix function panel visibility if it should be open
-                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                // Fix function panel state - check if it should be open
+                if (functionPanel) {
+                    const shouldBeOpen = functionPanel.classList.contains('mobile-open');
+                    
+                    // Temporarily disable transitions to prevent flickering
+                    const originalTransition = functionPanel.style.transition;
+                    functionPanel.style.transition = 'none';
+                    
+                    // Force basic visibility properties
                     functionPanel.style.display = 'block';
                     functionPanel.style.visibility = 'visible';
                     functionPanel.style.opacity = '1';
-                    functionPanel.style.left = '0';
                     functionPanel.style.position = 'fixed';
                     functionPanel.style.zIndex = '15';
+                    
+                    if (shouldBeOpen) {
+                        // Panel should be open - force it to open position
+                        functionPanel.style.left = '0';
+                        functionPanel.classList.remove('hidden');
+                        
+                        // Also ensure overlay is visible when panel is open
+                        if (mobileOverlay) {
+                            mobileOverlay.style.display = 'block';
+                            mobileOverlay.style.visibility = 'visible';
+                            mobileOverlay.style.opacity = '1';
+                            mobileOverlay.style.zIndex = '14';
+                            mobileOverlay.offsetHeight;
+                        }
+                    } else {
+                        // Panel should be closed - force it to closed position
+                        functionPanel.style.left = '-100%';
+                        
+                        // Hide overlay if panel is closed
+                        if (mobileOverlay) {
+                            mobileOverlay.style.display = 'none';
+                        }
+                    }
+                    
                     // Trigger reflow
                     functionPanel.offsetHeight;
                     
-                    // Also ensure overlay is visible when panel is open
-                    if (mobileOverlay) {
-                        mobileOverlay.style.display = 'block';
-                        mobileOverlay.style.visibility = 'visible';
-                        mobileOverlay.style.opacity = '1';
-                        mobileOverlay.style.zIndex = '14';
-                        mobileOverlay.offsetHeight;
-                    }
+                    // Restore transitions after a brief delay
+                    setTimeout(() => {
+                        functionPanel.style.transition = originalTransition || '';
+                    }, 50);
                 }
             };
             
@@ -3761,6 +3795,11 @@ class Graphiti {
             setTimeout(attemptFix, 200);
             setTimeout(attemptFix, 500);
         }
+    }
+
+    // Keep old method name for backward compatibility
+    fixIpadElementsVisibility() {
+        return this.fixIOSSafariElementsVisibility();
     }
 
     handleMobileLayout(forceUpdate = false) {

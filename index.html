@@ -426,10 +426,11 @@
             display: none !important;
         }
         
-        /* iPad-specific fixes for orientation change UI disappearing bug */
-        @media (hover: none) and (pointer: coarse) and (min-width: 768px) {
+        /* iOS Safari browser-specific fixes for orientation change UI disappearing bug */
+        /* Affects both iPhone and iPad in Safari browser mode, but not PWA mode */
+        @media (hover: none) and (pointer: coarse) {
             #hamburger-menu {
-                position: fixed !important; /* More stable positioning on iPad */
+                position: fixed !important; /* More stable positioning on iOS Safari */
                 transform: translateZ(0); /* Force hardware acceleration */
                 will-change: transform; /* Optimize for transforms */
             }
