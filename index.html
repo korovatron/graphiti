@@ -450,15 +450,6 @@
                 padding: 70px 20px 20px 20px !important; /* Extra top padding for PWA status bar */
             }
         }
-        
-        /* Additional iOS PWA detection using safe-area support */
-        @supports (padding-top: env(safe-area-inset-top)) {
-            @media (max-width: 500px) and (display-mode: standalone) {
-                #function-panel {
-                    padding: calc(70px + env(safe-area-inset-top, 0px)) 20px 20px 20px !important;
-                }
-            }
-        }
 
         
         #function-panel.mobile-open {
