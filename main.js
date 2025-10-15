@@ -3005,33 +3005,9 @@ class Graphiti {
     }
     
     formatNumber(num) {
-        // Format numbers for axis labels
-        if (Math.abs(num) < 0.0001) return '0';
-        
-        if (Math.abs(num) >= 1000000) {
-            return (num / 1000000).toFixed(1) + 'M';
-        }
-        if (Math.abs(num) >= 1000) {
-            return (num / 1000).toFixed(1) + 'k';
-        }
-        if (Math.abs(num) >= 100) {
-            return num.toFixed(0);
-        }
-        if (Math.abs(num) >= 10) {
-            return num.toFixed(1);
-        }
-        if (Math.abs(num) >= 1) {
-            return num.toFixed(1);
-        }
-        if (Math.abs(num) >= 0.1) {
-            return num.toFixed(2);
-        }
-        if (Math.abs(num) >= 0.01) {
-            return num.toFixed(3);
-        }
-        
-        // For very small numbers, use scientific notation
-        return num.toExponential(1);
+        // Format numbers for axis labels using context-aware precision
+        // Use the same intelligent formatting as coordinates for consistency
+        return this.formatCoordinate(num);
     }
     
     formatTrigNumber(num) {
@@ -3324,33 +3300,53 @@ class Graphiti {
     }
 
     formatCoordinate(value) {
-        // Format coordinate values for display
-        if (Math.abs(value) < 0.000001) return '0';
+        // Format coordinate values for display - never use scientific notation
+        // Use context-aware precision based on current viewport scale
         
+        // Get the current viewport range to determine appropriate precision
+        const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
+        const xRange = currentViewport.maxX - currentViewport.minX;
+        const yRange = currentViewport.maxY - currentViewport.minY;
+        const typicalRange = Math.max(xRange, yRange);
+        
+        // Calculate precision based on viewport scale
+        // For large ranges, we need fewer decimal places
+        // For small ranges, we need more decimal places
+        let precision;
+        if (typicalRange >= 1000) {
+            precision = 0; // No decimal places for very large scales
+        } else if (typicalRange >= 100) {
+            precision = 1; // 1 decimal place
+        } else if (typicalRange >= 10) {
+            precision = 2; // 2 decimal places
+        } else if (typicalRange >= 1) {
+            precision = 3; // 3 decimal places
+        } else if (typicalRange >= 0.1) {
+            precision = 4; // 4 decimal places
+        } else if (typicalRange >= 0.01) {
+            precision = 5; // 5 decimal places
+        } else if (typicalRange >= 0.001) {
+            precision = 6; // 6 decimal places
+        } else if (typicalRange >= 0.0001) {
+            precision = 7; // 7 decimal places
+        } else {
+            precision = 8; // Maximum 8 decimal places for very fine scales
+        }
+        
+        // Zero threshold based on precision - if number is too small relative to scale, show as zero
+        const zeroThreshold = Math.pow(10, -(precision + 3)); // 3 orders of magnitude below precision
+        if (Math.abs(value) < zeroThreshold) return '0';
+        
+        // Handle large numbers with suffixes (only for very large numbers)
         if (Math.abs(value) >= 1000000) {
-            return (value / 1000000).toFixed(2) + 'M';
+            return (value / 1000000).toFixed(Math.max(0, precision - 3)) + 'M';
         }
-        if (Math.abs(value) >= 1000) {
-            return (value / 1000).toFixed(2) + 'k';
-        }
-        if (Math.abs(value) >= 100) {
-            return value.toFixed(1);
-        }
-        if (Math.abs(value) >= 10) {
-            return value.toFixed(2);
-        }
-        if (Math.abs(value) >= 1) {
-            return value.toFixed(3);
-        }
-        if (Math.abs(value) >= 0.1) {
-            return value.toFixed(4);
-        }
-        if (Math.abs(value) >= 0.01) {
-            return value.toFixed(5);
+        if (Math.abs(value) >= 1000 && typicalRange >= 1000) {
+            return (value / 1000).toFixed(Math.max(0, precision)) + 'k';
         }
         
-        // For very small numbers, use scientific notation
-        return value.toExponential(2);
+        // Use context-aware precision for all numbers
+        return value.toFixed(precision);
     }
     
     getGridSpacing() {

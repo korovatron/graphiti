@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-contrasting-badge-text-15-10-2025-22:05';
+const CACHE_NAME = 'graphiti-context-aware-axis-labels-15-10-2025-22:35';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
