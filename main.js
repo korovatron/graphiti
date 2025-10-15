@@ -3199,17 +3199,17 @@ class Graphiti {
         // Coordinate label with background
         const coordinates = this.formatCoordinates(worldX, worldY);
         
-        this.ctx.font = '12px Arial, sans-serif';
+        this.ctx.font = '16px Arial, sans-serif'; // Larger font for classroom visibility
         const textMetrics = this.ctx.measureText(coordinates);
         const textWidth = textMetrics.width;
-        const textHeight = 12;
+        const textHeight = 16; // Updated to match font size
         
         // Position label to avoid overlapping with the circle
         const labelX = screenX + 15;
         const labelY = screenY - 10;
         
         // Background rectangle - solid color matching the function
-        const padding = 4;
+        const padding = 6; // Increased padding for larger text
         
         this.ctx.fillStyle = color; // Use function color for solid background
         this.ctx.lineWidth = 1;
