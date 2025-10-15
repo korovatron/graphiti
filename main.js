@@ -82,14 +82,9 @@ class Graphiti {
                     touch: 20  // pixels (larger for touch)
                 }
             },
-            // Persistent tracing display for educational use
-            persistentTracing: {
-                visible: false,
-                functionId: null,
-                worldX: 0,
-                worldY: 0,
-                functionColor: '#4A90E2'
-            },
+            // Multi-badge persistent tracing system for educational use
+            persistentBadges: [], // Array of trace badges: { id, functionId, worldX, worldY, functionColor, screenX, screenY }
+            badgeIdCounter: 0, // For generating unique badge IDs
             // Pinch gesture tracking
             pinch: {
                 active: false,
@@ -219,23 +214,23 @@ class Graphiti {
         });
         
         input.addEventListener('input', (e) => {
-            // Clear persistent tracing when editing functions
-            this.input.persistentTracing.visible = false;
+            // Clear badges for this function when editing
+            this.removeBadgesForFunction(func.id);
             func.expression = e.target.value;
             // Auto-plot with debouncing to avoid excessive calculations
             this.debouncePlot(func);
         });
         
         colorIndicator.addEventListener('click', () => {
-            // Clear persistent tracing when toggling function visibility
-            this.input.persistentTracing.visible = false;
+            // Clear badges for this function when toggling visibility
+            this.removeBadgesForFunction(func.id);
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
         });
         
         removeBtn.addEventListener('click', () => {
-            // Clear persistent tracing when removing functions
-            this.input.persistentTracing.visible = false;
+            // Clear badges for this function when removing
+            this.removeBadgesForFunction(func.id);
             this.removeFunction(func.id);
         });
         
@@ -697,8 +692,7 @@ class Graphiti {
         
         if (addFunctionButton) {
             addFunctionButton.addEventListener('click', () => {
-                // Clear persistent tracing when adding functions
-                this.input.persistentTracing.visible = false;
+                // Note: Don't clear badges when adding functions - preserve existing trace points
                 this.addFunction('');
             });
         }
@@ -739,8 +733,7 @@ class Graphiti {
 
         if (resetViewButton) {
             resetViewButton.addEventListener('click', () => {
-                // Clear persistent tracing when resetting view
-                this.input.persistentTracing.visible = false;
+                // Note: Don't clear badges when resetting view - preserve tracing state
                 
                 // Close the function panel only on mobile devices
                 if (this.isTrueMobile()) {
@@ -780,8 +773,7 @@ class Graphiti {
         const themeToggle = document.getElementById('theme-toggle');
         if (themeToggle) {
             themeToggle.addEventListener('click', () => {
-                // Clear persistent tracing when changing theme
-                this.input.persistentTracing.visible = false;
+                // Note: Don't clear badges when changing theme - preserve tracing state
                 this.toggleTheme();
             });
         }
@@ -790,8 +782,8 @@ class Graphiti {
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
             angleModeToggle.addEventListener('click', () => {
-                // Clear persistent tracing when changing angle mode
-                this.input.persistentTracing.visible = false;
+                // Clear all badges when changing angle mode (coordinate system change)
+                this.clearAllBadges();
                 this.toggleAngleMode();
             });
         }
@@ -941,12 +933,12 @@ class Graphiti {
         [xMinInput, xMaxInput, yMinInput, yMaxInput].forEach(input => {
             if (input) {
                 input.addEventListener('input', () => {
-                    this.input.persistentTracing.visible = false;
+                    this.clearAllBadges(); // Clear badges when viewport changes
                     this.debounceRangeUpdate();
                 });
                 
                 input.addEventListener('keydown', (e) => {
-                    this.input.persistentTracing.visible = false;
+                    this.clearAllBadges(); // Clear badges when viewport changes
                     if (e.key === 'Enter') {
                         // Force immediate update on Enter, bypassing debounce
                         this.validateAndSetRange();
@@ -969,6 +961,16 @@ class Graphiti {
         
         // Check if we should enter tracing mode
         if (this.currentState === this.states.GRAPHING) {
+            // Update badge positions for accurate click detection
+            this.updateBadgeScreenPositions();
+            
+            // First, check if user clicked on an existing badge to remove it
+            const badgeToRemove = this.findBadgeAtScreenPosition(x, y, 25);
+            if (badgeToRemove) {
+                this.removeBadgeById(badgeToRemove.id);
+                return; // Don't start tracing if we removed a badge
+            }
+            
             // Determine tolerance based on input type (mouse vs touch)
             const tolerance = this.input.touch.active ? 
                 this.input.tracing.tolerance.touch : 
@@ -977,10 +979,7 @@ class Graphiti {
             const curvePoint = this.findClosestCurvePoint(x, y, tolerance);
             
             if (curvePoint) {
-                // Clear persistent tracing only when starting a new trace
-                this.input.persistentTracing.visible = false;
-                
-                // Enter tracing mode
+                // Enter tracing mode (don't clear existing badges)
                 this.input.tracing.active = true;
                 this.input.tracing.functionId = curvePoint.function.id;
                 this.input.tracing.worldX = curvePoint.worldX;
@@ -1055,17 +1054,19 @@ class Graphiti {
             this.replotAllFunctions();
         }
         
-        // Exit tracing mode - save state for persistent display
+        // Exit tracing mode - add new badge for persistent display
         if (this.input.tracing.active) {
-            // Save current tracing state for persistent display
-            this.input.persistentTracing.visible = true;
-            this.input.persistentTracing.functionId = this.input.tracing.functionId;
-            this.input.persistentTracing.worldX = this.input.tracing.worldX;
-            this.input.persistentTracing.worldY = this.input.tracing.worldY;
-            
-            // Get function color for persistent display
+            // Get function color for the badge
             const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
-            this.input.persistentTracing.functionColor = tracingFunction ? tracingFunction.color : '#4A90E2';
+            const functionColor = tracingFunction ? tracingFunction.color : '#4A90E2';
+            
+            // Add new badge to the collection
+            this.addTraceBadge(
+                this.input.tracing.functionId,
+                this.input.tracing.worldX,
+                this.input.tracing.worldY,
+                functionColor
+            );
         }
         
         this.input.tracing.active = false;
@@ -1601,8 +1602,8 @@ class Graphiti {
     }
     
     togglePlotMode() {
-        // Clear persistent tracing when switching modes since functions are mode-specific
-        this.input.persistentTracing.visible = false;
+        // Clear all badges when switching modes since coordinate systems are different
+        this.clearAllBadges();
         
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
@@ -1813,8 +1814,7 @@ class Graphiti {
     
     // Mobile Menu Methods
     toggleMobileMenu() {
-        // Clear persistent tracing when menu is toggled
-        this.input.persistentTracing.visible = false;
+        // Note: Don't clear badges when menu is toggled - preserve tracing state
         
         const hamburgerMenu = document.getElementById('hamburger-menu');
         const functionPanel = document.getElementById('function-panel');
@@ -2137,6 +2137,56 @@ class Graphiti {
         return null;
     }
     
+    // Badge management methods for multi-badge tracing system
+    addTraceBadge(functionId, worldX, worldY, functionColor) {
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: functionId,
+            worldX: worldX,
+            worldY: worldY,
+            functionColor: functionColor,
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
+    }
+    
+    removeBadgeById(badgeId) {
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
+    }
+    
+    removeBadgesForFunction(functionId) {
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
+    }
+    
+    clearAllBadges() {
+        this.input.persistentBadges = [];
+    }
+    
+    findBadgeAtScreenPosition(screenX, screenY, tolerance = 20) {
+        for (const badge of this.input.persistentBadges) {
+            const distance = Math.sqrt(
+                Math.pow(badge.screenX - screenX, 2) + 
+                Math.pow(badge.screenY - screenY, 2)
+            );
+            if (distance <= tolerance) {
+                return badge;
+            }
+        }
+        return null;
+    }
+    
+    updateBadgeScreenPositions() {
+        // Update screen positions for all badges based on current viewport
+        for (const badge of this.input.persistentBadges) {
+            const screenPos = this.worldToScreen(badge.worldX, badge.worldY);
+            badge.screenX = screenPos.x;
+            badge.screenY = screenPos.y;
+        }
+    }
+
     findClosestPolarPoint(func, screenX, screenY, tolerance) {
         try {
             let closestDistance = Infinity;
@@ -2413,10 +2463,14 @@ class Graphiti {
             }
         });
         
-        // Draw tracing indicator if active or persistent
-        if (this.input.tracing.active || this.input.persistentTracing.visible) {
-            this.drawTracingIndicator();
+        // Draw tracing indicator if active, and all persistent badges
+        if (this.input.tracing.active) {
+            this.drawActiveTracingIndicator();
         }
+        
+        // Draw all persistent badges
+        this.updateBadgeScreenPositions();
+        this.drawPersistentBadges();
         
         // UI overlays removed - cleaner interface
     }
@@ -3042,25 +3096,14 @@ class Graphiti {
         }
     }
 
-    drawTracingIndicator() {
-        let tracingData, tracingFunction;
+    drawActiveTracingIndicator() {
+        if (!this.input.tracing.active) return;
         
-        if (this.input.tracing.active) {
-            // Use active tracing data
-            tracingData = this.input.tracing;
-            tracingFunction = this.findFunctionById(tracingData.functionId);
-        } else if (this.input.persistentTracing.visible) {
-            // Use persistent tracing data
-            tracingData = this.input.persistentTracing;
-            tracingFunction = { color: tracingData.functionColor }; // Simplified function object
-        } else {
-            return;
-        }
-        
+        const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
         if (!tracingFunction) return;
         
         // Convert world coordinates to screen coordinates
-        const screenPos = this.worldToScreen(tracingData.worldX, tracingData.worldY);
+        const screenPos = this.worldToScreen(this.input.tracing.worldX, this.input.tracing.worldY);
         
         // Skip drawing if point is outside the visible canvas
         if (screenPos.x < -20 || screenPos.x > this.viewport.width + 20 ||
@@ -3068,33 +3111,93 @@ class Graphiti {
             return;
         }
         
+        // Draw the active tracing indicator
+        this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, this.input.tracing.worldX, this.input.tracing.worldY, true);
+    }
+    
+    drawPersistentBadges() {
+        // Update badge screen positions before drawing
+        this.updateBadgeScreenPositions();
+        
+        for (const badge of this.input.persistentBadges) {
+            // Skip drawing if badge is outside visible canvas
+            if (badge.screenX < -20 || badge.screenX > this.viewport.width + 20 ||
+                badge.screenY < -20 || badge.screenY > this.viewport.height + 20) {
+                continue;
+            }
+            
+            // Draw the persistent badge
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false);
+        }
+    }
+    
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false) {
         // Draw the circle indicator
         this.ctx.save();
         
-        // Circle - use function color
+        // Circle - use function color, slightly larger for active tracing
+        const radius = isActive ? 10 : 8;
         this.ctx.strokeStyle = '#FFFFFF';
-        this.ctx.fillStyle = tracingFunction.color;
+        this.ctx.fillStyle = color;
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
-        this.ctx.arc(screenPos.x, screenPos.y, 8, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, radius, 0, 2 * Math.PI);
         this.ctx.fill();
         this.ctx.stroke();
         
         // Inner dot
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.beginPath();
-        this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, 2, 0, 2 * Math.PI);
         this.ctx.fill();
         
-        // Coordinate display - show polar coordinates (r, θ) in polar mode
-        const x = tracingData.worldX;
-        const y = tracingData.worldY;
+        // Coordinate label with background
+        const coordinates = this.formatCoordinates(worldX, worldY);
         
-        let coordText;
+        this.ctx.font = '12px Arial, sans-serif';
+        const textMetrics = this.ctx.measureText(coordinates);
+        const textWidth = textMetrics.width;
+        const textHeight = 12;
+        
+        // Position label to avoid overlapping with the circle
+        const labelX = screenX + 15;
+        const labelY = screenY - 10;
+        
+        // Background rectangle - solid color matching the function
+        const padding = 4;
+        
+        this.ctx.fillStyle = color; // Use function color for solid background
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.roundRect(
+            labelX - padding, 
+            labelY - textHeight - padding, 
+            textWidth + 2 * padding, 
+            textHeight + 2 * padding, 
+            3
+        );
+        this.ctx.fill();
+        
+        // Text - position inside the background rectangle with proper alignment
+        this.ctx.fillStyle = '#FFFFFF'; // White text for good contrast on colored background
+        this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
+        this.ctx.textBaseline = 'top'; // Set baseline to top for consistent positioning
+        this.ctx.fillText(coordinates, labelX, labelY - textHeight);
+        
+        this.ctx.restore();
+    }
+    
+    // Legacy method kept for compatibility - now redirects to new methods
+    drawTracingIndicator() {
+        this.drawActiveTracingIndicator();
+        this.drawPersistentBadges();
+    }
+    
+    formatCoordinates(worldX, worldY) {
         if (this.plotMode === 'polar') {
             // Convert cartesian coordinates back to polar for display
-            const r = Math.sqrt(x * x + y * y);
-            let theta = Math.atan2(y, x);
+            const r = Math.sqrt(worldX * worldX + worldY * worldY);
+            let theta = Math.atan2(worldY, worldX);
             
             // Normalize theta to 0-2π range
             if (theta < 0) theta += 2 * Math.PI;
@@ -3102,44 +3205,14 @@ class Graphiti {
             // Format based on angle mode
             if (this.angleMode === 'degrees') {
                 const thetaDegrees = theta * 180 / Math.PI;
-                coordText = `(${this.formatCoordinate(r)}, ${this.formatCoordinate(thetaDegrees)}°)`;
+                return `(${this.formatCoordinate(r)}, ${this.formatCoordinate(thetaDegrees)}°)`;
             } else {
-                coordText = `(${this.formatCoordinate(r)}, ${this.formatCoordinate(theta)})`;
+                return `(${this.formatCoordinate(r)}, ${this.formatCoordinate(theta)})`;
             }
         } else {
             // Cartesian mode - show (x, y)
-            coordText = `(${this.formatCoordinate(x)}, ${this.formatCoordinate(y)})`;
+            return `(${this.formatCoordinate(worldX)}, ${this.formatCoordinate(worldY)})`;
         }
-        
-        // Position text to avoid going off screen
-        let textX = screenPos.x + 15;
-        let textY = screenPos.y - 15;
-        
-        // Measure text to adjust position
-        this.ctx.font = '14px Arial';
-        const textMetrics = this.ctx.measureText(coordText);
-        const textWidth = textMetrics.width;
-        const textHeight = 16;
-        
-        // Adjust if text would go off screen
-        if (textX + textWidth > this.viewport.width - 10) {
-            textX = screenPos.x - textWidth - 15;
-        }
-        if (textY - textHeight < 10) {
-            textY = screenPos.y + textHeight + 15;
-        }
-        
-        // Draw text background using function color
-        this.ctx.fillStyle = tracingFunction.color;
-        this.ctx.fillRect(textX - 5, textY - textHeight, textWidth + 10, textHeight + 4);
-        
-        // Draw text with contrasting color
-        this.ctx.fillStyle = this.getContrastingTextColor(tracingFunction.color);
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText(coordText, textX, textY - textHeight + 2);
-        
-        this.ctx.restore();
     }
 
     getContrastingTextColor(backgroundColor) {

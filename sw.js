@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-remove-cartesian-pan-debouncing-15-10-2025-19:15';
+const CACHE_NAME = 'graphiti-fix-function-removal-id-error-15-10-2025-20:20';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
