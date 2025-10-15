@@ -438,11 +438,29 @@
             transition: left 0.3s ease;
             overflow-y: scroll; /* Always scroll to prevent iOS PWA touch fall-through */
             border-radius: 0 !important;
-            padding: 70px 20px 20px 20px !important; /* Top padding for hamburger on all devices */
+            padding: 20px !important; /* Normal padding for desktop/browser */
             backdrop-filter: blur(10px);
             background: rgba(26, 47, 66, 0.95) !important;
         }
         
+        /* Mobile PWA mode - extra top padding for status bar/notch clearance */
+        /* Only applies to actual mobile devices in PWA mode, not narrow desktop windows */
+        @media (max-width: 500px) and (hover: none) and (pointer: coarse) and (display-mode: standalone),
+               (max-width: 500px) and (hover: none) and (pointer: coarse) and (display-mode: fullscreen),
+               (max-width: 500px) and (hover: none) and (pointer: coarse) and (-webkit-touch-callout: none) {
+            #function-panel {
+                padding: 70px 20px 20px 20px !important; /* Extra top padding for PWA status bar */
+            }
+        }
+        
+        /* Additional iOS PWA detection using safe-area support - mobile devices only */
+        @supports (padding-top: env(safe-area-inset-top)) {
+            @media (max-width: 500px) and (hover: none) and (pointer: coarse) {
+                #function-panel {
+                    padding: calc(70px + env(safe-area-inset-top, 0px)) 20px 20px 20px !important;
+                }
+            }
+        }
 
         
         #function-panel.mobile-open {
@@ -562,6 +580,13 @@
         
         /* Hide Graphiti title on mobile landscape to save vertical space */
         @media (max-width: 900px) and (orientation: landscape) {
+            #graphiti-title {
+                display: none;
+            }
+        }
+        
+        /* Hide Graphiti title on very short desktop windows to save vertical space */
+        @media (max-height: 500px) {
             #graphiti-title {
                 display: none;
             }
