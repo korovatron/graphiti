@@ -853,6 +853,15 @@ class Graphiti {
         this.canvas.addEventListener('mouseup', () => this.handlePointerEnd());
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
         
+        // Global mouse events to handle mouse release outside canvas (fixes sticky panning)
+        document.addEventListener('mouseup', () => this.handlePointerEnd());
+        document.addEventListener('mousemove', (e) => {
+            // Only handle if mouse is down and cursor is outside canvas
+            if (this.input.mouse.down) {
+                this.handlePointerMove(e.clientX, e.clientY);
+            }
+        });
+        
         // Click on canvas to close hamburger menu (desktop only)
         this.canvas.addEventListener('click', (e) => {
             // Only close mobile menu on mobile devices when tapping the graph
@@ -1106,6 +1115,11 @@ class Graphiti {
     }
     
     handlePointerEnd() {
+        // Safety check: prevent duplicate handling if already processed
+        if (!this.input.mouse.down) {
+            return;
+        }
+        
         // Handle badge interaction (tap vs hold based on movement, not time)
         if (this.input.badgeInteraction.targetBadge) {
             const totalMovement = Math.sqrt(

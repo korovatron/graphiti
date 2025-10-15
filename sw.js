@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-fix-grid-spacing-mode-switching-15-10-2025-22:55';
+const CACHE_NAME = 'graphiti-fix-sticky-panning-global-mouseup-15-10-2025-23:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
