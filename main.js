@@ -85,6 +85,16 @@ class Graphiti {
             // Multi-badge persistent tracing system for educational use
             persistentBadges: [], // Array of trace badges: { id, functionId, worldX, worldY, functionColor, screenX, screenY }
             badgeIdCounter: 0, // For generating unique badge IDs
+            // Badge interaction timing for tap vs hold behavior
+            badgeInteraction: {
+                targetBadge: null, // Badge being interacted with
+                startTime: 0, // When interaction started
+                startX: 0, // Starting X position
+                startY: 0, // Starting Y position
+                holdThreshold: 250, // milliseconds - time to distinguish tap vs hold (shorter for better UX)
+                moveThreshold: 15, // pixels - movement that cancels badge interaction
+                isHolding: false // Whether we're in hold mode
+            },
             // Pinch gesture tracking
             pinch: {
                 active: false,
@@ -964,12 +974,36 @@ class Graphiti {
             // Update badge positions for accurate click detection
             this.updateBadgeScreenPositions();
             
-            // First, check if user clicked on an existing badge to remove it
-            const badgeToRemove = this.findBadgeAtScreenPosition(x, y, 25);
-            if (badgeToRemove) {
-                this.removeBadgeById(badgeToRemove.id);
-                return; // Don't start tracing if we removed a badge
+            // First, check if user clicked on an existing badge
+            const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
+            if (targetBadge) {
+                // Immediately enter badge interaction mode with visual feedback
+                this.input.badgeInteraction.targetBadge = targetBadge;
+                this.input.badgeInteraction.startTime = Date.now();
+                this.input.badgeInteraction.startX = x;
+                this.input.badgeInteraction.startY = y;
+                this.input.badgeInteraction.isHolding = true; // Start in hold mode immediately
+                
+                // Remove the original badge right away
+                this.removeBadgeById(targetBadge.id);
+                
+                // Start tracing mode for immediate responsiveness
+                const targetFunction = this.findFunctionById(targetBadge.functionId);
+                if (targetFunction) {
+                    this.input.tracing.active = true;
+                    this.input.tracing.functionId = targetBadge.functionId;
+                    this.input.tracing.worldX = targetBadge.worldX;
+                    this.input.tracing.worldY = targetBadge.worldY;
+                }
+                return; // Don't start normal tracing if we're interacting with a badge
             }
+            
+            // Clear any previous badge interaction state
+            this.input.badgeInteraction.targetBadge = null;
+            this.input.badgeInteraction.startTime = 0;
+            this.input.badgeInteraction.startX = 0;
+            this.input.badgeInteraction.startY = 0;
+            this.input.badgeInteraction.isHolding = false;
             
             // Determine tolerance based on input type (mouse vs touch)
             const tolerance = this.input.touch.active ? 
@@ -995,6 +1029,9 @@ class Graphiti {
         if (this.input.mouse.down && this.currentState === this.states.GRAPHING) {
             const deltaX = x - this.input.lastX;
             const deltaY = y - this.input.lastY;
+            
+            // Badge interaction is now handled immediately in handlePointerStart
+            // All badge interactions start in tracing mode right away
             
             if (this.input.tracing.active) {
                 // Tracing mode - update on every movement for smooth tracing
@@ -1048,6 +1085,31 @@ class Graphiti {
     }
     
     handlePointerEnd() {
+        // Handle badge interaction (tap vs hold based on movement, not time)
+        if (this.input.badgeInteraction.targetBadge) {
+            const totalMovement = Math.sqrt(
+                Math.pow(this.input.mouse.x - this.input.badgeInteraction.startX, 2) + 
+                Math.pow(this.input.mouse.y - this.input.badgeInteraction.startY, 2)
+            );
+            
+            // If user didn't move much and released quickly, it was a tap - don't add new badge
+            if (totalMovement < this.input.badgeInteraction.moveThreshold) {
+                const holdDuration = Date.now() - this.input.badgeInteraction.startTime;
+                if (holdDuration < this.input.badgeInteraction.holdThreshold) {
+                    // Quick tap with minimal movement - just remove the badge (already removed in handlePointerStart)
+                    this.input.tracing.active = false; // Cancel tracing so no new badge is added
+                }
+            }
+            // If significant movement occurred, treat as hold/drag and add new badge at final position
+            
+            // Clear badge interaction state
+            this.input.badgeInteraction.targetBadge = null;
+            this.input.badgeInteraction.startTime = 0;
+            this.input.badgeInteraction.startX = 0;
+            this.input.badgeInteraction.startY = 0;
+            this.input.badgeInteraction.isHolding = false;
+        }
+        
         // If we were dragging and not tracing, ensure final replot happens
         if (this.input.dragging && !this.input.tracing.active) {
             // Final replot to ensure everything is current (though we now replot during panning)
@@ -3126,29 +3188,36 @@ class Graphiti {
                 continue;
             }
             
-            // Draw the persistent badge
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false);
+            // Check if this badge is being held (for visual feedback)
+            const isBeingHeld = this.input.badgeInteraction.targetBadge && 
+                               this.input.badgeInteraction.targetBadge.id === badge.id;
+            
+            // Draw the persistent badge with hold indication
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld);
         }
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false) {
         // Draw the circle indicator
         this.ctx.save();
         
-        // Circle - use function color, slightly larger for active tracing
-        const radius = isActive ? 10 : 8;
-        this.ctx.strokeStyle = '#FFFFFF';
+        // Circle - use function color, slightly larger for active tracing or being held
+        let radius = 8;
+        if (isActive) radius = 10;
+        if (isBeingHeld) radius = 9;
+        
+        this.ctx.strokeStyle = isBeingHeld ? '#FFD700' : '#FFFFFF'; // Gold border when being held
         this.ctx.fillStyle = color;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = isBeingHeld ? 3 : 2; // Thicker border when being held
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, radius, 0, 2 * Math.PI);
         this.ctx.fill();
         this.ctx.stroke();
         
-        // Inner dot
+        // Inner dot - slightly larger when being held
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 2, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, isBeingHeld ? 3 : 2, 0, 2 * Math.PI);
         this.ctx.fill();
         
         // Coordinate label with background
@@ -3179,7 +3248,7 @@ class Graphiti {
         this.ctx.fill();
         
         // Text - position inside the background rectangle with proper alignment
-        this.ctx.fillStyle = '#FFFFFF'; // White text for good contrast on colored background
+        this.ctx.fillStyle = this.getContrastingTextColor(color); // Dynamic text color for optimal contrast
         this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
         this.ctx.textBaseline = 'top'; // Set baseline to top for consistent positioning
         this.ctx.fillText(coordinates, labelX, labelY - textHeight);

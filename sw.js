@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-fix-function-removal-id-error-15-10-2025-20:20';
+const CACHE_NAME = 'graphiti-contrasting-badge-text-15-10-2025-22:05';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
