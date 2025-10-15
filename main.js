@@ -611,6 +611,11 @@ class Graphiti {
             setTimeout(() => {
                 resizeCanvas();
                 this.handleMobileLayout(true); // Force layout re-evaluation on orientation change
+                
+                // iPad Safari bug fix: hamburger disappears after orientation change
+                if (this.isIpad() && !this.isStandalonePWA()) {
+                    this.fixIpadHamburgerVisibility();
+                }
             }, 100);
         });
         
@@ -3685,6 +3690,35 @@ class Graphiti {
         // Use the narrower dimension to determine if we should be in mobile mode
         const narrowDimension = Math.min(window.innerWidth, window.innerHeight);
         return narrowDimension <= 500;
+    }
+
+    isIpad() {
+        // Modern iPad detection that works even when Safari is in "desktop mode"
+        return (
+            navigator.maxTouchPoints > 1 &&
+            /iPad|Macintosh/.test(navigator.userAgent) &&
+            'ontouchend' in document
+        );
+    }
+
+    isStandalonePWA() {
+        // Check if the app is running as a standalone PWA
+        return window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    }
+
+    fixIpadHamburgerVisibility() {
+        // iPad Safari bug fix: hamburger can disappear during orientation changes
+        if (this.isIpad() && !this.isStandalonePWA()) {
+            const hamburgerMenu = document.getElementById('hamburger-menu');
+            if (hamburgerMenu) {
+                // Force visibility and trigger reflow
+                hamburgerMenu.style.display = 'block';
+                hamburgerMenu.style.visibility = 'visible';
+                hamburgerMenu.style.opacity = '1';
+                // Trigger reflow to ensure changes take effect
+                hamburgerMenu.offsetHeight;
+            }
+        }
     }
 
     handleMobileLayout(forceUpdate = false) {

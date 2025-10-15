@@ -426,6 +426,15 @@
             display: none !important;
         }
         
+        /* iPad-specific fixes for orientation change hamburger disappearing bug */
+        @media (hover: none) and (pointer: coarse) and (min-width: 768px) {
+            #hamburger-menu {
+                position: fixed !important; /* More stable positioning on iPad */
+                transform: translateZ(0); /* Force hardware acceleration */
+                will-change: transform; /* Optimize for transforms */
+            }
+        }
+        
         /* Function panel sliding animation for all devices - v2 narrower */
         #function-panel {
             position: fixed !important;
