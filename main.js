@@ -611,13 +611,15 @@ class Graphiti {
             setTimeout(() => {
                 resizeCanvas();
                 this.handleMobileLayout(true); // Force layout re-evaluation on orientation change
-                
-                // iOS Safari browser bug fix: UI elements disappear after orientation change
-                // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
-                if (this.isIOSSafari() && !this.isStandalonePWA()) {
-                    this.fixIOSSafariElementsVisibility();
-                }
             }, 100);
+            
+            // iOS Safari browser bug fix: Run after handleMobileLayout to avoid conflicts
+            // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
+            if (this.isIOSSafari() && !this.isStandalonePWA()) {
+                setTimeout(() => {
+                    this.fixIOSSafariElementsVisibility();
+                }, 150); // Run after handleMobileLayout
+            }
         });
         
         // Additional mobile-specific resize handling
@@ -626,13 +628,15 @@ class Graphiti {
                 setTimeout(() => {
                     resizeCanvas();
                     this.handleMobileLayout(true); // Force layout re-evaluation on screen orientation change
-                    
-                    // iOS Safari browser bug fix: UI elements disappear after orientation change
-                    // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
-                    if (this.isIOSSafari() && !this.isStandalonePWA()) {
-                        this.fixIOSSafariElementsVisibility();
-                    }
                 }, 100);
+                
+                // iOS Safari browser bug fix: Run after handleMobileLayout to avoid conflicts
+                // Affects both iPhone and iPad in Safari browser mode, but not PWA mode
+                if (this.isIOSSafari() && !this.isStandalonePWA()) {
+                    setTimeout(() => {
+                        this.fixIOSSafariElementsVisibility();
+                    }, 150); // Run after handleMobileLayout
+                }
             });
         }
         
@@ -3811,8 +3815,19 @@ class Graphiti {
         const shouldBeMobile = this.isTrueMobile();
         
         // Don't interfere if mobile menu is currently open (user is actively using it)
+        // Special handling for iOS Safari: even with forceUpdate, preserve open panel state
         if (!forceUpdate && functionPanel.classList.contains('mobile-open')) {
             return;
+        }
+        
+        // iOS Safari special case: Don't force close panel during orientation changes
+        if (forceUpdate && this.isIOSSafari() && !this.isStandalonePWA() && 
+            functionPanel.classList.contains('mobile-open')) {
+            // Skip layout changes but ensure hamburger is visible
+            if (shouldBeMobile) {
+                hamburgerMenu.style.display = 'flex';
+            }
+            return; // Preserve panel state on iOS Safari
         }
         
         // Don't show hamburger on title screen regardless of mobile/desktop
