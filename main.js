@@ -513,9 +513,11 @@ class Graphiti {
             const compiledExpression = math.compile(processedExpression);
             
             const points = [];
-            const thetaStep = this.polarSettings.step;
             const thetaMin = this.polarSettings.thetaMin;
             const thetaMax = this.polarSettings.thetaMax;
+            
+            // Calculate dynamic step size to prevent system hangs
+            const thetaStep = this.calculateDynamicPolarStep(thetaMin, thetaMax);
             
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
@@ -562,6 +564,59 @@ class Graphiti {
             console.error('Error parsing polar function:', error);
             // Silent error for better UX during typing - no alert popup
             func.points = [];
+        }
+    }
+    
+    calculateDynamicPolarStep(thetaMin, thetaMax) {
+        // Prevent system hangs by limiting total number of calculation points
+        const MAX_POINTS = 800; // Safe maximum for mobile devices
+        const MIN_STEP = 0.001; // Minimum step for visual quality
+        const DEFAULT_STEP = this.polarSettings.step; // Original step size (0.01)
+        
+        const thetaRange = Math.abs(thetaMax - thetaMin);
+        
+        // Calculate how many points the default step would create
+        const defaultPointCount = thetaRange / DEFAULT_STEP;
+        
+        // If default step creates too many points, increase step size
+        if (defaultPointCount > MAX_POINTS) {
+            const dynamicStep = thetaRange / MAX_POINTS;
+            // Use the larger of dynamic step or minimum step
+            return Math.max(dynamicStep, MIN_STEP);
+        }
+        
+        // For reasonable ranges, use the default step size
+        return DEFAULT_STEP;
+    }
+    
+    resetPolarRange() {
+        // Reset theta range to appropriate defaults based on angle mode
+        const thetaMinInput = document.getElementById('theta-min');
+        const thetaMaxInput = document.getElementById('theta-max');
+        
+        if (this.angleMode === 'degrees') {
+            // Reset to 0 to 360 degrees
+            this.polarSettings.thetaMin = 0;
+            this.polarSettings.thetaMax = 360;
+            
+            if (thetaMinInput) {
+                thetaMinInput.value = '0';
+            }
+            if (thetaMaxInput) {
+                thetaMaxInput.value = '360';
+            }
+        } else {
+            // Reset to 0 to 2π radians (default)
+            this.polarSettings.thetaMin = 0;
+            this.polarSettings.thetaMax = 2 * Math.PI;
+            
+            if (thetaMinInput) {
+                thetaMinInput.value = '0';
+            }
+            if (thetaMaxInput) {
+                const value = (2 * Math.PI).toFixed(6);
+                thetaMaxInput.value = value;
+            }
         }
     }
     
@@ -769,6 +824,11 @@ class Graphiti {
                 // Close the function panel only on mobile devices
                 if (this.isTrueMobile()) {
                     this.closeMobileMenu();
+                }
+                
+                // In polar mode, also reset theta range to appropriate defaults
+                if (this.plotMode === 'polar') {
+                    this.resetPolarRange();
                 }
                 
                 // Use smart reset based on current functions
@@ -2297,8 +2357,9 @@ class Graphiti {
             const processedExpression = func.expression.toLowerCase();
             const compiled = math.compile(processedExpression);
             
-            // Sample more densely for better detection
-            const thetaStep = this.polarSettings.step / 2; // Higher resolution
+            // Use dynamic step sizing for performance with higher resolution
+            const baseThetaStep = this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax);
+            const thetaStep = baseThetaStep / 2; // Higher resolution for better detection
             const thetaMin = this.polarSettings.thetaMin;
             const thetaMax = this.polarSettings.thetaMax;
             
@@ -2393,7 +2454,7 @@ class Graphiti {
             let closestPoint = null;
             let closestDistance = Infinity;
             
-            const thetaStep = this.polarSettings.step;
+            const thetaStep = this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax);
             const thetaMin = this.polarSettings.thetaMin;
             const thetaMax = this.polarSettings.thetaMax;
             
