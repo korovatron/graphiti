@@ -511,10 +511,6 @@
         /* Landscape orientation adjustments - More specific mobile detection */
         @media (max-width: 500px) and (orientation: landscape),
                (max-height: 500px) and (orientation: landscape) {
-            #function-panel {
-                max-width: 280px !important; /* Simplified for iOS compatibility */
-            }
-            
             #hamburger-menu {
                 top: calc(10px + var(--safe-area-top, 0px)) !important;
                 right: calc(10px + var(--safe-area-right, 0px)) !important;
@@ -565,20 +561,6 @@
             z-index: 14;
             display: none;
             pointer-events: auto;
-        }
-        
-        /* Hide Graphiti title on mobile landscape to save vertical space */
-        @media (max-width: 900px) and (orientation: landscape) {
-            #graphiti-title {
-                display: none;
-            }
-        }
-        
-        /* Hide Graphiti title on very short desktop windows to save vertical space */
-        @media (max-height: 500px) {
-            #graphiti-title {
-                display: none;
-            }
         }
     </style>
 </head>
