@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-polar-grid-initialization-fix-15-10-2025-18:00';
+const CACHE_NAME = 'graphiti-ipad-ui-elements-orientation-fix-15-10-2025-18:15';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

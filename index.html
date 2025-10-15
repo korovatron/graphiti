@@ -426,12 +426,22 @@
             display: none !important;
         }
         
-        /* iPad-specific fixes for orientation change hamburger disappearing bug */
+        /* iPad-specific fixes for orientation change UI disappearing bug */
         @media (hover: none) and (pointer: coarse) and (min-width: 768px) {
             #hamburger-menu {
                 position: fixed !important; /* More stable positioning on iPad */
                 transform: translateZ(0); /* Force hardware acceleration */
                 will-change: transform; /* Optimize for transforms */
+            }
+            
+            #function-panel {
+                transform: translateZ(0) !important; /* Force hardware acceleration */
+                will-change: transform, left !important; /* Optimize for transforms */
+            }
+            
+            #mobile-overlay {
+                transform: translateZ(0) !important; /* Force hardware acceleration */
+                will-change: transform !important; /* Optimize for transforms */
             }
         }
         

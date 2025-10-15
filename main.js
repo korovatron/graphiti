@@ -612,9 +612,9 @@ class Graphiti {
                 resizeCanvas();
                 this.handleMobileLayout(true); // Force layout re-evaluation on orientation change
                 
-                // iPad Safari bug fix: hamburger disappears after orientation change
+                // iPad Safari bug fix: UI elements disappear after orientation change
                 if (this.isIpad() && !this.isStandalonePWA()) {
-                    this.fixIpadHamburgerVisibility();
+                    this.fixIpadElementsVisibility();
                 }
             }, 100);
         });
@@ -625,6 +625,11 @@ class Graphiti {
                 setTimeout(() => {
                     resizeCanvas();
                     this.handleMobileLayout(true); // Force layout re-evaluation on screen orientation change
+                    
+                    // iPad Safari bug fix: UI elements disappear after orientation change
+                    if (this.isIpad() && !this.isStandalonePWA()) {
+                        this.fixIpadElementsVisibility();
+                    }
                 }, 100);
             });
         }
@@ -3706,18 +3711,55 @@ class Graphiti {
         return window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
     }
 
-    fixIpadHamburgerVisibility() {
-        // iPad Safari bug fix: hamburger can disappear during orientation changes
+    fixIpadElementsVisibility() {
+        // iPad Safari bug fix: UI elements can disappear during orientation changes
         if (this.isIpad() && !this.isStandalonePWA()) {
-            const hamburgerMenu = document.getElementById('hamburger-menu');
-            if (hamburgerMenu) {
-                // Force visibility and trigger reflow
-                hamburgerMenu.style.display = 'block';
-                hamburgerMenu.style.visibility = 'visible';
-                hamburgerMenu.style.opacity = '1';
-                // Trigger reflow to ensure changes take effect
-                hamburgerMenu.offsetHeight;
-            }
+            // Use multiple attempts with different timings to ensure fix takes effect
+            const attemptFix = () => {
+                const hamburgerMenu = document.getElementById('hamburger-menu');
+                const functionPanel = document.getElementById('function-panel');
+                const mobileOverlay = document.getElementById('mobile-overlay');
+                
+                // Fix hamburger menu visibility
+                if (hamburgerMenu) {
+                    hamburgerMenu.style.display = 'block';
+                    hamburgerMenu.style.visibility = 'visible';
+                    hamburgerMenu.style.opacity = '1';
+                    hamburgerMenu.style.position = 'fixed';
+                    hamburgerMenu.style.zIndex = '20';
+                    // Trigger reflow
+                    hamburgerMenu.offsetHeight;
+                }
+                
+                // Fix function panel visibility if it should be open
+                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                    functionPanel.style.display = 'block';
+                    functionPanel.style.visibility = 'visible';
+                    functionPanel.style.opacity = '1';
+                    functionPanel.style.left = '0';
+                    functionPanel.style.position = 'fixed';
+                    functionPanel.style.zIndex = '15';
+                    // Trigger reflow
+                    functionPanel.offsetHeight;
+                    
+                    // Also ensure overlay is visible when panel is open
+                    if (mobileOverlay) {
+                        mobileOverlay.style.display = 'block';
+                        mobileOverlay.style.visibility = 'visible';
+                        mobileOverlay.style.opacity = '1';
+                        mobileOverlay.style.zIndex = '14';
+                        mobileOverlay.offsetHeight;
+                    }
+                }
+            };
+            
+            // Immediate fix
+            attemptFix();
+            
+            // Delayed fix attempts to catch any elements that might reappear later
+            setTimeout(attemptFix, 50);
+            setTimeout(attemptFix, 200);
+            setTimeout(attemptFix, 500);
         }
     }
 
