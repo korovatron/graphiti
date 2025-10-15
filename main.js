@@ -3732,13 +3732,17 @@ class Graphiti {
                 const functionPanel = document.getElementById('function-panel');
                 const mobileOverlay = document.getElementById('mobile-overlay');
                 
-                // Fix hamburger menu visibility
+                // Fix hamburger menu visibility and layout
                 if (hamburgerMenu) {
-                    hamburgerMenu.style.display = 'block';
+                    hamburgerMenu.style.display = 'flex'; // Important: flex not block for proper line spacing
                     hamburgerMenu.style.visibility = 'visible';
                     hamburgerMenu.style.opacity = '1';
                     hamburgerMenu.style.position = 'fixed';
                     hamburgerMenu.style.zIndex = '20';
+                    // Restore flexbox properties that might get corrupted
+                    hamburgerMenu.style.flexDirection = 'column';
+                    hamburgerMenu.style.justifyContent = 'center';
+                    hamburgerMenu.style.alignItems = 'center';
                     // Trigger reflow
                     hamburgerMenu.offsetHeight;
                 }
