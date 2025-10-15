@@ -122,7 +122,6 @@ class Graphiti {
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.rangeTimer = null; // For debouncing range updates
-        this.panTimer = null; // For debouncing pan replotting
         
         // Animation
         this.lastFrameTime = 0;
@@ -1036,8 +1035,8 @@ class Graphiti {
                     // Update range inputs to reflect the pan (immediate for responsiveness)
                     this.updateRangeInputs();
                     
-                    // Debounce the expensive function re-plotting
-                    this.debouncePanReplot();
+                    // Immediate replot for smooth visual feedback (consistent with polar mode)
+                    this.replotAllFunctions();
                 }
             }
             
@@ -1049,31 +1048,11 @@ class Graphiti {
         this.input.mouse.y = y;
     }
     
-    debouncePanReplot() {
-        // Clear existing timer
-        if (this.panTimer) {
-            clearTimeout(this.panTimer);
-        }
-        
-        // Set new timer for delayed re-plotting
-        this.panTimer = setTimeout(() => {
-            this.replotAllFunctions();
-            this.panTimer = null;
-        }, 100); // 100ms delay - responsive but not overwhelming
-    }
-    
     handlePointerEnd() {
-        // If we were dragging, ensure final replot happens immediately
-        if (this.input.dragging) {
-            // Clear any pending debounced replot
-            if (this.panTimer) {
-                clearTimeout(this.panTimer);
-                this.panTimer = null;
-            }
-            // Do immediate final replot if not tracing
-            if (!this.input.tracing.active) {
-                this.replotAllFunctions();
-            }
+        // If we were dragging and not tracing, ensure final replot happens
+        if (this.input.dragging && !this.input.tracing.active) {
+            // Final replot to ensure everything is current (though we now replot during panning)
+            this.replotAllFunctions();
         }
         
         // Exit tracing mode - save state for persistent display

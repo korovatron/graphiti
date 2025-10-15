@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-ios-safari-hamburger-lines-fix-15-10-2025-19:00';
+const CACHE_NAME = 'graphiti-remove-cartesian-pan-debouncing-15-10-2025-19:15';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
