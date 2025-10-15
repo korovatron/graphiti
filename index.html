@@ -444,18 +444,16 @@
         }
         
         /* Mobile PWA mode - extra top padding for status bar/notch clearance */
-        /* Only applies to actual mobile devices in PWA mode, not narrow desktop windows */
-        @media (max-width: 500px) and (hover: none) and (pointer: coarse) and (display-mode: standalone),
-               (max-width: 500px) and (hover: none) and (pointer: coarse) and (display-mode: fullscreen),
-               (max-width: 500px) and (hover: none) and (pointer: coarse) and (-webkit-touch-callout: none) {
+        /* Apply to mobile devices in PWA mode only */
+        @media (max-width: 500px) and (display-mode: standalone) {
             #function-panel {
                 padding: 70px 20px 20px 20px !important; /* Extra top padding for PWA status bar */
             }
         }
         
-        /* Additional iOS PWA detection using safe-area support - mobile devices only */
+        /* Additional iOS PWA detection using safe-area support */
         @supports (padding-top: env(safe-area-inset-top)) {
-            @media (max-width: 500px) and (hover: none) and (pointer: coarse) {
+            @media (max-width: 500px) and (display-mode: standalone) {
                 #function-panel {
                     padding: calc(70px + env(safe-area-inset-top, 0px)) 20px 20px 20px !important;
                 }
