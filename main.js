@@ -120,6 +120,10 @@ class Graphiti {
         this.cartesianFunctions = [];
         this.polarFunctions = [];
         this.nextFunctionId = 1;
+        
+        // Track when user intentionally clears all functions (don't auto-repopulate)
+        this.cartesianFunctionsCleared = false;
+        this.polarFunctionsCleared = false;
         this.functionColors = [
             '#4A90E2', '#E74C3C', '#27AE60', '#F39C12', 
             '#9B59B6', '#1ABC9C', '#E67E22', '#34495E',
@@ -191,6 +195,14 @@ class Graphiti {
         };
         
         this.getCurrentFunctions().push(func);
+        
+        // Reset cleared flag when user adds functions back
+        if (this.plotMode === 'cartesian') {
+            this.cartesianFunctionsCleared = false;
+        } else {
+            this.polarFunctionsCleared = false;
+        }
+        
         this.createFunctionUI(func);
         
         // If expression is provided, plot it immediately
@@ -338,6 +350,15 @@ class Graphiti {
         // Remove from the appropriate function array
         this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
         this.polarFunctions = this.polarFunctions.filter(f => f.id !== id);
+        
+        // Track when user intentionally clears all functions in current mode
+        if (this.getCurrentFunctions().length === 0) {
+            if (this.plotMode === 'cartesian') {
+                this.cartesianFunctionsCleared = true;
+            } else {
+                this.polarFunctionsCleared = true;
+            }
+        }
         
         const funcDiv = document.querySelector(`[data-function-id="${id}"]`);
         if (funcDiv) {
@@ -1714,7 +1735,11 @@ class Graphiti {
         this.refreshFunctionUI();
 
         // Add pre-populated functions if the current mode has no functions
-        if (this.getCurrentFunctions().length === 0) {
+        // BUT only if user hasn't intentionally cleared all functions
+        const isCartesian = this.plotMode === 'cartesian';
+        const wasCleared = isCartesian ? this.cartesianFunctionsCleared : this.polarFunctionsCleared;
+        
+        if (this.getCurrentFunctions().length === 0 && !wasCleared) {
             if (this.plotMode === 'cartesian') {
                 this.addFunction('sin(2x + pi)');
                 this.addFunction('e^(-x^2)');
@@ -2892,8 +2917,8 @@ class Graphiti {
                     if (this.plotMode === 'polar') {
                         label = this.formatNumber(x);
                     } else {
-                        const hasRegularTrig = this.containsRegularTrigFunctions();
-                        const hasInverseTrig = this.containsInverseTrigFunctions();
+                        const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+                        const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
                         const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
                         label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
                     }
@@ -2927,8 +2952,8 @@ class Graphiti {
                     if (this.plotMode === 'polar') {
                         label = this.formatNumber(y);
                     } else {
-                        const hasRegularTrig = this.containsRegularTrigFunctions();
-                        const hasInverseTrig = this.containsInverseTrigFunctions();
+                        const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+                        const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
                         const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
                         label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
                     }
@@ -3446,6 +3471,25 @@ class Graphiti {
         );
     }
     
+    // Check trig functions in current mode only (for axis formatting)
+    currentModeContainsRegularTrigFunctions() {
+        const regularTrigRegex = /\b(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)\s*\(/i;
+        return this.getCurrentFunctions().some(func => 
+            func.enabled && 
+            func.expression && 
+            regularTrigRegex.test(func.expression)
+        );
+    }
+    
+    currentModeContainsInverseTrigFunctions() {
+        const inverseTrigRegex = /\b(asin|acos|atan|asec|acsc|acot)\s*\(/i;
+        return this.getCurrentFunctions().some(func => 
+            func.enabled && 
+            func.expression && 
+            inverseTrigRegex.test(func.expression)
+        );
+    }
+    
     getSmartResetViewport() {
         // Use different logic for polar vs cartesian modes
         if (this.plotMode === 'polar') {
@@ -3541,7 +3585,7 @@ class Graphiti {
     }
     
     getTrigAwareXGridSpacing() {
-        if (!this.containsRegularTrigFunctions()) {
+        if (!this.currentModeContainsRegularTrigFunctions()) {
             return this.getXGridSpacing(); // Use normal spacing if no regular trig functions
         }
         
@@ -3619,7 +3663,7 @@ class Graphiti {
     }
 
     getTrigAwareYGridSpacing() {
-        if (!this.containsInverseTrigFunctions()) {
+        if (!this.currentModeContainsInverseTrigFunctions()) {
             return this.getYGridSpacing(); // Use normal spacing if no inverse trig functions
         }
         
@@ -3753,7 +3797,7 @@ class Graphiti {
     }
     
     getTrigAwareXLabelSpacing() {
-        if (!this.containsRegularTrigFunctions()) {
+        if (!this.currentModeContainsRegularTrigFunctions()) {
             return this.getXLabelSpacing(); // Use normal spacing if no regular trig functions
         }
         
@@ -3778,7 +3822,7 @@ class Graphiti {
     }
     
     getTrigAwareYLabelSpacing() {
-        if (!this.containsInverseTrigFunctions()) {
+        if (!this.currentModeContainsInverseTrigFunctions()) {
             return this.getYLabelSpacing(); // Use normal spacing if no inverse trig functions
         }
         

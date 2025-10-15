@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-larger-badge-text-classroom-15-10-2025-22:40';
+const CACHE_NAME = 'graphiti-fix-grid-spacing-mode-switching-15-10-2025-22:55';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
