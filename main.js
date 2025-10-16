@@ -139,6 +139,12 @@ class Graphiti {
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
         
+        // Turning point detection
+        this.turningPoints = []; // Store detected turning points (maxima/minima)
+        this.showTurningPoints = true; // Toggle for turning point display (on by default)
+        this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
+        this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
+        
         // Animation
         this.lastFrameTime = 0;
         this.deltaTime = 0;
@@ -220,6 +226,11 @@ class Graphiti {
             if (this.showIntersections) {
                 this.intersections = this.findIntersections();
             }
+            
+            // Update turning points after adding this function
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
         }
     }
     
@@ -268,6 +279,11 @@ class Graphiti {
             // Recalculate intersections with the new function state
             if (this.showIntersections) {
                 this.intersections = this.findIntersections();
+            }
+            
+            // Recalculate turning points with the new function state
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
             }
         });
         
@@ -362,6 +378,11 @@ class Graphiti {
             // Update intersections after plotting this function
             if (this.showIntersections) {
                 this.intersections = this.findIntersections();
+            }
+            
+            // Update turning points after plotting this function
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
             }
             
             // Update UI to show success (remove any error styling)
@@ -678,6 +699,16 @@ class Graphiti {
             }));
         }
         
+        // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
+        if (!this.isViewportChanging && this.showTurningPoints && this.turningPoints.length > 0) {
+            this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
+                x: turningPoint.x,
+                y: turningPoint.y,
+                type: turningPoint.type,
+                func: turningPoint.func
+            }));
+        }
+        
         // Mark viewport as actively changing
         this.isViewportChanging = true;
         
@@ -686,12 +717,16 @@ class Graphiti {
             clearTimeout(this.intersectionDebounceTimer);
         }
         
-        // Set new timer to recalculate intersections after user stops pan/zoom
+        // Set new timer to recalculate intersections and turning points after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
             this.frozenIntersectionBadges = []; // Clear frozen badges
+            this.frozenTurningPointBadges = []; // Clear frozen turning point badges
             if (this.showIntersections) {
                 this.intersections = this.findIntersections();
+            }
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
             }
         }, 200); // 200ms delay provides smooth experience
     }
@@ -1017,6 +1052,7 @@ class Graphiti {
         const addFunctionButton = document.getElementById('add-function');
         const resetViewButton = document.getElementById('reset-view');
         const intersectionToggleButton = document.getElementById('intersection-toggle');
+        const turningPointsToggleButton = document.getElementById('turning-points-toggle');
         const xMinInput = document.getElementById('x-min');
         const xMaxInput = document.getElementById('x-max');
         const yMinInput = document.getElementById('y-min');
@@ -1172,6 +1208,41 @@ class Graphiti {
                 }
                 
                 // Redraw to show/hide intersection markers
+                this.draw();
+            });
+        }
+        
+        // Turning Points Toggle
+        if (turningPointsToggleButton) {
+            turningPointsToggleButton.addEventListener('click', () => {
+                // Don't allow toggling in polar mode
+                if (this.plotMode === 'polar') {
+                    return;
+                }
+                
+                // Toggle turning point detection
+                this.showTurningPoints = !this.showTurningPoints;
+                
+                // Save state for Cartesian mode
+                this.showTurningPointsCartesian = this.showTurningPoints;
+                
+                // Update button visual state
+                this.updateTurningPointsToggleButton();
+                
+                if (this.showTurningPoints) {
+                    // Recalculate and show turning points
+                    this.turningPoints = this.findTurningPoints();
+                } else {
+                    // Clear turning points and badges
+                    this.clearTurningPoints();
+                }
+                
+                // Close the function panel only on mobile devices
+                if (this.isTrueMobile()) {
+                    this.closeMobileMenu();
+                }
+                
+                // Redraw to show/hide turning point markers
                 this.draw();
             });
         }
@@ -1407,6 +1478,14 @@ class Graphiti {
             if (tappedIntersection) {
                 // Handle intersection tap and exit early
                 this.handleIntersectionTap(tappedIntersection, x, y);
+                return; // Don't process any other input logic
+            }
+            
+            // Third, check for turning point marker tap (only if no intersection was clicked)
+            const tappedTurningPoint = this.findTurningPointAtScreenPoint(x, y);
+            if (tappedTurningPoint) {
+                // Handle turning point tap and exit early
+                this.handleTurningPointTap(tappedTurningPoint, x, y);
                 return; // Don't process any other input logic
             }
             
@@ -2085,6 +2164,17 @@ class Graphiti {
         // Clear all badges when switching modes since coordinate systems are different
         this.clearAllBadges();
         
+        // Handle turning points state when switching modes
+        if (this.plotMode === 'cartesian') {
+            // Switching from Cartesian to Polar: save state and disable
+            this.showTurningPointsCartesian = this.showTurningPoints;
+            this.showTurningPoints = false;
+            this.turningPoints = [];
+        } else {
+            // Switching from Polar to Cartesian: restore saved state
+            this.showTurningPoints = this.showTurningPointsCartesian;
+        }
+        
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
         // Update UI
@@ -2127,6 +2217,9 @@ class Graphiti {
             polarRanges.style.display = this.plotMode === 'polar' ? 'flex' : 'none';
             polarOptions.style.display = this.plotMode === 'polar' ? 'block' : 'none';
         }
+        
+        // Update turning points button state
+        this.updateTurningPointsToggleButton();
         
         // Clear existing function UI and recreate for current mode
         this.refreshFunctionUI();
@@ -2270,8 +2363,16 @@ class Graphiti {
                 this.intersections = this.findIntersections();
             }
             
+            // Calculate initial turning points
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
+            
             // Initialize intersection toggle button state
             this.updateIntersectionToggleButton();
+            
+            // Initialize turning points toggle button state
+            this.updateTurningPointsToggleButton();
         }
         // Open the function panel by default so users can start immediately
         // Add a small delay on mobile to prevent touch event conflicts
@@ -2341,10 +2442,10 @@ class Graphiti {
             functionPanel.classList.add('mobile-open');
         }
         
-        // Only show overlay on actual mobile devices
-        if (this.isTrueMobile() && mobileOverlay) {
-            mobileOverlay.style.display = 'block';
-        }
+        // Overlay disabled - no dimming of graph area
+        // if (this.isTrueMobile() && mobileOverlay) {
+        //     mobileOverlay.style.display = 'block';
+        // }
     }
     
     closeMobileMenu() {
@@ -2369,7 +2470,8 @@ class Graphiti {
                 }, 300);
             }
         }
-        if (mobileOverlay) mobileOverlay.style.display = 'none';
+        // Overlay disabled - no dimming management needed
+        // if (mobileOverlay) mobileOverlay.style.display = 'none';
     }
     
     toggleTheme() {
@@ -2634,7 +2736,7 @@ class Graphiti {
     }
     
     // Badge management methods for multi-badge tracing system
-    addTraceBadge(functionId, worldX, worldY, functionColor, customText = null) {
+    addTraceBadge(functionId, worldX, worldY, functionColor, customText = null, badgeType = null) {
         const badge = {
             id: this.input.badgeIdCounter++,
             functionId: functionId,
@@ -2642,6 +2744,7 @@ class Graphiti {
             worldY: worldY,
             functionColor: functionColor,
             customText: customText, // For intersection badges
+            badgeType: badgeType, // For turning point badges (maximum, minimum, etc.)
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -2663,6 +2766,192 @@ class Graphiti {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== null);
         // Also clear the intersection markers themselves
         this.intersections = [];
+    }
+    
+    // ================================
+    // TURNING POINT DETECTION METHODS
+    // ================================
+    
+    findTurningPoints() {
+        // Early exit if turning point detection is disabled or in polar mode
+        if (!this.showTurningPoints || this.plotMode === 'polar') {
+            return [];
+        }
+        
+        const turningPoints = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        
+        for (const func of enabledFunctions) {
+            try {
+                // Get symbolic derivative using math.js
+                const derivative = math.derivative(func.expression, 'x');
+                const derivativeStr = derivative.toString();
+                
+                // Also get second derivative for classification
+                const secondDerivative = math.derivative(derivative, 'x');
+                const secondDerivativeStr = secondDerivative.toString();
+                
+                // Find turning points by finding roots of f'(x) = 0
+                const functionTurningPoints = this.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr);
+                turningPoints.push(...functionTurningPoints);
+                
+            } catch (error) {
+                console.warn(`Could not find turning points for function ${func.expression}:`, error);
+                // Skip this function if derivative calculation fails
+                continue;
+            }
+        }
+        
+        return turningPoints;
+    }
+    
+    findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr) {
+        const turningPoints = [];
+        
+        // Get current viewport bounds for searching
+        const xMin = this.plotMode === 'polar' ? -10 : this.viewport.minX;
+        const xMax = this.plotMode === 'polar' ? 10 : this.viewport.maxX;
+        
+        // Use numerical method to find roots of f'(x) = 0
+        const roots = this.findRootsInRange(derivativeStr, xMin, xMax);
+        
+        for (const x of roots) {
+            try {
+                // Calculate y value at this x
+                const y = math.evaluate(func.expression, {x: x});
+                
+                // Classify using second derivative test
+                const secondDerivValue = math.evaluate(secondDerivativeStr, {x: x});
+                let type = 'inflection'; // fallback
+                
+                if (Math.abs(secondDerivValue) > 1e-10) { // avoid numerical noise
+                    type = secondDerivValue > 0 ? 'minimum' : 'maximum';
+                }
+                
+                // Only add if point is reasonable (not NaN, finite, etc.)
+                if (isFinite(x) && isFinite(y)) {
+                    turningPoints.push({
+                        x: x,
+                        y: y,
+                        func: func,
+                        type: type, // 'minimum', 'maximum', or 'inflection'
+                        derivative: derivativeStr,
+                        secondDerivative: secondDerivativeStr
+                    });
+                }
+            } catch (error) {
+                // Skip this root if evaluation fails
+                continue;
+            }
+        }
+        
+        return turningPoints;
+    }
+    
+    findRootsInRange(expression, xMin, xMax, steps = 200) {
+        // Simple numerical root finding using sign changes
+        const roots = [];
+        const stepSize = (xMax - xMin) / steps;
+        
+        // Special case: check if x=0 is in range and if derivative is approximately 0 there
+        if (xMin <= 0 && xMax >= 0) {
+            try {
+                const valueAtZero = math.evaluate(expression, {x: 0});
+                if (Math.abs(valueAtZero) < 1e-10) {
+                    roots.push(0);
+                }
+            } catch {
+                // Ignore if evaluation fails
+            }
+        }
+        
+        let prevX = xMin;
+        let prevValue;
+        
+        try {
+            prevValue = math.evaluate(expression, {x: prevX});
+        } catch {
+            prevValue = NaN;
+        }
+        
+        for (let i = 1; i <= steps; i++) {
+            const currentX = xMin + i * stepSize;
+            let currentValue;
+            
+            try {
+                currentValue = math.evaluate(expression, {x: currentX});
+            } catch {
+                currentValue = NaN;
+            }
+            
+            // Check for sign change (indicating a root)
+            if (isFinite(prevValue) && isFinite(currentValue) && 
+                prevValue * currentValue < 0) {
+                
+                // Use bisection method to refine the root
+                const root = this.bisectionMethod(expression, prevX, currentX);
+                if (root !== null && !roots.some(r => Math.abs(r - root) < 1e-6)) {
+                    roots.push(root);
+                }
+            }
+            
+            prevX = currentX;
+            prevValue = currentValue;
+        }
+        
+        return roots;
+    }
+    
+    bisectionMethod(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
+        try {
+            let fa = math.evaluate(expression, {x: a});
+            let fb = math.evaluate(expression, {x: b});
+            
+            if (fa * fb > 0) {
+                return null; // No root in interval
+            }
+            
+            for (let i = 0; i < maxIterations; i++) {
+                const c = (a + b) / 2;
+                const fc = math.evaluate(expression, {x: c});
+                
+                if (Math.abs(fc) < tolerance || Math.abs(b - a) < tolerance) {
+                    return c;
+                }
+                
+                if (fa * fc < 0) {
+                    b = c;
+                    fb = fc;
+                } else {
+                    a = c;
+                    fa = fc;
+                }
+            }
+            
+            return (a + b) / 2; // Return best approximation
+        } catch {
+            return null;
+        }
+    }
+    
+    clearTurningPoints() {
+        this.turningPoints = [];
+        this.frozenTurningPointBadges = [];
+    }
+    
+    updateTurningPointsToggleButton() {
+        const button = document.getElementById('turning-points-toggle');
+        if (button) {
+            if (this.plotMode === 'polar') {
+                // Disabled in polar mode
+                button.style.opacity = '0.3';
+                button.style.pointerEvents = 'none';
+            } else {
+                // Normal behavior in Cartesian mode
+                button.style.opacity = this.showTurningPoints ? '1' : '0.6';
+                button.style.pointerEvents = 'auto';
+            }
+        }
     }
     
     clearAllBadges() {
@@ -2976,6 +3265,17 @@ class Graphiti {
             } else if (!this.isViewportChanging && this.intersections.length > 0) {
                 // When viewport is stable, show actual intersection markers
                 this.drawIntersectionMarkers();
+            }
+        }
+        
+        // Draw turning point markers if enabled and viewport is stable
+        if (this.showTurningPoints) {
+            if (this.isViewportChanging && this.frozenTurningPointBadges.length > 0) {
+                // During viewport changes, show frozen turning point badges for visual continuity
+                this.drawFrozenTurningPointBadges();
+            } else if (!this.isViewportChanging && this.turningPoints.length > 0) {
+                // When viewport is stable, show actual turning point markers
+                this.drawTurningPointMarkers();
             }
         }
         
@@ -3589,15 +3889,53 @@ class Graphiti {
     }
 
     drawIntersectionMarkers() {
+        // Convert to screen coordinates and filter by viewport, then apply density culling
+        const markersInViewport = [];
+        
         for (const intersection of this.intersections) {
             const screenPos = this.worldToScreen(intersection.x, intersection.y);
             
-            // Only draw if within viewport
+            // Only consider markers within viewport
             if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
                 screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
                 
-                this.drawIntersectionMarker(screenPos.x, screenPos.y, intersection);
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    intersection: intersection
+                });
             }
+        }
+        
+        // Apply density-based culling: skip markers too close to each other
+        const minDistance = 40; // Minimum pixel distance between markers
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Check if this marker is too close to any already accepted marker
+            for (const accepted of culledMarkers) {
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            this.drawIntersectionMarker(marker.screenX, marker.screenY, marker.intersection);
         }
     }
     
@@ -3690,6 +4028,168 @@ class Graphiti {
         return null;
     }
     
+    // ================================
+    // TURNING POINT RENDERING METHODS
+    // ================================
+    
+    drawTurningPointMarkers() {
+        // Convert to screen coordinates and filter by viewport, then apply density culling
+        const markersInViewport = [];
+        
+        for (const turningPoint of this.turningPoints) {
+            const screenPos = this.worldToScreen(turningPoint.x, turningPoint.y);
+            
+            // Only consider markers within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    turningPoint: turningPoint
+                });
+            }
+        }
+        
+        // Apply density-based culling: skip markers too close to each other
+        const minDistance = 40; // Minimum pixel distance between markers
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Check if this marker is too close to any already accepted marker
+            for (const accepted of culledMarkers) {
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            this.drawTurningPointMarker(marker.screenX, marker.screenY, marker.turningPoint);
+        }
+    }
+    
+    drawTurningPointMarker(screenX, screenY, turningPoint) {
+        // Draw a marker with color coding: green for max, blue for min
+        this.ctx.save();
+        
+        // Outer circle (white/light background for contrast)
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        // Inner circle with color coding
+        let color;
+        switch (turningPoint.type) {
+            case 'maximum':
+                color = 'rgba(255, 140, 0, 0.8)'; // Orange for maximum
+                break;
+            case 'minimum':
+                color = 'rgba(255, 20, 147, 0.8)'; // Deep pink for minimum
+                break;
+            default:
+                color = 'rgba(128, 128, 128, 0.8)'; // Gray for inflection points
+        }
+        
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        this.ctx.restore();
+    }
+    
+    drawFrozenTurningPointBadges() {
+        for (const frozenBadge of this.frozenTurningPointBadges) {
+            const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+            
+            // Only draw if within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                // Draw as simple markers (same as regular turning points)
+                this.ctx.save();
+                
+                // Outer circle (white/light background for contrast)
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                // Inner circle with same color coding as regular turning points
+                let color;
+                switch (frozenBadge.type) {
+                    case 'maximum':
+                        color = 'rgba(255, 140, 0, 0.8)'; // Orange for maximum (matches live markers)
+                        break;
+                    case 'minimum':
+                        color = 'rgba(255, 20, 147, 0.8)'; // Deep pink for minimum (matches live markers)
+                        break;
+                    default:
+                        color = 'rgba(128, 128, 128, 0.8)'; // Gray for inflection points (matches live markers)
+                }
+                
+                this.ctx.fillStyle = color;
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            }
+        }
+    }
+    
+    findTurningPointAtScreenPoint(screenX, screenY) {
+        const tolerance = 15; // pixels - tolerance for tap detection
+        
+        // First check regular turning points (when viewport is stable)
+        if (!this.isViewportChanging) {
+            for (const turningPoint of this.turningPoints) {
+                const turningPointScreen = this.worldToScreen(turningPoint.x, turningPoint.y);
+                const distance = Math.sqrt(
+                    Math.pow(screenX - turningPointScreen.x, 2) + 
+                    Math.pow(screenY - turningPointScreen.y, 2)
+                );
+                
+                if (distance <= tolerance) {
+                    return turningPoint;
+                }
+            }
+        }
+        
+        // During viewport changes, check frozen turning point badges
+        if (this.isViewportChanging && this.frozenTurningPointBadges.length > 0) {
+            for (const frozenBadge of this.frozenTurningPointBadges) {
+                const badgeScreen = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+                const distance = Math.sqrt(
+                    Math.pow(screenX - badgeScreen.x, 2) + 
+                    Math.pow(screenY - badgeScreen.y, 2)
+                );
+                
+                if (distance <= tolerance) {
+                    return frozenBadge;
+                }
+            }
+        }
+        
+        return null;
+    }
+    
     handleIntersectionTap(intersection, screenX, screenY) {
         // Refine intersection using numerical method for precision
         const refinedIntersection = this.refineIntersection(intersection);
@@ -3759,6 +4259,45 @@ class Graphiti {
             // No custom text - will show coordinates
         );
     }
+    
+    // ================================
+    // TURNING POINT TAP HANDLING
+    // ================================
+    
+    handleTurningPointTap(turningPoint, screenX, screenY) {
+        // Create a badge at the turning point with classification
+        this.addTurningPointBadge(
+            turningPoint.x,
+            turningPoint.y,
+            turningPoint.func,
+            turningPoint.type
+        );
+    }
+    
+    addTurningPointBadge(worldX, worldY, func, type) {
+        // Use color coding for turning point badges
+        let badgeColor;
+        
+        switch (type) {
+            case 'maximum':
+                badgeColor = '#ff8c00'; // Orange for maximum (matches marker)
+                break;
+            case 'minimum':
+                badgeColor = '#ff1493'; // Deep pink for minimum (matches marker)
+                break;
+            default:
+                badgeColor = '#808080'; // Gray for inflection/other (matches marker)
+        }
+        
+        this.addTraceBadge(
+            func.id, // Associate with the function
+            worldX,
+            worldY,
+            badgeColor,
+            null, // No custom text - let system format coordinates dynamically
+            type  // Badge type for display (maximum, minimum, etc.)
+        );
+    }
 
     drawActiveTracingIndicator() {
         if (!this.input.tracing.active) return;
@@ -3795,11 +4334,11 @@ class Graphiti {
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType);
         }
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -3823,7 +4362,29 @@ class Graphiti {
         this.ctx.fill();
         
         // Coordinate label with background
-        const labelText = customText || this.formatCoordinates(worldX, worldY);
+        let labelText;
+        if (customText) {
+            labelText = customText;
+        } else if (badgeType) {
+            // Turning point badge with type-specific label
+            const coords = this.formatCoordinates(worldX, worldY);
+            switch (badgeType) {
+                case 'maximum':
+                    labelText = `Local Maximum: ${coords}`;
+                    break;
+                case 'minimum':
+                    labelText = `Local Minimum: ${coords}`;
+                    break;
+                default:
+                    labelText = `Turning Point: ${coords}`;
+            }
+        } else if (isActive) {
+            // Active tracing badge
+            labelText = this.formatCoordinates(worldX, worldY);
+        } else {
+            // Regular badge (intersections, etc.)
+            labelText = this.formatCoordinates(worldX, worldY);
+        }
         
         this.ctx.font = '16px Arial, sans-serif'; // Larger font for classroom visibility
         const textMetrics = this.ctx.measureText(labelText);
@@ -3856,6 +4417,14 @@ class Graphiti {
         this.ctx.fillText(labelText, labelX, labelY - textHeight);
         
         this.ctx.restore();
+    }
+    
+    // Start tracing mode at a specific world position
+    startTracingAtWorldPosition(worldX, worldY, targetFunction) {
+        this.input.tracing.active = true;
+        this.input.tracing.functionId = targetFunction.id;
+        this.input.tracing.worldX = worldX;
+        this.input.tracing.worldY = worldY;
     }
     
     // Legacy method kept for compatibility - now redirects to new methods
