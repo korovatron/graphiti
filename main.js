@@ -2783,8 +2783,11 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
+                // Make function names case-insensitive for derivative calculation (same as evaluateFunction)
+                const processedExpression = func.expression.toLowerCase();
+                
                 // Get symbolic derivative using math.js
-                const derivative = math.derivative(func.expression, 'x');
+                const derivative = math.derivative(processedExpression, 'x');
                 const derivativeStr = derivative.toString();
                 
                 // Also get second derivative for classification

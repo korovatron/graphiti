@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-degree-mode-turning-points-fix-16-10-2025-22:46';
+const CACHE_NAME = 'graphiti-case-insensitive-derivatives-16-10-2025-22:47';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
