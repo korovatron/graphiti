@@ -4084,7 +4084,7 @@ class Graphiti {
     }
     
     drawTurningPointMarker(screenX, screenY, turningPoint) {
-        // Draw a marker with color coding: green for max, blue for min
+        // Draw a marker with same neutral color as intersections
         this.ctx.save();
         
         // Outer circle (white/light background for contrast)
@@ -4093,20 +4093,8 @@ class Graphiti {
         this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
         this.ctx.fill();
         
-        // Inner circle with color coding
-        let color;
-        switch (turningPoint.type) {
-            case 'maximum':
-                color = 'rgba(255, 140, 0, 0.8)'; // Orange for maximum
-                break;
-            case 'minimum':
-                color = 'rgba(255, 20, 147, 0.8)'; // Deep pink for minimum
-                break;
-            default:
-                color = 'rgba(128, 128, 128, 0.8)'; // Gray for inflection points
-        }
-        
-        this.ctx.fillStyle = color;
+        // Inner circle (same neutral color as intersections)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
         this.ctx.fill();
@@ -4122,7 +4110,7 @@ class Graphiti {
             if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
                 screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
                 
-                // Draw as simple markers (same as regular turning points)
+                // Draw as simple markers (same neutral color as intersections)
                 this.ctx.save();
                 
                 // Outer circle (white/light background for contrast)
@@ -4131,20 +4119,8 @@ class Graphiti {
                 this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
-                // Inner circle with same color coding as regular turning points
-                let color;
-                switch (frozenBadge.type) {
-                    case 'maximum':
-                        color = 'rgba(255, 140, 0, 0.8)'; // Orange for maximum (matches live markers)
-                        break;
-                    case 'minimum':
-                        color = 'rgba(255, 20, 147, 0.8)'; // Deep pink for minimum (matches live markers)
-                        break;
-                    default:
-                        color = 'rgba(128, 128, 128, 0.8)'; // Gray for inflection points (matches live markers)
-                }
-                
-                this.ctx.fillStyle = color;
+                // Inner circle (same neutral color as intersections)
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.beginPath();
                 this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
                 this.ctx.fill();
@@ -4280,10 +4256,10 @@ class Graphiti {
         
         switch (type) {
             case 'maximum':
-                badgeColor = '#ff8c00'; // Orange for maximum (matches marker)
+                badgeColor = '#FFD700'; // Gold for maximum (matches marker)
                 break;
             case 'minimum':
-                badgeColor = '#ff1493'; // Deep pink for minimum (matches marker)
+                badgeColor = '#8A2BE2'; // Blue violet for minimum (matches marker)
                 break;
             default:
                 badgeColor = '#808080'; // Gray for inflection/other (matches marker)
