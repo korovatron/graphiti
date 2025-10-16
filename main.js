@@ -4523,7 +4523,18 @@ class Graphiti {
         }
         
         // Use context-aware precision for all numbers
-        return value.toFixed(precision);
+        const formatted = value.toFixed(precision);
+        
+        // If all decimal places are zeros, display as integer
+        // e.g. "2.00" becomes "2", but "2.01" stays "2.01"
+        if (precision > 0 && formatted.includes('.')) {
+            const [integerPart, decimalPart] = formatted.split('.');
+            if (decimalPart.match(/^0+$/)) {
+                return integerPart;
+            }
+        }
+        
+        return formatted;
     }
     
     getGridSpacing() {
