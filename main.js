@@ -2935,8 +2935,14 @@ class Graphiti {
     }
     
     clearTurningPoints() {
+        // Clear turning point markers and frozen badges
         this.turningPoints = [];
         this.frozenTurningPointBadges = [];
+        
+        // Remove all turning point badges (those with badgeType indicating turning points)
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+            !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum')
+        );
     }
     
     updateTurningPointsToggleButton() {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-intersection-toggle-improvements-16-10-2025-21:53';
+const CACHE_NAME = 'graphiti-intersection-toggle-improvements-16-10-2025-22:08';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
