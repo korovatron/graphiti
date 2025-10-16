@@ -137,6 +137,7 @@ class Graphiti {
         this.showIntersections = true; // Toggle for intersection display
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
+        this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
         
         // Animation
         this.lastFrameTime = 0;
@@ -667,6 +668,16 @@ class Graphiti {
     
     // Debounced intersection updates for smooth pan/zoom performance
     handleViewportChange() {
+        // Capture current intersections as frozen badges ONLY if viewport wasn't already changing
+        if (!this.isViewportChanging && this.showIntersections && this.intersections.length > 0) {
+            this.frozenIntersectionBadges = this.intersections.map(intersection => ({
+                x: intersection.x,
+                y: intersection.y,
+                functionPair: intersection.functionPair,
+                precision: intersection.precision || 'approximate'
+            }));
+        }
+        
         // Mark viewport as actively changing
         this.isViewportChanging = true;
         
@@ -678,6 +689,7 @@ class Graphiti {
         // Set new timer to recalculate intersections after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
+            this.frozenIntersectionBadges = []; // Clear frozen badges
             if (this.showIntersections) {
                 this.intersections = this.findIntersections();
             }
@@ -2957,8 +2969,14 @@ class Graphiti {
         });
         
         // Draw intersection markers if enabled and viewport is stable
-        if (this.showIntersections && !this.isViewportChanging && this.intersections.length > 0) {
-            this.drawIntersectionMarkers();
+        if (this.showIntersections) {
+            if (this.isViewportChanging && this.frozenIntersectionBadges.length > 0) {
+                // During viewport changes, show frozen intersection badges for visual continuity
+                this.drawFrozenIntersectionBadges();
+            } else if (!this.isViewportChanging && this.intersections.length > 0) {
+                // When viewport is stable, show actual intersection markers
+                this.drawIntersectionMarkers();
+            }
         }
         
         // Draw tracing indicator if active, and all persistent badges
@@ -3602,18 +3620,70 @@ class Graphiti {
         this.ctx.restore();
     }
     
+    drawFrozenIntersectionBadges() {
+        for (const frozenBadge of this.frozenIntersectionBadges) {
+            const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+            
+            // Only draw if within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                // Draw as simple markers (like the original intersection dots) but in red
+                this.ctx.save();
+                
+                // Outer circle (white/light background for contrast)
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                // Inner circle (same black color as regular intersections)
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Same black as regular intersections
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            }
+        }
+    }
+    
     findIntersectionAtScreenPoint(screenX, screenY) {
         const tolerance = 15; // pixels - tolerance for tap detection
         
-        for (const intersection of this.intersections) {
-            const intersectionScreen = this.worldToScreen(intersection.x, intersection.y);
-            const distance = Math.sqrt(
-                Math.pow(screenX - intersectionScreen.x, 2) + 
-                Math.pow(screenY - intersectionScreen.y, 2)
-            );
-            
-            if (distance <= tolerance) {
-                return intersection;
+        // First check regular intersections (when viewport is stable)
+        if (!this.isViewportChanging) {
+            for (const intersection of this.intersections) {
+                const intersectionScreen = this.worldToScreen(intersection.x, intersection.y);
+                const distance = Math.sqrt(
+                    Math.pow(screenX - intersectionScreen.x, 2) + 
+                    Math.pow(screenY - intersectionScreen.y, 2)
+                );
+                
+                if (distance <= tolerance) {
+                    return intersection;
+                }
+            }
+        }
+        
+        // During viewport changes, check frozen intersection badges
+        if (this.isViewportChanging && this.frozenIntersectionBadges.length > 0) {
+            for (const frozenBadge of this.frozenIntersectionBadges) {
+                const badgeScreen = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+                const distance = Math.sqrt(
+                    Math.pow(screenX - badgeScreen.x, 2) + 
+                    Math.pow(screenY - badgeScreen.y, 2)
+                );
+                
+                if (distance <= tolerance) {
+                    // Return in the same format as regular intersections
+                    return {
+                        x: frozenBadge.x,
+                        y: frozenBadge.y,
+                        functionPair: frozenBadge.functionPair,
+                        precision: frozenBadge.precision
+                    };
+                }
             }
         }
         
