@@ -2817,11 +2817,20 @@ class Graphiti {
         
         for (const x of roots) {
             try {
-                // Calculate y value at this x
-                const y = math.evaluate(func.expression, {x: x});
+                // Calculate y value at this x using same approach as evaluateFunction
+                const y = this.evaluateFunction(func.expression, x);
                 
-                // Classify using second derivative test
-                const secondDerivValue = math.evaluate(secondDerivativeStr, {x: x});
+                // Classify using second derivative test (also needs degree handling)
+                let secondDerivValue;
+                if (this.angleMode === 'degrees') {
+                    // Apply same degree transformation for second derivative evaluation
+                    const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(secondDerivativeStr);
+                    const evaluationX = hasRegularTrigWithX ? x * Math.PI / 180 : x;
+                    secondDerivValue = math.evaluate(secondDerivativeStr, {x: evaluationX});
+                } else {
+                    secondDerivValue = math.evaluate(secondDerivativeStr, {x: x});
+                }
+                
                 let type = 'inflection'; // fallback
                 
                 if (Math.abs(secondDerivValue) > 1e-10) { // avoid numerical noise
@@ -2853,10 +2862,27 @@ class Graphiti {
         const roots = [];
         const stepSize = (xMax - xMin) / steps;
         
+        // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
+        const evaluateDerivative = (expr, xValue) => {
+            // Apply the same degree transformation logic as evaluateFunction
+            let evaluationX = xValue;
+            if (this.angleMode === 'degrees') {
+                // Check if this derivative expression contains regular trig functions that need x converted
+                const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(expr);
+                
+                // Convert input x from degrees to radians for regular trig functions in derivatives
+                if (hasRegularTrigWithX) {
+                    evaluationX = xValue * Math.PI / 180;
+                }
+            }
+            
+            return math.evaluate(expr, {x: evaluationX});
+        };
+        
         // Special case: check if x=0 is in range and if derivative is approximately 0 there
         if (xMin <= 0 && xMax >= 0) {
             try {
-                const valueAtZero = math.evaluate(expression, {x: 0});
+                const valueAtZero = evaluateDerivative(expression, 0);
                 if (Math.abs(valueAtZero) < 1e-10) {
                     roots.push(0);
                 }
@@ -2869,7 +2895,7 @@ class Graphiti {
         let prevValue;
         
         try {
-            prevValue = math.evaluate(expression, {x: prevX});
+            prevValue = evaluateDerivative(expression, prevX);
         } catch {
             prevValue = NaN;
         }
@@ -2879,7 +2905,7 @@ class Graphiti {
             let currentValue;
             
             try {
-                currentValue = math.evaluate(expression, {x: currentX});
+                currentValue = evaluateDerivative(expression, currentX);
             } catch {
                 currentValue = NaN;
             }
@@ -2903,9 +2929,26 @@ class Graphiti {
     }
     
     bisectionMethod(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
+        // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
+        const evaluateDerivative = (expr, xValue) => {
+            // Apply the same degree transformation logic as evaluateFunction
+            let evaluationX = xValue;
+            if (this.angleMode === 'degrees') {
+                // Check if this derivative expression contains regular trig functions that need x converted
+                const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(expr);
+                
+                // Convert input x from degrees to radians for regular trig functions in derivatives
+                if (hasRegularTrigWithX) {
+                    evaluationX = xValue * Math.PI / 180;
+                }
+            }
+            
+            return math.evaluate(expr, {x: evaluationX});
+        };
+        
         try {
-            let fa = math.evaluate(expression, {x: a});
-            let fb = math.evaluate(expression, {x: b});
+            let fa = evaluateDerivative(expression, a);
+            let fb = evaluateDerivative(expression, b);
             
             if (fa * fb > 0) {
                 return null; // No root in interval
@@ -2913,7 +2956,7 @@ class Graphiti {
             
             for (let i = 0; i < maxIterations; i++) {
                 const c = (a + b) / 2;
-                const fc = math.evaluate(expression, {x: c});
+                const fc = evaluateDerivative(expression, c);
                 
                 if (Math.abs(fc) < tolerance || Math.abs(b - a) < tolerance) {
                     return c;

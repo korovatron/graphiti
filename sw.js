@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-intersection-toggle-improvements-16-10-2025-22:08';
+const CACHE_NAME = 'graphiti-degree-mode-turning-points-fix-16-10-2025-22:46';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
