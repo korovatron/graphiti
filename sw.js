@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-intersection-detection-with-precision-tapping-16-10-2025-17:30';
+const CACHE_NAME = 'graphiti-polar-intersection-refinement-fix-16-10-2025-18:50';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

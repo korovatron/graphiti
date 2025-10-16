@@ -212,6 +212,11 @@ class Graphiti {
         // If expression is provided, plot it immediately
         if (expression) {
             this.plotFunction(func);
+            
+            // Update intersections after adding this function
+            if (this.showIntersections) {
+                this.intersections = this.findIntersections();
+            }
         }
     }
     
@@ -242,6 +247,8 @@ class Graphiti {
         input.addEventListener('input', (e) => {
             // Clear badges for this function when editing
             this.removeBadgesForFunction(func.id);
+            // Clear intersection badges since they may no longer be valid
+            this.clearIntersections();
             func.expression = e.target.value;
             // Auto-plot with debouncing to avoid excessive calculations
             this.debouncePlot(func);
@@ -250,13 +257,22 @@ class Graphiti {
         colorIndicator.addEventListener('click', () => {
             // Clear badges for this function when toggling visibility
             this.removeBadgesForFunction(func.id);
+            // Clear intersection badges since they may no longer be valid
+            this.clearIntersections();
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
+            
+            // Recalculate intersections with the new function state
+            if (this.showIntersections) {
+                this.intersections = this.findIntersections();
+            }
         });
         
         removeBtn.addEventListener('click', () => {
             // Clear badges for this function when removing
             this.removeBadgesForFunction(func.id);
+            // Clear intersection badges since they may no longer be valid
+            this.clearIntersections();
             this.removeFunction(func.id);
         });
         
@@ -321,6 +337,11 @@ class Graphiti {
             
             // If we get here without throwing, the expression is syntactically valid
             this.plotFunction(func);
+            
+            // Update intersections after plotting this function
+            if (this.showIntersections) {
+                this.intersections = this.findIntersections();
+            }
             
             // Update UI to show success (remove any error styling)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
@@ -652,9 +673,11 @@ class Graphiti {
             return intersections;
         }
         
-        // For cartesian functions, find intersections by checking sign changes
+        // Find intersections by checking sign changes and close points
+        // Works for both cartesian and polar since polar points are stored as cartesian coordinates
+        
         if (this.plotMode === 'cartesian') {
-            // Create a merged x-axis array covering both functions' domains
+            // For cartesian functions, use x-axis interpolation method
             const allX = [...new Set([...points1.map(p => p.x), ...points2.map(p => p.x)])].sort((a, b) => a - b);
             
             for (let i = 0; i < allX.length - 1; i++) {
@@ -672,7 +695,7 @@ class Graphiti {
                     const diff1 = y1_at_x1 - y2_at_x1;
                     const diff2 = y1_at_x2 - y2_at_x2;
                     
-                    if (diff1 * diff2 < 0) { // Sign change detected
+                    if (diff1 * diff2 < 0) { // Sign change detected (crossing intersection)
                         // Linear interpolation to estimate intersection point
                         const ratio = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
                         const intersectionX = x1 + ratio * (x2 - x1);
@@ -688,9 +711,124 @@ class Graphiti {
                     }
                 }
             }
+            
+            // Second pass: look for tangent intersections using local minima detection
+            // Sample every 10th point to avoid dense detection
+            for (let i = 10; i < allX.length - 10; i += 5) {
+                const x0 = allX[i - 5];
+                const x1 = allX[i];
+                const x2 = allX[i + 5];
+                
+                const y1_at_x0 = this.interpolateYAtX(func1, x0);
+                const y1_at_x1 = this.interpolateYAtX(func1, x1);
+                const y1_at_x2 = this.interpolateYAtX(func1, x2);
+                const y2_at_x0 = this.interpolateYAtX(func2, x0);
+                const y2_at_x1 = this.interpolateYAtX(func2, x1);
+                const y2_at_x2 = this.interpolateYAtX(func2, x2);
+                
+                if (y1_at_x0 !== null && y1_at_x1 !== null && y1_at_x2 !== null && 
+                    y2_at_x0 !== null && y2_at_x1 !== null && y2_at_x2 !== null) {
+                    
+                    // Calculate distances between functions at these points
+                    const dist0 = Math.abs(y1_at_x0 - y2_at_x0);
+                    const dist1 = Math.abs(y1_at_x1 - y2_at_x1);
+                    const dist2 = Math.abs(y1_at_x2 - y2_at_x2);
+                    
+                    // Check if x1 is a local minimum in distance
+                    if (dist1 < dist0 && dist1 < dist2) {
+                        // Define threshold for tangent detection
+                        let threshold;
+                        if (this.scaleY && this.scaleY.domain) {
+                            const viewHeight = Math.abs(this.scaleY.domain()[1] - this.scaleY.domain()[0]);
+                            threshold = viewHeight * 0.005; // 0.5% of view height
+                        } else {
+                            threshold = 0.02; // Fallback threshold
+                        }
+                        
+                        if (dist1 <= threshold) {
+                            // Check if this is too close to existing intersections
+                            const tooClose = intersections.some(existing => 
+                                Math.abs(existing.x - x1) < Math.abs(x2 - x0) * 0.5
+                            );
+                            
+                            if (!tooClose) {
+                                intersections.push({
+                                    x: x1,
+                                    y: (y1_at_x1 + y2_at_x1) / 2,
+                                    func1: func1,
+                                    func2: func2,
+                                    isApproximate: true,
+                                    isTangent: true
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (this.plotMode === 'polar') {
+            // For polar functions, use line segment intersection method
+            // This works better for curves that loop back or have multiple y values per x
+            for (let i = 0; i < points1.length - 1; i++) {
+                const p1_current = points1[i];
+                const p1_next = points1[i + 1];
+                
+                if (!p1_current.connected || !p1_next.connected) continue;
+                
+                for (let j = 0; j < points2.length - 1; j++) {
+                    const p2_current = points2[j];
+                    const p2_next = points2[j + 1];
+                    
+                    if (!p2_current.connected || !p2_next.connected) continue;
+                    
+                    // Check if line segments intersect
+                    const intersection = this.findLineSegmentIntersection(
+                        p1_current, p1_next, p2_current, p2_next
+                    );
+                    
+                    if (intersection) {
+                        intersections.push({
+                            x: intersection.x,
+                            y: intersection.y,
+                            func1: func1,
+                            func2: func2,
+                            isApproximate: true
+                        });
+                    }
+                }
+            }
         }
         
         return intersections;
+    }
+    
+    findLineSegmentIntersection(p1, p2, p3, p4) {
+        // Find intersection between line segments (p1,p2) and (p3,p4)
+        // Using parametric line intersection algorithm
+        
+        const x1 = p1.x, y1 = p1.y;
+        const x2 = p2.x, y2 = p2.y;
+        const x3 = p3.x, y3 = p3.y;
+        const x4 = p4.x, y4 = p4.y;
+        
+        const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        
+        // Lines are parallel or coincident
+        if (Math.abs(denom) < 1e-10) {
+            return null;
+        }
+        
+        const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+        const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+        
+        // Check if intersection is within both line segments
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            return {
+                x: x1 + t * (x2 - x1),
+                y: y1 + t * (y2 - y1)
+            };
+        }
+        
+        return null;
     }
     
     interpolateYAtX(func, targetX) {
@@ -870,7 +1008,9 @@ class Graphiti {
         
         if (addFunctionButton) {
             addFunctionButton.addEventListener('click', () => {
-                // Note: Don't clear badges when adding functions - preserve existing trace points
+                // Clear intersection badges since adding a function changes the intersection landscape
+                this.clearIntersections();
+                // Note: Don't clear function badges when adding functions - preserve existing trace points
                 this.addFunction('');
             });
         }
@@ -2433,6 +2573,13 @@ class Graphiti {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
     }
     
+    clearIntersections() {
+        // Remove all intersection badges (those with functionId === null)
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== null);
+        // Also clear the intersection markers themselves
+        this.intersections = [];
+    }
+    
     clearAllBadges() {
         this.input.persistentBadges = [];
     }
@@ -3414,7 +3561,13 @@ class Graphiti {
     }
     
     refineIntersection(intersection) {
-        // Use bisection method to refine the intersection point
+        // For polar mode, the line segment intersection is already quite accurate
+        // so we don't need to refine it further
+        if (this.plotMode === 'polar') {
+            return { x: intersection.x, y: intersection.y };
+        }
+        
+        // Use bisection method to refine the intersection point for cartesian functions
         const func1 = intersection.func1;
         const func2 = intersection.func2;
         
@@ -3450,8 +3603,9 @@ class Graphiti {
     }
     
     addIntersectionBadge(worldX, worldY, func1, func2) {
-        // Use a unique color for intersection badges
-        const intersectionColor = '#FF6B6B'; // Distinct red color
+        // Use a unique color for intersection badges that's not used by any function
+        // Function colors: #4A90E2, #E74C3C, #27AE60, #F39C12, #9B59B6, #1ABC9C, #E67E22, #34495E, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4
+        const intersectionColor = '#D63384'; // Pink/magenta color not in function palette
         
         // Don't use custom text - let it show coordinates normally
         this.addTraceBadge(
