@@ -134,7 +134,7 @@ class Graphiti {
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
-        this.showIntersections = true; // Toggle for intersection display
+        this.showIntersections = false; // Toggle for intersection display
         
         // Animation
         this.lastFrameTime = 0;
@@ -300,6 +300,24 @@ class Graphiti {
             colorIndicator.title = 'Click to show function';
             input.style.opacity = '0.6';
             funcDiv.classList.add('disabled');
+        }
+    }
+    
+    updateIntersectionToggleButton() {
+        const intersectionToggleButton = document.getElementById('intersection-toggle');
+        if (intersectionToggleButton) {
+            const svg = intersectionToggleButton.querySelector('svg');
+            if (svg) {
+                if (this.showIntersections) {
+                    // Active state - intersection detection enabled (bright icon)
+                    svg.style.opacity = '1';
+                    intersectionToggleButton.title = 'Intersection detection enabled (click to disable)';
+                } else {
+                    // Inactive state - intersection detection disabled (dim icon)
+                    svg.style.opacity = '0.3';
+                    intersectionToggleButton.title = 'Intersection detection disabled (click to enable)';
+                }
+            }
         }
     }
     
@@ -646,6 +664,11 @@ class Graphiti {
     }
     
     findIntersections() {
+        // Early exit if intersection detection is disabled
+        if (!this.showIntersections) {
+            return [];
+        }
+        
         // Find intersection points between all pairs of enabled functions
         const intersections = [];
         const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
@@ -960,6 +983,7 @@ class Graphiti {
         // Wait for elements to be available
         const addFunctionButton = document.getElementById('add-function');
         const resetViewButton = document.getElementById('reset-view');
+        const intersectionToggleButton = document.getElementById('intersection-toggle');
         const xMinInput = document.getElementById('x-min');
         const xMaxInput = document.getElementById('x-max');
         const yMinInput = document.getElementById('y-min');
@@ -1089,6 +1113,33 @@ class Graphiti {
                 
                 // Re-plot all functions with the reset viewport
                 this.replotAllFunctions();
+            });
+        }
+        
+        // Intersection Toggle
+        if (intersectionToggleButton) {
+            intersectionToggleButton.addEventListener('click', () => {
+                // Toggle intersection detection
+                this.showIntersections = !this.showIntersections;
+                
+                // Update button visual state
+                this.updateIntersectionToggleButton();
+                
+                if (this.showIntersections) {
+                    // Recalculate and show intersections
+                    this.intersections = this.findIntersections();
+                } else {
+                    // Clear intersections and badges
+                    this.clearIntersections();
+                }
+                
+                // Close the function panel only on mobile devices
+                if (this.isTrueMobile()) {
+                    this.closeMobileMenu();
+                }
+                
+                // Redraw to show/hide intersection markers
+                this.draw();
             });
         }
         
@@ -2187,6 +2238,9 @@ class Graphiti {
             if (this.showIntersections) {
                 this.intersections = this.findIntersections();
             }
+            
+            // Initialize intersection toggle button state
+            this.updateIntersectionToggleButton();
         }
         // Open the function panel by default so users can start immediately
         // Add a small delay on mobile to prevent touch event conflicts

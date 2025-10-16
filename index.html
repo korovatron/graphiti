@@ -614,10 +614,23 @@
                     <img src="./images/graphitiTitle.png" alt="Graphiti" style="width: 90%; max-height: 50px; height: auto;">
                 </div>
                 
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px;">
-                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; width: 80px; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+ f(x)</button>     
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;">
+                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; width: 70px; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+ f(x)</button>     
 
-                    <button id="reset-view" style="padding: 8px; font-size: 10px; height: 40px; line-height: 1.2; background: #2A3F5A; border: 1px solid #555; width: 80px;" title="Reset View">RESET<br>AXES</button>
+                    <button id="reset-view" style="padding: 8px; font-size: 10px; height: 40px; line-height: 1.2; background: #2A3F5A; border: 1px solid #555; width: 70px;" title="Reset View">RESET<br>AXES</button>
+
+                    <!-- Intersection Toggle Button -->
+                    <button id="intersection-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; width: 70px; display: flex; align-items: center; justify-content: center;" title="Toggle intersection detection">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
+                            <!-- Parabola shifted up slightly from bottom -->
+                            <path d="M8 28 C8 1, 24 1, 24 28" stroke="currentColor" fill="none" stroke-width="3"></path>
+                            <!-- Longer line with gentler slope -->
+                            <line x1="4" y1="24" x2="28" y2="10" stroke="currentColor" stroke-width="2"></line>
+                            <!-- Two intersection markers -->
+                            <circle cx="10" cy="20" r="2.5" fill="currentColor"></circle>
+                            <circle cx="22" cy="13" r="2.5" fill="currentColor"></circle>
+                        </svg>
+                    </button>
 
                     <!-- Coordinate System Toggle Button with Icons -->
                     <button id="mode-toggle" style="padding: 8px 12px; font-size: 12px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; gap: 8px; height: 40px;" title="Toggle between Cartesian and Polar coordinate systems">
