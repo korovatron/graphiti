@@ -134,7 +134,9 @@ class Graphiti {
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
-        this.showIntersections = false; // Toggle for intersection display
+        this.showIntersections = true; // Toggle for intersection display
+        this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
+        this.isViewportChanging = false; // Flag to track active pan/zoom operations
         
         // Animation
         this.lastFrameTime = 0;
@@ -661,6 +663,25 @@ class Graphiti {
                 thetaMaxInput.value = value;
             }
         }
+    }
+    
+    // Debounced intersection updates for smooth pan/zoom performance
+    handleViewportChange() {
+        // Mark viewport as actively changing
+        this.isViewportChanging = true;
+        
+        // Clear existing timer to restart the debounce period
+        if (this.intersectionDebounceTimer) {
+            clearTimeout(this.intersectionDebounceTimer);
+        }
+        
+        // Set new timer to recalculate intersections after user stops pan/zoom
+        this.intersectionDebounceTimer = setTimeout(() => {
+            this.isViewportChanging = false;
+            if (this.showIntersections) {
+                this.intersections = this.findIntersections();
+            }
+        }, 200); // 200ms delay provides smooth experience
     }
     
     findIntersections() {
@@ -2194,10 +2215,8 @@ class Graphiti {
             }
         });
         
-        // Update intersections after replotting
-        if (this.showIntersections) {
-            this.intersections = this.findIntersections();
-        }
+        // Update intersections after replotting (debounced for viewport changes)
+        this.handleViewportChange();
         
         this.draw();
     }
@@ -2937,8 +2956,8 @@ class Graphiti {
             }
         });
         
-        // Draw intersection markers if enabled
-        if (this.showIntersections && this.intersections.length > 0) {
+        // Draw intersection markers if enabled and viewport is stable
+        if (this.showIntersections && !this.isViewportChanging && this.intersections.length > 0) {
             this.drawIntersectionMarkers();
         }
         
