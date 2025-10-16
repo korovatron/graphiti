@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-polar-range-reset-functionality-15-10-2025-23:30';
+const CACHE_NAME = 'graphiti-intersection-detection-with-precision-tapping-16-10-2025-17:30';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

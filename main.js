@@ -132,6 +132,10 @@ class Graphiti {
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.rangeTimer = null; // For debouncing range updates
         
+        // Intersection detection
+        this.intersections = []; // Store detected intersection points
+        this.showIntersections = true; // Toggle for intersection display
+        
         // Animation
         this.lastFrameTime = 0;
         this.deltaTime = 0;
@@ -620,6 +624,94 @@ class Graphiti {
         }
     }
     
+    findIntersections() {
+        // Find intersection points between all pairs of enabled functions
+        const intersections = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        
+        // Check all pairs of functions
+        for (let i = 0; i < enabledFunctions.length; i++) {
+            for (let j = i + 1; j < enabledFunctions.length; j++) {
+                const func1 = enabledFunctions[i];
+                const func2 = enabledFunctions[j];
+                
+                const pairIntersections = this.findIntersectionsBetweenFunctions(func1, func2);
+                intersections.push(...pairIntersections);
+            }
+        }
+        
+        return intersections;
+    }
+    
+    findIntersectionsBetweenFunctions(func1, func2) {
+        const intersections = [];
+        const points1 = func1.points;
+        const points2 = func2.points;
+        
+        if (points1.length === 0 || points2.length === 0) {
+            return intersections;
+        }
+        
+        // For cartesian functions, find intersections by checking sign changes
+        if (this.plotMode === 'cartesian') {
+            // Create a merged x-axis array covering both functions' domains
+            const allX = [...new Set([...points1.map(p => p.x), ...points2.map(p => p.x)])].sort((a, b) => a - b);
+            
+            for (let i = 0; i < allX.length - 1; i++) {
+                const x1 = allX[i];
+                const x2 = allX[i + 1];
+                
+                // Interpolate y values for both functions at these x points
+                const y1_at_x1 = this.interpolateYAtX(func1, x1);
+                const y1_at_x2 = this.interpolateYAtX(func1, x2);
+                const y2_at_x1 = this.interpolateYAtX(func2, x1);
+                const y2_at_x2 = this.interpolateYAtX(func2, x2);
+                
+                if (y1_at_x1 !== null && y1_at_x2 !== null && y2_at_x1 !== null && y2_at_x2 !== null) {
+                    // Check for sign change in (func1 - func2)
+                    const diff1 = y1_at_x1 - y2_at_x1;
+                    const diff2 = y1_at_x2 - y2_at_x2;
+                    
+                    if (diff1 * diff2 < 0) { // Sign change detected
+                        // Linear interpolation to estimate intersection point
+                        const ratio = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
+                        const intersectionX = x1 + ratio * (x2 - x1);
+                        const intersectionY = y1_at_x1 + ratio * (y1_at_x2 - y1_at_x1);
+                        
+                        intersections.push({
+                            x: intersectionX,
+                            y: intersectionY,
+                            func1: func1,
+                            func2: func2,
+                            isApproximate: true
+                        });
+                    }
+                }
+            }
+        }
+        
+        return intersections;
+    }
+    
+    interpolateYAtX(func, targetX) {
+        const points = func.points;
+        if (points.length === 0) return null;
+        
+        // Find the two points that bracket targetX
+        for (let i = 0; i < points.length - 1; i++) {
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            
+            if (p1.x <= targetX && targetX <= p2.x && p1.connected && p2.connected) {
+                // Linear interpolation
+                const ratio = (targetX - p1.x) / (p2.x - p1.x);
+                return p1.y + ratio * (p2.y - p1.y);
+            }
+        }
+        
+        return null; // targetX is outside the function's domain
+    }
+    
     parseAndGraphFunction(functionString) {
         // Legacy method - redirect to new system
         if (this.functions.length === 0) {
@@ -1007,6 +1099,7 @@ class Graphiti {
                 const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
                 
                 if (isTap) {
+                    // Existing mobile menu tap logic
                     const functionPanel = document.getElementById('function-panel');
                     if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                         const rect = functionPanel.getBoundingClientRect();
@@ -1064,7 +1157,7 @@ class Graphiti {
             // Update badge positions for accurate click detection
             this.updateBadgeScreenPositions();
             
-            // First, check if user clicked on an existing badge
+            // First, check if user clicked on an existing badge (highest priority)
             const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
             if (targetBadge) {
                 // Immediately enter badge interaction mode with visual feedback
@@ -1080,14 +1173,20 @@ class Graphiti {
                 // Start tracing mode for immediate responsiveness
                 const targetFunction = this.findFunctionById(targetBadge.functionId);
                 if (targetFunction) {
-                    this.input.tracing.active = true;
-                    this.input.tracing.functionId = targetBadge.functionId;
-                    this.input.tracing.worldX = targetBadge.worldX;
-                    this.input.tracing.worldY = targetBadge.worldY;
+                    this.startTracingAtWorldPosition(targetBadge.worldX, targetBadge.worldY, targetFunction);
                 }
-                return; // Don't start normal tracing if we're interacting with a badge
+                return; // Exit early - don't process other input logic
             }
             
+            // Second, check for intersection marker tap (only if no badge was clicked)
+            const tappedIntersection = this.findIntersectionAtScreenPoint(x, y);
+            if (tappedIntersection) {
+                // Handle intersection tap and exit early
+                this.handleIntersectionTap(tappedIntersection, x, y);
+                return; // Don't process any other input logic
+            }
+            
+            // If no badge or intersection was clicked, check for function curve tracing
             // Clear any previous badge interaction state
             this.input.badgeInteraction.targetBadge = null;
             this.input.badgeInteraction.startTime = 0;
@@ -1903,6 +2002,12 @@ class Graphiti {
                 this.plotFunction(func);
             }
         });
+        
+        // Update intersections after replotting
+        if (this.showIntersections) {
+            this.intersections = this.findIntersections();
+        }
+        
         this.draw();
     }
     
@@ -1937,6 +2042,11 @@ class Graphiti {
                     this.plotFunction(func);
                 }
             });
+            
+            // Calculate initial intersections
+            if (this.showIntersections) {
+                this.intersections = this.findIntersections();
+            }
         }
         // Open the function panel by default so users can start immediately
         // Add a small delay on mobile to prevent touch event conflicts
@@ -2299,13 +2409,14 @@ class Graphiti {
     }
     
     // Badge management methods for multi-badge tracing system
-    addTraceBadge(functionId, worldX, worldY, functionColor) {
+    addTraceBadge(functionId, worldX, worldY, functionColor, customText = null) {
         const badge = {
             id: this.input.badgeIdCounter++,
             functionId: functionId,
             worldX: worldX,
             worldY: worldY,
             functionColor: functionColor,
+            customText: customText, // For intersection badges
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -2624,6 +2735,11 @@ class Graphiti {
                 this.drawFunction(func);
             }
         });
+        
+        // Draw intersection markers if enabled
+        if (this.showIntersections && this.intersections.length > 0) {
+            this.drawIntersectionMarkers();
+        }
         
         // Draw tracing indicator if active, and all persistent badges
         if (this.input.tracing.active) {
@@ -3234,6 +3350,119 @@ class Graphiti {
         }
     }
 
+    drawIntersectionMarkers() {
+        for (const intersection of this.intersections) {
+            const screenPos = this.worldToScreen(intersection.x, intersection.y);
+            
+            // Only draw if within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                this.drawIntersectionMarker(screenPos.x, screenPos.y, intersection);
+            }
+        }
+    }
+    
+    drawIntersectionMarker(screenX, screenY, intersection) {
+        // Draw a small, unobtrusive marker
+        this.ctx.save();
+        
+        // Outer circle (white/light background for contrast)
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        // Inner circle (darker color to indicate intersection)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        this.ctx.restore();
+    }
+    
+    findIntersectionAtScreenPoint(screenX, screenY) {
+        const tolerance = 15; // pixels - tolerance for tap detection
+        
+        for (const intersection of this.intersections) {
+            const intersectionScreen = this.worldToScreen(intersection.x, intersection.y);
+            const distance = Math.sqrt(
+                Math.pow(screenX - intersectionScreen.x, 2) + 
+                Math.pow(screenY - intersectionScreen.y, 2)
+            );
+            
+            if (distance <= tolerance) {
+                return intersection;
+            }
+        }
+        
+        return null;
+    }
+    
+    handleIntersectionTap(intersection, screenX, screenY) {
+        // Refine intersection using numerical method for precision
+        const refinedIntersection = this.refineIntersection(intersection);
+        
+        // Create a badge at the refined intersection point
+        this.addIntersectionBadge(
+            refinedIntersection.x,
+            refinedIntersection.y,
+            intersection.func1,
+            intersection.func2
+        );
+    }
+    
+    refineIntersection(intersection) {
+        // Use bisection method to refine the intersection point
+        const func1 = intersection.func1;
+        const func2 = intersection.func2;
+        
+        // Start with a small interval around the approximate intersection
+        let x1 = intersection.x - 0.01;
+        let x2 = intersection.x + 0.01;
+        
+        // Bisection method to find where func1(x) - func2(x) = 0
+        for (let i = 0; i < 20; i++) { // 20 iterations gives good precision
+            const xMid = (x1 + x2) / 2;
+            
+            const y1_mid = this.evaluateFunction(func1.expression, xMid);
+            const y2_mid = this.evaluateFunction(func2.expression, xMid);
+            const diff_mid = y1_mid - y2_mid;
+            
+            const y1_1 = this.evaluateFunction(func1.expression, x1);
+            const y2_1 = this.evaluateFunction(func2.expression, x1);
+            const diff_1 = y1_1 - y2_1;
+            
+            if (Math.abs(diff_mid) < 1e-10) break; // Sufficient precision
+            
+            if (diff_mid * diff_1 < 0) {
+                x2 = xMid;
+            } else {
+                x1 = xMid;
+            }
+        }
+        
+        const refinedX = (x1 + x2) / 2;
+        const refinedY = this.evaluateFunction(func1.expression, refinedX);
+        
+        return { x: refinedX, y: refinedY };
+    }
+    
+    addIntersectionBadge(worldX, worldY, func1, func2) {
+        // Use a unique color for intersection badges
+        const intersectionColor = '#FF6B6B'; // Distinct red color
+        
+        // Don't use custom text - let it show coordinates normally
+        this.addTraceBadge(
+            null, // No specific function ID for intersections
+            worldX,
+            worldY,
+            intersectionColor
+            // No custom text - will show coordinates
+        );
+    }
+
     drawActiveTracingIndicator() {
         if (!this.input.tracing.active) return;
         
@@ -3269,11 +3498,11 @@ class Graphiti {
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText);
         }
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -3297,10 +3526,10 @@ class Graphiti {
         this.ctx.fill();
         
         // Coordinate label with background
-        const coordinates = this.formatCoordinates(worldX, worldY);
+        const labelText = customText || this.formatCoordinates(worldX, worldY);
         
         this.ctx.font = '16px Arial, sans-serif'; // Larger font for classroom visibility
-        const textMetrics = this.ctx.measureText(coordinates);
+        const textMetrics = this.ctx.measureText(labelText);
         const textWidth = textMetrics.width;
         const textHeight = 16; // Updated to match font size
         
@@ -3327,7 +3556,7 @@ class Graphiti {
         this.ctx.fillStyle = this.getContrastingTextColor(color); // Dynamic text color for optimal contrast
         this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
         this.ctx.textBaseline = 'top'; // Set baseline to top for consistent positioning
-        this.ctx.fillText(coordinates, labelX, labelY - textHeight);
+        this.ctx.fillText(labelText, labelX, labelY - textHeight);
         
         this.ctx.restore();
     }
