@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-row5-separator-fix-18-10-2025-18:00';
+const CACHE_NAME = 'graphiti-numeric-fraction-fix-18-10-2025-18:05';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

@@ -183,7 +183,7 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    { latex: '\\div', label: '/' }
+                                    { latex: '\\frac{#0}{#?}', label: '/' }
                                 ],
                                 [
                                     // Powers and roots (more useful than fractions since we have division)
