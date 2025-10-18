@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-division-slash-behavior-18-10-2025-21:00';
+const CACHE_NAME = 'graphiti-offline-mathlive-19-10-2025-10:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
@@ -6,7 +6,8 @@ const ASSETS_TO_CACHE = [
     './sw.js',
     './logo.png',
     './images/graphitiTitle.png',
-    'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js'
+    'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
+    'https://unpkg.com/mathlive'
 ];
 
 // Install event - cache assets
