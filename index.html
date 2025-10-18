@@ -417,8 +417,30 @@
             .ML__virtual-keyboard,
             math-field::part(keyboard) {
                 /* Extend keyboard to true bottom edge in PWA mode */
-                padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
                 margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                width: 100% !important;
+            }
+            
+            /* Ensure keyboard content is properly contained without clipping */
+            .ML__keyboard .ML__row,
+            math-field::part(keyboard-row) {
+                overflow: visible !important;
+                height: auto !important;
+            }
+            
+            /* Portrait mode specific fixes */
+            @media (orientation: portrait) {
+                .ML__keyboard,
+                .ML__keyboard-container,
+                .ML__virtual-keyboard {
+                    max-height: 50vh !important; /* More space in portrait */
+                    min-height: 200px !important;
+                }
             }
         }
         
@@ -640,29 +662,42 @@
             /* Reduce virtual keyboard height in landscape mode and prevent repositioning */
             .ML__keyboard,
             math-field::part(keyboard) {
-                max-height: 30vh !important; /* Limit to 30% of viewport height */
-                min-height: 120px !important; /* Ensure minimum usable height */
-                overflow-y: auto !important; /* Allow scrolling if needed */
+                max-height: 40vh !important; /* Increased from 30vh to prevent clipping */
+                min-height: 160px !important; /* Increased min height */
+                height: auto !important; /* Let content determine height within limits */
+                overflow: visible !important; /* Prevent clipping of content */
                 position: fixed !important; /* Force fixed positioning */
                 bottom: 0 !important; /* Always stick to bottom */
                 top: auto !important; /* Override any top positioning */
+                left: 0 !important; /* Ensure full width positioning */
+                right: 0 !important; /* Ensure full width positioning */
+                width: 100% !important; /* Full width */
                 transform: none !important; /* Disable any transforms that might move it */
                 z-index: 9999 !important; /* Ensure it stays on top */
                 /* PWA safe area handling - extend to true bottom */
-                padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
+                padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
                 margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+                box-sizing: border-box !important;
             }
             
-            /* Prevent keyboard container from jumping around */
+            /* Prevent keyboard container from jumping around and clipping */
             .ML__keyboard-container,
             .ML__virtual-keyboard {
                 position: fixed !important;
                 bottom: 0 !important;
                 top: auto !important;
+                left: 0 !important;
+                right: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+                max-height: 40vh !important;
+                min-height: 160px !important;
+                overflow: visible !important; /* Critical: prevent content clipping */
                 transform: none !important;
                 /* PWA safe area handling for containers */
-                padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
+                padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
                 margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+                box-sizing: border-box !important;
             }
             
             /* Reduce keyboard button sizes and spacing in landscape - more specific selectors */
