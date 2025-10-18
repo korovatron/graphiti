@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-js-pwa-keyboard-fix-18-10-2025-20:10';
+const CACHE_NAME = 'graphiti-aggressive-keyboard-positioning-18-10-2025-20:15';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

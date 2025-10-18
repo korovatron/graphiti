@@ -373,28 +373,64 @@ class Graphiti {
                                          window.navigator.standalone === true;
                             
                             if (isPWAMode) {
-                                // Wait for keyboard to be created, then adjust positioning
-                                const adjustKeyboardPosition = () => {
+                                console.log('PWA mode detected, setting up keyboard bottom positioning');
+                                
+                                // More aggressive keyboard positioning for PWA
+                                const forceKeyboardToBottom = () => {
                                     const keyboard = document.querySelector('.ML__keyboard');
+                                    const keyboardContainer = document.querySelector('.ML__keyboard-container');
+                                    const virtualKeyboard = document.querySelector('.ML__virtual-keyboard');
+                                    
                                     if (keyboard) {
-                                        keyboard.style.paddingBottom = '0px';
-                                        keyboard.style.marginBottom = '0px';
-                                        console.log('PWA keyboard positioning adjusted');
+                                        // Force position to bottom with multiple approaches
+                                        keyboard.style.setProperty('position', 'fixed', 'important');
+                                        keyboard.style.setProperty('bottom', '0px', 'important');
+                                        keyboard.style.setProperty('left', '0px', 'important');
+                                        keyboard.style.setProperty('right', '0px', 'important');
+                                        keyboard.style.setProperty('padding-bottom', '0px', 'important');
+                                        keyboard.style.setProperty('margin-bottom', '0px', 'important');
+                                        console.log('PWA keyboard forced to bottom edge');
+                                    }
+                                    
+                                    if (keyboardContainer) {
+                                        keyboardContainer.style.setProperty('bottom', '0px', 'important');
+                                        keyboardContainer.style.setProperty('padding-bottom', '0px', 'important');
+                                        keyboardContainer.style.setProperty('margin-bottom', '0px', 'important');
+                                    }
+                                    
+                                    if (virtualKeyboard) {
+                                        virtualKeyboard.style.setProperty('bottom', '0px', 'important');
+                                        virtualKeyboard.style.setProperty('padding-bottom', '0px', 'important');
+                                        virtualKeyboard.style.setProperty('margin-bottom', '0px', 'important');
                                     }
                                 };
                                 
-                                // Monitor for keyboard creation
+                                // Monitor for keyboard creation and changes
                                 const observer = new MutationObserver(() => {
-                                    adjustKeyboardPosition();
+                                    forceKeyboardToBottom();
                                 });
                                 
                                 observer.observe(document.body, { 
                                     childList: true, 
-                                    subtree: true 
+                                    subtree: true,
+                                    attributes: true,
+                                    attributeFilter: ['style', 'class']
                                 });
                                 
-                                // Also try immediate adjustment
-                                setTimeout(adjustKeyboardPosition, 1000);
+                                // Also try multiple times to ensure it sticks
+                                setTimeout(forceKeyboardToBottom, 500);
+                                setTimeout(forceKeyboardToBottom, 1000);
+                                setTimeout(forceKeyboardToBottom, 2000);
+                                
+                                // Monitor for keyboard show/hide events
+                                if (window.mathVirtualKeyboard) {
+                                    const originalShow = window.mathVirtualKeyboard.show;
+                                    window.mathVirtualKeyboard.show = function(...args) {
+                                        const result = originalShow.apply(this, args);
+                                        setTimeout(forceKeyboardToBottom, 100);
+                                        return result;
+                                    };
+                                }
                             }
                             
                             // Close virtual keyboard on orientation change to prevent corruption
