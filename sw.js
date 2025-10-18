@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-keyboard-clipping-fix-18-10-2025-18:45';
+const CACHE_NAME = 'graphiti-portrait-keyboard-fix-18-10-2025-18:50';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
