@@ -420,6 +420,17 @@
                 padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
                 margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
             }
+            
+            /* In fullscreen PWA mode, extend keyboard to bottom edge */
+            @media (display-mode: fullscreen) {
+                .ML__keyboard,
+                .ML__keyboard-container,
+                .ML__virtual-keyboard,
+                math-field::part(keyboard) {
+                    padding-bottom: 8px !important;
+                    margin-bottom: 0px !important;
+                }
+            }
         }
 
         /* Landscape editing restriction overlay for mobile phones */

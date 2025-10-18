@@ -368,18 +368,59 @@ class Graphiti {
                             console.log('Mobile keyboard container configured');
                             
                             // Close virtual keyboard on orientation change to prevent corruption
-                            window.addEventListener('orientationchange', () => {
+                            let lastOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+                            
+                            const closeKeyboardOnOrientationChange = () => {
                                 setTimeout(() => {
-                                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
-                                        window.mathVirtualKeyboard.hide();
-                                        // Also blur any focused mathfields
-                                        const focused = document.querySelector('math-field:focus');
-                                        if (focused) {
-                                            focused.blur();
+                                    const currentOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+                                    
+                                    // Only act if orientation actually changed
+                                    if (currentOrientation !== lastOrientation) {
+                                        lastOrientation = currentOrientation;
+                                        
+                                        if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                                            window.mathVirtualKeyboard.hide();
+                                            // Also blur any focused mathfields
+                                            const focused = document.querySelector('math-field:focus');
+                                            if (focused) {
+                                                focused.blur();
+                                            }
+                                            console.log('Keyboard closed due to orientation change:', currentOrientation);
                                         }
                                     }
-                                }, 100); // Small delay to ensure orientation change is complete
-                            });
+                                }, 150);
+                            };
+                            
+                            // Detect if running as PWA
+                            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+                                         window.matchMedia('(display-mode: fullscreen)').matches ||
+                                         window.navigator.standalone === true;
+                            
+                            // Try multiple events for better compatibility
+                            window.addEventListener('orientationchange', closeKeyboardOnOrientationChange);
+                            window.addEventListener('resize', closeKeyboardOnOrientationChange);
+                            
+                            // For PWA mode, use additional detection methods
+                            if (isPWA) {
+                                console.log('PWA mode detected, using enhanced orientation detection');
+                                
+                                // More frequent checking in PWA mode
+                                let resizeTimeout;
+                                window.addEventListener('resize', () => {
+                                    clearTimeout(resizeTimeout);
+                                    resizeTimeout = setTimeout(closeKeyboardOnOrientationChange, 50);
+                                });
+                                
+                                // Visual viewport API for PWA
+                                if (window.visualViewport) {
+                                    window.visualViewport.addEventListener('resize', closeKeyboardOnOrientationChange);
+                                }
+                            }
+                            
+                            // For modern browsers with screen.orientation API
+                            if (screen.orientation) {
+                                screen.orientation.addEventListener('change', closeKeyboardOnOrientationChange);
+                            }
                         }
                         
                         // Add HYP toggle functionality
