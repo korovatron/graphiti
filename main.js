@@ -401,6 +401,17 @@ class Graphiti {
         const isMobilePhone = this.isMobilePhone();
         const isLandscape = window.innerWidth > window.innerHeight;
         
+        // Temporary debug info for mobile testing
+        this.showDebugInfo({
+            isMobilePhone,
+            isLandscape,
+            userAgent: navigator.userAgent.substring(0, 100),
+            screenW: window.screen.width,
+            screenH: window.screen.height,
+            windowW: window.innerWidth,
+            windowH: window.innerHeight
+        });
+        
         return isMobilePhone && isLandscape;
     }
     
@@ -418,6 +429,9 @@ class Graphiti {
     }
     
     showLandscapeEditingRestriction() {
+        // Debug: Show that this function is being called
+        this.showDebugInfo({ message: 'showLandscapeEditingRestriction() called!' });
+        
         // Remove any existing overlay
         const existingOverlay = document.querySelector('.landscape-edit-overlay');
         if (existingOverlay) {
@@ -430,27 +444,92 @@ class Graphiti {
         overlay.innerHTML = `
             <div class="landscape-edit-message">
                 <h3>Function Editing Restricted</h3>
-                <div class="rotate-icon">📱→📱</div>
+                <div class="rotate-icon">Please rotate to portrait mode</div>
                 <p>Function editing is only available in portrait mode on mobile phones for the best experience.</p>
                 <p>Please rotate your device to portrait mode to edit functions.</p>
                 <button class="landscape-dismiss-btn">Got it</button>
             </div>
         `;
         
-        // Add dismiss functionality
-        const dismissBtn = overlay.querySelector('.landscape-dismiss-btn');
-        dismissBtn.addEventListener('click', () => {
-            overlay.remove();
-        });
-        
-        // Also dismiss on overlay click
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                overlay.remove();
-            }
-        });
-        
         document.body.appendChild(overlay);
+        
+        // Add dismiss functionality with a slight delay to prevent immediate dismissal
+        setTimeout(() => {
+            const dismissBtn = overlay.querySelector('.landscape-dismiss-btn');
+            dismissBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.showDebugInfo({ message: 'Dismiss button clicked' });
+                overlay.remove();
+            });
+            
+            // Also dismiss on overlay background click (not the message)
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    this.showDebugInfo({ message: 'Overlay background clicked' });
+                    overlay.remove();
+                }
+            });
+        }, 200);
+        
+        // Debug: Confirm overlay persistence
+        setTimeout(() => {
+            const addedOverlay = document.querySelector('.landscape-edit-overlay');
+            this.showDebugInfo({ 
+                message: `Overlay still there after 1s: ${addedOverlay ? 'YES' : 'NO'}`
+            });
+        }, 1000);
+    }
+    
+    showDebugInfo(info) {
+        // Remove any existing debug info
+        const existingDebug = document.querySelector('.debug-info');
+        if (existingDebug) {
+            existingDebug.remove();
+        }
+        
+        // Create debug overlay that shows for 3 seconds
+        const debug = document.createElement('div');
+        debug.className = 'debug-info';
+        debug.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            font-size: 12px;
+            z-index: 10000;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        `;
+        
+        let content = '<strong>Debug Info:</strong><br>';
+        if (info.message) {
+            content += `Message: ${info.message}<br>`;
+        }
+        if (info.isMobilePhone !== undefined) {
+            content += `Mobile Phone: ${info.isMobilePhone}<br>`;
+            content += `Landscape: ${info.isLandscape}<br>`;
+            content += `Screen: ${info.screenW}x${info.screenH}<br>`;
+            content += `Window: ${info.windowW}x${info.windowH}<br>`;
+            content += `UA: ${info.userAgent}...<br>`;
+        }
+        if (info.overlayVisible) {
+            content += `Overlay Display: ${info.overlayVisible}<br>`;
+        }
+        
+        debug.innerHTML = content;
+        
+        document.body.appendChild(debug);
+        
+        // Auto-remove after 3 seconds  
+        setTimeout(() => {
+            if (debug.parentNode) {
+                debug.remove();
+            }
+        }, 3000);
     }
 
     // ================================
