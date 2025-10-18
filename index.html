@@ -427,14 +427,27 @@
                 .ML__keyboard-container,
                 .ML__virtual-keyboard,
                 math-field::part(keyboard) {
-                    padding-bottom: 8px !important;
+                    padding-bottom: 0px !important;
                     margin-bottom: 0px !important;
                 }
                 
-                /* Use MathLive's official CSS custom properties for PWA */
+                /* Use all MathLive's CSS custom properties for complete PWA bottom positioning */
                 .ML__keyboard {
                     --keyboard-padding-bottom: 0px !important;
                     --_padding-bottom: 0px !important;
+                    --keyboard-padding-top: 5px !important;
+                    --_padding-top: 5px !important;
+                }
+                
+                /* Target the backdrop and plate elements specifically */
+                .MLK__backdrop {
+                    padding-bottom: 0px !important;
+                    margin-bottom: 0px !important;
+                }
+                
+                .MLK__plate {
+                    padding-bottom: 0px !important;
+                    margin-bottom: 0px !important;
                 }
             }
             
@@ -444,14 +457,27 @@
                 .ML__keyboard-container,
                 .ML__virtual-keyboard,
                 math-field::part(keyboard) {
-                    padding-bottom: 8px !important;
+                    padding-bottom: 0px !important;
                     margin-bottom: 0px !important;
                 }
                 
-                /* Use MathLive's official CSS custom properties for PWA */
+                /* Use all MathLive's CSS custom properties for complete PWA bottom positioning */
                 .ML__keyboard {
                     --keyboard-padding-bottom: 0px !important;
                     --_padding-bottom: 0px !important;
+                    --keyboard-padding-top: 5px !important;
+                    --_padding-top: 5px !important;
+                }
+                
+                /* Target the backdrop and plate elements specifically */
+                .MLK__backdrop {
+                    padding-bottom: 0px !important;
+                    margin-bottom: 0px !important;
+                }
+                
+                .MLK__plate {
+                    padding-bottom: 0px !important;
+                    margin-bottom: 0px !important;
                 }
             }
         }

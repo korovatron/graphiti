@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-mathlive-official-css-vars-18-10-2025-20:20';
+const CACHE_NAME = 'graphiti-comprehensive-css-no-js-18-10-2025-20:25';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
