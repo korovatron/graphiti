@@ -367,6 +367,36 @@ class Graphiti {
                             window.mathVirtualKeyboard.container = document.body;
                             console.log('Mobile keyboard container configured');
                             
+                            // For PWA mode, adjust keyboard positioning to reach bottom edge
+                            const isPWAMode = window.matchMedia('(display-mode: standalone)').matches ||
+                                         window.matchMedia('(display-mode: fullscreen)').matches ||
+                                         window.navigator.standalone === true;
+                            
+                            if (isPWAMode) {
+                                // Wait for keyboard to be created, then adjust positioning
+                                const adjustKeyboardPosition = () => {
+                                    const keyboard = document.querySelector('.ML__keyboard');
+                                    if (keyboard) {
+                                        keyboard.style.paddingBottom = '0px';
+                                        keyboard.style.marginBottom = '0px';
+                                        console.log('PWA keyboard positioning adjusted');
+                                    }
+                                };
+                                
+                                // Monitor for keyboard creation
+                                const observer = new MutationObserver(() => {
+                                    adjustKeyboardPosition();
+                                });
+                                
+                                observer.observe(document.body, { 
+                                    childList: true, 
+                                    subtree: true 
+                                });
+                                
+                                // Also try immediate adjustment
+                                setTimeout(adjustKeyboardPosition, 1000);
+                            }
+                            
                             // Close virtual keyboard on orientation change to prevent corruption
                             let lastOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
                             
