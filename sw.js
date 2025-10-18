@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-numeric-fraction-fix-18-10-2025-18:05';
+const CACHE_NAME = 'graphiti-numeric-no-gap-arrows-backspace-18-10-2025-18:40';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

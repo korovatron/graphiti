@@ -174,11 +174,11 @@ class Graphiti {
                             tooltip: 'Numbers & Basic Operations',
                             rows: [
                                 [
-                                    // Variables for both cartesian and polar
+                                    // Variables and parentheses - reorganized
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'] },
-                                    { latex: 'y' },
-                                    { latex: 'r' },
                                     { latex: '\\theta', label: 'θ' },
+                                    { latex: '\\left(', label: '(' },
+                                    { latex: '\\right)', label: ')' },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -186,7 +186,7 @@ class Graphiti {
                                     { latex: '\\frac{#0}{#?}', label: '/' }
                                 ],
                                 [
-                                    // Powers and roots (more useful than fractions since we have division)
+                                    // Powers and roots
                                     { latex: '^2', label: 'x²' },
                                     { latex: '^3', label: 'x³' },
                                     { latex: '^{#?}', label: 'xⁿ' },
@@ -198,7 +198,7 @@ class Graphiti {
                                     { latex: '\\times', label: '×' }
                                 ],
                                 [
-                                    // Constants and common expressions
+                                    // Constants and operations
                                     { latex: '\\pi', label: 'π' },
                                     { latex: 'e', label: 'e' },
                                     { latex: '\\left|#?\\right|', label: '|x|' },
@@ -210,26 +210,14 @@ class Graphiti {
                                     { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Just parentheses - the only grouping we need
-                                    { latex: '\\left(', label: '(' },
-                                    { latex: '\\right)', label: ')' },
-                                    '[separator]',
-                                    '[separator]',
+                                    // Bottom row with 0, operations, and navigation
+                                    '[left]', '[right]',
+                                    { label: '[backspace]', width: 2 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { latex: '.', label: '.' },
                                     '[separator]',
                                     { latex: '-', label: '-' }
-                                ],
-                                [
-                                    // Navigation and basic comparison
-                                    '[left]', '[right]',
-                                    '[separator]',
-                                    '[separator]',
-                                    '[separator]',
-                                    '[separator]',
-                                    { latex: '=', label: '=' },
-                                    { label: '[backspace]', width: 2 }
                                 ]
                             ]
                         };

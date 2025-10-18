@@ -410,6 +410,18 @@
             }
         }
         
+        /* PWA safe area handling for virtual keyboard - applies in all modes */
+        @media (display-mode: standalone) {
+            .ML__keyboard,
+            .ML__keyboard-container,
+            .ML__virtual-keyboard,
+            math-field::part(keyboard) {
+                /* Extend keyboard to true bottom edge in PWA mode */
+                padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+            }
+        }
+        
         /* Target the actual math content for larger font size */
         .function-item math-field::part(content) {
             font-size: 18px !important;
@@ -623,7 +635,66 @@
             .copyright {
                 font-size: 0.7em !important; /* Smaller text */
                 bottom: calc(10px + var(--safe-area-bottom, 0px)) !important; /* Closer to bottom */
-                opacity: 0.7 !important; /* Less prominent */
+            }
+            
+            /* Reduce virtual keyboard height in landscape mode and prevent repositioning */
+            .ML__keyboard,
+            math-field::part(keyboard) {
+                max-height: 30vh !important; /* Limit to 30% of viewport height */
+                min-height: 120px !important; /* Ensure minimum usable height */
+                overflow-y: auto !important; /* Allow scrolling if needed */
+                position: fixed !important; /* Force fixed positioning */
+                bottom: 0 !important; /* Always stick to bottom */
+                top: auto !important; /* Override any top positioning */
+                transform: none !important; /* Disable any transforms that might move it */
+                z-index: 9999 !important; /* Ensure it stays on top */
+                /* PWA safe area handling - extend to true bottom */
+                padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
+                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+            }
+            
+            /* Prevent keyboard container from jumping around */
+            .ML__keyboard-container,
+            .ML__virtual-keyboard {
+                position: fixed !important;
+                bottom: 0 !important;
+                top: auto !important;
+                transform: none !important;
+                /* PWA safe area handling for containers */
+                padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
+                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
+            }
+            
+            /* Reduce keyboard button sizes and spacing in landscape - more specific selectors */
+            .ML__keyboard .ML__keycap,
+            .ML__keyboard .ML__keycap--small,
+            .ML__keyboard .ML__keycap--large,
+            math-field::part(keycap) {
+                min-height: 28px !important; /* Reduced from default ~40px */
+                max-height: 28px !important; /* Force consistent height */
+                padding: 2px 6px !important; /* Reduced padding */
+                font-size: 0.75em !important; /* Smaller text */
+                line-height: 1.2 !important; /* Tighter line height */
+            }
+            
+            /* Reduce row spacing in keyboard */
+            .ML__keyboard .ML__row,
+            math-field::part(keyboard-row) {
+                margin-bottom: 1px !important; /* Reduced row gap */
+                padding: 1px 0 !important; /* Minimal row padding */
+            }
+            
+            /* Make keyboard tabs smaller */
+            .ML__keyboard .ML__tab,
+            math-field::part(keyboard-tab) {
+                padding: 3px 6px !important; /* Reduced tab padding */
+                font-size: 0.75em !important; /* Smaller tab text */
+                min-height: 24px !important; /* Smaller tab height */
+            }
+            
+            /* Reduce overall keyboard container padding */
+            .ML__keyboard {
+                padding: 4px !important; /* Reduced container padding */
             }
         }
 
