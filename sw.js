@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-superscript-n-label-18-10-2025-16:47';
+const CACHE_NAME = 'graphiti-row5-separator-fix-18-10-2025-18:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

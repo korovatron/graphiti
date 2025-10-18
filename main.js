@@ -180,8 +180,10 @@ class Graphiti {
                                     { latex: 'r' },
                                     { latex: '\\theta', label: 'θ' },
                                     '[separator]',
-                                    '[7]', '[8]', '[9]',
-                                    '[/]'
+                                    { latex: '7', label: '7' },
+                                    { latex: '8', label: '8' },
+                                    { latex: '9', label: '9' },
+                                    { latex: '\\div', label: '/' }
                                 ],
                                 [
                                     // Powers and roots (more useful than fractions since we have division)
@@ -190,8 +192,10 @@ class Graphiti {
                                     { latex: '^{#?}', label: 'xⁿ' },
                                     { latex: '\\sqrt{#?}', label: '√' },
                                     '[separator]',
-                                    '[4]', '[5]', '[6]',
-                                    '[*]'
+                                    { latex: '4', label: '4' },
+                                    { latex: '5', label: '5' },
+                                    { latex: '6', label: '6' },
+                                    { latex: '\\times', label: '×' }
                                 ],
                                 [
                                     // Constants and common expressions
@@ -200,23 +204,31 @@ class Graphiti {
                                     { latex: '\\left|#?\\right|', label: '|x|' },
                                     { latex: '#?!', label: 'n!' },
                                     '[separator]',
-                                    '[1]', '[2]', '[3]',
-                                    '[+]'
+                                    { latex: '1', label: '1' },
+                                    { latex: '2', label: '2' },
+                                    { latex: '3', label: '3' },
+                                    { latex: '+', label: '+' }
                                 ],
                                 [
                                     // Just parentheses - the only grouping we need
-                                    '[(]', '[)]',
+                                    { latex: '\\left(', label: '(' },
+                                    { latex: '\\right)', label: ')' },
                                     '[separator]',
-                                    { label: '[0]', width: 2 }, 
-                                    '[.]',
-                                    '[-]'
+                                    '[separator]',
+                                    '[separator]',
+                                    { latex: '0', label: '0' }, 
+                                    { latex: '.', label: '.' },
+                                    '[separator]',
+                                    { latex: '-', label: '-' }
                                 ],
                                 [
                                     // Navigation and basic comparison
                                     '[left]', '[right]',
                                     '[separator]',
-                                    '[=]',
                                     '[separator]',
+                                    '[separator]',
+                                    '[separator]',
+                                    { latex: '=', label: '=' },
                                     { label: '[backspace]', width: 2 }
                                 ]
                             ]
@@ -229,9 +241,21 @@ class Graphiti {
                             rows: [
                                 [
                                     // Trigonometric functions with inverse variants on shift
-                                    { latex: '\\sin(#?)', label: 'sin', shift: { latex: '\\arcsin(#?)', label: 'asin' } },
-                                    { latex: '\\cos(#?)', label: 'cos', shift: { latex: '\\arccos(#?)', label: 'acos' } },
-                                    { latex: '\\tan(#?)', label: 'tan', shift: { latex: '\\arctan(#?)', label: 'atan' } },
+                                    { 
+                                        latex: '\\sin(#?)', 
+                                        label: 'sin', 
+                                        shift: { latex: '\\arcsin(#?)', label: 'sin⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\cos(#?)', 
+                                        label: 'cos', 
+                                        shift: { latex: '\\arccos(#?)', label: 'cos⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\tan(#?)', 
+                                        label: 'tan', 
+                                        shift: { latex: '\\arctan(#?)', label: 'tan⁻¹' }
+                                    },
                                     { latex: '\\sec(#?)', label: 'sec' },
                                     { latex: '\\csc(#?)', label: 'csc' },
                                     { latex: '\\cot(#?)', label: 'cot' },
@@ -239,15 +263,15 @@ class Graphiti {
                                     '[right]'
                                 ],
                                 [
-                                    // Hyperbolic functions with inverse variants on shift
-                                    { latex: '\\sinh(#?)', label: 'sinh', shift: { latex: '\\operatorname{asinh}(#?)', label: 'asinh' } },
-                                    { latex: '\\cosh(#?)', label: 'cosh', shift: { latex: '\\operatorname{acosh}(#?)', label: 'acosh' } },
-                                    { latex: '\\tanh(#?)', label: 'tanh', shift: { latex: '\\operatorname{atanh}(#?)', label: 'atanh' } },
-                                    { latex: '\\ln(#?)', label: 'ln', shift: { latex: 'e^{#?}', label: 'e^x' } },
-                                    { latex: '\\log_{10}(#?)', label: 'log', shift: { latex: '10^{#?}', label: '10^x' } },
+                                    // Other mathematical functions
+                                    { latex: '\\ln(#?)', label: 'ln', shift: { latex: 'e^{#?}', label: 'eˣ' } },
+                                    { latex: '\\log_{10}(#?)', label: 'log', shift: { latex: '10^{#?}', label: '10ˣ' } },
                                     { latex: '\\sqrt{#?}', label: '√', shift: { latex: '^2', label: 'x²' } },
                                     { latex: '\\left|#?\\right|', label: '|x|' },
-                                    { latex: 'x' }, { latex: '\\theta', label: 'θ' }
+                                    { latex: 'x' }, { latex: '\\theta', label: 'θ' },
+                                    '[separator]',
+                                    '[separator]',
+                                    '[separator]'
                                 ],
                                 [
                                     // Constants, basic operations and shift key (removed number buttons)
@@ -260,7 +284,90 @@ class Graphiti {
                         };
 
                         // Set custom layouts: only our custom numeric and functions layouts
-                        window.mathVirtualKeyboard.layouts = [customNumericLayout, functionsLayout];
+                        // Create hyperbolic functions layout
+                        const hyperbolicLayout = {
+                            label: 'hyp',
+                            tooltip: 'Hyperbolic Functions',
+                            rows: [
+                                [
+                                    // Hyperbolic functions with inverse variants on shift
+                                    { 
+                                        latex: '\\sinh(#?)', 
+                                        label: 'sinh', 
+                                        shift: { latex: '\\operatorname{asinh}(#?)', label: 'sinh⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\cosh(#?)', 
+                                        label: 'cosh', 
+                                        shift: { latex: '\\operatorname{acosh}(#?)', label: 'cosh⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\tanh(#?)', 
+                                        label: 'tanh', 
+                                        shift: { latex: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹' }
+                                    },
+                                    { latex: '\\operatorname{sech}(#?)', label: 'sech' },
+                                    { latex: '\\operatorname{csch}(#?)', label: 'csch' },
+                                    { latex: '\\operatorname{coth}(#?)', label: 'coth' },
+                                    '[left]',
+                                    '[right]'
+                                ],
+                                [
+                                    // Additional hyperbolic-related functions
+                                    { latex: 'e^{#?}', label: 'eˣ' },
+                                    { latex: '\\ln(#?)', label: 'ln' },
+                                    { latex: '\\sqrt{#?}', label: '√' },
+                                    { latex: '\\left|#?\\right|', label: '|x|' },
+                                    { latex: 'x' }, { latex: '\\theta', label: 'θ' },
+                                    '[separator]',
+                                    '[separator]',
+                                    '[separator]'
+                                ],
+                                [
+                                    // Constants, basic operations and shift key (no numbers needed)
+                                    { latex: '\\pi', label: 'π' },
+                                    { latex: 'e', label: 'e' },
+                                    '[+]', '[-]', '[*]', '[/]', '[(]', '[)]', '[.]',
+                                    { label: '[shift]', width: 1.5 }, // Add shift key
+                                    { label: '[backspace]', width: 1.5 }
+                                ]
+                            ]
+                        };
+
+                        window.mathVirtualKeyboard.layouts = [customNumericLayout, functionsLayout, hyperbolicLayout];
+                        
+                        // Monitor for layout tab clicks to reset shift state on numeric layout
+                        const observer = new MutationObserver(() => {
+                            // Check if we're on the numeric layout
+                            const activeTab = document.querySelector('.ML__tab--active');
+                            if (activeTab && activeTab.textContent === '123') {
+                                // We're on the numeric layout, ensure no shift state
+                                const shiftButtons = document.querySelectorAll('.ML__keycap[data-command="toggleShift"]');
+                                shiftButtons.forEach(button => {
+                                    button.classList.remove('ML__keycap--pressed', 'ML__keycap--active');
+                                });
+                                
+                                // Also clear any shift-related styling on other buttons
+                                const allButtons = document.querySelectorAll('.ML__keycap');
+                                allButtons.forEach(button => {
+                                    button.classList.remove('ML__keycap--shifted');
+                                });
+                            }
+                        });
+                        
+                        // Start observing when keyboard is available
+                        setTimeout(() => {
+                            const keyboardElement = document.querySelector('.ML__keyboard');
+                            if (keyboardElement) {
+                                observer.observe(keyboardElement, {
+                                    childList: true,
+                                    subtree: true,
+                                    attributes: true,
+                                    attributeFilter: ['class']
+                                });
+                            }
+                        }, 1000);
+                        
                         console.log('Custom virtual keyboard layouts configured successfully!');
                         console.log('Current layouts:', window.mathVirtualKeyboard.layouts);
                         console.log('Custom numeric layout:', customNumericLayout);
@@ -272,6 +379,9 @@ class Graphiti {
                             window.mathVirtualKeyboard.container = document.body;
                             console.log('Mobile keyboard container configured');
                         }
+                        
+                        // Add HYP toggle functionality
+
                         
                     } catch (error) {
                         console.error('Error configuring custom virtual keyboard layouts:', error);
@@ -290,6 +400,8 @@ class Graphiti {
             setupKeyboard();
         }
     }
+    
+
     
     // ================================
     // FUNCTION MANAGEMENT METHODS
@@ -555,9 +667,15 @@ class Graphiti {
     
     plotFunctionWithValidation(func) {
         try {
-            // Don't plot empty expressions
+            // Don't plot empty expressions, but ensure error state is cleared
             if (!func.expression.trim()) {
                 func.points = [];
+                
+                // Remove error styling for empty expressions (they're valid)
+                const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
+                if (funcDiv) {
+                    funcDiv.classList.remove('function-error');
+                }
                 return;
             }
             
