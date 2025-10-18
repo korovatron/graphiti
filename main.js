@@ -2015,10 +2015,8 @@ class Graphiti {
                     if (e.key === 'Enter') {
                         // Force immediate update on Enter, bypassing debounce
                         this.validateAndSetRange();
-                    } else if (e.key === '-') {
-                        // Handle minus key to maintain cursor position
-                        this.handleMinusKey(e, input);
                     }
+                    // Removed custom minus key handling - let browser handle it naturally
                 });
             }
         });
@@ -2576,30 +2574,6 @@ class Graphiti {
             this.updateRangeInputs();
             this.replotAllFunctions();
         }
-    }
-    
-    handleMinusKey(e, input) {
-        const cursorPosition = input.selectionStart;
-        const currentValue = input.value;
-        
-        // If we're at the beginning or the value is empty, handle minus specially
-        if (cursorPosition === 0 || currentValue === '') {
-            e.preventDefault();
-            
-            if (currentValue.startsWith('-')) {
-                // Remove existing minus sign
-                input.value = currentValue.substring(1);
-                input.setSelectionRange(0, 0);
-            } else {
-                // Add minus sign at the beginning
-                input.value = '-' + currentValue;
-                input.setSelectionRange(1, 1);
-            }
-            
-            // Trigger input event to update the graph
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        // If cursor is not at the beginning, let default behavior handle it
     }
     
     debounceRangeUpdate() {
