@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-simple-text-icon-18-10-2025-19:40';
+const CACHE_NAME = 'graphiti-remove-debug-fix-orientation-18-10-2025-19:45';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
