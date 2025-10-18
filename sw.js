@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-aggressive-keyboard-positioning-18-10-2025-20:15';
+const CACHE_NAME = 'graphiti-mathlive-official-css-vars-18-10-2025-20:20';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

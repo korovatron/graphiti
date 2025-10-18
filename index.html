@@ -430,6 +430,29 @@
                     padding-bottom: 8px !important;
                     margin-bottom: 0px !important;
                 }
+                
+                /* Use MathLive's official CSS custom properties for PWA */
+                .ML__keyboard {
+                    --keyboard-padding-bottom: 0px !important;
+                    --_padding-bottom: 0px !important;
+                }
+            }
+            
+            /* Alternative approach for standalone PWA mode */
+            @media (display-mode: standalone) {
+                .ML__keyboard,
+                .ML__keyboard-container,
+                .ML__virtual-keyboard,
+                math-field::part(keyboard) {
+                    padding-bottom: 8px !important;
+                    margin-bottom: 0px !important;
+                }
+                
+                /* Use MathLive's official CSS custom properties for PWA */
+                .ML__keyboard {
+                    --keyboard-padding-bottom: 0px !important;
+                    --_padding-bottom: 0px !important;
+                }
             }
         }
 
