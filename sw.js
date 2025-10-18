@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-case-insensitive-derivatives-16-10-2025-22:47';
+const CACHE_NAME = 'graphiti-immediate-marker-cleanup-18-10-2025-16:12';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

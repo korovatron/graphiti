@@ -320,7 +320,7 @@
         
         .function-item {
             display: flex;
-            align-items: center;
+            align-items: stretch;
             gap: 8px;
             margin-bottom: 10px;
             padding: 8px;
@@ -329,16 +329,18 @@
             border-left: 3px solid;
         }
         
-        .function-item input[type="text"], .function-item input[type="number"] {
-            flex: 1;
-            min-width: 100px;
-            font-size: 14px;
-            padding: 4px 6px;
+        .function-item .function-controls {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            min-height: 100%;
         }
         
         .function-item .color-indicator {
-            width: 20px;
-            height: 20px;
+            width: 24px;
+            height: 18px;
             border-radius: 4px;
             border: 2px solid rgba(255, 255, 255, 0.2);
             cursor: pointer;
@@ -355,19 +357,74 @@
             transform: scale(0.95);
         }
         
-        .function-item button {
-            padding: 4px 8px;
-            font-size: 13px;
-            min-width: auto;
-        }
-        
         .function-item .remove-btn {
             background: #E74C3C;
             padding: 2px 6px;
+            font-size: 12px;
+            min-width: 24px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
         }
         
         .function-item .remove-btn:hover {
             background: #C0392B;
+        }
+        
+        .function-item input[type="text"], .function-item input[type="number"] {
+            flex: 1;
+            min-width: 100px;
+            font-size: 14px;
+            padding: 4px 6px;
+        }
+        
+        /* MathLive styling */
+        .function-item math-field {
+            flex: 1;
+            min-width: 100px;
+            font-size: 18px !important; /* Increased to 18px with !important */
+            padding: 6px 8px; /* Increased padding to accommodate larger text */
+            line-height: 1.4; /* Better line spacing for larger text */
+            --border-radius: 4px;
+            --border: 1px solid var(--border-color);
+            --background: var(--input-bg) !important;
+            --text-color: var(--text-primary);
+            --selection-background-color: var(--accent-color);
+            --selection-color: white;
+            --contains-highlight-background-color: rgba(74, 144, 226, 0.3);
+            --keyboard-zindex: 9999;
+        }
+        
+        /* Hide the menu toggle button to save space */
+        .function-item math-field::part(menu-toggle) {
+            display: none;
+        }
+        
+        /* Target the actual math content for larger font size */
+        .function-item math-field::part(content) {
+            font-size: 18px !important;
+            line-height: 1.4 !important;
+        }
+        
+        .function-item math-field:focus-within {
+            --border: 1px solid var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+        }
+        
+        /* Error styling for functions using direct styling */
+        .function-item.function-error math-field {
+            background: rgba(231, 76, 60, 0.1) !important;
+            border: 2px solid #E74C3C !important;
+            border-radius: 4px !important;
+        }
+        
+        /* Also try with :focus-within for visibility */
+        .function-item.function-error math-field:focus-within {
+            background: rgba(231, 76, 60, 0.2) !important;
+            border: 2px solid #E74C3C !important;
+            box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3) !important;
         }
         
         .function-item.disabled {
@@ -767,6 +824,9 @@
             </div>
         </div>
     </div>
+    
+    <!-- MathLive library for mathematical notation input -->
+    <script src="https://unpkg.com/mathlive"></script>
     
     <!-- Math.js library for safe mathematical expression evaluation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>

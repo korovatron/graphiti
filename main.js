@@ -6,6 +6,9 @@ class Graphiti {
         // Fix iOS PWA 9-pixel viewport bug
         this.fixIOSViewportBug();
         
+        // Configure MathLive virtual keyboard globally
+        this.configureMathLive();
+        
         this.canvas = document.getElementById('canvas');
         this.ctx = this.canvas.getContext('2d');
         
@@ -125,9 +128,9 @@ class Graphiti {
         this.cartesianFunctionsCleared = false;
         this.polarFunctionsCleared = false;
         this.functionColors = [
-            '#4A90E2', '#E74C3C', '#27AE60', '#F39C12', 
+            '#4A90E2', '#27AE60', '#F39C12', 
             '#9B59B6', '#1ABC9C', '#E67E22', '#34495E',
-            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#E74C3C'
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.rangeTimer = null; // For debouncing range updates
@@ -151,6 +154,141 @@ class Graphiti {
         this.animationId = null;
         
         this.init();
+    }
+    
+    configureMathLive() {
+        // Wait for both DOMContentLoaded and MathLive to be available
+        const setupKeyboard = () => {
+            console.log('Setting up custom virtual keyboard...');
+            
+            // Wait a bit more to ensure MathLive is fully loaded
+            setTimeout(() => {
+                if (window.mathVirtualKeyboard) {
+                    try {
+                        console.log('MathLive detected, configuring custom layouts...');
+                        
+                        // Create a custom numeric layout (replacing the default)
+                        const customNumericLayout = {
+                            label: '123',
+                            labelClass: 'MLK__tex-math',
+                            tooltip: 'Numbers & Basic Operations',
+                            rows: [
+                                [
+                                    // Variables for both cartesian and polar
+                                    { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'] },
+                                    { latex: 'y' },
+                                    { latex: 'r' },
+                                    { latex: '\\theta', label: 'θ' },
+                                    '[separator]',
+                                    '[7]', '[8]', '[9]',
+                                    '[/]'
+                                ],
+                                [
+                                    // Powers and roots (more useful than fractions since we have division)
+                                    { latex: '#?^2', label: 'x²' },
+                                    { latex: '#?^3', label: 'x³' },
+                                    { latex: '#?^{#?}', label: 'x^n' },
+                                    { latex: '\\sqrt{#?}', label: '√' },
+                                    '[separator]',
+                                    '[4]', '[5]', '[6]',
+                                    '[*]'
+                                ],
+                                [
+                                    // Constants and common expressions
+                                    { latex: '\\pi', label: 'π' },
+                                    { latex: 'e', label: 'e' },
+                                    { latex: '\\left|#?\\right|', label: '|x|' },
+                                    { latex: '#?!', label: 'n!' },
+                                    '[separator]',
+                                    '[1]', '[2]', '[3]',
+                                    '[+]'
+                                ],
+                                [
+                                    // Just parentheses - the only grouping we need
+                                    '[(]', '[)]',
+                                    '[separator]',
+                                    { label: '[0]', width: 2 }, 
+                                    '[.]',
+                                    '[-]'
+                                ],
+                                [
+                                    // Navigation and basic comparison
+                                    '[left]', '[right]',
+                                    '[separator]',
+                                    '[=]',
+                                    '[separator]',
+                                    { label: '[backspace]', width: 2 }
+                                ]
+                            ]
+                        };
+
+                        // Create a simple custom function layout to test
+                        const functionsLayout = {
+                            label: 'f(x)',
+                            tooltip: 'Functions for Graphing',
+                            rows: [
+                                [
+                                    // Trigonometric functions with inverse variants on shift
+                                    { latex: '\\sin(#?)', label: 'sin', shift: { latex: '\\arcsin(#?)', label: 'asin' } },
+                                    { latex: '\\cos(#?)', label: 'cos', shift: { latex: '\\arccos(#?)', label: 'acos' } },
+                                    { latex: '\\tan(#?)', label: 'tan', shift: { latex: '\\arctan(#?)', label: 'atan' } },
+                                    { latex: '\\sec(#?)', label: 'sec' },
+                                    { latex: '\\csc(#?)', label: 'csc' },
+                                    { latex: '\\cot(#?)', label: 'cot' },
+                                    '[left]',
+                                    '[right]'
+                                ],
+                                [
+                                    // Hyperbolic functions with inverse variants on shift
+                                    { latex: '\\sinh(#?)', label: 'sinh', shift: { latex: '\\operatorname{asinh}(#?)', label: 'asinh' } },
+                                    { latex: '\\cosh(#?)', label: 'cosh', shift: { latex: '\\operatorname{acosh}(#?)', label: 'acosh' } },
+                                    { latex: '\\tanh(#?)', label: 'tanh', shift: { latex: '\\operatorname{atanh}(#?)', label: 'atanh' } },
+                                    { latex: '\\ln(#?)', label: 'ln', shift: { latex: 'e^{#?}', label: 'e^x' } },
+                                    { latex: '\\log_{10}(#?)', label: 'log', shift: { latex: '10^{#?}', label: '10^x' } },
+                                    { latex: '\\sqrt{#?}', label: '√', shift: { latex: '#?^2', label: 'x²' } },
+                                    { latex: '\\left|#?\\right|', label: '|x|' },
+                                    { latex: 'x' }, { latex: '\\theta', label: 'θ' }
+                                ],
+                                [
+                                    // Constants, basic operations and shift key (removed number buttons)
+                                    { latex: '\\pi' }, { latex: 'e' },
+                                    '[+]', '[-]', '[*]', '[/]', '[(]', '[)]', '[.]',
+                                    { label: '[shift]', width: 1.5 }, // Add shift key
+                                    { label: '[backspace]', width: 1.5 }
+                                ]
+                            ]
+                        };
+
+                        // Set custom layouts: only our custom numeric and functions layouts
+                        window.mathVirtualKeyboard.layouts = [customNumericLayout, functionsLayout];
+                        console.log('Custom virtual keyboard layouts configured successfully!');
+                        console.log('Current layouts:', window.mathVirtualKeyboard.layouts);
+                        console.log('Custom numeric layout:', customNumericLayout);
+                        console.log('Functions layout:', functionsLayout);
+                        
+                        // Configure virtual keyboard behavior for mobile
+                        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                        if (isMobile) {
+                            window.mathVirtualKeyboard.container = document.body;
+                            console.log('Mobile keyboard container configured');
+                        }
+                        
+                    } catch (error) {
+                        console.error('Error configuring custom virtual keyboard layouts:', error);
+                    }
+                } else {
+                    console.log('MathLive not yet available, retrying...');
+                    // Retry after another delay
+                    setTimeout(setupKeyboard, 500);
+                }
+            }, 100);
+        };
+        
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupKeyboard);
+        } else {
+            setupKeyboard();
+        }
     }
     
     // ================================
@@ -242,30 +380,90 @@ class Graphiti {
         funcDiv.setAttribute('data-function-id', func.id);
 
         funcDiv.innerHTML = `
-            <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
-            <input type="text" spellcheck="false" placeholder="e.g., sin(x), x^2, log(x)" value="${func.expression}">
-            <button class="remove-btn">×</button>
-        `;        // Add event listeners
-        const input = funcDiv.querySelector('input');
-        const colorIndicator = funcDiv.querySelector('.color-indicator');
-        const removeBtn = funcDiv.querySelector('.remove-btn');
+            <math-field 
+                class="mathlive-input" 
+                placeholder="\\sin(x)"
+                default-mode="math"
+                smart-fence="true"
+                smart-superscript="true"
+                virtual-keyboard-mode="auto"
+                virtual-keyboards="numeric functions symbols greek"
+                style="
+                    width: 100%;
+                    padding: 8px;
+                    font-size: 14px;
+                    border: 1px solid var(--border-color);
+                    border-radius: 4px;
+                    background: var(--input-bg);
+                    color: var(--text-primary);
+                    outline: none;
+                    box-sizing: border-box;
+                    --hue: 220;
+                    --accent-color: var(--accent-color);
+                    --background: var(--input-bg);
+                    --text-color: var(--text-primary);
+                    --selection-background-color: var(--accent-color);
+                    --selection-color: #fff;
+                    --contains-highlight-background-color: var(--accent-color);
+                ">${this.convertToLatex(func.expression)}</math-field>
+            <div class="function-controls">
+                <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
+                <button class="remove-btn">×</button>
+            </div>
+        `;
         
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                // Force immediate plotting on Enter, bypassing debounce
-                func.expression = input.value;
-                this.plotFunctionWithValidation(func);
+        // Get the MathLive element
+        const mathField = funcDiv.querySelector('math-field');
+        
+        // Configure this specific mathfield's virtual keyboard
+        setTimeout(() => {
+            try {
+                // Virtual keyboard layouts are configured globally in configureMathLive()
+                // No need to set per-mathfield since we have custom layouts
+            } catch (error) {
+                console.log('Virtual keyboard setup:', error);
+            }
+        }, 100);
+        
+        // Add keyboard event listener for polar mode theta conversion
+        mathField.addEventListener('keydown', (event) => {
+            // In polar mode, convert 't' key to theta symbol
+            if (this.plotMode === 'polar' && event.key === 't' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault(); // Prevent default 't' insertion
+                mathField.executeCommand(['insert', '\\theta']); // Insert theta instead
             }
         });
         
-        input.addEventListener('input', (e) => {
-            // Clear badges for this function when editing
-            this.removeBadgesForFunction(func.id);
-            // Clear intersection badges since they may no longer be valid
-            this.clearIntersections();
-            func.expression = e.target.value;
-            // Auto-plot with debouncing to avoid excessive calculations
-            this.debouncePlot(func);
+        // Add event listeners
+        const colorIndicator = funcDiv.querySelector('.color-indicator');
+        const removeBtn = funcDiv.querySelector('.remove-btn');
+        
+        mathField.addEventListener('input', () => {
+            // Convert LaTeX to math.js expression
+            try {
+                const latex = mathField.getValue();
+                const expression = this.convertFromLatex(latex);
+                func.expression = expression;
+                
+                // Debounced plotting
+                this.debouncePlot(func);
+            } catch (error) {
+                console.warn('Error getting mathfield value:', error);
+            }
+        });
+        
+        mathField.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                // Force immediate plotting on Enter, bypassing debounce
+                try {
+                    const latex = mathField.getValue();
+                    const expression = this.convertFromLatex(latex);
+                    func.expression = expression;
+                    this.plotFunctionWithValidation(func);
+                } catch (error) {
+                    console.warn('Error getting mathfield value on Enter:', error);
+                }
+            }
         });
         
         colorIndicator.addEventListener('click', () => {
@@ -303,21 +501,21 @@ class Graphiti {
     
     updateFunctionVisualState(func, funcDiv) {
         const colorIndicator = funcDiv.querySelector('.color-indicator');
-        const input = funcDiv.querySelector('input');
+        const mathField = funcDiv.querySelector('math-field');
         
         if (func.enabled) {
             // Function is visible
             colorIndicator.style.opacity = '1';
             colorIndicator.style.filter = 'none';
             colorIndicator.title = 'Click to hide function';
-            input.style.opacity = '1';
+            if (mathField) mathField.style.opacity = '1';
             funcDiv.classList.remove('disabled');
         } else {
             // Function is hidden
             colorIndicator.style.opacity = '0.3';
             colorIndicator.style.filter = 'grayscale(100%)';
             colorIndicator.title = 'Click to show function';
-            input.style.opacity = '0.6';
+            if (mathField) mathField.style.opacity = '0.6';
             funcDiv.classList.add('disabled');
         }
     }
@@ -356,19 +554,31 @@ class Graphiti {
     }
     
     plotFunctionWithValidation(func) {
-        // Don't plot empty expressions
-        if (!func.expression.trim()) {
-            func.points = [];
-            return;
-        }
-        
-        // Check if math.js is available
-        if (typeof math === 'undefined') {
-            console.error('Math.js library not loaded!');
-            return;
-        }
-        
         try {
+            // Don't plot empty expressions
+            if (!func.expression.trim()) {
+                func.points = [];
+                return;
+            }
+            
+            // Check for incomplete expressions (ending with operators)
+            if (/[+\-*/^]$/.test(func.expression.trim())) {
+                throw new Error('Incomplete expression ending with operator');
+            }
+            
+            // Check if math.js is available
+            if (typeof math === 'undefined') {
+                console.error('Math.js library not loaded!');
+                return;
+            }
+            
+            // Try a simple test evaluation to catch syntax errors early
+            try {
+                math.evaluate(func.expression, { x: 1 });
+            } catch (evalError) {
+                throw new Error('Invalid mathematical expression: ' + evalError.message);
+            }
+            
             // Quick validation: try to evaluate at x=0
             const testResult = this.evaluateFunction(func.expression, 0);
             
@@ -388,21 +598,23 @@ class Graphiti {
             // Update UI to show success (remove any error styling)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
             if (funcDiv) {
-                const input = funcDiv.querySelector('input');
-                input.style.borderColor = '';
-                input.style.backgroundColor = '';
+                // Remove error class instead of trying to manipulate styles directly
+                funcDiv.classList.remove('function-error');
+                console.log('Removed error class from function', func.id);
             }
             
         } catch (error) {
             // Expression is invalid, clear points and show visual feedback
             func.points = [];
             
+            console.log('Error in plotFunctionWithValidation:', error.message);
+            
             // Update UI to show error (subtle visual feedback)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
             if (funcDiv) {
-                const input = funcDiv.querySelector('input');
-                input.style.borderColor = '#E74C3C';
-                input.style.backgroundColor = 'rgba(231, 76, 60, 0.1)';
+                // Add error class instead of trying to manipulate styles directly
+                funcDiv.classList.add('function-error');
+                console.log('Added error class to function', func.id);
             }
         }
     }
@@ -431,6 +643,12 @@ class Graphiti {
         if (funcDiv) {
             funcDiv.remove();
         }
+        
+        // Recalculate intersections and turning points for remaining functions
+        this.handleViewportChange();
+        
+        // Redraw to update the display immediately
+        this.draw();
     }
     
     clearAllFunctions() {
@@ -2235,7 +2453,7 @@ class Graphiti {
                 this.addFunction('e^(-x^2)');
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
-                this.addFunction('1 + cos(t)'); // Cardioid
+                this.addFunction('1 + cos(t)'); // Cardioid - t will be converted to θ in UI
                 this.addFunction('2cos(3t)'); // Three-petaled rose  
                 this.addFunction('sin(2t)'); // Four-petaled rose
                 this.addFunction(''); // Empty function to show placeholder example text
@@ -2303,12 +2521,12 @@ class Graphiti {
     }
     
     updateFunctionPlaceholders() {
-        const functionInputs = document.querySelectorAll('.function-item input[type="text"]');
-        functionInputs.forEach(input => {
+        const mathFields = document.querySelectorAll('.function-item math-field');
+        mathFields.forEach(mathField => {
             if (this.plotMode === 'polar') {
-                input.placeholder = 'e.g., 1 + cos(t), 2sin(3t)';
+                mathField.setAttribute('placeholder', '1 + \\cos(\\theta)');
             } else {
-                input.placeholder = 'e.g., sin(x), x^2, log(x)';
+                mathField.setAttribute('placeholder', '\\sin(x)');
             }
         });
     }
@@ -2335,7 +2553,7 @@ class Graphiti {
                 this.addFunction('e^(-x^2)');
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
-                this.addFunction('1 + cos(t)');
+                this.addFunction('1 + cos(t)'); // t will be converted to θ in UI
                 this.addFunction('cos(3t)');
                 this.addFunction(''); // Empty function to show placeholder example text
             }
@@ -2779,10 +2997,30 @@ class Graphiti {
         }
         
         const turningPoints = [];
-        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+            // Filter for enabled functions with valid expressions and points
+            if (!f.enabled || !f.points || f.points.length === 0) {
+                return false;
+            }
+            
+            // Also check that the expression doesn't end with operators (invalid)
+            if (!f.expression || !f.expression.trim() || /[+\-*/^]$/.test(f.expression.trim())) {
+                return false;
+            }
+            
+            return true;
+        });
         
         for (const func of enabledFunctions) {
             try {
+                // Validate that the expression can be parsed before attempting derivatives
+                try {
+                    math.parse(func.expression);
+                } catch (parseError) {
+                    console.warn(`Skipping turning points for invalid expression "${func.expression}":`, parseError.message);
+                    continue;
+                }
+                
                 // Make function names case-insensitive for derivative calculation (same as evaluateFunction)
                 const processedExpression = func.expression.toLowerCase();
                 
@@ -5275,6 +5513,161 @@ class Graphiti {
                 console.log('Service Worker registration failed:', error);
             }
         }
+    }
+
+    // ================================
+    // LATEX CONVERSION METHODS
+    // ================================
+    
+    convertToLatex(expression) {
+        if (!expression) return '';
+        
+        let latex = expression;
+        
+        // In polar mode, convert 't' to '\theta' for display
+        if (this.plotMode === 'polar') {
+            // Replace 't' with theta - handle various contexts where t appears
+            latex = latex.replace(/\bt\b/g, '\\theta'); // standalone t
+            latex = latex.replace(/(\d)t\b/g, '$1\\theta'); // numbers followed by t (like 3t)
+            latex = latex.replace(/\(([^)]*)\)t\b/g, '($1)\\theta'); // parentheses followed by t
+        }
+        
+        // Convert common math.js expressions to LaTeX
+        // Powers: x^2 -> x^{2}, x^(n+1) -> x^{n+1}
+        latex = latex.replace(/\^(\w)/g, '^{$1}');
+        latex = latex.replace(/\^(\([^)]+\))/g, '^{$1}');
+        
+        // Fractions: (a)/(b) -> \frac{a}{b}
+        latex = latex.replace(/\(([^)]+)\)\/\(([^)]+)\)/g, '\\frac{$1}{$2}');
+        
+        // Square roots: sqrt(x) -> \sqrt{x}
+        latex = latex.replace(/sqrt\(([^)]+)\)/g, '\\sqrt{$1}');
+        
+        // Trigonometric functions
+        latex = latex.replace(/\bsin\(/g, '\\sin(');
+        latex = latex.replace(/\bcos\(/g, '\\cos(');
+        latex = latex.replace(/\btan\(/g, '\\tan(');
+        latex = latex.replace(/\basin\(/g, '\\arcsin(');
+        latex = latex.replace(/\bacos\(/g, '\\arccos(');
+        latex = latex.replace(/\batan\(/g, '\\arctan(');
+        
+        // Logarithms
+        latex = latex.replace(/\blog\(/g, '\\log(');
+        latex = latex.replace(/\bln\(/g, '\\ln(');
+        
+        // Constants
+        latex = latex.replace(/\bpi\b/g, '\\pi');
+        latex = latex.replace(/\be\b/g, 'e');
+        
+        // Exponential: e^x -> e^{x}
+        latex = latex.replace(/\be\^(\w)/g, 'e^{$1}');
+        latex = latex.replace(/\be\^(\([^)]+\))/g, 'e^{$1}');
+        
+        return latex;
+    }
+    
+    convertFromLatex(latex) {
+        if (!latex) return '';
+        
+        console.log('Converting LaTeX:', latex);
+        
+        let expression = latex;
+        
+        // FIRST: Handle LaTeX parentheses before any other processing
+        expression = expression.replace(/\\left\(/g, '(');
+        expression = expression.replace(/\\right\)/g, ')');
+        expression = expression.replace(/\\left\[/g, '[');
+        expression = expression.replace(/\\right\]/g, ']');
+        expression = expression.replace(/\\left\{/g, '{');
+        expression = expression.replace(/\\right\}/g, '}');
+        
+        // Convert LaTeX back to math.js expressions
+        // Fractions: \frac{a}{b} -> (a)/(b)
+        expression = expression.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
+        
+        // Square roots: \sqrt{x} -> sqrt(x)
+        expression = expression.replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)');
+        
+        // Powers: x^{2} -> x^2, but keep parentheses for complex expressions
+        expression = expression.replace(/\^{([^}]+)}/g, '^($1)');
+        
+        // Handle 10^{x} specifically before general power conversion
+        expression = expression.replace(/10\^\(([^)]+)\)/g, 'pow(10,$1)'); // 10^{x} -> pow(10,x)
+        
+        // Trigonometric functions
+        expression = expression.replace(/\\sin/g, 'sin');
+        expression = expression.replace(/\\cos/g, 'cos');
+        expression = expression.replace(/\\tan/g, 'tan');
+        expression = expression.replace(/\\sec/g, 'sec');
+        expression = expression.replace(/\\csc/g, 'csc');
+        expression = expression.replace(/\\cot/g, 'cot');
+        expression = expression.replace(/\\arcsin/g, 'asin');
+        expression = expression.replace(/\\arccos/g, 'acos');
+        expression = expression.replace(/\\arctan/g, 'atan');
+        
+        // Hyperbolic functions
+        expression = expression.replace(/\\sinh/g, 'sinh');
+        expression = expression.replace(/\\cosh/g, 'cosh');
+        expression = expression.replace(/\\tanh/g, 'tanh');
+        expression = expression.replace(/\\operatorname\{asinh\}/g, 'asinh');
+        expression = expression.replace(/\\operatorname\{acosh\}/g, 'acosh');
+        expression = expression.replace(/\\operatorname\{atanh\}/g, 'atanh');
+        
+        // Logarithms and exponentials (corrected for math.js)
+        expression = expression.replace(/\\ln/g, 'log');     // ln(x) -> log(x) (natural log in math.js)
+        
+        // Handle logarithms with arbitrary bases - MUST come before the fallback \\log replacement
+        // Pattern 1: log_{base}(arg) with braces
+        expression = expression.replace(/\\log_\{([^}]+)\}\(([^)]+)\)/g, function(match, base, arg) {
+            if (base === '10') {
+                return `log10(${arg})`; // Use built-in log10 for base 10
+            } else if (base === 'e') {
+                return `log(${arg})`; // Use built-in log for base e (natural log)
+            } else {
+                return `(log(${arg})/log(${base}))`; // Change of base formula
+            }
+        });
+        
+        // Pattern 2: log_base(arg) without braces around base
+        expression = expression.replace(/\\log_([0-9]+)\(([^)]+)\)/g, function(match, base, arg) {
+            if (base === '10') {
+                return `log10(${arg})`; // Use built-in log10 for base 10
+            } else if (base === 'e') {
+                return `log(${arg})`; // Use built-in log for base e (natural log)
+            } else {
+                return `(log(${arg})/log(${base}))`; // Change of base formula
+            }
+        });
+        
+        // Fallback: plain log (must come AFTER specific base handling)
+        expression = expression.replace(/\\log/g, 'log10');  // fallback: log(x) -> log10(x) (base-10 log in math.js)
+        expression = expression.replace(/e\^/g, 'exp');
+        
+        // Absolute value: \left|x\right| -> abs(x)
+        expression = expression.replace(/\\left\|([^|]+)\\right\|/g, 'abs($1)');
+        
+        // Constants
+        expression = expression.replace(/\\pi/g, 'pi');
+        // In polar mode, convert theta back to 't' for evaluation
+        if (this.plotMode === 'polar') {
+            expression = expression.replace(/\\theta/g, 't');
+        } else {
+            expression = expression.replace(/\\theta/g, 'theta');
+        }
+        
+        // Add implicit multiplication for common cases
+        // 2x -> 2*x, 3sin(x) -> 3*sin(x)
+        expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+        expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+        // DON'T add multiplication between function names and parentheses
+        // expression = expression.replace(/([a-zA-Z])(\()/g, '$1*$2'); // REMOVED this line
+        
+        // Remove spaces
+        expression = expression.replace(/\s+/g, '');
+        
+        console.log('Converted to math.js:', expression);
+        
+        return expression;
     }
 
 
