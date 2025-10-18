@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-comprehensive-css-no-js-18-10-2025-20:25';
+const CACHE_NAME = 'graphiti-division-slash-behavior-18-10-2025-21:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

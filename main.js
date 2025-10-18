@@ -175,15 +175,15 @@ class Graphiti {
                             rows: [
                                 [
                                     // Variables and parentheses - reorganized
-                                    { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'] },
-                                    { latex: '\\theta', label: 'θ' },
+                                    { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
+                                    { latex: '\\theta', label: 'θ', class: 'variable-key' },
                                     { latex: '\\left(', label: '(' },
                                     { latex: '\\right)', label: ')' },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    { latex: '\\frac{#0}{#?}', label: '/' }
+                                    '[/]'
                                 ],
                                 [
                                     // Powers and roots
@@ -202,7 +202,7 @@ class Graphiti {
                                     { latex: '\\pi', label: 'π' },
                                     { latex: 'e', label: 'e' },
                                     { latex: '\\left|#?\\right|', label: '|x|' },
-                                    { latex: '#?!', label: 'n!' },
+                                    { insert: '!', label: 'n!' },
                                     '[separator]',
                                     { latex: '1', label: '1' },
                                     { latex: '2', label: '2' },
@@ -222,13 +222,26 @@ class Graphiti {
                             ]
                         };
 
-                        // Create a simple custom function layout to test
+                        // Create function layout matching numeric keyboard structure
                         const functionsLayout = {
                             label: 'f(x)',
-                            tooltip: 'Functions for Graphing',
+                            labelClass: 'MLK__tex-math',
+                            tooltip: 'Trigonometric Functions',
                             rows: [
                                 [
-                                    // Trigonometric functions with inverse variants on shift
+                                    // Variables and parentheses - same as numeric keyboard
+                                    { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
+                                    { latex: '\\theta', label: 'θ', class: 'variable-key' },
+                                    { latex: '\\left(', label: '(' },
+                                    { latex: '\\right)', label: ')' },
+                                    '[separator]',
+                                    { latex: '7', label: '7' },
+                                    { latex: '8', label: '8' },
+                                    { latex: '9', label: '9' },
+                                    '[/]'
+                                ],
+                                [
+                                    // Trigonometric functions (primary)
                                     { 
                                         latex: '\\sin(#?)', 
                                         label: 'sin', 
@@ -244,41 +257,79 @@ class Graphiti {
                                         label: 'tan', 
                                         shift: { latex: '\\arctan(#?)', label: 'tan⁻¹' }
                                     },
-                                    { latex: '\\sec(#?)', label: 'sec' },
-                                    { latex: '\\csc(#?)', label: 'csc' },
-                                    { latex: '\\cot(#?)', label: 'cot' },
-                                    '[left]',
-                                    '[right]'
+                                    { 
+                                        latex: '\\ln(#?)', 
+                                        label: 'ln', 
+                                        shift: { latex: 'e^{#?}', label: 'eˣ' }
+                                    },
+                                    '[separator]',
+                                    { latex: '4', label: '4' },
+                                    { latex: '5', label: '5' },
+                                    { latex: '6', label: '6' },
+                                    { latex: '\\times', label: '×' }
                                 ],
                                 [
-                                    // Other mathematical functions
-                                    { latex: '\\ln(#?)', label: 'ln', shift: { latex: 'e^{#?}', label: 'eˣ' } },
-                                    { latex: '\\log_{10}(#?)', label: 'log', shift: { latex: '10^{#?}', label: '10ˣ' } },
-                                    { latex: '\\sqrt{#?}', label: '√', shift: { latex: '^2', label: 'x²' } },
-                                    { latex: '\\left|#?\\right|', label: '|x|' },
-                                    { latex: 'x' }, { latex: '\\theta', label: 'θ' },
+                                    // Trigonometric reciprocal functions and log
+                                    { 
+                                        latex: '\\csc(#?)', 
+                                        label: 'csc', 
+                                        shift: { latex: '\\operatorname{arccsc}(#?)', label: 'csc⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\sec(#?)', 
+                                        label: 'sec', 
+                                        shift: { latex: '\\operatorname{arcsec}(#?)', label: 'sec⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\cot(#?)', 
+                                        label: 'cot', 
+                                        shift: { latex: '\\operatorname{arccot}(#?)', label: 'cot⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\log_{10}(#?)', 
+                                        label: 'log', 
+                                        shift: { latex: '10^{#?}', label: '10ˣ' }
+                                    },
                                     '[separator]',
-                                    '[separator]',
-                                    '[separator]'
+                                    { latex: '1', label: '1' },
+                                    { latex: '2', label: '2' },
+                                    { latex: '3', label: '3' },
+                                    { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Constants, basic operations and shift key (removed number buttons)
-                                    { latex: '\\pi' }, { latex: 'e' },
-                                    '[+]', '[-]', '[*]', '[/]', '[(]', '[)]', '[.]',
-                                    { label: '[shift]', width: 1.5 }, // Add shift key
-                                    { label: '[backspace]', width: 1.5 }
+                                    // Bottom row with navigation, shift key between . and -
+                                    '[left]', '[right]',
+                                    { label: '[backspace]', width: 2 },
+                                    '[separator]',
+                                    { latex: '0', label: '0' }, 
+                                    { latex: '.', label: '.' },
+                                    { label: '[shift]', width: 1 },
+                                    { latex: '-', label: '-' }
                                 ]
                             ]
                         };
 
                         // Set custom layouts: only our custom numeric and functions layouts
-                        // Create hyperbolic functions layout
+                        // Create hyperbolic layout matching numeric keyboard structure
                         const hyperbolicLayout = {
                             label: 'hyp',
+                            labelClass: 'MLK__tex-math',
                             tooltip: 'Hyperbolic Functions',
                             rows: [
                                 [
-                                    // Hyperbolic functions with inverse variants on shift
+                                    // Variables and parentheses - same as numeric keyboard
+                                    { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
+                                    { latex: '\\theta', label: 'θ', class: 'variable-key' },
+                                    { latex: '\\left(', label: '(' },
+                                    { latex: '\\right)', label: ')' },
+                                    '[separator]',
+                                    { latex: '7', label: '7' },
+                                    { latex: '8', label: '8' },
+                                    { latex: '9', label: '9' },
+                                    '[/]'
+                                ],
+                                [
+                                    // Hyperbolic functions (primary)
                                     { 
                                         latex: '\\sinh(#?)', 
                                         label: 'sinh', 
@@ -294,30 +345,54 @@ class Graphiti {
                                         label: 'tanh', 
                                         shift: { latex: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹' }
                                     },
-                                    { latex: '\\operatorname{sech}(#?)', label: 'sech' },
-                                    { latex: '\\operatorname{csch}(#?)', label: 'csch' },
-                                    { latex: '\\operatorname{coth}(#?)', label: 'coth' },
-                                    '[left]',
-                                    '[right]'
+                                    { 
+                                        latex: 'e^{#?}', 
+                                        label: 'eˣ', 
+                                        shift: { latex: '\\ln(#?)', label: 'ln' }
+                                    },
+                                    '[separator]',
+                                    { latex: '4', label: '4' },
+                                    { latex: '5', label: '5' },
+                                    { latex: '6', label: '6' },
+                                    { latex: '\\times', label: '×' }
                                 ],
                                 [
-                                    // Additional hyperbolic-related functions
-                                    { latex: 'e^{#?}', label: 'eˣ' },
-                                    { latex: '\\ln(#?)', label: 'ln' },
-                                    { latex: '\\sqrt{#?}', label: '√' },
-                                    { latex: '\\left|#?\\right|', label: '|x|' },
-                                    { latex: 'x' }, { latex: '\\theta', label: 'θ' },
+                                    // Hyperbolic reciprocal functions and root
+                                    { 
+                                        latex: '\\operatorname{csch}(#?)', 
+                                        label: 'csch', 
+                                        shift: { latex: '\\operatorname{acsch}(#?)', label: 'csch⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\operatorname{sech}(#?)', 
+                                        label: 'sech', 
+                                        shift: { latex: '\\operatorname{asech}(#?)', label: 'sech⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\operatorname{coth}(#?)', 
+                                        label: 'coth', 
+                                        shift: { latex: '\\operatorname{acoth}(#?)', label: 'coth⁻¹' }
+                                    },
+                                    { 
+                                        latex: '\\sqrt{#?}', 
+                                        label: '√', 
+                                        shift: { latex: '^2', label: 'x²' }
+                                    },
                                     '[separator]',
-                                    '[separator]',
-                                    '[separator]'
+                                    { latex: '1', label: '1' },
+                                    { latex: '2', label: '2' },
+                                    { latex: '3', label: '3' },
+                                    { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Constants, basic operations and shift key (no numbers needed)
-                                    { latex: '\\pi', label: 'π' },
-                                    { latex: 'e', label: 'e' },
-                                    '[+]', '[-]', '[*]', '[/]', '[(]', '[)]', '[.]',
-                                    { label: '[shift]', width: 1.5 }, // Add shift key
-                                    { label: '[backspace]', width: 1.5 }
+                                    // Bottom row with navigation, shift key between . and -
+                                    '[left]', '[right]',
+                                    { label: '[backspace]', width: 2 },
+                                    '[separator]',
+                                    { latex: '0', label: '0' }, 
+                                    { latex: '.', label: '.' },
+                                    { label: '[shift]', width: 1 },
+                                    { latex: '-', label: '-' }
                                 ]
                             ]
                         };
@@ -387,6 +462,25 @@ class Graphiti {
                                             }
                                             console.log('Keyboard closed due to orientation change:', currentOrientation);
                                         }
+                                        
+                                        // Clean up any lingering MathLive backdrop elements
+                                        // This fixes the phantom overlay issue in mobile browser mode
+                                        setTimeout(() => {
+                                            const backdrops = document.querySelectorAll('.MLK__backdrop');
+                                            backdrops.forEach(backdrop => {
+                                                if (backdrop.parentNode) {
+                                                    backdrop.parentNode.removeChild(backdrop);
+                                                }
+                                            });
+                                            
+                                            // Also clean up any virtual keyboard containers that might be stuck
+                                            const keyboards = document.querySelectorAll('.ML__virtual-keyboard');
+                                            keyboards.forEach(keyboard => {
+                                                if (keyboard.style.display !== 'none' && !window.mathVirtualKeyboard.visible) {
+                                                    keyboard.style.display = 'none';
+                                                }
+                                            });
+                                        }, 100);
                                     }
                                 }, 150);
                             };
@@ -1122,10 +1216,10 @@ class Graphiti {
             this.polarSettings.thetaMax = 360;
             
             if (thetaMinInput) {
-                thetaMinInput.value = '0';
+                this.setRangeValue(thetaMinInput, '0');
             }
             if (thetaMaxInput) {
-                thetaMaxInput.value = '360';
+                this.setRangeValue(thetaMaxInput, '360');
             }
         } else {
             // Reset to 0 to 2π radians (default)
@@ -1133,11 +1227,11 @@ class Graphiti {
             this.polarSettings.thetaMax = 2 * Math.PI;
             
             if (thetaMinInput) {
-                thetaMinInput.value = '0';
+                this.setRangeValue(thetaMinInput, '0');
             }
             if (thetaMaxInput) {
                 const value = (2 * Math.PI).toFixed(6);
-                thetaMaxInput.value = value;
+                this.setRangeValue(thetaMaxInput, value);
             }
         }
     }
@@ -1578,14 +1672,14 @@ class Graphiti {
         
         if (thetaMinInput) {
             thetaMinInput.addEventListener('input', () => {
-                this.polarSettings.thetaMin = parseFloat(thetaMinInput.value) || 0;
+                this.polarSettings.thetaMin = this.getRangeValue(thetaMinInput) || 0;
                 this.replotAllFunctions();
             });
         }
         
         if (thetaMaxInput) {
             thetaMaxInput.addEventListener('input', () => {
-                this.polarSettings.thetaMax = parseFloat(thetaMaxInput.value) || 2 * Math.PI;
+                this.polarSettings.thetaMax = this.getRangeValue(thetaMaxInput) || 2 * Math.PI;
                 this.replotAllFunctions();
             });
         }
@@ -1902,6 +1996,15 @@ class Graphiti {
             if (input) {
                 input.addEventListener('input', () => {
                     this.clearAllBadges(); // Clear badges when viewport changes
+                    
+                    // Immediate validation for invalid expressions
+                    const value = this.getRangeValue(input);
+                    if (isNaN(value)) {
+                        this.setInputError(input, true);
+                    } else {
+                        this.setInputError(input, false);
+                    }
+                    
                     this.debounceRangeUpdate();
                 });
                 
@@ -2536,10 +2639,10 @@ class Graphiti {
         if (!xMinInput || !xMaxInput || !yMinInput || !yMaxInput) return;
         
         // Parse values
-        const xMin = parseFloat(xMinInput.value);
-        const xMax = parseFloat(xMaxInput.value);
-        const yMin = parseFloat(yMinInput.value);
-        const yMax = parseFloat(yMaxInput.value);
+        const xMin = this.getRangeValue(xMinInput);
+        const xMax = this.getRangeValue(xMaxInput);
+        const yMin = this.getRangeValue(yMinInput);
+        const yMax = this.getRangeValue(yMaxInput);
         
         // Validate all inputs
         const inputs = [
@@ -2583,14 +2686,24 @@ class Graphiti {
     }
     
     setInputError(input, hasError) {
+        if (!input) return;
+        
         if (hasError) {
-            input.style.borderColor = '#E74C3C';
-            input.style.backgroundColor = 'rgba(231, 76, 60, 0.15)';
-            input.style.boxShadow = '0 0 0 1px rgba(231, 76, 60, 0.3)';
+            input.classList.add('input-error');
+            // Fallback for regular input elements
+            if (input.tagName.toLowerCase() !== 'math-field') {
+                input.style.borderColor = '#E74C3C';
+                input.style.backgroundColor = 'rgba(231, 76, 60, 0.15)';
+                input.style.boxShadow = '0 0 0 1px rgba(231, 76, 60, 0.3)';
+            }
         } else {
-            input.style.borderColor = '';
-            input.style.backgroundColor = '';
-            input.style.boxShadow = '';
+            input.classList.remove('input-error');
+            // Clear fallback styles for regular input elements
+            if (input.tagName.toLowerCase() !== 'math-field') {
+                input.style.borderColor = '';
+                input.style.backgroundColor = '';
+                input.style.boxShadow = '';
+            }
         }
     }
     
@@ -2626,19 +2739,19 @@ class Graphiti {
         const yMaxInput = document.getElementById('y-max');
         
         if (xMinInput) {
-            xMinInput.value = this.viewport.minX.toFixed(2);
+            this.setRangeValue(xMinInput, this.viewport.minX.toFixed(2));
             this.setInputError(xMinInput, false);
         }
         if (xMaxInput) {
-            xMaxInput.value = this.viewport.maxX.toFixed(2);
+            this.setRangeValue(xMaxInput, this.viewport.maxX.toFixed(2));
             this.setInputError(xMaxInput, false);
         }
         if (yMinInput) {
-            yMinInput.value = this.viewport.minY.toFixed(2);
+            this.setRangeValue(yMinInput, this.viewport.minY.toFixed(2));
             this.setInputError(yMinInput, false);
         }
         if (yMaxInput) {
-            yMaxInput.value = this.viewport.maxY.toFixed(2);
+            this.setRangeValue(yMaxInput, this.viewport.maxY.toFixed(2));
             this.setInputError(yMaxInput, false);
         }
     }
@@ -5850,8 +5963,14 @@ class Graphiti {
         // Fractions: \frac{a}{b} -> (a)/(b)
         expression = expression.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
         
+        // Handle shorthand fractions: \frac12 -> (1)/(2) (single characters without braces)
+        expression = expression.replace(/\\frac([0-9a-zA-Z])([0-9a-zA-Z])/g, '($1)/($2)');
+        
         // Square roots: \sqrt{x} -> sqrt(x)
         expression = expression.replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)');
+        
+        // Handle shorthand square roots: \sqrt2 -> sqrt(2) (single characters without braces)
+        expression = expression.replace(/\\sqrt([0-9a-zA-Z])/g, 'sqrt($1)');
         
         // Powers: x^{2} -> x^2, but keep parentheses for complex expressions
         expression = expression.replace(/\^{([^}]+)}/g, '^($1)');
@@ -5870,13 +5989,26 @@ class Graphiti {
         expression = expression.replace(/\\arccos/g, 'acos');
         expression = expression.replace(/\\arctan/g, 'atan');
         
+        // Inverse trigonometric functions using \operatorname
+        expression = expression.replace(/\\operatorname\{arcsec\}/g, 'asec');
+        expression = expression.replace(/\\operatorname\{arccsc\}/g, 'acsc');
+        expression = expression.replace(/\\operatorname\{arccot\}/g, 'acot');
+        
         // Hyperbolic functions
         expression = expression.replace(/\\sinh/g, 'sinh');
         expression = expression.replace(/\\cosh/g, 'cosh');
         expression = expression.replace(/\\tanh/g, 'tanh');
+        expression = expression.replace(/\\operatorname\{sech\}/g, 'sech');
+        expression = expression.replace(/\\operatorname\{csch\}/g, 'csch');
+        expression = expression.replace(/\\operatorname\{coth\}/g, 'coth');
+        
+        // Inverse hyperbolic functions using \operatorname
         expression = expression.replace(/\\operatorname\{asinh\}/g, 'asinh');
         expression = expression.replace(/\\operatorname\{acosh\}/g, 'acosh');
         expression = expression.replace(/\\operatorname\{atanh\}/g, 'atanh');
+        expression = expression.replace(/\\operatorname\{asech\}/g, 'asech');
+        expression = expression.replace(/\\operatorname\{acsch\}/g, 'acsch');
+        expression = expression.replace(/\\operatorname\{acoth\}/g, 'acoth');
         
         // Logarithms and exponentials (corrected for math.js)
         expression = expression.replace(/\\ln/g, 'log');     // ln(x) -> log(x) (natural log in math.js)
@@ -5955,6 +6087,69 @@ class Graphiti {
             // iOS needs a delay after orientation change
             setTimeout(setActualViewportHeight, 100);
         });
+    }
+
+    // Helper functions for MathLive range inputs
+    getRangeValue(element) {
+        if (!element) return NaN;
+        
+        // If it's a MathLive math-field, get the LaTeX and convert to number
+        if (element.tagName.toLowerCase() === 'math-field') {
+            const latex = element.getValue();
+            if (!latex) return NaN;
+            
+            console.log('Range input - LaTeX:', latex);
+            
+            // Convert LaTeX expressions to numbers
+            const expression = this.convertFromLatex(latex);
+            console.log('Range input - Converted expression:', expression);
+            
+            try {
+                // Use math.js to evaluate the expression
+                const result = window.math.evaluate(expression);
+                console.log('Range input - Evaluated result:', result);
+                
+                // Make sure result is a finite number
+                if (typeof result === 'number' && isFinite(result)) {
+                    return result;
+                } else {
+                    console.warn('Range input - Result is not a finite number:', result);
+                    return NaN;
+                }
+            } catch (error) {
+                console.warn('Could not evaluate range value:', latex, '->', expression, 'Error:', error.message);
+                
+                // Try simple fallback conversions for common cases
+                if (latex === '\\pi') return Math.PI;
+                if (latex === '2\\pi') return 2 * Math.PI;
+                if (latex === '-\\pi') return -Math.PI;
+                if (latex === '-2\\pi') return -2 * Math.PI;
+                
+                // Try parsing as a simple number if conversion failed
+                const numValue = parseFloat(latex);
+                if (!isNaN(numValue) && isFinite(numValue)) {
+                    return numValue;
+                }
+                
+                console.warn('Range input - Returning NaN for invalid expression');
+                return NaN;
+            }
+        }
+        
+        // Fallback for regular input elements
+        return parseFloat(element.value);
+    }
+    
+    setRangeValue(element, value) {
+        if (!element) return;
+        
+        // If it's a MathLive math-field, set the LaTeX
+        if (element.tagName.toLowerCase() === 'math-field') {
+            element.setValue(value.toString());
+        } else {
+            // Fallback for regular input elements
+            element.value = value;
+        }
     }
 }
 

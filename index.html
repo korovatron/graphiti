@@ -97,6 +97,7 @@
             --border-color: #555;
             --input-bg: #3A4F6A;
             --button-bg: #4A90E2;
+            --primary-color: #4A90E2;
             --grid-color: rgba(255, 255, 255, 0.2);
             --axes-color: rgba(255, 255, 255, 0.5);
             --label-color: rgba(255, 255, 255, 0.8);
@@ -384,9 +385,10 @@
         .function-item math-field {
             flex: 1;
             min-width: 100px;
-            font-size: 18px !important; /* Increased to 18px with !important */
-            padding: 6px 8px; /* Increased padding to accommodate larger text */
-            line-height: 1.4; /* Better line spacing for larger text */
+            font-size: 18px !important;
+            padding: 2px 4px !important; /* Even more compact padding */
+            line-height: 1.1 !important; /* Very tight line spacing */
+            min-height: 26px; /* Much smaller minimum height */
             --border-radius: 4px;
             --border: 1px solid var(--border-color);
             --background: var(--input-bg) !important;
@@ -543,7 +545,7 @@
         /* Target the actual math content for larger font size */
         .function-item math-field::part(content) {
             font-size: 18px !important;
-            line-height: 1.4 !important;
+            line-height: 1.1 !important;
         }
         
         .function-item math-field:focus-within {
@@ -569,6 +571,40 @@
             opacity: 0.7;
         }
         
+        /* Range input styling - now using regular HTML inputs */
+        #cartesian-ranges input[type="number"],
+        #cartesian-ranges-y input[type="number"],
+        #polar-ranges input[type="number"] {
+            flex: 1;
+            min-width: 80px;
+            font-size: 14px;
+            padding: 4px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+        
+        #cartesian-ranges input[type="number"]:focus,
+        #cartesian-ranges-y input[type="number"]:focus,
+        #polar-ranges input[type="number"]:focus {
+            border-color: var(--accent-color);
+        }
+        
+        /* Error styling for range inputs (handled by JavaScript) */
+        #cartesian-ranges input[type="number"].input-error,
+        #cartesian-ranges-y input[type="number"].input-error,
+        #polar-ranges input[type="number"].input-error {
+            border-color: #E74C3C !important;
+            background-color: rgba(231, 76, 60, 0.15) !important;
+            box-shadow: 0 0 0 1px rgba(231, 76, 60, 0.3) !important;
+        }
+        
+
+        
+        /* Range input error focus styling */
         /* Hamburger Menu Styles - Always top-right for consistency */
         #hamburger-menu {
             position: absolute;
@@ -795,6 +831,37 @@
             }
         }
 
+        /* Highlight variable keys (x and θ) for better visibility using MathLive's class system */
+        
+        /* Add a custom class to x and θ keys and target them specifically */
+        .ML__keyboard .MLK__keycap.variable-key,
+        .ML__keyboard .variable-key,
+        .MLK__keycap.variable-key {
+            background: var(--panel-bg) !important;
+            background-color: var(--panel-bg) !important;
+            color: white !important;
+            font-weight: bold !important;
+            border: 2px solid rgba(42, 63, 90, 1) !important;
+            border-color: rgba(42, 63, 90, 1) !important;
+            box-shadow: 0 2px 6px rgba(42, 63, 90, 0.4) !important;
+        }
+        
+        .ML__keyboard .MLK__keycap.variable-key:hover,
+        .ML__keyboard .variable-key:hover,
+        .MLK__keycap.variable-key:hover {
+            background: rgba(52, 73, 100, 0.95) !important;
+            background-color: rgba(52, 73, 100, 0.95) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 3px 8px rgba(42, 63, 90, 0.5) !important;
+        }
+        
+        /* Extra specificity to override MathLive defaults */
+        .ML__keyboard .MLK__rows .MLK__keycap.variable-key {
+            background: var(--panel-bg) !important;
+            background-color: var(--panel-bg) !important;
+            color: white !important;
+        }
+
         /* Landscape editing overlay */
         .landscape-edit-overlay {
             position: fixed;
@@ -973,34 +1040,34 @@
                 <div id="cartesian-ranges" style="display: flex; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
                     <div style="flex: 1;">
                         <label for="x-min" style="font-size: 14px; display: block; margin-bottom: 2px;">X min:</label>
-                        <input type="number" id="x-min" value="-10" style="width: 100%; font-size: 14px;">
+                        <input type="number" id="x-min" value="-10" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
                     </div>
                     <div style="flex: 1;">
                         <label for="x-max" style="font-size: 14px; display: block; margin-bottom: 2px;">X max:</label>
-                        <input type="number" id="x-max" value="10" style="width: 100%; font-size: 14px;">
+                        <input type="number" id="x-max" value="10" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
                     </div>
                 </div>
                 
                 <div id="cartesian-ranges-y" style="display: flex; gap: 10px; margin-bottom: 10px;">
                     <div style="flex: 1;">
                         <label for="y-min" style="font-size: 14px; display: block; margin-bottom: 2px;">Y min:</label>
-                        <input type="number" id="y-min" value="-10" style="width: 100%; font-size: 14px;">
+                        <input type="number" id="y-min" value="-10" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
                     </div>
                     <div style="flex: 1;">
                         <label for="y-max" style="font-size: 14px; display: block; margin-bottom: 2px;">Y max:</label>
-                        <input type="number" id="y-max" value="10" style="width: 100%; font-size: 14px;">
+                        <input type="number" id="y-max" value="10" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
                     </div>
                 </div>
                 
                 <!-- Polar Range Controls (hidden initially) -->
-                <div id="polar-ranges" style="display: none; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
+                <div id="polar-ranges" style="display: none; flex-direction: row; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
                     <div style="flex: 1;">
                         <label for="theta-min" style="font-size: 14px; display: block; margin-bottom: 2px;">θ min:</label>
-                        <input type="number" id="theta-min" value="0" step="0.1" style="width: 100%; font-size: 14px;">
+                        <input type="number" id="theta-min" value="0" step="0.01" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
                     </div>
                     <div style="flex: 1;">
                         <label for="theta-max" style="font-size: 14px; display: block; margin-bottom: 2px;">θ max:</label>
-                        <input type="number" id="theta-max" value="6.28" step="0.1" style="width: 100%; font-size: 14px;">
+                        <input type="number" id="theta-max" value="6.28" step="0.01" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
                     </div>
                 </div>
                 
