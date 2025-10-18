@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-fixed-ios-keyboard-interference-18-10-2025-16:25';
+const CACHE_NAME = 'graphiti-superscript-n-label-18-10-2025-16:47';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

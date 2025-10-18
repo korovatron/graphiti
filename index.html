@@ -402,6 +402,14 @@
             display: none;
         }
         
+        /* Hide virtual keyboard toggle on mobile since keyboard appears automatically */
+        @media (hover: none) and (pointer: coarse) {
+            .function-item math-field::part(virtual-keyboard-toggle),
+            .function-item math-field::part(keyboard-toggle) {
+                display: none !important;
+            }
+        }
+        
         /* Target the actual math content for larger font size */
         .function-item math-field::part(content) {
             font-size: 18px !important;
@@ -557,7 +565,7 @@
             .function-item {
                 flex-wrap: nowrap;
                 gap: 8px;
-                align-items: center;
+                align-items: stretch; /* Maintain stretch for proper button alignment */
             }
             
             .function-item input[type="text"] {

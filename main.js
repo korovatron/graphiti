@@ -185,9 +185,9 @@ class Graphiti {
                                 ],
                                 [
                                     // Powers and roots (more useful than fractions since we have division)
-                                    { latex: '#?^2', label: 'x²' },
-                                    { latex: '#?^3', label: 'x³' },
-                                    { latex: '#?^{#?}', label: 'x^n' },
+                                    { latex: '^2', label: 'x²' },
+                                    { latex: '^3', label: 'x³' },
+                                    { latex: '^{#?}', label: 'xⁿ' },
                                     { latex: '\\sqrt{#?}', label: '√' },
                                     '[separator]',
                                     '[4]', '[5]', '[6]',
@@ -245,7 +245,7 @@ class Graphiti {
                                     { latex: '\\tanh(#?)', label: 'tanh', shift: { latex: '\\operatorname{atanh}(#?)', label: 'atanh' } },
                                     { latex: '\\ln(#?)', label: 'ln', shift: { latex: 'e^{#?}', label: 'e^x' } },
                                     { latex: '\\log_{10}(#?)', label: 'log', shift: { latex: '10^{#?}', label: '10^x' } },
-                                    { latex: '\\sqrt{#?}', label: '√', shift: { latex: '#?^2', label: 'x²' } },
+                                    { latex: '\\sqrt{#?}', label: '√', shift: { latex: '^2', label: 'x²' } },
                                     { latex: '\\left|#?\\right|', label: '|x|' },
                                     { latex: 'x' }, { latex: '\\theta', label: 'θ' }
                                 ],
@@ -419,7 +419,7 @@ class Graphiti {
         setTimeout(() => {
             try {
                 // Virtual keyboard layouts are configured globally in configureMathLive()
-                // No need to set per-mathfield since we have custom layouts
+                // Menu toggle is hidden via CSS to save space on all devices
             } catch (error) {
                 console.log('Virtual keyboard setup:', error);
             }
