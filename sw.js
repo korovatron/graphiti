@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-portrait-keyboard-fix-18-10-2025-18:50';
+const CACHE_NAME = 'graphiti-landscape-edit-restriction-18-10-2025-19:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

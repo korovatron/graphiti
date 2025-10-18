@@ -392,6 +392,68 @@ class Graphiti {
 
     
     // ================================
+    // LANDSCAPE EDITING RESTRICTION
+    // ================================
+    
+    shouldRestrictLandscapeEditing() {
+        // Only restrict on mobile phones in landscape mode
+        // Allow tablets (iPad) and desktop to edit in landscape
+        const isMobilePhone = this.isMobilePhone();
+        const isLandscape = window.innerWidth > window.innerHeight;
+        
+        return isMobilePhone && isLandscape;
+    }
+    
+    isMobilePhone() {
+        // Detect mobile phones (exclude tablets and desktop)
+        const userAgent = navigator.userAgent.toLowerCase();
+        const isAndroidPhone = /android/.test(userAgent) && /mobile/.test(userAgent);
+        const isIPhone = /iphone/.test(userAgent);
+        const isWindowsPhone = /windows phone/.test(userAgent);
+        
+        // Also check screen size - phones typically have smaller screens
+        const isSmallScreen = window.screen.width <= 500 || window.screen.height <= 500;
+        
+        return (isAndroidPhone || isIPhone || isWindowsPhone) && isSmallScreen;
+    }
+    
+    showLandscapeEditingRestriction() {
+        // Remove any existing overlay
+        const existingOverlay = document.querySelector('.landscape-edit-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+        
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'landscape-edit-overlay';
+        overlay.innerHTML = `
+            <div class="landscape-edit-message">
+                <h3>Function Editing Restricted</h3>
+                <div class="rotate-icon">📱→📱</div>
+                <p>Function editing is only available in portrait mode on mobile phones for the best experience.</p>
+                <p>Please rotate your device to portrait mode to edit functions.</p>
+                <button class="landscape-dismiss-btn">Got it</button>
+            </div>
+        `;
+        
+        // Add dismiss functionality
+        const dismissBtn = overlay.querySelector('.landscape-dismiss-btn');
+        dismissBtn.addEventListener('click', () => {
+            overlay.remove();
+        });
+        
+        // Also dismiss on overlay click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
+        
+        document.body.appendChild(overlay);
+    }
+
+    // ================================
     // FUNCTION MANAGEMENT METHODS
     // ================================
     // FUNCTION MANAGEMENT
@@ -538,6 +600,16 @@ class Graphiti {
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const removeBtn = funcDiv.querySelector('.remove-btn');
         
+        // Add focus listener to check for landscape editing restriction
+        mathField.addEventListener('focus', (e) => {
+            if (this.shouldRestrictLandscapeEditing()) {
+                e.preventDefault();
+                mathField.blur(); // Remove focus
+                this.showLandscapeEditingRestriction();
+                return;
+            }
+        });
+
         mathField.addEventListener('input', () => {
             // Convert LaTeX to math.js expression
             try {

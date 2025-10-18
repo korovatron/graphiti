@@ -410,45 +410,74 @@
             }
         }
         
-        /* PWA safe area handling for virtual keyboard - landscape mode only for fixed positioning */
-        @media (display-mode: standalone) and (orientation: landscape) {
-            .ML__keyboard,
-            .ML__keyboard-container,
-            .ML__virtual-keyboard,
-            math-field::part(keyboard) {
-                /* Extend keyboard to true bottom edge in PWA landscape mode */
-                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
-                position: fixed !important;
-                bottom: 0 !important;
-                left: 0 !important;
-                right: 0 !important;
-                width: 100% !important;
-            }
-        }
-        
-        /* PWA safe area handling for portrait - NO fixed positioning */
-        @media (display-mode: standalone) and (orientation: portrait) {
-            .ML__keyboard,
-            .ML__keyboard-container,
-            .ML__virtual-keyboard,
-            math-field::part(keyboard) {
-                /* Only safe area padding in portrait, let MathLive handle positioning */
-                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
-                max-height: 50vh !important; /* More space in portrait */
-                min-height: 200px !important;
-            }
-        }
-        
-        /* General PWA keyboard content fixes */
+        /* Simple PWA safe area handling - no positioning interference */
         @media (display-mode: standalone) {
-            /* Ensure keyboard content is properly contained without clipping */
-            .ML__keyboard .ML__row,
-            math-field::part(keyboard-row) {
-                overflow: visible !important;
-                height: auto !important;
+            .ML__keyboard,
+            .ML__keyboard-container,
+            .ML__virtual-keyboard,
+            math-field::part(keyboard) {
+                /* Only handle safe area padding, let MathLive handle positioning */
+                padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
             }
+        }
+
+        /* Landscape editing restriction overlay for mobile phones */
+        .landscape-edit-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 47, 66, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+        }
+
+        .landscape-edit-message {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .landscape-edit-message h3 {
+            color: var(--text-color);
+            margin: 0 0 15px 0;
+            font-size: 1.2em;
+        }
+
+        .landscape-edit-message p {
+            color: var(--text-muted);
+            margin: 0 0 20px 0;
+            line-height: 1.4;
+        }
+
+        .landscape-edit-message .rotate-icon {
+            font-size: 2em;
+            margin: 10px 0;
+            opacity: 0.7;
+        }
+
+        .landscape-dismiss-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.2s;
+        }
+
+        .landscape-dismiss-btn:hover {
+            background: #2980b9;
         }
         
         /* Target the actual math content for larger font size */
@@ -666,33 +695,11 @@
                 bottom: calc(10px + var(--safe-area-bottom, 0px)) !important; /* Closer to bottom */
             }
             
-            /* Reduce virtual keyboard height in landscape mode and prevent repositioning */
-            /* LANDSCAPE ONLY - don't interfere with portrait positioning */
+            /* Simple landscape keyboard height reduction - no aggressive positioning */
             .ML__keyboard,
             math-field::part(keyboard) {
-                max-height: 40vh !important; /* Increased from 30vh to prevent clipping */
-                min-height: 160px !important; /* Increased min height */
-                height: auto !important; /* Let content determine height within limits */
-                overflow: visible !important; /* Prevent clipping of content */
-                /* PWA safe area handling - extend to true bottom */
-                padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
-                margin-bottom: calc(-1 * env(safe-area-inset-bottom, 0px)) !important;
-                box-sizing: border-box !important;
-            }
-            
-            /* LANDSCAPE ONLY - Fixed positioning and clipping prevention */
-            .ML__keyboard,
-            .ML__keyboard-container,
-            .ML__virtual-keyboard,
-            math-field::part(keyboard) {
-                position: fixed !important; /* Force fixed positioning ONLY in landscape */
-                bottom: 0 !important; /* Always stick to bottom ONLY in landscape */
-                top: auto !important; /* Override any top positioning */
-                left: 0 !important; /* Ensure full width positioning */
-                right: 0 !important; /* Ensure full width positioning */
-                width: 100% !important; /* Full width */
-                transform: none !important; /* Disable any transforms that might move it */
-                z-index: 9999 !important; /* Ensure it stays on top */
+                max-height: 40vh !important; /* Limit height in landscape */
+                overflow-y: auto !important; /* Allow scrolling if needed */
             }
             
             /* Reduce keyboard button sizes and spacing in landscape - more specific selectors */
@@ -726,6 +733,59 @@
             .ML__keyboard {
                 padding: 4px !important; /* Reduced container padding */
             }
+        }
+
+        /* Landscape editing overlay */
+        .landscape-edit-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+        }
+
+        .landscape-edit-message {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 400px;
+            margin: 20px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .landscape-edit-message h3 {
+            margin: 0 0 15px 0;
+            color: var(--text-color);
+            font-size: 1.2em;
+        }
+
+        .landscape-edit-message p {
+            margin: 0 0 20px 0;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .landscape-edit-dismiss {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .landscape-edit-dismiss:hover {
+            background: var(--accent-hover);
         }
 
         /* Force mobile mode for narrow screens regardless of landscape */
