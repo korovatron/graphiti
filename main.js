@@ -905,7 +905,15 @@ class Graphiti {
             
             // Try a simple test evaluation to catch syntax errors early
             try {
-                math.evaluate(func.expression, { x: 1 });
+                if (this.plotMode === 'polar') {
+                    // For polar mode, test with theta/t variable
+                    const processedExpression = this.convertFromLatex(func.expression);
+                    math.evaluate(processedExpression, { t: 1, theta: 1 });
+                } else {
+                    // For cartesian mode, test with x variable
+                    const processedExpression = this.convertFromLatex(func.expression);
+                    math.evaluate(processedExpression, { x: 1 });
+                }
             } catch (evalError) {
                 throw new Error('Invalid mathematical expression: ' + evalError.message);
             }
@@ -3613,8 +3621,11 @@ class Graphiti {
             let closestWorldX = 0;
             let closestWorldY = 0;
             
-            const processedExpression = func.expression.toLowerCase();
+            console.log('Polar plotting - Original expression:', func.expression);
+            const processedExpression = this.convertFromLatex(func.expression);
+            console.log('Polar plotting - Processed expression:', processedExpression);
             const compiled = math.compile(processedExpression);
+            console.log('Polar plotting - Compiled successfully');
             
             // Use dynamic step sizing for performance with higher resolution
             const baseThetaStep = this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax);
@@ -3624,7 +3635,7 @@ class Graphiti {
             
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
-                    const scope = { theta: theta, t: theta, pi: Math.PI, e: Math.E };
+                    const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
                     let r = compiled.evaluate(scope);
                     
                     if (r < 0 && this.polarSettings.plotNegativeR) {
@@ -3720,9 +3731,11 @@ class Graphiti {
             // Sample the polar function and find closest point to worldX
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
-                    let processedExpression = func.expression.toLowerCase();
+                    console.log('Polar intersection - Original expression:', func.expression);
+                    let processedExpression = this.convertFromLatex(func.expression);
+                    console.log('Polar intersection - Processed expression:', processedExpression);
                     const compiled = math.compile(processedExpression);
-                    const scope = { theta: theta, t: theta, pi: Math.PI, e: Math.E };
+                    const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
                     
                     let r = compiled.evaluate(scope);
                     
@@ -5918,6 +5931,8 @@ class Graphiti {
         expression = expression.replace(/\\left\{/g, '{');
         expression = expression.replace(/\\right\}/g, '}');
         
+        console.log('After parentheses conversion:', expression);
+        
         // Convert LaTeX back to math.js expressions
         // Fractions: \frac{a}{b} -> (a)/(b)
         expression = expression.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
@@ -5947,6 +5962,8 @@ class Graphiti {
         expression = expression.replace(/\\arcsin/g, 'asin');
         expression = expression.replace(/\\arccos/g, 'acos');
         expression = expression.replace(/\\arctan/g, 'atan');
+        
+        console.log('After trig functions conversion:', expression);
         
         // Inverse trigonometric functions using \operatorname
         expression = expression.replace(/\\operatorname\{arcsec\}/g, 'asec');
@@ -6004,12 +6021,10 @@ class Graphiti {
         
         // Constants
         expression = expression.replace(/\\pi/g, 'pi');
-        // In polar mode, convert theta back to 't' for evaluation
-        if (this.plotMode === 'polar') {
-            expression = expression.replace(/\\theta/g, 't');
-        } else {
-            expression = expression.replace(/\\theta/g, 'theta');
-        }
+        // Convert theta to 't' for evaluation (math.js doesn't treat 't' as a unit in this context)
+        expression = expression.replace(/\\theta/g, 't');
+        
+        console.log('After theta conversion:', expression);
         
         // Add implicit multiplication for common cases
         // 2x -> 2*x, 3sin(x) -> 3*sin(x)
@@ -6021,7 +6036,7 @@ class Graphiti {
         // Remove spaces
         expression = expression.replace(/\s+/g, '');
         
-        console.log('Converted to math.js:', expression);
+        console.log('Final converted expression:', expression);
         
         return expression;
     }
