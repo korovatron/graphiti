@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-pwa-orientation-detection-18-10-2025-20:00';
+const CACHE_NAME = 'graphiti-force-keyboard-bottom-pwa-18-10-2025-20:05';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
