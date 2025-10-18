@@ -1566,6 +1566,16 @@ class Graphiti {
         
         // Document-level touch events for hamburger menu closure
         document.addEventListener('touchstart', (e) => {
+            // Don't handle if interaction is with MathLive virtual keyboard
+            if (e.target.closest('.ML__keyboard') || e.target.closest('math-field')) {
+                return;
+            }
+            
+            // Additional iOS-specific check: if MathLive virtual keyboard is visible, ignore all touch events
+            if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                return;
+            }
+            
             // Only handle if not on canvas, hamburger menu, or function panel (they have their own handlers)
             const hamburgerMenu = document.getElementById('hamburger-menu');
             const functionPanel = document.getElementById('function-panel');
@@ -1581,6 +1591,11 @@ class Graphiti {
         }, { passive: true });
         
         document.addEventListener('touchmove', (e) => {
+            // Don't handle if interaction is with MathLive virtual keyboard
+            if (e.target.closest('.ML__keyboard') || e.target.closest('math-field')) {
+                return;
+            }
+            
             // Only handle if not on canvas, hamburger menu, or function panel and we have start coordinates
             const hamburgerMenu = document.getElementById('hamburger-menu');
             const functionPanel = document.getElementById('function-panel');
@@ -1600,6 +1615,16 @@ class Graphiti {
         document.addEventListener('touchend', (e) => {
             // Only handle mobile menu closing on mobile devices
             if (!this.isTrueMobile()) return;
+            
+            // Don't handle if interaction is with MathLive virtual keyboard
+            if (e.target.closest('.ML__keyboard') || e.target.closest('math-field')) {
+                return;
+            }
+            
+            // Additional iOS-specific check: if MathLive virtual keyboard is visible, ignore all touch events
+            if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                return;
+            }
             
             // Only handle if not on canvas, hamburger menu, or function panel and we have start coordinates
             const hamburgerMenu = document.getElementById('hamburger-menu');
@@ -2072,17 +2097,20 @@ class Graphiti {
     }
     
     handleKeyboard(e) {
-        // Check if any input field is currently focused
+        // Check if any input field is currently focused, including MathLive fields
         const activeElement = document.activeElement;
         const isInputFocused = activeElement && (
             activeElement.tagName === 'INPUT' || 
             activeElement.tagName === 'TEXTAREA' ||
-            activeElement.isContentEditable
+            activeElement.tagName === 'MATH-FIELD' ||  // Add MathLive support
+            activeElement.isContentEditable ||
+            activeElement.closest('math-field') ||     // Check if inside a MathLive field
+            activeElement.closest('.ML__keyboard')     // Check if inside MathLive virtual keyboard
         );
         
-        // If an input is focused, don't handle navigation keys
-        if (isInputFocused && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-            return; // Let the input handle the arrow keys normally
+        // If an input is focused or virtual keyboard is active, don't handle any navigation keys
+        if (isInputFocused && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Delete'].includes(e.key)) {
+            return; // Let the input/MathLive handle these keys normally
         }
         
         switch(e.key.toLowerCase()) {
