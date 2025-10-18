@@ -183,7 +183,7 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    '[/]'
+                                    { key: '[/]', label: '/' }
                                 ],
                                 [
                                     // Powers and roots
@@ -238,7 +238,7 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    '[/]'
+                                    { key: '[/]', label: '/' }
                                 ],
                                 [
                                     // Trigonometric functions (primary)
@@ -326,7 +326,7 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    '[/]'
+                                    { key: '[/]', label: '/' }
                                 ],
                                 [
                                     // Hyperbolic functions (primary)
@@ -1684,6 +1684,8 @@ class Graphiti {
             });
         }
         
+
+
         if (negativeRToggle) {
             negativeRToggle.addEventListener('change', () => {
                 this.polarSettings.plotNegativeR = !negativeRToggle.checked;  // Invert checkbox state
@@ -2448,33 +2450,16 @@ class Graphiti {
             activeElement.closest('.ML__keyboard')     // Check if inside MathLive virtual keyboard
         );
         
-        // If an input is focused or virtual keyboard is active, don't handle any navigation keys
-        if (isInputFocused && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Backspace', 'Delete'].includes(e.key)) {
-            return; // Let the input/MathLive handle these keys normally
+        // If an input is focused, don't handle any keyboard shortcuts at all
+        if (isInputFocused) {
+            return; // Let the input field handle all keys when focused
         }
         
         switch(e.key.toLowerCase()) {
             case 'escape':
                 this.changeState(this.states.TITLE);
                 break;
-            case '=':
-            case '+':
-                const newScaleUp = this.viewport.scale * 1.1;
-                if (newScaleUp <= 10000) {
-                    this.viewport.scale = newScaleUp;
-                    this.updateViewport();
-                }
-                break;
-            case '-':
-                // Only handle minus for zoom if not in an input field
-                if (!isInputFocused) {
-                    const newScaleDown = this.viewport.scale / 1.1;
-                    if (newScaleDown >= 0.001) {
-                        this.viewport.scale = newScaleDown;
-                        this.updateViewport();
-                    }
-                }
-                break;
+            // Removed zoom shortcuts (=, +, -) to prevent accidental zooming
         }
     }
     
