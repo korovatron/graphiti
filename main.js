@@ -3033,6 +3033,17 @@ class Graphiti {
                 }, 300);
             }
         }
+        
+        // Close MathLive virtual keyboard when closing mobile menu
+        if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+            window.mathVirtualKeyboard.hide();
+            // Also blur any focused mathfields
+            const focused = document.querySelector('math-field:focus');
+            if (focused) {
+                focused.blur();
+            }
+        }
+        
         // Overlay disabled - no dimming management needed
         // if (mobileOverlay) mobileOverlay.style.display = 'none';
     }

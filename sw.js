@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-offline-parentheses-fix-19-10-2025-10:45';
+const CACHE_NAME = 'graphiti-offline-keyboard-close-fix-19-10-2025-11:00';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
