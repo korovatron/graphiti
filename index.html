@@ -935,6 +935,12 @@
             display: none;
             pointer-events: auto;
         }
+
+        /* Mathematical typography for function notation */
+        .math-italic {
+            font-style: italic;
+            font-family: 'Times New Roman', 'STIX Two Math', serif;
+        }
     </style>
 </head>
 <body>
@@ -969,7 +975,7 @@
                 
                 <!-- Top Row: Function Management + View Controls -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px;">
-                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; flex: 1; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+ f(x)</button>     
+                    <button id="add-function" style="padding: 8px 12px; font-size: 14px; height: 40px; display: flex; align-items: center; flex: 1; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">x</span>)</button>     
 
                     <button id="reset-view" style="padding: 8px; font-size: 10px; height: 40px; line-height: 1.2; background: #2A3F5A; border: 1px solid #555; flex: 1;" title="Reset View">RESET<br>AXES</button>
 

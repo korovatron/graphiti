@@ -2803,7 +2803,11 @@ class Graphiti {
         // Update Add Function button text based on coordinate system
         const addFunctionBtn = document.getElementById('add-function');
         if (addFunctionBtn) {
-            addFunctionBtn.textContent = this.plotMode === 'cartesian' ? '+ f(x)' : '+ f(θ)';
+            if (this.plotMode === 'cartesian') {
+                addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">x</span>)';
+            } else {
+                addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">θ</span>)';
+            }
         }
         
         if (cartesianRanges && cartesianRangesY) {
