@@ -265,7 +265,7 @@
             bottom: calc(20px + var(--safe-area-bottom, 0px));
             left: 50%;
             transform: translateX(-50%);
-            font-size: 0.85em;
+            font-size: 0.7em;
             color: var(--text-secondary);
             margin: 0;
             text-align: center;
@@ -340,9 +340,9 @@
         }
         
         .function-item .color-indicator {
-            width: 24px;
-            height: 18px;
-            border-radius: 4px;
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
             border: 2px solid rgba(255, 255, 255, 0.2);
             cursor: pointer;
             transition: all 0.2s ease;
@@ -359,19 +359,28 @@
         }
         
         .function-item .remove-btn {
-            background: #E74C3C;
-            padding: 2px 6px;
+            background: #2A3F5A;
+            color: var(--text-primary);
+            border: 1px solid #555;
+            padding: 0;
             font-size: 12px;
-            min-width: 24px;
-            height: 18px;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 3px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
         
         .function-item .remove-btn:hover {
-            background: #C0392B;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .function-item .remove-btn:active {
+            background: #E74C3C;
         }
         
         .function-item input[type="text"], .function-item input[type="number"] {
@@ -787,7 +796,7 @@
             
             /* Make copyright smaller and less prominent in landscape */
             .copyright {
-                font-size: 0.7em !important; /* Smaller text */
+                font-size: 0.6em !important; /* Smaller text */
                 bottom: calc(10px + var(--safe-area-bottom, 0px)) !important; /* Closer to bottom */
             }
             

@@ -188,9 +188,17 @@ class Graphiti {
                                 [
                                     // Powers and roots
                                     { latex: '^2', label: 'x²' },
-                                    { latex: '^3', label: 'x³' },
-                                    { latex: '^{#?}', label: 'xⁿ' },
                                     { latex: '\\sqrt{#?}', label: '√' },
+                                    { 
+                                        latex: '^3', 
+                                        label: 'x³',
+                                        shift: { latex: '\\sqrt[3]{#?}', label: '∛' }
+                                    },
+                                    { 
+                                        latex: '^{#?}', 
+                                        label: 'xⁿ',
+                                        shift: { latex: '\\sqrt[#?]{#@}', label: 'ⁿ√' }
+                                    },
                                     '[separator]',
                                     { latex: '4', label: '4' },
                                     { latex: '5', label: '5' },
@@ -216,7 +224,7 @@ class Graphiti {
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { latex: '.', label: '.' },
-                                    '[separator]',
+                                    { label: '[shift]', width: 1 },
                                     { latex: '-', label: '-' }
                                 ]
                             ]
@@ -376,7 +384,7 @@ class Graphiti {
                                     { 
                                         latex: '\\sqrt{#?}', 
                                         label: '√', 
-                                        shift: { latex: '^2', label: 'x²' }
+                                        shift: { latex: '#@^2', label: 'x²' }
                                     },
                                     '[separator]',
                                     { latex: '1', label: '1' },
@@ -723,7 +731,7 @@ class Graphiti {
                 ">${this.convertToLatex(func.expression)}</math-field>
             <div class="function-controls">
                 <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
-                <button class="remove-btn">×</button>
+                <button class="remove-btn" title="Delete function">×</button>
             </div>
         `;
         
@@ -740,12 +748,22 @@ class Graphiti {
             }
         }, 100);
         
-        // Add keyboard event listener for polar mode theta conversion
+        // Add keyboard event listener for polar mode theta conversion and smart power key
         mathField.addEventListener('keydown', (event) => {
             // In polar mode, convert 't' key to theta symbol
             if (this.plotMode === 'polar' && event.key === 't' && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 event.preventDefault(); // Prevent default 't' insertion
                 mathField.executeCommand(['insert', '\\theta']); // Insert theta instead
+                return;
+            }
+            
+            // Smart power key: ^ behaves like the power buttons
+            if (event.key === '^' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault(); // Prevent default ^ insertion
+                
+                // Use the same smart behavior as the power buttons: #@^{#?}
+                // This will use selection/preceding content as base, or create placeholder if none
+                mathField.executeCommand(['insert', '#@^{#?}']);
             }
         });
         
@@ -6077,6 +6095,12 @@ class Graphiti {
         
         // Handle shorthand fractions: \frac12 -> (1)/(2) (single characters without braces)
         expression = expression.replace(/\\frac([0-9a-zA-Z])([0-9a-zA-Z])/g, '($1)/($2)');
+        
+        // Cube roots specifically: \sqrt[3]{x} -> cbrt(x) for proper negative value handling
+        expression = expression.replace(/\\sqrt\[3\]\{([^}]*)\}/g, 'cbrt($1)');
+        
+        // Other nth roots: \sqrt[n]{x} -> pow(x, 1/n) (but this won't work for negative x with odd n)
+        expression = expression.replace(/\\sqrt\[([^\]]+)\]\{([^}]*)\}/g, 'pow($2, 1/($1))');
         
         // Square roots: \sqrt{x} -> sqrt(x)
         expression = expression.replace(/\\sqrt\{([^}]+)\}/g, 'sqrt($1)');
