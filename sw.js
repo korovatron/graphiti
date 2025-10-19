@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-offline-multiply-button-19-10-2025-10:30';
+const CACHE_NAME = 'graphiti-offline-parentheses-fix-19-10-2025-10:45';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
