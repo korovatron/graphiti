@@ -1,10 +1,11 @@
-const CACHE_NAME = 'graphiti-offline-cache-19-10-2025-17:00';
+const CACHE_NAME = 'graphiti-offline-cache-19-10-2025-19:49';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',
     './manifest.json',
     './sw.js',
     './logo.png',
+    './logoTrans.png',
     './images/graphitiTitle.png',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
     'https://unpkg.com/mathlive'
