@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-offline-tablet-keyboard-fix-19-10-2025-11:15';
+const CACHE_NAME = 'graphiti-offline-tablet-refocus-fix-19-10-2025-11:30';
 const ASSETS_TO_CACHE = [
     './index.html',
     './main.js',

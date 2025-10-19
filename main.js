@@ -761,6 +761,13 @@ class Graphiti {
                 this.showLandscapeEditingRestriction();
                 return;
             }
+            
+            // Prevent immediate refocus on tablets after closing mobile menu
+            if (mathField.getAttribute('data-blur-protected') === 'true') {
+                e.preventDefault();
+                mathField.blur();
+                return;
+            }
         });
 
         mathField.addEventListener('input', () => {
@@ -3060,11 +3067,25 @@ class Graphiti {
             window.mathVirtualKeyboard.hide();
         }
         
-        // Also blur any focused mathfields to prevent keyboard from reopening
-        const focused = document.querySelector('math-field:focus');
-        if (focused) {
-            focused.blur();
-        }
+        // For tablets, delay the blur to prevent immediate refocus from the same touch event
+        const isTablet = window.innerWidth > 500 && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        const blurDelay = isTablet ? 150 : 0;
+        
+        setTimeout(() => {
+            // Blur any focused mathfields to prevent keyboard from reopening
+            const focused = document.querySelector('math-field:focus');
+            if (focused) {
+                focused.blur();
+                
+                // For tablets, add a temporary flag to prevent immediate refocus
+                if (isTablet) {
+                    focused.setAttribute('data-blur-protected', 'true');
+                    setTimeout(() => {
+                        focused.removeAttribute('data-blur-protected');
+                    }, 300);
+                }
+            }
+        }, blurDelay);
         
         // Additional cleanup for tablets - sometimes the keyboard needs extra time to close
         setTimeout(() => {
@@ -3078,7 +3099,7 @@ class Graphiti {
                     backdrop.parentNode.removeChild(backdrop);
                 }
             });
-        }, 100);
+        }, 200);
         
         // Overlay disabled - no dimming management needed
         // if (mobileOverlay) mobileOverlay.style.display = 'none';
