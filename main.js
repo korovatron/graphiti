@@ -253,17 +253,17 @@ class Graphiti {
                                     { 
                                         latex: '\\sin(#?)', 
                                         label: 'sin', 
-                                        shift: { latex: '\\arcsin(#?)', label: 'sin⁻¹' }
+                                        shift: { latex: '\\arcsin(#?)', label: 'sin⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cos(#?)', 
                                         label: 'cos', 
-                                        shift: { latex: '\\arccos(#?)', label: 'cos⁻¹' }
+                                        shift: { latex: '\\arccos(#?)', label: 'cos⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\tan(#?)', 
                                         label: 'tan', 
-                                        shift: { latex: '\\arctan(#?)', label: 'tan⁻¹' }
+                                        shift: { latex: '\\arctan(#?)', label: 'tan⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\ln(#?)', 
@@ -281,17 +281,17 @@ class Graphiti {
                                     { 
                                         latex: '\\csc(#?)', 
                                         label: 'csc', 
-                                        shift: { latex: '\\operatorname{arccsc}(#?)', label: 'csc⁻¹' }
+                                        shift: { latex: '\\operatorname{arccsc}(#?)', label: 'csc⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\sec(#?)', 
                                         label: 'sec', 
-                                        shift: { latex: '\\operatorname{arcsec}(#?)', label: 'sec⁻¹' }
+                                        shift: { latex: '\\operatorname{arcsec}(#?)', label: 'sec⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cot(#?)', 
                                         label: 'cot', 
-                                        shift: { latex: '\\operatorname{arccot}(#?)', label: 'cot⁻¹' }
+                                        shift: { latex: '\\operatorname{arccot}(#?)', label: 'cot⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\log_{10}(#?)', 
@@ -340,17 +340,20 @@ class Graphiti {
                                     // Hyperbolic functions (primary)
                                     { 
                                         latex: '\\sinh(#?)', 
-                                        label: 'sinh', 
+                                        label: 'sinh',
+                                        class: 'small',
                                         shift: { latex: '\\operatorname{asinh}(#?)', label: 'sinh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cosh(#?)', 
-                                        label: 'cosh', 
+                                        label: 'cosh',
+                                        class: 'small',
                                         shift: { latex: '\\operatorname{acosh}(#?)', label: 'cosh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\tanh(#?)', 
-                                        label: 'tanh', 
+                                        label: 'tanh',
+                                        class: 'small',
                                         shift: { latex: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹', class: 'small' }
                                     },
                                     { 
@@ -368,17 +371,20 @@ class Graphiti {
                                     // Hyperbolic reciprocal functions and root
                                     { 
                                         latex: '\\operatorname{csch}(#?)', 
-                                        label: 'csch', 
+                                        label: 'csch',
+                                        class: 'small',
                                         shift: { latex: '\\operatorname{acsch}(#?)', label: 'csch⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\operatorname{sech}(#?)', 
-                                        label: 'sech', 
+                                        label: 'sech',
+                                        class: 'small',
                                         shift: { latex: '\\operatorname{asech}(#?)', label: 'sech⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\operatorname{coth}(#?)', 
-                                        label: 'coth', 
+                                        label: 'coth',
+                                        class: 'small',
                                         shift: { latex: '\\operatorname{acoth}(#?)', label: 'coth⁻¹', class: 'small' }
                                     },
                                     { 
