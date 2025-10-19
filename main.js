@@ -955,6 +955,13 @@ class Graphiti {
             
             console.log('Error in plotFunctionWithValidation:', error.message);
             
+            // Clear badges for this invalid function
+            this.removeBadgesForFunction(func.id);
+            
+            // Force a complete replot to recalculate intersections and turning points
+            // This ensures all badges are updated correctly based on remaining valid functions
+            this.plotFunctions();
+            
             // Update UI to show error (subtle visual feedback)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
             if (funcDiv) {
@@ -1130,8 +1137,9 @@ class Graphiti {
             func.points = processedPoints;
         } catch (error) {
             console.error('Error parsing function:', error);
-            // Silent error for better UX during typing - no alert popup
+            // Set empty points and re-throw so plotFunctionWithValidation can handle cleanup
             func.points = [];
+            throw error; // Re-throw so badges get cleaned up properly
         }
     }
     
@@ -1193,8 +1201,9 @@ class Graphiti {
             func.points = points;
         } catch (error) {
             console.error('Error parsing polar function:', error);
-            // Silent error for better UX during typing - no alert popup
+            // Set empty points and re-throw so plotFunctionWithValidation can handle cleanup
             func.points = [];
+            throw error; // Re-throw so badges get cleaned up properly
         }
     }
     
