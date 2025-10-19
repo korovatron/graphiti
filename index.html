@@ -260,12 +260,12 @@
             color: #357ABD; /* Fixed hover blue */
         }
         
-        .copyright {
+        .title-screen p.copyright {
             position: absolute;
             bottom: calc(20px + var(--safe-area-bottom, 0px));
             left: 50%;
             transform: translateX(-50%);
-            font-size: 0.7em;
+            font-size: 0.8em;
             color: var(--text-secondary);
             margin: 0;
             text-align: center;
@@ -275,7 +275,7 @@
             hyphens: auto;
         }
         
-        .copyright a {
+        .title-screen p.copyright a {
             white-space: nowrap; /* Keep URL from breaking */
         }
         
@@ -295,24 +295,24 @@
             .space-desktop {
                 display: inline; /* Show space on desktop */
             }
-            .copyright {
+            .title-screen p.copyright {
                 max-width: 70%;
             }
-            .copyright .projects-text {
+            .title-screen p.copyright .projects-text {
                 white-space: nowrap; /* Keep "Check out my other projects at" together on wide screens */
             }
         }
         
         /* On medium screens, show strategic breaks */
         @media (min-width: 400px) and (max-width: 599px) {
-            .copyright {
+            .title-screen p.copyright {
                 max-width: 85%;
             }
         }
         
         /* On very narrow screens, ensure readability */
         @media (max-width: 399px) {
-            .copyright {
+            .title-screen p.copyright {
                 font-size: 0.75em;
                 max-width: 95%;
                 line-height: 1.4;
@@ -795,8 +795,8 @@
             }
             
             /* Make copyright smaller and less prominent in landscape */
-            .copyright {
-                font-size: 0.6em !important; /* Smaller text */
+            .title-screen p.copyright {
+                font-size: 0.7em !important; /* Smaller text */
                 bottom: calc(10px + var(--safe-area-bottom, 0px)) !important; /* Closer to bottom */
             }
             
