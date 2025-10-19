@@ -697,7 +697,7 @@ class Graphiti {
         funcDiv.innerHTML = `
             <math-field 
                 class="mathlive-input" 
-                placeholder="\\sin(x)"
+                placeholder="\\text{Enter } f(x)"
                 default-mode="math"
                 smart-fence="true"
                 smart-superscript="true"
@@ -791,7 +791,7 @@ class Graphiti {
                     const latex = mathField.getValue();
                     const expression = this.convertFromLatex(latex);
                     func.expression = expression;
-                    this.plotFunctionWithValidation(func);
+                    this.replotAllFunctions(); // Replot all functions for consistent badge behavior
                 } catch (error) {
                     console.warn('Error getting mathfield value on Enter:', error);
                 }
@@ -876,9 +876,9 @@ class Graphiti {
             clearTimeout(this.plotTimers.get(func.id));
         }
         
-        // Set new timer for delayed plotting
+        // Set new timer for delayed plotting - replot all functions for consistent badge behavior
         const timerId = setTimeout(() => {
-            this.plotFunctionWithValidation(func);
+            this.replotAllFunctions(); // Replot all functions to ensure badges are properly updated
             this.plotTimers.delete(func.id);
         }, 300); // 300ms delay
         
@@ -1137,9 +1137,8 @@ class Graphiti {
             func.points = processedPoints;
         } catch (error) {
             console.error('Error parsing function:', error);
-            // Set empty points and re-throw so plotFunctionWithValidation can handle cleanup
+            // Silent error for better UX during typing - no alert popup
             func.points = [];
-            throw error; // Re-throw so badges get cleaned up properly
         }
     }
     
@@ -1201,9 +1200,8 @@ class Graphiti {
             func.points = points;
         } catch (error) {
             console.error('Error parsing polar function:', error);
-            // Set empty points and re-throw so plotFunctionWithValidation can handle cleanup
+            // Silent error for better UX during typing - no alert popup
             func.points = [];
-            throw error; // Re-throw so badges get cleaned up properly
         }
     }
     
@@ -2837,7 +2835,6 @@ class Graphiti {
             } else {
                 this.addFunction('1 + cos(t)'); // Cardioid - t will be converted to θ in UI
                 this.addFunction('2cos(3t)'); // Three-petaled rose  
-                this.addFunction('sin(2t)'); // Four-petaled rose
                 this.addFunction(''); // Empty function to show placeholder example text
             }
         }
@@ -2906,9 +2903,9 @@ class Graphiti {
         const mathFields = document.querySelectorAll('.function-item math-field');
         mathFields.forEach(mathField => {
             if (this.plotMode === 'polar') {
-                mathField.setAttribute('placeholder', '1 + \\cos(\\theta)');
+                mathField.setAttribute('placeholder', '\\text{Enter } f(\\theta)');
             } else {
-                mathField.setAttribute('placeholder', '\\sin(x)');
+                mathField.setAttribute('placeholder', '\\text{Enter } f(x)');
             }
         });
     }
@@ -5989,6 +5986,13 @@ class Graphiti {
         // Exponential: e^x -> e^{x}
         latex = latex.replace(/\be\^(\w)/g, 'e^{$1}');
         latex = latex.replace(/\be\^(\([^)]+\))/g, 'e^{$1}');
+        
+        // Clean up unnecessary parentheses in exponents like e^{(-x^2)} -> e^{-x^2}
+        latex = latex.replace(/e\^\{(\([^)]+\))\}/g, (match, content) => {
+            // Remove outer parentheses if the content is a simple expression
+            const inner = content.slice(1, -1); // Remove the parentheses
+            return `e^{${inner}}`;
+        });
         
         return latex;
     }
