@@ -1,5 +1,6 @@
-const CACHE_NAME = 'graphiti-offline-cache-19-10-2025-21:52';
+const CACHE_NAME = 'graphiti-offline-cache-19-10-2025-22:00';
 const ASSETS_TO_CACHE = [
+    './',
     './index.html',
     './main.js',
     './manifest.json',
@@ -20,8 +21,13 @@ self.addEventListener('install', (event) => {
                 console.log('Caching assets...');
                 return cache.addAll(ASSETS_TO_CACHE);
             })
+            .then(() => {
+                console.log('All assets cached successfully');
+                self.skipWaiting(); // Force activation
+            })
             .catch((error) => {
                 console.log('Cache failed:', error);
+                throw error;
             })
     );
 });
@@ -39,6 +45,9 @@ self.addEventListener('activate', (event) => {
                     }
                 })
             );
+        }).then(() => {
+            console.log('Service Worker activated');
+            return self.clients.claim(); // Take control immediately
         })
     );
 });
@@ -48,14 +57,35 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request)
             .then((response) => {
-                // Return cached version or fetch from network
-                return response || fetch(event.request);
+                if (response) {
+                    console.log('Serving from cache:', event.request.url);
+                    return response;
+                }
+                
+                console.log('Fetching from network:', event.request.url);
+                return fetch(event.request)
+                    .then((response) => {
+                        // Clone the response before caching
+                        const responseClone = response.clone();
+                        
+                        // Only cache successful responses
+                        if (response.status === 200) {
+                            caches.open(CACHE_NAME)
+                                .then((cache) => {
+                                    cache.put(event.request, responseClone);
+                                });
+                        }
+                        
+                        return response;
+                    });
             })
-            .catch(() => {
-                // If both cache and network fail, could return a fallback page
+            .catch((error) => {
+                console.log('Network and cache failed for:', event.request.url);
+                // If both cache and network fail, return fallback for documents
                 if (event.request.destination === 'document') {
                     return caches.match('./index.html');
                 }
+                throw error;
             })
     );
 });
