@@ -183,7 +183,7 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    { key: '[/]', label: '/' }
+                                    { insert: '\\frac{#@}{#?}', label: '/' }
                                 ],
                                 [
                                     // Powers and roots
@@ -238,7 +238,7 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    { key: '[/]', label: '/' }
+                                    { insert: '\\frac{#@}{#?}', label: '/' }
                                 ],
                                 [
                                     // Trigonometric functions (primary)
@@ -326,24 +326,24 @@ class Graphiti {
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
                                     { latex: '9', label: '9' },
-                                    { key: '[/]', label: '/' }
+                                    { insert: '\\frac{#@}{#?}', label: '/' }
                                 ],
                                 [
                                     // Hyperbolic functions (primary)
                                     { 
                                         latex: '\\sinh(#?)', 
                                         label: 'sinh', 
-                                        shift: { latex: '\\operatorname{asinh}(#?)', label: 'sinh⁻¹' }
+                                        shift: { latex: '\\operatorname{asinh}(#?)', label: 'sinh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cosh(#?)', 
                                         label: 'cosh', 
-                                        shift: { latex: '\\operatorname{acosh}(#?)', label: 'cosh⁻¹' }
+                                        shift: { latex: '\\operatorname{acosh}(#?)', label: 'cosh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\tanh(#?)', 
                                         label: 'tanh', 
-                                        shift: { latex: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹' }
+                                        shift: { latex: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: 'e^{#?}', 
@@ -361,17 +361,17 @@ class Graphiti {
                                     { 
                                         latex: '\\operatorname{csch}(#?)', 
                                         label: 'csch', 
-                                        shift: { latex: '\\operatorname{acsch}(#?)', label: 'csch⁻¹' }
+                                        shift: { latex: '\\operatorname{acsch}(#?)', label: 'csch⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\operatorname{sech}(#?)', 
                                         label: 'sech', 
-                                        shift: { latex: '\\operatorname{asech}(#?)', label: 'sech⁻¹' }
+                                        shift: { latex: '\\operatorname{asech}(#?)', label: 'sech⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\operatorname{coth}(#?)', 
                                         label: 'coth', 
-                                        shift: { latex: '\\operatorname{acoth}(#?)', label: 'coth⁻¹' }
+                                        shift: { latex: '\\operatorname{acoth}(#?)', label: 'coth⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\sqrt{#?}', 
@@ -5984,6 +5984,59 @@ class Graphiti {
         return latex;
     }
     
+    convertFractions(expression) {
+        // Helper function to find matching closing brace
+        const findMatchingBrace = (str, startIndex) => {
+            let braceCount = 1;
+            let index = startIndex + 1;
+            
+            while (index < str.length && braceCount > 0) {
+                if (str[index] === '{') {
+                    braceCount++;
+                } else if (str[index] === '}') {
+                    braceCount--;
+                }
+                index++;
+            }
+            
+            return braceCount === 0 ? index - 1 : -1;
+        };
+        
+        let result = expression;
+        
+        // Process fractions from innermost to outermost
+        while (result.includes('\\frac{')) {
+            const fracIndex = result.indexOf('\\frac{');
+            if (fracIndex === -1) break;
+            
+            const firstBraceStart = fracIndex + 6; // After '\\frac{'
+            const firstBraceEnd = findMatchingBrace(result, firstBraceStart - 1);
+            
+            if (firstBraceEnd === -1) break; // Malformed fraction
+            
+            // Look for the second opening brace right after the first closing brace
+            if (firstBraceEnd + 1 >= result.length || result[firstBraceEnd + 1] !== '{') {
+                break; // Malformed fraction
+            }
+            
+            const secondBraceStart = firstBraceEnd + 2; // After the '{'
+            const secondBraceEnd = findMatchingBrace(result, firstBraceEnd + 1);
+            
+            if (secondBraceEnd === -1) break; // Malformed fraction
+            
+            // Extract numerator and denominator
+            const numerator = result.substring(firstBraceStart, firstBraceEnd);
+            const denominator = result.substring(secondBraceStart, secondBraceEnd);
+            
+            // Replace the fraction with the converted form
+            const before = result.substring(0, fracIndex);
+            const after = result.substring(secondBraceEnd + 1);
+            result = before + `(${numerator})/(${denominator})` + after;
+        }
+        
+        return result;
+    }
+    
     convertFromLatex(latex) {
         if (!latex) return '';
         
@@ -6002,8 +6055,8 @@ class Graphiti {
         console.log('After parentheses conversion:', expression);
         
         // Convert LaTeX back to math.js expressions
-        // Fractions: \frac{a}{b} -> (a)/(b)
-        expression = expression.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
+        // Fractions: \frac{a}{b} -> (a)/(b) - handle nested braces properly
+        expression = this.convertFractions(expression);
         
         // Handle shorthand fractions: \frac12 -> (1)/(2) (single characters without braces)
         expression = expression.replace(/\\frac([0-9a-zA-Z])([0-9a-zA-Z])/g, '($1)/($2)');
