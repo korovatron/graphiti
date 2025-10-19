@@ -1868,16 +1868,36 @@ class Graphiti {
             }
         });
         
-        // Click on canvas to close hamburger menu (desktop only)
+        // Click on canvas to close hamburger menu (mobile and tablet)
         this.canvas.addEventListener('click', (e) => {
-            // Only close mobile menu on mobile devices when tapping the graph
-            if (this.isTrueMobile()) {
+            // Close mobile menu on touch devices (phones and tablets) when tapping the graph
+            const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            if (isTouchDevice) {
                 const functionPanel = document.getElementById('function-panel');
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                     this.closeMobileMenu();
                 }
             }
         });
+        
+        // Additional touchend handler for tablets that might not trigger the canvas touchend properly
+        this.canvas.addEventListener('touchend', (e) => {
+            // On tablets, also check if we should close the mobile menu
+            // This is a backup for cases where handleTouchEnd might not work properly
+            const isTablet = window.innerWidth > 500 && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+            if (isTablet && e.touches.length === 0) {
+                const functionPanel = document.getElementById('function-panel');
+                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                    // Simple tap detection - if the touch was quick and didn't move much
+                    setTimeout(() => {
+                        // Use a small delay to avoid conflicts with the existing touch handler
+                        if (functionPanel.classList.contains('mobile-open')) {
+                            this.closeMobileMenu();
+                        }
+                    }, 50);
+                }
+            }
+        }, { passive: true });
         
         // Touch Events
         this.canvas.addEventListener('touchstart', (e) => {
@@ -2407,6 +2427,7 @@ class Graphiti {
             
             if (isTap) {
                 // Since this touch event is on the canvas, close mobile menu if open
+                // This works for all touch devices including tablets
                 const functionPanel = document.getElementById('function-panel');
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                     this.closeMobileMenu();
@@ -3037,12 +3058,27 @@ class Graphiti {
         // Close MathLive virtual keyboard when closing mobile menu
         if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
             window.mathVirtualKeyboard.hide();
-            // Also blur any focused mathfields
-            const focused = document.querySelector('math-field:focus');
-            if (focused) {
-                focused.blur();
-            }
         }
+        
+        // Also blur any focused mathfields to prevent keyboard from reopening
+        const focused = document.querySelector('math-field:focus');
+        if (focused) {
+            focused.blur();
+        }
+        
+        // Additional cleanup for tablets - sometimes the keyboard needs extra time to close
+        setTimeout(() => {
+            if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                window.mathVirtualKeyboard.hide();
+            }
+            // Clean up any lingering MathLive elements that might keep keyboard open
+            const backdrops = document.querySelectorAll('.MLK__backdrop');
+            backdrops.forEach(backdrop => {
+                if (backdrop.parentNode) {
+                    backdrop.parentNode.removeChild(backdrop);
+                }
+            });
+        }, 100);
         
         // Overlay disabled - no dimming management needed
         // if (mobileOverlay) mobileOverlay.style.display = 'none';
