@@ -187,15 +187,15 @@ class Graphiti {
                                 ],
                                 [
                                     // Powers and roots
-                                    { latex: '^2', label: 'x²' },
+                                    { latex: '#@^2', label: 'x²' },
                                     { latex: '\\sqrt{#?}', label: '√' },
                                     { 
-                                        latex: '^3', 
+                                        latex: '#@^3', 
                                         label: 'x³',
                                         shift: { latex: '\\sqrt[3]{#?}', label: '∛' }
                                     },
                                     { 
-                                        latex: '^{#?}', 
+                                        latex: '#@^{#?}', 
                                         label: 'xⁿ',
                                         shift: { latex: '\\sqrt[#?]{#@}', label: 'ⁿ√' }
                                     },
