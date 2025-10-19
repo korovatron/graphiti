@@ -177,8 +177,8 @@ class Graphiti {
                                     // Variables and parentheses - reorganized
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', label: 'θ', class: 'variable-key' },
-                                    { latex: '\\left(', label: '(' },
-                                    { latex: '\\right)', label: ')' },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -232,8 +232,8 @@ class Graphiti {
                                     // Variables and parentheses - same as numeric keyboard
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', label: 'θ', class: 'variable-key' },
-                                    { latex: '\\left(', label: '(' },
-                                    { latex: '\\right)', label: ')' },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -320,8 +320,8 @@ class Graphiti {
                                     // Variables and parentheses - same as numeric keyboard
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', label: 'θ', class: 'variable-key' },
-                                    { latex: '\\left(', label: '(' },
-                                    { latex: '\\right)', label: ')' },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
