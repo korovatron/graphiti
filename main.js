@@ -195,7 +195,7 @@ class Graphiti {
                                     { latex: '4', label: '4' },
                                     { latex: '5', label: '5' },
                                     { latex: '6', label: '6' },
-                                    { latex: '\\times', label: '×' }
+                                    { latex: '\\cdot', label: '×' }
                                 ],
                                 [
                                     // Constants and operations
@@ -266,7 +266,7 @@ class Graphiti {
                                     { latex: '4', label: '4' },
                                     { latex: '5', label: '5' },
                                     { latex: '6', label: '6' },
-                                    { latex: '\\times', label: '×' }
+                                    { latex: '\\cdot', label: '×' }
                                 ],
                                 [
                                     // Trigonometric reciprocal functions and log
@@ -354,7 +354,7 @@ class Graphiti {
                                     { latex: '4', label: '4' },
                                     { latex: '5', label: '5' },
                                     { latex: '6', label: '6' },
-                                    { latex: '\\times', label: '×' }
+                                    { latex: '\\cdot', label: '×' }
                                 ],
                                 [
                                     // Hyperbolic reciprocal functions and root
@@ -6023,6 +6023,10 @@ class Graphiti {
         expression = expression.replace(/\\pi/g, 'pi');
         // Convert theta to 't' for evaluation (math.js doesn't treat 't' as a unit in this context)
         expression = expression.replace(/\\theta/g, 't');
+        
+        // Multiplication symbols
+        expression = expression.replace(/\\cdot/g, '*');
+        expression = expression.replace(/\\times/g, '*');
         
         console.log('After theta conversion:', expression);
         
