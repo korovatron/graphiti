@@ -923,7 +923,7 @@ class Graphiti {
         const timerId = setTimeout(() => {
             this.replotAllFunctions(); // Replot all functions to ensure badges are properly updated
             this.plotTimers.delete(func.id);
-        }, 300); // 300ms delay
+        }, 500); // Balanced delay for responsiveness and performance
         
         this.plotTimers.set(func.id, timerId);
     }
@@ -1055,11 +1055,11 @@ class Graphiti {
             // Clear intersection badges that involve this function
             this.removeIntersectionBadgesForFunction(func.id);
             
-            // Immediately recalculate intersections and turning points after function becomes invalid
-            // This ensures markers are updated correctly based on remaining valid functions
-            if (this.showIntersections) {
-                this.intersections = this.findIntersections();
-            }
+            // Don't immediately recalculate intersections here - let the normal debounce handle it
+            // This prevents race conditions with badge cleanup
+            // if (this.showIntersections) {
+            //     this.intersections = this.findIntersections();
+            // }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
             }
@@ -1152,9 +1152,9 @@ class Graphiti {
         try {
             // Calculate points for the current viewport
             const points = [];
-            // Apply adaptive resolution based on function count (same as worker)
+            // Apply adaptive resolution based on function count (balanced for quality and performance)
             const functionCount = this.getCurrentFunctions().filter(f => f.enabled).length;
-            const adaptiveResolution = functionCount > 10 ? 500 : 1000;
+            const adaptiveResolution = functionCount > 10 ? 400 : functionCount > 6 ? 600 : 1000;
             const maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
             const step = (this.viewport.maxX - this.viewport.minX) / Math.min(this.viewport.width, maxPlotResolution);
             
@@ -1408,7 +1408,7 @@ class Graphiti {
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
             }
-        }, 200); // 200ms delay provides smooth experience
+        }, 400); // Balanced delay for intersection calculations
     }
     
     findIntersections() {
@@ -3072,6 +3072,7 @@ class Graphiti {
                 
                 // If function has no points after validation, clear its badges
                 if (!func.points || func.points.length === 0) {
+                    console.log(`Cleaning up badges for invalid function ${func.id} in ${this.plotMode} mode`);
                     this.removeBadgesForFunction(func.id);
                     this.removeIntersectionBadgesForFunction(func.id);
                 }
@@ -3557,17 +3558,25 @@ class Graphiti {
     }
     
     removeBadgesForFunction(functionId) {
+        const beforeCount = this.input.persistentBadges.length;
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
+        const afterCount = this.input.persistentBadges.length;
+        if (beforeCount !== afterCount) {
+            console.log(`[${this.plotMode}] Removed ${beforeCount - afterCount} badges for function ${functionId}`);
+        }
     }
-    
+
     removeIntersectionBadgesForFunction(functionId) {
         // Remove intersection badges that involve the specified function
+        const beforeCount = this.input.persistentBadges.length;
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             !(badge.badgeType === 'intersection' && (badge.func1Id === functionId || badge.func2Id === functionId))
         );
-    }
-    
-    clearIntersections() {
+        const afterCount = this.input.persistentBadges.length;
+        if (beforeCount !== afterCount) {
+            console.log(`[${this.plotMode}] Removed ${beforeCount - afterCount} intersection badges for function ${functionId}`);
+        }
+    }    clearIntersections() {
         // Remove all intersection badges (those with functionId === null or badgeType === 'intersection')
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             badge.functionId !== null && badge.badgeType !== 'intersection'
@@ -3631,7 +3640,19 @@ class Graphiti {
                 console.log(`Intersections calculated: ${data.intersections.length} found in ${data.calculationTime.toFixed(2)}ms`);
                 this.intersections = data.intersections;
                 this.isWorkerCalculating = false;
-                this.draw(); // Update display with new intersections
+                
+                // After intersection calculation completes, clean up any intersection badges for invalid functions
+                if (this.plotMode === 'polar') {
+                    this.getCurrentFunctions().forEach(func => {
+                        if (!func.points || func.points.length === 0) {
+                            console.log(`[${this.plotMode}] Post-intersection cleanup for invalid function ${func.id}`);
+                            this.removeIntersectionBadgesForFunction(func.id);
+                        }
+                    });
+                }
+                
+                // Use chunked rendering to avoid blocking UI
+                this.scheduleChunkedDraw();
                 break;
                 
             case 'INTERSECTIONS_ERROR':
@@ -3647,15 +3668,26 @@ class Graphiti {
                 this.isWorkerCalculating = false;
                 break;
                 
+            case 'CALCULATION_CANCELLED':
+                console.log('Worker calculation was cancelled');
+                this.isWorkerCalculating = false;
+                break;
+                
             default:
                 console.warn('Unknown worker message type:', type);
         }
     }
 
     calculateIntersectionsWithWorker() {
-        if (!this.intersectionWorker || this.isWorkerCalculating) {
-            // Fallback to main thread if worker not available or already calculating
+        if (!this.intersectionWorker) {
+            // Fallback to main thread if worker not available
             return this.findIntersections();
+        }
+
+        // Cancel any previous calculation
+        if (this.isWorkerCalculating) {
+            console.log('Canceling previous intersection calculation...');
+            this.intersectionWorker.postMessage({ type: 'CANCEL_CALCULATION' });
         }
 
         this.isWorkerCalculating = true;
@@ -4299,6 +4331,13 @@ class Graphiti {
         // UI overlays removed - cleaner interface
     }
     
+    scheduleChunkedDraw() {
+        // Use requestAnimationFrame to avoid blocking the UI
+        requestAnimationFrame(() => {
+            this.draw();
+        });
+    }
+    
     drawGrid() {
         if (this.plotMode === 'polar') {
             this.drawPolarGrid();
@@ -4897,6 +4936,26 @@ class Graphiti {
     }
 
     drawIntersectionMarkers() {
+        // Early exit if no intersections
+        if (!this.intersections || this.intersections.length === 0) {
+            return;
+        }
+        
+        // For large numbers of intersections, limit processing to avoid UI blocking
+        const maxProcessPerFrame = 1000;
+        const totalIntersections = this.intersections.length;
+        
+        if (totalIntersections > maxProcessPerFrame) {
+            // Process in chunks - only process a subset per frame
+            this.drawIntersectionMarkersChunked(maxProcessPerFrame);
+            return;
+        }
+        
+        // For smaller numbers, process normally but efficiently
+        this.drawIntersectionMarkersImmediate();
+    }
+    
+    drawIntersectionMarkersImmediate() {
         // Convert to screen coordinates and filter by viewport, then apply density culling
         const markersInViewport = [];
         
@@ -4936,6 +4995,61 @@ class Graphiti {
             }
             
             // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            this.drawIntersectionMarker(marker.screenX, marker.screenY, marker.intersection);
+        }
+    }
+    
+    drawIntersectionMarkersChunked(maxProcess) {
+        // For large intersection sets, only process the first N intersections
+        // This prevents UI blocking while still showing intersection points
+        const intersectionsToProcess = this.intersections.slice(0, maxProcess);
+        
+        // Convert to screen coordinates and filter by viewport
+        const markersInViewport = [];
+        
+        for (const intersection of intersectionsToProcess) {
+            const screenPos = this.worldToScreen(intersection.x, intersection.y);
+            
+            // Only consider markers within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    intersection: intersection
+                });
+            }
+        }
+        
+        // Apply simplified culling for performance
+        const minDistance = 40;
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Limit culling checks to prevent excessive computation
+            for (let i = Math.max(0, culledMarkers.length - 50); i < culledMarkers.length; i++) {
+                const accepted = culledMarkers[i];
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
             if (!tooClose) {
                 culledMarkers.push(marker);
             }
@@ -5233,6 +5347,8 @@ class Graphiti {
         // Use a unique color for intersection badges that's not used by any function
         // Function colors: #4A90E2, #E74C3C, #27AE60, #F39C12, #9B59B6, #1ABC9C, #E67E22, #34495E, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4
         const intersectionColor = '#D63384'; // Pink/magenta color not in function palette
+        
+        console.log(`[${this.plotMode}] Adding intersection badge between functions ${func1.id} and ${func2.id} at (${worldX.toFixed(3)}, ${worldY.toFixed(3)})`);
         
         // Create intersection badge with both function IDs stored
         const badge = {

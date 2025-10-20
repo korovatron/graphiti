@@ -6,6 +6,9 @@ console.log('Intersection worker loaded');
 // Import math.js for function evaluation in the worker context
 importScripts('https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js');
 
+// Global cancellation flag
+let isCancelled = false;
+
 // Worker message handler
 self.onmessage = function(event) {
     const { type, data } = event.data;
@@ -21,8 +24,20 @@ self.onmessage = function(event) {
             });
             break;
             
+        case 'CANCEL_CALCULATION':
+            // Set cancellation flag to abort current calculation
+            isCancelled = true;
+            console.log('Worker: Calculation cancelled');
+            self.postMessage({
+                type: 'CALCULATION_CANCELLED',
+                data: { timestamp: Date.now() }
+            });
+            break;
+            
         case 'CALCULATE_INTERSECTIONS':
             try {
+                // Reset cancellation flag for new calculation
+                isCancelled = false;
                 console.log('Starting intersection calculations...');
                 const startTime = performance.now();
                 
@@ -30,11 +45,17 @@ self.onmessage = function(event) {
                 const { functions, viewport, plotMode, maxResolution } = data;
                 
                 // Apply adaptive resolution based on function count
-                const adaptiveResolution = functions.length > 10 ? 500 : 1000;
+                const adaptiveResolution = functions.length > 10 ? 400 : functions.length > 6 ? 600 : 1000;
                 console.log(`Using adaptive resolution: ${adaptiveResolution} points for ${functions.length} functions`);
                 
                 // Calculate intersections using the same logic as main thread
                 const intersections = findIntersections(functions, plotMode);
+                
+                // Check if calculation was cancelled before sending results
+                if (isCancelled) {
+                    console.log('Worker: Calculation was cancelled, not sending results');
+                    return;
+                }
                 
                 const endTime = performance.now();
                 const calculationTime = endTime - startTime;
@@ -85,6 +106,12 @@ function findIntersections(functions, plotMode) {
     
     // Check all pairs of functions
     for (let i = 0; i < enabledFunctions.length; i++) {
+        // Check for cancellation between function pairs
+        if (isCancelled) {
+            console.log('Worker: Intersection calculation cancelled');
+            return [];
+        }
+        
         for (let j = i + 1; j < enabledFunctions.length; j++) {
             const func1 = enabledFunctions[i];
             const func2 = enabledFunctions[j];
@@ -114,6 +141,11 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
         const allX = [...new Set([...points1.map(p => p.x), ...points2.map(p => p.x)])].sort((a, b) => a - b);
         
         for (let i = 0; i < allX.length - 1; i++) {
+            // Check for cancellation every 100 iterations to avoid excessive checking
+            if (i % 100 === 0 && isCancelled) {
+                return [];
+            }
+            
             const x1 = allX[i];
             const x2 = allX[i + 1];
             
@@ -148,6 +180,11 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
         // Second pass: look for tangent intersections using local minima detection
         // Sample every 10th point to avoid dense detection
         for (let i = 10; i < allX.length - 10; i += 5) {
+            // Check for cancellation every 50 iterations
+            if (i % 50 === 0 && isCancelled) {
+                return [];
+            }
+            
             const x0 = allX[i - 5];
             const x1 = allX[i];
             const x2 = allX[i + 5];
