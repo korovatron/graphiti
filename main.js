@@ -2219,8 +2219,15 @@ class Graphiti {
                     // Update range inputs to reflect the pan (immediate for responsiveness)
                     this.updateRangeInputs();
                     
-                    // Immediate replot for smooth visual feedback (consistent with polar mode)
-                    this.replotAllFunctions();
+                    // Immediate replot for visual continuity, without expensive intersection calculations
+                    this.getCurrentFunctions().forEach(func => {
+                        if (func.expression && func.enabled) {
+                            this.plotFunctionWithValidation(func);
+                        }
+                    });
+                    
+                    // Debounce the expensive intersection/turning point calculations
+                    this.handleViewportChange();
                 }
             }
             
@@ -2265,7 +2272,7 @@ class Graphiti {
         
         // If we were dragging and not tracing, ensure final replot happens
         if (this.input.dragging && !this.input.tracing.active) {
-            // Final replot to ensure everything is current (though we now replot during panning)
+            // Final complete replot with badge management
             this.replotAllFunctions();
         }
         
