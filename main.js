@@ -2414,7 +2414,14 @@ class Graphiti {
                     // Update viewport scale based on new X range for proper grid/label spacing
                     this.updateViewportScale();
                     this.updateRangeInputs();
-                    this.replotAllFunctions();
+                    
+                    // Use lightweight plotting for pinch operations
+                    this.getCurrentFunctions().forEach(func => {
+                        if (func.expression && func.enabled) {
+                            this.plotFunction(func);
+                        }
+                    });
+                    this.handleViewportChange();
                 }
                 
             } else if (this.input.pinch.direction === 'vertical') {
@@ -2436,7 +2443,14 @@ class Graphiti {
                     // Update viewport scale based on new Y range for proper grid/label spacing
                     this.updateViewportScale();
                     this.updateRangeInputs();
-                    this.replotAllFunctions();
+                    
+                    // Use lightweight plotting for pinch operations
+                    this.getCurrentFunctions().forEach(func => {
+                        if (func.expression && func.enabled) {
+                            this.plotFunction(func);
+                        }
+                    });
+                    this.handleViewportChange();
                 }
                 
             } else {
@@ -2465,7 +2479,14 @@ class Graphiti {
                     
                     this.updateViewportScale();
                     this.updateRangeInputs();
-                    this.replotAllFunctions();
+                    
+                    // Use lightweight plotting for pinch operations
+                    this.getCurrentFunctions().forEach(func => {
+                        if (func.expression && func.enabled) {
+                            this.plotFunction(func);
+                        }
+                    });
+                    this.handleViewportChange();
                 }
             }
         }
