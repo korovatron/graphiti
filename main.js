@@ -2627,7 +2627,14 @@ class Graphiti {
             // Update scale for consistent grid/label spacing
             this.updateViewportScale();
             this.updateRangeInputs();
-            this.replotAllFunctions();
+            
+            // Use lightweight plotting for zoom operations
+            this.getCurrentFunctions().forEach(func => {
+                if (func.expression && func.enabled) {
+                    this.plotFunction(func);
+                }
+            });
+            this.handleViewportChange();
         }
     }
     
@@ -2653,7 +2660,14 @@ class Graphiti {
             // Update scale for consistent grid/label spacing
             this.updateViewportScale();
             this.updateRangeInputs();
-            this.replotAllFunctions();
+            
+            // Use lightweight plotting for zoom operations
+            this.getCurrentFunctions().forEach(func => {
+                if (func.expression && func.enabled) {
+                    this.plotFunction(func);
+                }
+            });
+            this.handleViewportChange();
         }
     }
     
