@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-offline-cache-19-10-2025-22:00';
+const CACHE_NAME = 'graphiti-offline-cache-20-10-2025-01:00';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

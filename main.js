@@ -844,8 +844,8 @@ class Graphiti {
         removeBtn.addEventListener('click', () => {
             // Clear badges for this function when removing
             this.removeBadgesForFunction(func.id);
-            // Clear intersection badges since they may no longer be valid
-            this.clearIntersections();
+            // Clear intersection badges that involve this function
+            this.removeIntersectionBadgesForFunction(func.id);
             this.removeFunction(func.id);
         });
         
@@ -981,10 +981,17 @@ class Graphiti {
             
             // Clear badges for this invalid function
             this.removeBadgesForFunction(func.id);
+            // Clear intersection badges that involve this function
+            this.removeIntersectionBadgesForFunction(func.id);
             
-            // Force a complete replot to recalculate intersections and turning points
-            // This ensures all badges are updated correctly based on remaining valid functions
-            this.plotFunctions();
+            // Immediately recalculate intersections and turning points after function becomes invalid
+            // This ensures markers are updated correctly based on remaining valid functions
+            if (this.showIntersections) {
+                this.intersections = this.findIntersections();
+            }
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
             
             // Update UI to show error (subtle visual feedback)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
@@ -2941,7 +2948,13 @@ class Graphiti {
     replotAllFunctions() {
         this.getCurrentFunctions().forEach(func => {
             if (func.expression && func.enabled) {
-                this.plotFunction(func);
+                this.plotFunctionWithValidation(func);
+                
+                // If function has no points after validation, clear its badges
+                if (!func.points || func.points.length === 0) {
+                    this.removeBadgesForFunction(func.id);
+                    this.removeIntersectionBadgesForFunction(func.id);
+                }
             }
         });
         
@@ -3426,9 +3439,18 @@ class Graphiti {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
     }
     
+    removeIntersectionBadgesForFunction(functionId) {
+        // Remove intersection badges that involve the specified function
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+            !(badge.badgeType === 'intersection' && (badge.func1Id === functionId || badge.func2Id === functionId))
+        );
+    }
+    
     clearIntersections() {
-        // Remove all intersection badges (those with functionId === null)
-        this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== null);
+        // Remove all intersection badges (those with functionId === null or badgeType === 'intersection')
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+            badge.functionId !== null && badge.badgeType !== 'intersection'
+        );
         // Also clear the intersection markers themselves
         this.intersections = [];
     }
@@ -4968,14 +4990,23 @@ class Graphiti {
         // Function colors: #4A90E2, #E74C3C, #27AE60, #F39C12, #9B59B6, #1ABC9C, #E67E22, #34495E, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4
         const intersectionColor = '#D63384'; // Pink/magenta color not in function palette
         
-        // Don't use custom text - let it show coordinates normally
-        this.addTraceBadge(
-            null, // No specific function ID for intersections
-            worldX,
-            worldY,
-            intersectionColor
-            // No custom text - will show coordinates
-        );
+        // Create intersection badge with both function IDs stored
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: null, // Keep null for backward compatibility with existing code
+            func1Id: func1.id, // Store first function ID
+            func2Id: func2.id, // Store second function ID
+            worldX: worldX,
+            worldY: worldY,
+            functionColor: intersectionColor,
+            customText: null,
+            badgeType: 'intersection',
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
     }
     
     // ================================
@@ -5084,7 +5115,7 @@ class Graphiti {
         if (customText) {
             labelText = customText;
         } else if (badgeType) {
-            // Turning point badge with type-specific label
+            // Badge with type-specific label
             const coords = this.formatCoordinates(worldX, worldY);
             switch (badgeType) {
                 case 'maximum':
@@ -5093,8 +5124,13 @@ class Graphiti {
                 case 'minimum':
                     labelText = `Local Minimum: ${coords}`;
                     break;
+                case 'intersection':
+                    // Intersection badges show only coordinates
+                    labelText = coords;
+                    break;
                 default:
-                    labelText = `Turning Point: ${coords}`;
+                    // Fallback for any unknown badge types - just show coordinates
+                    labelText = coords;
             }
         } else if (isActive) {
             // Active tracing badge
