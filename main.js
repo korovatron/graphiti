@@ -703,7 +703,7 @@ class Graphiti {
             
             // Update intersections after adding this function
             if (this.showIntersections) {
-                this.intersections = this.findIntersections();
+                this.intersections = this.calculateIntersectionsWithWorker();
             }
             
             // Update turning points after adding this function
@@ -1028,7 +1028,7 @@ class Graphiti {
             
             // Update intersections after plotting this function
             if (this.showIntersections) {
-                this.intersections = this.findIntersections();
+                this.intersections = this.calculateIntersectionsWithWorker();
             }
             
             // Update turning points after plotting this function
@@ -1152,8 +1152,10 @@ class Graphiti {
         try {
             // Calculate points for the current viewport
             const points = [];
-            // Cap resolution to prevent performance issues on high-res displays
-            const maxPlotResolution = 1000; // Maximum points regardless of display resolution
+            // Apply adaptive resolution based on function count (same as worker)
+            const functionCount = this.getCurrentFunctions().filter(f => f.enabled).length;
+            const adaptiveResolution = functionCount > 10 ? 500 : 1000;
+            const maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
             const step = (this.viewport.maxX - this.viewport.minX) / Math.min(this.viewport.width, maxPlotResolution);
             
             // Use a more precise approach to ensure we include the endpoint
@@ -1401,7 +1403,7 @@ class Graphiti {
             this.frozenIntersectionBadges = []; // Clear frozen badges
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
             if (this.showIntersections) {
-                this.intersections = this.findIntersections();
+                this.intersections = this.calculateIntersectionsWithWorker();
             }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
@@ -1875,8 +1877,8 @@ class Graphiti {
                 this.updateIntersectionToggleButton();
                 
                 if (this.showIntersections) {
-                    // Recalculate and show intersections
-                    this.intersections = this.findIntersections();
+                    // Recalculate and show intersections using Web Worker
+                    this.intersections = this.calculateIntersectionsWithWorker();
                 } else {
                     // Clear intersections and badges
                     this.clearIntersections();
@@ -3116,7 +3118,7 @@ class Graphiti {
             
             // Calculate initial intersections
             if (this.showIntersections) {
-                this.intersections = this.findIntersections();
+                this.intersections = this.calculateIntersectionsWithWorker();
             }
             
             // Calculate initial turning points
