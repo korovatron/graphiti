@@ -1,8 +1,9 @@
-const CACHE_NAME = 'graphiti-offline-cache-20-10-2025-21:15';
+const CACHE_NAME = 'graphiti-offline-cache-20-10-2025-23:30';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './main.js',
+    './intersection-worker.js',
     './manifest.json',
     './sw.js',
     './logo.png',
