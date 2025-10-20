@@ -1147,7 +1147,9 @@ class Graphiti {
         try {
             // Calculate points for the current viewport
             const points = [];
-            const step = (this.viewport.maxX - this.viewport.minX) / this.viewport.width;
+            // Cap resolution to prevent performance issues on high-res displays
+            const maxPlotResolution = 1000; // Maximum points regardless of display resolution
+            const step = (this.viewport.maxX - this.viewport.minX) / Math.min(this.viewport.width, maxPlotResolution);
             
             // Use a more precise approach to ensure we include the endpoint
             const numSteps = Math.ceil((this.viewport.maxX - this.viewport.minX) / step);
