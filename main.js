@@ -155,6 +155,11 @@ class Graphiti {
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         
+        // Web Worker for intersection calculations
+        this.intersectionWorker = null;
+        this.isWorkerCalculating = false;
+        this.initializeIntersectionWorker();
+        
         // Animation
         this.lastFrameTime = 0;
         this.deltaTime = 0;
@@ -3567,6 +3572,123 @@ class Graphiti {
         );
         // Also clear the intersection markers themselves
         this.intersections = [];
+    }
+
+    // ================================
+    // WEB WORKER INTERSECTION METHODS
+    // ================================
+
+    initializeIntersectionWorker() {
+        try {
+            this.intersectionWorker = new Worker('intersection-worker.js');
+            
+            // Handle messages from worker
+            this.intersectionWorker.onmessage = (event) => {
+                this.handleWorkerMessage(event.data);
+            };
+            
+            // Handle worker errors
+            this.intersectionWorker.onerror = (error) => {
+                console.error('Intersection worker error:', error);
+                this.isWorkerCalculating = false;
+                // Fallback to main thread calculation
+                this.intersections = this.findIntersections();
+                this.draw();
+            };
+            
+            // Test worker communication
+            this.testWorkerCommunication();
+            
+        } catch (error) {
+            console.warn('Web Workers not supported or failed to initialize:', error);
+            this.intersectionWorker = null;
+        }
+    }
+
+    testWorkerCommunication() {
+        if (this.intersectionWorker) {
+            console.log('Testing worker communication...');
+            this.intersectionWorker.postMessage({
+                type: 'TEST_COMMUNICATION',
+                data: { message: 'Hello from main thread' }
+            });
+        }
+    }
+
+    handleWorkerMessage(message) {
+        const { type, data } = message;
+        
+        console.log('Main thread received message:', type);
+        
+        switch (type) {
+            case 'TEST_RESPONSE':
+                console.log('Worker communication test successful:', data);
+                break;
+                
+            case 'INTERSECTIONS_COMPLETE':
+                console.log(`Intersections calculated: ${data.intersections.length} found in ${data.calculationTime.toFixed(2)}ms`);
+                this.intersections = data.intersections;
+                this.isWorkerCalculating = false;
+                this.draw(); // Update display with new intersections
+                break;
+                
+            case 'INTERSECTIONS_ERROR':
+                console.error('Worker intersection calculation error:', data.error);
+                this.isWorkerCalculating = false;
+                // Fallback to main thread calculation
+                this.intersections = this.findIntersections();
+                this.draw();
+                break;
+                
+            case 'WORKER_ERROR':
+                console.error('Worker error:', data.error);
+                this.isWorkerCalculating = false;
+                break;
+                
+            default:
+                console.warn('Unknown worker message type:', type);
+        }
+    }
+
+    calculateIntersectionsWithWorker() {
+        if (!this.intersectionWorker || this.isWorkerCalculating) {
+            // Fallback to main thread if worker not available or already calculating
+            return this.findIntersections();
+        }
+
+        this.isWorkerCalculating = true;
+        console.log('Requesting intersection calculation from worker...');
+
+        // Prepare data for worker
+        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        const workerData = {
+            functions: enabledFunctions.map(func => ({
+                id: func.id,
+                expression: func.expression,
+                points: func.points,
+                color: func.color,
+                enabled: func.enabled
+            })),
+            viewport: {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY,
+                width: this.viewport.width,
+                height: this.viewport.height
+            },
+            plotMode: this.plotMode,
+            maxResolution: 1000 // Current resolution cap
+        };
+
+        // Send calculation request to worker
+        this.intersectionWorker.postMessage({
+            type: 'CALCULATE_INTERSECTIONS',
+            data: workerData
+        });
+
+        // Return empty array for now - results will come via message handler
+        return [];
     }
     
     // ================================
