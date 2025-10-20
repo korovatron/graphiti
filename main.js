@@ -61,6 +61,10 @@ class Graphiti {
         // Expression compilation cache for performance optimization
         this.expressionCache = new Map(); // Map<string, CompiledExpression>
         
+        // Regex pattern cache for performance optimization
+        this.regexCache = new Map(); // Map<string, RegExp>
+        this.initializeRegexCache();
+        
         // Input handling
         this.input = {
             mouse: { x: 0, y: 0, down: false },
@@ -573,9 +577,9 @@ class Graphiti {
     isMobilePhone() {
         // Detect mobile phones (exclude tablets and desktop)
         const userAgent = navigator.userAgent.toLowerCase();
-        const isAndroidPhone = /android/.test(userAgent) && /mobile/.test(userAgent);
-        const isIPhone = /iphone/.test(userAgent);
-        const isWindowsPhone = /windows phone/.test(userAgent);
+        const isAndroidPhone = this.getCachedRegex('android').test(userAgent) && this.getCachedRegex('mobile').test(userAgent);
+        const isIPhone = this.getCachedRegex('iPhone').test(userAgent);
+        const isWindowsPhone = this.getCachedRegex('windowsPhone').test(userAgent);
         
         // Also check screen size - phones typically have smaller screens
         const isSmallScreen = window.screen.width <= 500 || window.screen.height <= 500;
@@ -942,6 +946,35 @@ class Graphiti {
         this.expressionCache.clear();
     }
     
+    // Regex pattern cache helpers for performance optimization
+    initializeRegexCache() {
+        // Cache commonly used regex patterns
+        this.regexCache.set('regularTrigWithX', /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i);
+        this.regexCache.set('inverseTrigWithX', /\b(asin|acos|atan)\s*\(\s*[^)]*x[^)]*\)/i);
+        this.regexCache.set('inverseTrig', /\b(asin|acos|atan)\s*\(/i);
+        this.regexCache.set('regularTrig', /\b(sin|cos|tan)\s*\(/i);
+        this.regexCache.set('operatorEnd', /[+\-*/^]$/);
+        this.regexCache.set('android', /android/i);
+        this.regexCache.set('mobile', /mobile/i);
+        this.regexCache.set('iPhone', /iphone/i);
+        this.regexCache.set('windowsPhone', /windows phone/i);
+        this.regexCache.set('iOS', /iPad|iPhone|iPod/);
+        this.regexCache.set('safari', /Safari/);
+        this.regexCache.set('notChromeEdge', /CriOS|FxiOS|EdgiOS/);
+        
+        // LaTeX conversion patterns
+        this.regexCache.set('sinFunction', /\bsin\(/g);
+        this.regexCache.set('cosFunction', /\bcos\(/g);
+        this.regexCache.set('tanFunction', /\btan\(/g);
+        this.regexCache.set('asinFunction', /\basin\(/g);
+        this.regexCache.set('acosFunction', /\bacos\(/g);
+        this.regexCache.set('atanFunction', /\batan\(/g);
+    }
+    
+    getCachedRegex(patternName) {
+        return this.regexCache.get(patternName);
+    }
+    
     plotFunctionWithValidation(func) {
         try {
             // Don't plot empty expressions, but ensure error state is cleared
@@ -957,7 +990,7 @@ class Graphiti {
             }
             
             // Check for incomplete expressions (ending with operators)
-            if (/[+\-*/^]$/.test(func.expression.trim())) {
+            if (this.getCachedRegex('operatorEnd').test(func.expression.trim())) {
                 throw new Error('Incomplete expression ending with operator');
             }
             
@@ -3354,9 +3387,9 @@ class Graphiti {
             let evaluationX = x;
             if (this.angleMode === 'degrees') {
                 // Check if THIS specific expression contains regular trig functions that need x converted
-                const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(processedExpression);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
                 // Check if THIS specific expression contains inverse trig functions (which use regular number inputs)
-                const hasInverseTrigWithX = /\b(asin|acos|atan)\s*\(\s*[^)]*x[^)]*\)/i.test(processedExpression);
+                const hasInverseTrigWithX = this.getCachedRegex('inverseTrigWithX').test(processedExpression);
                 
                 // Convert input x from degrees to radians for regular trig functions
                 if (hasRegularTrigWithX) {
@@ -3374,7 +3407,7 @@ class Graphiti {
             if (typeof result === 'number' && isFinite(result)) {
                 // Convert result for inverse trig functions if in degree mode
                 if (this.angleMode === 'degrees') {
-                    const hasInverseTrig = /\b(asin|acos|atan)\s*\(/i.test(processedExpression);
+                    const hasInverseTrig = this.getCachedRegex('inverseTrig').test(processedExpression);
                     if (hasInverseTrig) {
                         const convertedResult = result * 180 / Math.PI; // Convert radians to degrees
                         return convertedResult;
@@ -3552,7 +3585,7 @@ class Graphiti {
             }
             
             // Also check that the expression doesn't end with operators (invalid)
-            if (!f.expression || !f.expression.trim() || /[+\-*/^]$/.test(f.expression.trim())) {
+            if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
                 return false;
             }
             
@@ -3613,7 +3646,7 @@ class Graphiti {
                 let secondDerivValue;
                 if (this.angleMode === 'degrees') {
                     // Apply same degree transformation for second derivative evaluation
-                    const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(secondDerivativeStr);
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(secondDerivativeStr);
                     const evaluationX = hasRegularTrigWithX ? x * Math.PI / 180 : x;
                     const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
                     secondDerivValue = compiledSecondDeriv.evaluate({x: evaluationX});
@@ -3659,7 +3692,7 @@ class Graphiti {
             let evaluationX = xValue;
             if (this.angleMode === 'degrees') {
                 // Check if this derivative expression contains regular trig functions that need x converted
-                const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(expr);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(expr);
                 
                 // Convert input x from degrees to radians for regular trig functions in derivatives
                 if (hasRegularTrigWithX) {
@@ -3728,7 +3761,7 @@ class Graphiti {
             let evaluationX = xValue;
             if (this.angleMode === 'degrees') {
                 // Check if this derivative expression contains regular trig functions that need x converted
-                const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(expr);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(expr);
                 
                 // Convert input x from degrees to radians for regular trig functions in derivatives
                 if (hasRegularTrigWithX) {
@@ -5887,9 +5920,9 @@ class Graphiti {
     isIOSSafari() {
         // Detect iOS devices (iPhone and iPad) running in Safari browser mode
         // This affects both iPhone and iPad when NOT in PWA mode
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+        const isIOS = this.getCachedRegex('iOS').test(navigator.userAgent) || 
                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        const isSafari = /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+        const isSafari = this.getCachedRegex('safari').test(navigator.userAgent) && !this.getCachedRegex('notChromeEdge').test(navigator.userAgent);
         return isIOS && isSafari;
     }
 
@@ -6117,12 +6150,12 @@ class Graphiti {
         latex = latex.replace(/sqrt\(([^)]+)\)/g, '\\sqrt{$1}');
         
         // Trigonometric functions
-        latex = latex.replace(/\bsin\(/g, '\\sin(');
-        latex = latex.replace(/\bcos\(/g, '\\cos(');
-        latex = latex.replace(/\btan\(/g, '\\tan(');
-        latex = latex.replace(/\basin\(/g, '\\arcsin(');
-        latex = latex.replace(/\bacos\(/g, '\\arccos(');
-        latex = latex.replace(/\batan\(/g, '\\arctan(');
+        latex = latex.replace(this.getCachedRegex('sinFunction'), '\\sin(');
+        latex = latex.replace(this.getCachedRegex('cosFunction'), '\\cos(');
+        latex = latex.replace(this.getCachedRegex('tanFunction'), '\\tan(');
+        latex = latex.replace(this.getCachedRegex('asinFunction'), '\\arcsin(');
+        latex = latex.replace(this.getCachedRegex('acosFunction'), '\\arccos(');
+        latex = latex.replace(this.getCachedRegex('atanFunction'), '\\arctan(');
         
         // Logarithms
         latex = latex.replace(/\blog\(/g, '\\log(');
