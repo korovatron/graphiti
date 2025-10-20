@@ -2222,7 +2222,7 @@ class Graphiti {
                     // Immediate replot for visual continuity, without expensive intersection calculations
                     this.getCurrentFunctions().forEach(func => {
                         if (func.expression && func.enabled) {
-                            this.plotFunctionWithValidation(func);
+                            this.plotFunction(func); // Use lightweight plotting without validation
                         }
                     });
                     
