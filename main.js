@@ -58,6 +58,9 @@ class Graphiti {
             maxY: 3
         };
         
+        // Expression compilation cache for performance optimization
+        this.expressionCache = new Map(); // Map<string, CompiledExpression>
+        
         // Input handling
         this.input = {
             mouse: { x: 0, y: 0, down: false },
@@ -801,6 +804,9 @@ class Graphiti {
                 const expression = this.convertFromLatex(latex);
                 func.expression = expression;
                 
+                // Clear expression cache when function expression changes
+                this.clearExpressionCache();
+                
                 // Debounced plotting
                 this.debouncePlot(func);
             } catch (error) {
@@ -815,6 +821,10 @@ class Graphiti {
                     const latex = mathField.getValue();
                     const expression = this.convertFromLatex(latex);
                     func.expression = expression;
+                    
+                    // Clear expression cache when function expression changes
+                    this.clearExpressionCache();
+                    
                     this.replotAllFunctions(); // Replot all functions for consistent badge behavior
                 } catch (error) {
                     console.warn('Error getting mathfield value on Enter:', error);
@@ -907,6 +917,29 @@ class Graphiti {
         }, 300); // 300ms delay
         
         this.plotTimers.set(func.id, timerId);
+    }
+    
+    // Expression compilation cache helpers for performance optimization
+    getCompiledExpression(expression) {
+        // Check if expression is already in cache
+        if (this.expressionCache.has(expression)) {
+            return this.expressionCache.get(expression);
+        }
+        
+        // Compile and cache the expression
+        try {
+            const compiledExpression = math.compile(expression);
+            this.expressionCache.set(expression, compiledExpression);
+            return compiledExpression;
+        } catch (error) {
+            // Don't cache failed compilations
+            throw error;
+        }
+    }
+    
+    clearExpressionCache() {
+        // Clear the entire cache when functions are modified
+        this.expressionCache.clear();
     }
     
     plotFunctionWithValidation(func) {
@@ -1009,6 +1042,9 @@ class Graphiti {
             clearTimeout(this.plotTimers.get(id));
             this.plotTimers.delete(id);
         }
+        
+        // Clear expression cache when functions are removed
+        this.clearExpressionCache();
         
         // Remove from the appropriate function array
         this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
@@ -1178,8 +1214,8 @@ class Graphiti {
             // Prepare the expression for evaluation
             let processedExpression = func.expression.toLowerCase();
             
-            // Create a compiled expression with math.js
-            const compiledExpression = math.compile(processedExpression);
+            // Use cached compiled expression for better performance
+            const compiledExpression = this.getCompiledExpression(processedExpression);
             
             const points = [];
             const thetaMin = this.polarSettings.thetaMin;
@@ -3330,8 +3366,9 @@ class Graphiti {
                 }
             }
             
-            // Use math.js for safe mathematical expression evaluation
-            const result = math.evaluate(processedExpression, { x: evaluationX });
+            // Use cached compiled expression for better performance
+            const compiledExpression = this.getCompiledExpression(processedExpression);
+            const result = compiledExpression.evaluate({ x: evaluationX });
             
             // Ensure the result is a finite number
             if (typeof result === 'number' && isFinite(result)) {
@@ -3578,9 +3615,11 @@ class Graphiti {
                     // Apply same degree transformation for second derivative evaluation
                     const hasRegularTrigWithX = /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i.test(secondDerivativeStr);
                     const evaluationX = hasRegularTrigWithX ? x * Math.PI / 180 : x;
-                    secondDerivValue = math.evaluate(secondDerivativeStr, {x: evaluationX});
+                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
+                    secondDerivValue = compiledSecondDeriv.evaluate({x: evaluationX});
                 } else {
-                    secondDerivValue = math.evaluate(secondDerivativeStr, {x: x});
+                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
+                    secondDerivValue = compiledSecondDeriv.evaluate({x: x});
                 }
                 
                 let type = 'inflection'; // fallback
@@ -3628,7 +3667,9 @@ class Graphiti {
                 }
             }
             
-            return math.evaluate(expr, {x: evaluationX});
+            // Use cached compiled expression for better performance
+            const compiledExpression = this.getCompiledExpression(expr);
+            return compiledExpression.evaluate({x: evaluationX});
         };
         
         // Special case: check if x=0 is in range and if derivative is approximately 0 there
@@ -3695,7 +3736,9 @@ class Graphiti {
                 }
             }
             
-            return math.evaluate(expr, {x: evaluationX});
+            // Use cached compiled expression for better performance
+            const compiledExpression = this.getCompiledExpression(expr);
+            return compiledExpression.evaluate({x: evaluationX});
         };
         
         try {
