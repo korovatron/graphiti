@@ -42,11 +42,11 @@ self.onmessage = function(event) {
                 const startTime = performance.now();
                 
                 // Extract data from main thread
-                const { functions, viewport, plotMode, maxResolution } = data;
+                const { functions, viewport, plotMode, maxResolution, calculationType } = data;
                 
                 // Apply adaptive resolution based on function count
                 const adaptiveResolution = functions.length > 10 ? 400 : functions.length > 6 ? 600 : 1000;
-                console.log(`Using adaptive resolution: ${adaptiveResolution} points for ${functions.length} functions`);
+                console.log(`Using adaptive resolution: ${adaptiveResolution} points for ${functions.length} functions (${calculationType || 'mixed'} calculation)`);
                 
                 // Calculate intersections using the same logic as main thread
                 const intersections = findIntersections(functions, plotMode);
@@ -68,7 +68,8 @@ self.onmessage = function(event) {
                     data: {
                         intersections: intersections,
                         calculationTime: calculationTime,
-                        functionCount: functions.length
+                        functionCount: functions.length,
+                        calculationType: calculationType || 'mixed'
                     }
                 });
                 
@@ -104,6 +105,11 @@ function findIntersections(functions, plotMode) {
     const intersections = [];
     const enabledFunctions = functions.filter(f => f.enabled && f.points.length > 0);
     
+    console.log(`Worker: Processing ${enabledFunctions.length} functions for intersections`);
+    enabledFunctions.forEach((f, i) => {
+        console.log(`  Function ${i}: ${f.expression} (${f.points.length} points, implicit: ${f.isImplicit || f.expression.includes('=')})`);
+    });
+    
     // Check all pairs of functions
     for (let i = 0; i < enabledFunctions.length; i++) {
         // Check for cancellation between function pairs
@@ -116,11 +122,15 @@ function findIntersections(functions, plotMode) {
             const func1 = enabledFunctions[i];
             const func2 = enabledFunctions[j];
             
+            console.log(`Worker: Checking intersections between "${func1.expression}" and "${func2.expression}"`);
+            
             const pairIntersections = findIntersectionsBetweenFunctions(func1, func2, plotMode);
+            console.log(`  Found ${pairIntersections.length} intersections`);
             intersections.push(...pairIntersections);
         }
     }
     
+    console.log(`Worker: Total intersections found: ${intersections.length}`);
     return intersections;
 }
 
@@ -133,9 +143,25 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
         return intersections;
     }
     
-    // Find intersections by checking sign changes and close points
-    // Works for both cartesian and polar since polar points are stored as cartesian coordinates
+    // Check if either function is implicit (has NaN separators)
+    const isImplicit1 = points1.some(p => !isFinite(p.x) || !isFinite(p.y));
+    const isImplicit2 = points2.some(p => !isFinite(p.x) || !isFinite(p.y));
     
+    // Handle different combinations of function types
+    if (isImplicit1 && isImplicit2) {
+        // Both implicit - use line segment intersection
+        console.log('  Both functions are implicit - using segment intersection');
+        return findImplicitIntersections(func1, func2);
+    } else if (isImplicit1 || isImplicit2) {
+        // Mixed explicit/implicit - use hybrid method
+        console.log('  Mixed explicit/implicit - using hybrid intersection');
+        return findMixedIntersections(func1, func2, isImplicit1);
+    }
+    
+    // Both explicit - use original interpolation method
+    console.log('  Both functions are explicit - using interpolation method');
+    
+    // Original logic for explicit functions
     if (plotMode === 'cartesian') {
         // For cartesian functions, use x-axis interpolation method
         const allX = [...new Set([...points1.map(p => p.x), ...points2.map(p => p.x)])].sort((a, b) => a - b);
@@ -265,6 +291,136 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
     return intersections;
 }
 
+function findImplicitIntersections(func1, func2) {
+    const intersections = [];
+    const segments1 = getLineSegments(func1.points);
+    const segments2 = getLineSegments(func2.points);
+    
+    // Simple O(n²) approach but with reasonable segment counts
+    for (const seg1 of segments1) {
+        for (const seg2 of segments2) {
+            const intersection = findLineSegmentIntersection(
+                seg1.start, seg1.end, seg2.start, seg2.end
+            );
+            
+            if (intersection) {
+                // Reasonable duplicate filtering
+                const isDuplicate = intersections.some(existing => 
+                    Math.abs(existing.x - intersection.x) < 0.01 && 
+                    Math.abs(existing.y - intersection.y) < 0.01
+                );
+                
+                if (!isDuplicate) {
+                    intersections.push({
+                        x: intersection.x,
+                        y: intersection.y,
+                        func1: func1,
+                        func2: func2,
+                        isApproximate: true
+                    });
+                }
+            }
+        }
+    }
+    
+    return intersections;
+}
+
+function findMixedIntersections(func1, func2, func1IsImplicit) {
+    const intersections = [];
+    
+    // Determine which function is explicit and which is implicit
+    const explicitFunc = func1IsImplicit ? func2 : func1;
+    const implicitFunc = func1IsImplicit ? func1 : func2;
+    
+    console.log(`  Explicit function has ${explicitFunc.points.length} points`);
+    console.log(`  Implicit function has ${implicitFunc.points.length} points`);
+    
+    // Get line segments from implicit function
+    const implicitSegments = getLineSegments(implicitFunc.points);
+    
+    console.log(`  Found ${implicitSegments.length} implicit segments`);
+    
+    // For each implicit segment, check intersection with explicit function curve
+    for (const segment of implicitSegments) {
+        // Find intersections between this line segment and the explicit function
+        const segmentIntersections = findSegmentCurveIntersections(segment, explicitFunc, implicitFunc);
+        intersections.push(...segmentIntersections);
+    }
+    
+    console.log(`  Found ${intersections.length} mixed intersections`);
+    return intersections;
+}
+
+function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
+    const intersections = [];
+    const { start: segStart, end: segEnd } = segment;
+    
+    // Validate segment coordinates
+    if (isNaN(segStart.x) || isNaN(segStart.y) || isNaN(segEnd.x) || isNaN(segEnd.y)) {
+        console.log('  Skipping invalid segment with NaN coordinates');
+        return intersections;
+    }
+    
+    // Check intersection with each pair of consecutive points in explicit function
+    for (let i = 0; i < explicitFunc.points.length - 1; i++) {
+        const curveP1 = explicitFunc.points[i];
+        const curveP2 = explicitFunc.points[i + 1];
+        
+        // Skip if curve points are invalid
+        if (isNaN(curveP1.x) || isNaN(curveP1.y) || isNaN(curveP2.x) || isNaN(curveP2.y)) {
+            continue;
+        }
+        
+        // Check if line segments intersect using existing function
+        const intersection = findLineSegmentIntersection(segStart, segEnd, curveP1, curveP2);
+        
+        if (intersection) {
+            // Validate intersection coordinates
+            if (isNaN(intersection.x) || isNaN(intersection.y)) {
+                console.log('  Skipping intersection with NaN coordinates:', intersection);
+                continue;
+            }
+            
+            // Check for duplicates
+            const isDuplicate = intersections.some(existing => 
+                Math.abs(existing.x - intersection.x) < 0.01 && 
+                Math.abs(existing.y - intersection.y) < 0.01
+            );
+            
+            if (!isDuplicate) {
+                intersections.push({
+                    x: intersection.x,
+                    y: intersection.y,
+                    func1: explicitFunc,
+                    func2: implicitFunc,
+                    isApproximate: true
+                });
+            }
+        }
+    }
+    
+    return intersections;
+}
+
+function getLineSegments(points) {
+    const segments = [];
+    
+    // Process points in groups of 3 (start, end, NaN)
+    for (let i = 0; i < points.length - 1; i += 3) {
+        const start = points[i];
+        const end = points[i + 1];
+        
+        if (start && end && 
+            isFinite(start.x) && isFinite(start.y) &&
+            isFinite(end.x) && isFinite(end.y)) {
+            segments.push({ start, end });
+        }
+    }
+    
+    return segments;
+}
+
 function findLineSegmentIntersection(p1, p2, p3, p4) {
     // Find intersection between line segments (p1,p2) and (p3,p4)
     // Using parametric line intersection algorithm
@@ -299,7 +455,30 @@ function interpolateYAtX(func, targetX) {
     const points = func.points;
     if (points.length === 0) return null;
     
-    // Find the two points that bracket targetX
+    // Check if this is an implicit function (has disconnected segments)
+    const hasDisconnectedSegments = points.some(p => !isFinite(p.x) || !isFinite(p.y));
+    
+    if (hasDisconnectedSegments) {
+        // For implicit functions, only use exact matches or very close points
+        // Don't interpolate across disconnected segments
+        let closestPoint = null;
+        let minDistance = Infinity;
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            if (isFinite(point.x) && isFinite(point.y)) {
+                const distance = Math.abs(point.x - targetX);
+                if (distance < minDistance && distance < 0.01) { // Very close threshold
+                    minDistance = distance;
+                    closestPoint = point;
+                }
+            }
+        }
+        
+        return closestPoint ? closestPoint.y : null;
+    }
+    
+    // For explicit functions, use original interpolation logic
     for (let i = 0; i < points.length - 1; i++) {
         const p1 = points[i];
         const p2 = points[i + 1];

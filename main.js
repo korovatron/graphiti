@@ -21,6 +21,9 @@ class Graphiti {
         this.currentState = this.states.TITLE;
         this.previousState = null;
         
+        // Startup state tracking for immediate implicit function rendering
+        this.isStartup = false;
+        
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
         
@@ -144,6 +147,23 @@ class Graphiti {
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
+        
+        // Separate intersection systems for better performance
+        this.explicitIntersections = []; // Fast explicit/explicit intersections  
+        this.implicitIntersections = []; // High-resolution implicit intersections
+        this.combinedIntersections = []; // Combined for display
+        
+        // Implicit intersection timing control
+        this.implicitIntersectionTimer = null;
+        this.implicitIntersectionDelay = 500; // ms after pan/zoom stops
+        this.lastViewportState = null; // Track viewport changes
+        
+        // Implicit function viewport caching for smooth pan/zoom performance
+        this.implicitFunctionCache = new Map(); // Cache: functionId -> { viewport, points, timestamp }
+        this.viewportChangeThreshold = 0.1; // Relative threshold for cache invalidation
+        
+        // Legacy manual intersection storage (keeping for compatibility)
+        this.manualImplicitIntersections = []; // Store manually calculated implicit intersections
         this.showIntersections = true; // Toggle for intersection display
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
@@ -232,7 +252,8 @@ class Graphiti {
                                 [
                                     // Bottom row with 0, operations, and navigation
                                     '[left]', '[right]',
-                                    { label: '[backspace]', width: 2 },
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { latex: '.', label: '.' },
@@ -319,7 +340,8 @@ class Graphiti {
                                 [
                                     // Bottom row with navigation, shift key between . and -
                                     '[left]', '[right]',
-                                    { label: '[backspace]', width: 2 },
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { latex: '.', label: '.' },
@@ -413,7 +435,8 @@ class Graphiti {
                                 [
                                     // Bottom row with navigation, shift key between . and -
                                     '[left]', '[right]',
-                                    { label: '[backspace]', width: 2 },
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { latex: '.', label: '.' },
@@ -424,6 +447,14 @@ class Graphiti {
                         };
 
                         window.mathVirtualKeyboard.layouts = [customNumericLayout, functionsLayout, hyperbolicLayout];
+                        
+                        // Store layout references for mode-aware updates
+                        this.customNumericLayout = customNumericLayout;
+                        this.functionsLayout = functionsLayout;
+                        this.hyperbolicLayout = hyperbolicLayout;
+                        
+                        // Update keyboards for initial mode
+                        this.updateVirtualKeyboardsForMode();
                         
                         // Monitor for layout tab clicks to reset shift state on numeric layout
                         const observer = new MutationObserver(() => {
@@ -701,9 +732,9 @@ class Graphiti {
         if (expression) {
             this.plotFunction(func);
             
-            // Update intersections after adding this function
+            // Update intersections after adding this function (immediate calculation)
             if (this.showIntersections) {
-                this.intersections = this.calculateIntersectionsWithWorker();
+                this.intersections = this.calculateIntersectionsWithWorker(true); // true = immediate
             }
             
             // Update turning points after adding this function
@@ -844,19 +875,17 @@ class Graphiti {
         colorIndicator.addEventListener('click', () => {
             // Clear badges for this function when toggling visibility
             this.removeBadgesForFunction(func.id);
-            // Clear intersection badges since they may no longer be valid
-            this.clearIntersections();
+            // Clear intersection badges that involve this function only
+            this.removeIntersectionBadgesForFunction(func.id);
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
             
-            // Recalculate intersections with the new function state
-            if (this.showIntersections) {
-                this.intersections = this.findIntersections();
-            }
+            // Replot all functions to ensure proper display with new state
+            this.replotAllFunctions();
             
-            // Recalculate turning points with the new function state
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
+            // Recalculate intersections and turning points with the new function state
+            if (this.showIntersections || this.showTurningPoints) {
+                this.handleViewportChange();
             }
         });
         
@@ -980,7 +1009,7 @@ class Graphiti {
         return this.regexCache.get(patternName);
     }
     
-    plotFunctionWithValidation(func) {
+    async plotFunctionWithValidation(func) {
         try {
             // Don't plot empty expressions, but ensure error state is cleared
             if (!func.expression.trim()) {
@@ -1016,19 +1045,35 @@ class Graphiti {
                     }
                     math.evaluate(processedExpression, { t: 1, theta: 1 });
                 } else {
-                    // For cartesian mode, test with x variable
-                    const processedExpression = this.convertFromLatex(func.expression);
-                    math.evaluate(processedExpression, { x: 1 });
+                    // For cartesian mode, check function type first
+                    const functionType = this.detectFunctionType(func.expression);
+                    
+                    if (functionType === 'implicit') {
+                        // Test implicit function with x,y variables
+                        const equation = this.parseImplicitEquation(func.expression);
+                        if (!equation) {
+                            throw new Error('Invalid implicit equation format');
+                        }
+                        // Test evaluation at a sample point
+                        const testValue = this.evaluateImplicitEquation(equation, 1, 1);
+                        if (testValue === null) {
+                            throw new Error('Cannot evaluate implicit equation');
+                        }
+                    } else {
+                        // For explicit functions, test with x variable
+                        const processedExpression = this.convertFromLatex(func.expression);
+                        math.evaluate(processedExpression, { x: 1 });
+                        
+                        // Additional validation: try to evaluate at x=0 for explicit functions only
+                        const testResult = this.evaluateFunction(func.expression, 0);
+                    }
                 }
             } catch (evalError) {
                 throw new Error('Invalid mathematical expression: ' + evalError.message);
             }
             
-            // Quick validation: try to evaluate at x=0
-            const testResult = this.evaluateFunction(func.expression, 0);
-            
             // If we get here without throwing, the expression is syntactically valid
-            this.plotFunction(func);
+            await this.plotFunction(func);
             
             // Update intersections after plotting this function
             if (this.showIntersections) {
@@ -1133,7 +1178,7 @@ class Graphiti {
         });
     }
     
-    plotFunction(func) {
+    async plotFunction(func) {
         // Check if math.js is available
         if (typeof math === 'undefined') {
             console.error('Math.js library not loaded!');
@@ -1146,11 +1191,21 @@ class Graphiti {
             return;
         }
         
-        // Route to appropriate plotting method based on mode
+        // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
             this.plotPolarFunction(func);
             return;
         }
+        
+        // Detect function type for cartesian mode
+        const functionType = this.detectFunctionType(func.expression);
+        
+        if (functionType === 'implicit') {
+            await this.plotImplicitFunction(func, false, this.isStartup);
+            return;
+        }
+        
+        console.log('Using explicit function plotting');
         
         // Cartesian plotting (existing code)
         try {
@@ -1321,6 +1376,919 @@ class Graphiti {
             func.points = [];
         }
     }
+
+    // ================================
+    // FUNCTION TYPE DETECTION METHODS
+    // ================================
+
+    detectFunctionType(expression) {
+        // Clean expression first (remove y= prefix if present)
+        let clean = expression.trim();
+        
+        if (clean.toLowerCase().startsWith('y=')) {
+            return 'explicit'; // y=f(x) format
+        }
+        
+        // Check for equals sign (required for implicit)
+        if (!clean.includes('=')) {
+            return 'explicit'; // f(x) format - assume explicit
+        }
+        
+        // Has equals sign - check for variables
+        const hasY = /y/.test(clean); // Contains 'y' variable anywhere
+        const hasX = /x/.test(clean); // Contains 'x' variable anywhere
+        
+        if (hasX && hasY) {
+            return 'implicit'; // f(x,y) = g(x,y) format
+        }
+        
+        // Special cases: equations with only x or only y should also be implicit
+        if (hasX || hasY) {
+            return 'implicit'; // Examples: x=1, y^2=1, x^2=4, etc.
+        }
+        
+        return 'explicit'; // Default fallback (could be parametric or other)
+    }
+
+    // ================================
+    // IMPLICIT FUNCTION PLOTTING METHODS
+    // ================================
+
+    async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
+        try {
+            let points = [];
+            
+            // Parse the implicit equation f(x,y) = g(x,y) into f(x,y) - g(x,y) = 0
+            const equation = this.parseImplicitEquation(func.expression);
+            
+            if (!equation) {
+                console.warn('Could not parse implicit equation:', func.expression);
+                func.points = [];
+                return;
+            }
+            
+            // Use high resolution for intersection detection, normal resolution for display
+            if (highResForIntersections) {
+                points = await this.marchingSquaresHighResAsync(equation, immediate);
+            } else {
+                points = await this.marchingSquaresAsync(equation, immediate);
+            }
+            
+            func.points = points;
+            
+        } catch (error) {
+            console.error('Error plotting implicit function:', error);
+            func.points = [];
+        }
+    }
+
+    isCircleEquation(expr) {
+        // Check for patterns like x^2+y^2=r^2 or (x-h)^2+(y-k)^2=r^2
+        return /x\^?2\+y\^?2=/.test(expr) || /\(x[-+]/.test(expr) && /\(y[-+]/.test(expr);
+    }
+    
+    isEllipseEquation(expr) {
+        // Check for patterns like x^2/a^2+y^2/b^2=1 or (x^2)/(4)+(y^2)/(9)=1
+        // Handle both simple fractions and parenthesized forms
+        const patterns = [
+            /x\^?2\/\d+(\.\d+)?\+y\^?2\/\d+(\.\d+)?\s*=\s*1/, // x^2/4+y^2/9=1
+            /\(x\^?2\)\/\(\d+(\.\d+)?\)\+\(y\^?2\)\/\(\d+(\.\d+)?\)\s*=\s*1/ // (x^2)/(4)+(y^2)/(9)=1
+        ];
+        return patterns.some(p => p.test(expr));
+    }
+    
+    isParabolaEquation(expr) {
+        // Check for patterns like y=ax^2+bx+c, x=ay^2+by+c, y^2=4px, x^2=4py
+        const patterns = [
+            /y\^?2\s*=.*x/, // y^2 = ...x
+            /x\^?2\s*=.*y/  // x^2 = ...y
+        ];
+        return patterns.some(p => p.test(expr));
+    }
+    
+    isHyperbolaEquation(expr) {
+        // Check for patterns like x^2/a^2-y^2/b^2=1 or y^2/b^2-x^2/a^2=1
+        // Handle both simple fractions and parenthesized forms
+        const patterns = [
+            /x\^?2\/\d+(\.\d+)?[-−]y\^?2\/\d+(\.\d+)?\s*=\s*1/, // x^2/4-y^2/9=1
+            /y\^?2\/\d+(\.\d+)?[-−]x\^?2\/\d+(\.\d+)?\s*=\s*1/, // y^2/9-x^2/4=1
+            /\(x\^?2\)\/\(\d+(\.\d+)?\)[-−]\(y\^?2\)\/\(\d+(\.\d+)?\)\s*=\s*1/, // (x^2)/(4)-(y^2)/(9)=1
+            /\(y\^?2\)\/\(\d+(\.\d+)?\)[-−]\(x\^?2\)\/\(\d+(\.\d+)?\)\s*=\s*1/  // (y^2)/(9)-(x^2)/(4)=1
+        ];
+        return patterns.some(p => p.test(expr));
+    }
+    
+    plotCircle(expr) {
+        const points = [];
+        
+        // Extract radius from expressions like x^2+y^2=4 (radius = 2)
+        let radius = 1;
+        let centerX = 0;
+        let centerY = 0;
+        
+        const match = expr.match(/x\^?2\+y\^?2=(\d+(?:\.\d+)?)/);
+        if (match) {
+            radius = Math.sqrt(parseFloat(match[1]));
+        }
+        
+        // Use parametric equations for perfect circle
+        const numPoints = 360; // One point per degree for smooth circle
+        for (let i = 0; i < numPoints; i++) {
+            const angle = (i * 2 * Math.PI) / numPoints;
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle);
+            
+            // Only include points within viewport
+            if (x >= this.viewport.minX && x <= this.viewport.maxX &&
+                y >= this.viewport.minY && y <= this.viewport.maxY) {
+                points.push({ x: x, y: y, connected: true });
+            }
+        }
+        
+        return points;
+    }
+    
+    plotEllipse(expr) {
+        const points = [];
+        
+        // Extract a and b from expressions like x^2/4+y^2/9=1 or (x^2)/(4)+(y^2)/(9)=1
+        let a = 1; // semi-major axis
+        let b = 1; // semi-minor axis
+        let centerX = 0;
+        let centerY = 0;
+        
+        // Try both simple and parenthesized patterns
+        let match = expr.match(/x\^?2\/(\d+(?:\.\d+)?)\+y\^?2\/(\d+(?:\.\d+)?)\s*=\s*1/);
+        if (!match) {
+            match = expr.match(/\(x\^?2\)\/\((\d+(?:\.\d+)?)\)\+\(y\^?2\)\/\((\d+(?:\.\d+)?)\)\s*=\s*1/);
+        }
+        
+        if (match) {
+            a = Math.sqrt(parseFloat(match[1]));
+            b = Math.sqrt(parseFloat(match[2]));
+        }
+        
+        // Use parametric equations for perfect ellipse: x = a*cos(t), y = b*sin(t)
+        const numPoints = 360;
+        for (let i = 0; i < numPoints; i++) {
+            const t = (i * 2 * Math.PI) / numPoints;
+            const x = centerX + a * Math.cos(t);
+            const y = centerY + b * Math.sin(t);
+            
+            // Only include points within viewport
+            if (x >= this.viewport.minX && x <= this.viewport.maxX &&
+                y >= this.viewport.minY && y <= this.viewport.maxY) {
+                points.push({ x: x, y: y, connected: true });
+            }
+        }
+        
+        return points;
+    }
+    
+    plotParabola(expr) {
+        const points = [];
+        
+        // Determine orientation and parameters
+        if (/y\^?2=/.test(expr)) {
+            // Horizontal parabola: y^2 = 4px or y^2 = ax
+            let p = 1;
+            const match = expr.match(/y\^?2\s*=\s*(\d+(?:\.\d+)?)\*?x/);
+            if (match) {
+                p = parseFloat(match[1]) / 4; // Convert from y^2=4px to parameter p
+            }
+            
+            // Parametric: x = pt^2, y = 2pt
+            const tRange = 6; // Range of parameter t
+            const numPoints = 200;
+            for (let i = -numPoints; i <= numPoints; i++) {
+                const t = (i * tRange) / numPoints;
+                const x = p * t * t;
+                const y = 2 * p * t;
+                
+                if (x >= this.viewport.minX && x <= this.viewport.maxX &&
+                    y >= this.viewport.minY && y <= this.viewport.maxY) {
+                    points.push({ x: x, y: y, connected: true });
+                }
+            }
+        } else if (/x\^?2=/.test(expr)) {
+            // Vertical parabola: x^2 = 4py or x^2 = ay
+            let p = 1;
+            const match = expr.match(/x\^?2\s*=\s*(\d+(?:\.\d+)?)\*?y/);
+            if (match) {
+                p = parseFloat(match[1]) / 4;
+            }
+            
+            // Parametric: x = 2pt, y = pt^2
+            const tRange = 6;
+            const numPoints = 200;
+            for (let i = -numPoints; i <= numPoints; i++) {
+                const t = (i * tRange) / numPoints;
+                const x = 2 * p * t;
+                const y = p * t * t;
+                
+                if (x >= this.viewport.minX && x <= this.viewport.maxX &&
+                    y >= this.viewport.minY && y <= this.viewport.maxY) {
+                    points.push({ x: x, y: y, connected: true });
+                }
+            }
+        }
+        
+        return points;
+    }
+    
+    plotHyperbola(expr) {
+        const points = [];
+        
+        // Extract a and b from expressions like x^2/4-y^2/9=1 or y^2/9-x^2/4=1
+        let a = 1;
+        let b = 1;
+        let xHyperbola = true; // true for x^2/a^2-y^2/b^2=1, false for y^2/b^2-x^2/a^2=1
+        
+        const xMatch = expr.match(/x\^?2\/(\d+(?:\.\d+)?)[-−]y\^?2\/(\d+(?:\.\d+)?)\s*=\s*1/) ||
+                       expr.match(/\(x\^?2\)\/\((\d+(?:\.\d+)?)\)[-−]\(y\^?2\)\/\((\d+(?:\.\d+)?)\)\s*=\s*1/);
+        const yMatch = expr.match(/y\^?2\/(\d+(?:\.\d+)?)[-−]x\^?2\/(\d+(?:\.\d+)?)\s*=\s*1/) ||
+                       expr.match(/\(y\^?2\)\/\((\d+(?:\.\d+)?)\)[-−]\(x\^?2\)\/\((\d+(?:\.\d+)?)\)\s*=\s*1/);
+        
+        if (xMatch) {
+            a = Math.sqrt(parseFloat(xMatch[1]));
+            b = Math.sqrt(parseFloat(xMatch[2]));
+            xHyperbola = true;
+        } else if (yMatch) {
+            b = Math.sqrt(parseFloat(yMatch[1]));
+            a = Math.sqrt(parseFloat(yMatch[2]));
+            xHyperbola = false;
+        }
+        
+        const numPoints = 150;
+        const tRange = 3; // Range for hyperbolic parameter
+        
+        if (xHyperbola) {
+            // x^2/a^2 - y^2/b^2 = 1: x = ±a*cosh(t), y = b*sinh(t)
+            
+            // Right branch (positive x)
+            for (let i = 0; i <= numPoints; i++) {
+                const t = (i * tRange) / numPoints;
+                const x = a * Math.cosh(t);
+                const yPos = b * Math.sinh(t);
+                const yNeg = -b * Math.sinh(t);
+                
+                if (x >= this.viewport.minX && x <= this.viewport.maxX) {
+                    if (yPos >= this.viewport.minY && yPos <= this.viewport.maxY) {
+                        points.push({ x: x, y: yPos, connected: true, branch: 'right-pos' });
+                    }
+                    if (yNeg >= this.viewport.minY && yNeg <= this.viewport.maxY) {
+                        points.push({ x: x, y: yNeg, connected: true, branch: 'right-neg' });
+                    }
+                }
+            }
+            
+            // Left branch (negative x)
+            for (let i = 0; i <= numPoints; i++) {
+                const t = (i * tRange) / numPoints;
+                const x = -a * Math.cosh(t);
+                const yPos = b * Math.sinh(t);
+                const yNeg = -b * Math.sinh(t);
+                
+                if (x >= this.viewport.minX && x <= this.viewport.maxX) {
+                    if (yPos >= this.viewport.minY && yPos <= this.viewport.maxY) {
+                        points.push({ x: x, y: yPos, connected: true, branch: 'left-pos' });
+                    }
+                    if (yNeg >= this.viewport.minY && yNeg <= this.viewport.maxY) {
+                        points.push({ x: x, y: yNeg, connected: true, branch: 'left-neg' });
+                    }
+                }
+            }
+        } else {
+            // y^2/b^2 - x^2/a^2 = 1: y = ±b*cosh(t), x = a*sinh(t)
+            
+            // Top branch (positive y)
+            for (let i = 0; i <= numPoints; i++) {
+                const t = (i * tRange) / numPoints;
+                const y = b * Math.cosh(t);
+                const xPos = a * Math.sinh(t);
+                const xNeg = -a * Math.sinh(t);
+                
+                if (y >= this.viewport.minY && y <= this.viewport.maxY) {
+                    if (xPos >= this.viewport.minX && xPos <= this.viewport.maxX) {
+                        points.push({ x: xPos, y: y, connected: true, branch: 'top-pos' });
+                    }
+                    if (xNeg >= this.viewport.minX && xNeg <= this.viewport.maxX) {
+                        points.push({ x: xNeg, y: y, connected: true, branch: 'top-neg' });
+                    }
+                }
+            }
+            
+            // Bottom branch (negative y)
+            for (let i = 0; i <= numPoints; i++) {
+                const t = (i * tRange) / numPoints;
+                const y = -b * Math.cosh(t);
+                const xPos = a * Math.sinh(t);
+                const xNeg = -a * Math.sinh(t);
+                
+                if (y >= this.viewport.minY && y <= this.viewport.maxY) {
+                    if (xPos >= this.viewport.minX && xPos <= this.viewport.maxX) {
+                        points.push({ x: xPos, y: y, connected: true, branch: 'bottom-pos' });
+                    }
+                    if (xNeg >= this.viewport.minX && xNeg <= this.viewport.maxX) {
+                        points.push({ x: xNeg, y: y, connected: true, branch: 'bottom-neg' });
+                    }
+                }
+            }
+        }
+        
+        return points;
+    }
+    
+    plotGeneralImplicit(equation) {
+        // Use marching squares algorithm for better curve detection
+        return this.marchingSquares(equation);
+    }
+    
+    marchingSquares(equation) {
+        const segments = [];
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        
+        // Balanced resolution scaling - performance vs quality
+        const viewportSize = Math.max(viewportWidth, viewportHeight);
+        
+        // Improved resolution scaling for smoother curves
+        let resolution;
+        if (viewportSize > 100) {
+            // Extremely zoomed out - maintain minimum quality
+            resolution = 80;
+        } else if (viewportSize > 50) {
+            // Very zoomed out - better resolution for smoothness
+            resolution = 100;
+        } else if (viewportSize > 20) {
+            // Normal zoom - high quality
+            resolution = 120;
+        } else if (viewportSize > 10) {
+            // Zoomed in - very high detail
+            resolution = 140;
+        } else if (viewportSize > 5) {
+            // Very zoomed in - maximum detail
+            resolution = 160;
+        } else {
+            // Extremely zoomed in - ultra high detail
+            resolution = 180;
+        }
+        
+        console.log(`Marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}`);
+        const stepX = viewportWidth / resolution;
+        const stepY = viewportHeight / resolution;
+        
+        return this.marchingSquaresAtResolution(equation, resolution, stepX, stepY);
+    }
+
+    async marchingSquaresAsync(equation, immediate = false) {
+        const segments = [];
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        
+        // Balanced resolution scaling - performance vs quality
+        const viewportSize = Math.max(viewportWidth, viewportHeight);
+        
+        // Improved resolution scaling for smoother curves
+        let resolution;
+        if (viewportSize > 100) {
+            // Extremely zoomed out - maintain minimum quality
+            resolution = 80;
+        } else if (viewportSize > 50) {
+            // Very zoomed out - better resolution for smoothness
+            resolution = 100;
+        } else if (viewportSize > 20) {
+            // Normal zoom - high quality
+            resolution = 120;
+        } else if (viewportSize > 10) {
+            // Zoomed in - very high detail
+            resolution = 140;
+        } else if (viewportSize > 5) {
+            // Very zoomed in - maximum detail
+            resolution = 160;
+        } else {
+            // Extremely zoomed in - ultra high detail
+            resolution = 180;
+        }
+        
+        console.log(`Async marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
+        const stepX = viewportWidth / resolution;
+        const stepY = viewportHeight / resolution;
+        
+        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate);
+    }
+
+    marchingSquaresHighRes(equation) {
+        // Fixed high resolution for intersection detection - ignores zoom level
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        
+        // Use fixed high resolution for consistent intersection detection
+        const resolution = 150; // High resolution regardless of zoom
+        const stepX = viewportWidth / resolution;
+        const stepY = viewportHeight / resolution;
+        
+        console.log(`High-res marching squares for intersections: ${resolution}x${resolution}`);
+        return this.marchingSquaresAtResolution(equation, resolution, stepX, stepY);
+    }
+
+    async marchingSquaresHighResAsync(equation, immediate = false) {
+        // Fixed high resolution for intersection detection - ignores zoom level
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        
+        // Use fixed high resolution for consistent intersection detection
+        const resolution = 150; // High resolution regardless of zoom
+        const stepX = viewportWidth / resolution;
+        const stepY = viewportHeight / resolution;
+        
+        console.log(`Async high-res marching squares for intersections: ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
+        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate);
+    }
+
+    marchingSquaresAtResolution(equation, resolution, stepX, stepY) {
+        const segments = [];
+        
+        // Create grid of function values
+        const grid = [];
+        for (let i = 0; i <= resolution; i++) {
+            grid[i] = [];
+            for (let j = 0; j <= resolution; j++) {
+                const x = this.viewport.minX + i * stepX;
+                const y = this.viewport.minY + j * stepY;
+                const value = this.evaluateImplicitEquation(equation, x, y);
+                grid[i][j] = value !== null ? value : 0;
+            }
+        }
+        
+        // Process each cell for marching squares
+        for (let i = 0; i < resolution; i++) {
+            for (let j = 0; j < resolution; j++) {
+                const x = this.viewport.minX + i * stepX;
+                const y = this.viewport.minY + j * stepY;
+                
+                // Get the four corner values
+                const corners = [
+                    grid[i][j],     // bottom-left
+                    grid[i+1][j],   // bottom-right
+                    grid[i+1][j+1], // top-right
+                    grid[i][j+1]    // top-left
+                ];
+                
+                // Create binary configuration (1 if positive, 0 if negative)
+                let config = 0;
+                for (let k = 0; k < 4; k++) {
+                    if (corners[k] > 0) config |= (1 << k);
+                }
+                
+                // Get line segments for this configuration
+                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+                segments.push(...cellSegments);
+            }
+        }
+        
+        // Convert segments to points format
+        const points = [];
+        for (const segment of segments) {
+            points.push({ x: segment.start.x, y: segment.start.y, connected: true });
+            points.push({ x: segment.end.x, y: segment.end.y, connected: true });
+            // Add break between segments to prevent unwanted connections
+            points.push({ x: NaN, y: NaN, connected: false });
+        }
+        
+        return points;
+    }
+    
+    getMarchingSquaresSegments(config, corners, x, y, stepX, stepY) {
+        const segments = [];
+        
+        // Edge interpolation points (linear interpolation for zero crossings)
+        const getEdgePoint = (edge, v1, v2) => {
+            const t = Math.abs(v1) / (Math.abs(v1) + Math.abs(v2));
+            switch(edge) {
+                case 0: return { x: x + t * stepX, y: y }; // bottom edge
+                case 1: return { x: x + stepX, y: y + t * stepY }; // right edge  
+                case 2: return { x: x + (1-t) * stepX, y: y + stepY }; // top edge
+                case 3: return { x: x, y: y + (1-t) * stepY }; // left edge
+            }
+        };
+        
+        // Marching squares lookup table - defines which edges to connect for each configuration
+        const marchingSquaresTable = {
+            0: [], // no contour
+            1: [[3, 0]], // bottom-left corner
+            2: [[0, 1]], // bottom-right corner
+            3: [[3, 1]], // bottom edge
+            4: [[1, 2]], // top-right corner
+            5: [[3, 0], [1, 2]], // saddle case
+            6: [[0, 2]], // right edge
+            7: [[3, 2]], // everything except top-left
+            8: [[2, 3]], // top-left corner
+            9: [[0, 2]], // left edge
+            10: [[0, 1], [2, 3]], // saddle case
+            11: [[1, 2]], // everything except top-right
+            12: [[1, 3]], // top edge
+            13: [[0, 1]], // everything except bottom-right
+            14: [[0, 3]], // everything except bottom-left
+            15: [] // full contour (no line)
+        };
+        
+        const edgeConnections = marchingSquaresTable[config] || [];
+        
+        for (const [edge1, edge2] of edgeConnections) {
+            // Only create segment if there's actually a zero crossing on both edges
+            const v1_1 = corners[edge1];
+            const v1_2 = corners[(edge1 + 1) % 4];
+            const v2_1 = corners[edge2];
+            const v2_2 = corners[(edge2 + 1) % 4];
+            
+            if (v1_1 * v1_2 <= 0 && v2_1 * v2_2 <= 0) {
+                const start = getEdgePoint(edge1, v1_1, v1_2);
+                const end = getEdgePoint(edge2, v2_1, v2_2);
+                segments.push({ start, end });
+            }
+        }
+        
+        return segments;
+    }
+
+    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false) {
+        const segments = [];
+        
+        // Create grid of function values
+        const grid = [];
+        
+        // Process grid creation in chunks to prevent blocking
+        const chunkSize = 10; // Process 10 rows at a time
+        
+        for (let chunkStart = 0; chunkStart <= resolution; chunkStart += chunkSize) {
+            const chunkEnd = Math.min(chunkStart + chunkSize, resolution + 1);
+            
+            for (let i = chunkStart; i < chunkEnd; i++) {
+                grid[i] = [];
+                for (let j = 0; j <= resolution; j++) {
+                    const x = this.viewport.minX + i * stepX;
+                    const y = this.viewport.minY + j * stepY;
+                    const value = this.evaluateImplicitEquation(equation, x, y);
+                    grid[i][j] = value !== null ? value : 0;
+                }
+            }
+            
+            // Yield control after each chunk (skip delay during immediate mode)
+            if (!immediate && chunkStart + chunkSize <= resolution) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
+        
+        // Process each cell for marching squares in chunks
+        for (let chunkStart = 0; chunkStart < resolution; chunkStart += chunkSize) {
+            const chunkEnd = Math.min(chunkStart + chunkSize, resolution);
+            
+            for (let i = chunkStart; i < chunkEnd; i++) {
+                for (let j = 0; j < resolution; j++) {
+                    const x = this.viewport.minX + i * stepX;
+                    const y = this.viewport.minY + j * stepY;
+                    
+                    // Get the four corner values
+                    const corners = [
+                        grid[i][j],     // bottom-left
+                        grid[i+1][j],   // bottom-right
+                        grid[i+1][j+1], // top-right
+                        grid[i][j+1]    // top-left
+                    ];
+                    
+                    // Create binary configuration (1 if positive, 0 if negative)
+                    let config = 0;
+                    for (let k = 0; k < 4; k++) {
+                        if (corners[k] > 0) config |= (1 << k);
+                    }
+                    
+                    // Get line segments for this configuration
+                    const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+                    segments.push(...cellSegments);
+                }
+            }
+            
+            // Yield control after each chunk (skip delay during immediate mode)
+            if (!immediate && chunkStart + chunkSize < resolution) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
+        
+        // Convert segments to points format
+        const points = [];
+        for (const segment of segments) {
+            points.push({ x: segment.start.x, y: segment.start.y, connected: true });
+            points.push({ x: segment.end.x, y: segment.end.y, connected: true });
+            // Add break between segments to prevent unwanted connections
+            points.push({ x: NaN, y: NaN, connected: false });
+        }
+        
+        return points;
+    }
+    
+    findZeroCrossings(corners, x, y, stepX, stepY) {
+        const edges = [];
+        
+        // Define edge positions: bottom, right, top, left
+        const edgePos = [
+            {start: {x: x, y: y}, end: {x: x + stepX, y: y}},           // bottom
+            {start: {x: x + stepX, y: y}, end: {x: x + stepX, y: y + stepY}}, // right
+            {start: {x: x + stepX, y: y + stepY}, end: {x: x, y: y + stepY}}, // top
+            {start: {x: x, y: y + stepY}, end: {x: x, y: y}}            // left
+        ];
+        
+        // Check each edge for zero crossing
+        for (let i = 0; i < 4; i++) {
+            const v1 = corners[i];
+            const v2 = corners[(i + 1) % 4];
+            
+            // Zero crossing occurs when values have opposite signs
+            if (v1 * v2 < 0) {
+                // Use linear interpolation to find crossing point
+                const t = Math.abs(v1) / (Math.abs(v1) + Math.abs(v2));
+                const edge = edgePos[i];
+                const crossingX = edge.start.x + t * (edge.end.x - edge.start.x);
+                const crossingY = edge.start.y + t * (edge.end.y - edge.start.y);
+                
+                edges.push({ x: crossingX, y: crossingY });
+            }
+        }
+        
+        return edges;
+    }
+    
+    connectImplicitPoints(candidatePoints) {
+        const curves = [];
+        const used = new Set();
+        const maxDistance = Math.min(
+            (this.viewport.maxX - this.viewport.minX) / 30,
+            (this.viewport.maxY - this.viewport.minY) / 30
+        );
+        
+        for (let i = 0; i < candidatePoints.length; i++) {
+            if (used.has(i)) continue;
+            
+            const curve = this.traceCurve(candidatePoints, i, used, maxDistance);
+            
+            if (curve.length >= 3) {
+                curve.id = curves.length;
+                curves.push(curve);
+            } else {
+                // For small clusters, mark individual points as disconnected
+                curve.forEach(() => {
+                    curves.push([candidatePoints[i]]);
+                });
+            }
+        }
+        
+        return curves;
+    }
+    
+    traceCurve(points, startIdx, used, maxDistance) {
+        const curve = [];
+        const visited = new Set();
+        
+        // Start from the given point
+        let currentIdx = startIdx;
+        used.add(currentIdx);
+        visited.add(currentIdx);
+        curve.push(points[currentIdx]);
+        
+        // Trace the curve by following nearest neighbors
+        while (true) {
+            let nearestIdx = -1;
+            let nearestDistance = Infinity;
+            
+            const currentPoint = points[currentIdx];
+            
+            // Find the nearest unvisited point
+            for (let i = 0; i < points.length; i++) {
+                if (used.has(i) || visited.has(i)) continue;
+                
+                const distance = Math.sqrt(
+                    Math.pow(currentPoint.x - points[i].x, 2) + 
+                    Math.pow(currentPoint.y - points[i].y, 2)
+                );
+                
+                if (distance <= maxDistance && distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestIdx = i;
+                }
+            }
+            
+            // If no nearby point found, try to extend in the opposite direction
+            if (nearestIdx === -1 && curve.length === 1) {
+                // Try going backwards from the start point
+                const backwardCurve = this.traceBackward(points, startIdx, used, visited, maxDistance);
+                if (backwardCurve.length > 0) {
+                    // Prepend backward points to curve
+                    curve.unshift(...backwardCurve.reverse());
+                }
+                break;
+            } else if (nearestIdx === -1) {
+                break; // End of curve
+            }
+            
+            // Add the nearest point to the curve
+            used.add(nearestIdx);
+            visited.add(nearestIdx);
+            curve.push(points[nearestIdx]);
+            currentIdx = nearestIdx;
+        }
+        
+        return curve;
+    }
+    
+    traceBackward(points, startIdx, used, visited, maxDistance) {
+        const backwardCurve = [];
+        let currentIdx = startIdx;
+        
+        while (true) {
+            let nearestIdx = -1;
+            let nearestDistance = Infinity;
+            
+            const currentPoint = points[currentIdx];
+            
+            // Find the nearest unvisited point
+            for (let i = 0; i < points.length; i++) {
+                if (used.has(i) || visited.has(i)) continue;
+                
+                const distance = Math.sqrt(
+                    Math.pow(currentPoint.x - points[i].x, 2) + 
+                    Math.pow(currentPoint.y - points[i].y, 2)
+                );
+                
+                if (distance <= maxDistance && distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestIdx = i;
+                }
+            }
+            
+            if (nearestIdx === -1) break;
+            
+            used.add(nearestIdx);
+            visited.add(nearestIdx);
+            backwardCurve.push(points[nearestIdx]);
+            currentIdx = nearestIdx;
+        }
+        
+        return backwardCurve;
+    }
+    
+    findYValuesForImplicitFunction(equation, x) {
+        const yValues = [];
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        const yMin = this.viewport.minY;
+        const yMax = this.viewport.maxY;
+        const tolerance = 0.001;
+        const maxIterations = 50;
+        
+        // Use a combination of bisection and scanning to find y values
+        const scanResolution = 100;
+        const stepY = viewportHeight / scanResolution;
+        
+        let lastValue = null;
+        let lastY = null;
+        let zerosFound = 0;
+        
+        for (let y = yMin; y <= yMax; y += stepY) {
+            const currentValue = this.evaluateImplicitEquation(equation, x, y);
+            
+            if (currentValue !== null) {
+                // Check for sign change (zero crossing)
+                if (lastValue !== null && 
+                    ((lastValue > 0 && currentValue < 0) || (lastValue < 0 && currentValue > 0))) {
+                    
+                    // Use bisection method to find more accurate zero
+                    const accurateY = this.bisectionMethod(equation, x, lastY, y, tolerance, maxIterations);
+                    if (accurateY !== null) {
+                        yValues.push(accurateY);
+                        zerosFound++;
+                    }
+                }
+                
+                // Also check if current value is very close to zero
+                if (Math.abs(currentValue) < tolerance) {
+                    yValues.push(y);
+                    zerosFound++;
+                }
+                
+                lastValue = currentValue;
+                lastY = y;
+            }
+        }
+        
+        // Debug: Log for x=0 to see what's happening
+        if (Math.abs(x) < 0.01) {
+            console.log(`For x=${x}, found ${zerosFound} y values:`, yValues);
+        }
+        
+        return yValues;
+    }
+    
+    bisectionMethod(equation, x, y1, y2, tolerance, maxIterations) {
+        let a = y1;
+        let b = y2;
+        
+        for (let i = 0; i < maxIterations; i++) {
+            const c = (a + b) / 2;
+            const fc = this.evaluateImplicitEquation(equation, x, c);
+            
+            if (fc === null || Math.abs(fc) < tolerance) {
+                return c;
+            }
+            
+            const fa = this.evaluateImplicitEquation(equation, x, a);
+            if (fa === null) return null;
+            
+            if ((fa > 0 && fc > 0) || (fa < 0 && fc < 0)) {
+                a = c;
+            } else {
+                b = c;
+            }
+            
+            if (Math.abs(b - a) < tolerance) {
+                return (a + b) / 2;
+            }
+        }
+        
+        return null;
+    }
+
+    parseImplicitEquation(expression) {
+        try {
+            // Split on equals sign
+            const parts = expression.split('=');
+            if (parts.length !== 2) {
+                return null;
+            }
+            
+            const leftSide = parts[0].trim();
+            const rightSide = parts[1].trim();
+            
+            // Return the difference: left - right (so we solve for = 0)
+            return {
+                leftExpression: leftSide,
+                rightExpression: rightSide
+            };
+            
+        } catch (error) {
+            console.error('Error parsing implicit equation:', error);
+            return null;
+        }
+    }
+
+    evaluateImplicitEquation(equation, x, y) {
+        try {
+            // Evaluate left side - right side
+            const scope = { x: x, y: y, pi: Math.PI, e: Math.E };
+            
+            // Use existing infrastructure but with x,y scope
+            const leftValue = this.evaluateMathExpression(equation.leftExpression, scope);
+            const rightValue = this.evaluateMathExpression(equation.rightExpression, scope);
+            
+            if (leftValue === null || rightValue === null) {
+                return null;
+            }
+            
+            return leftValue - rightValue; // We want this to be ≈ 0
+            
+        } catch (error) {
+            return null;
+        }
+    }
+
+    evaluateMathExpression(expression, scope) {
+        try {
+            // Process expression for math.js directly without convertFromLatex to avoid recursion
+            let processedExpression = expression.toLowerCase();
+            
+            // Handle implicit multiplication for adjacent variables and numbers
+            // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
+            processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
+            processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
+            processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
+            processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
+            processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+            
+            // Basic math.js compatible conversions
+            processedExpression = processedExpression.replace(/\^/g, '^'); // Keep power notation
+            processedExpression = processedExpression.replace(/\bpi\b/g, 'pi');
+            processedExpression = processedExpression.replace(/\be\b/g, 'e');
+            
+            // Use math.js directly without compiled expression cache to avoid recursion
+            const result = math.evaluate(processedExpression, scope);
+            
+            if (typeof result === 'number' && isFinite(result)) {
+                return result;
+            }
+            
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
     
     calculateDynamicPolarStep(thetaMin, thetaMax) {
         // Prevent system hangs by limiting total number of calculation points
@@ -1387,6 +2355,9 @@ class Graphiti {
             }));
         }
         
+        // Schedule implicit intersection recalculation after viewport changes settle
+        this.scheduleImplicitIntersectionCalculation();
+        
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
         if (!this.isViewportChanging && this.showTurningPoints && this.turningPoints.length > 0) {
             this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
@@ -1400,6 +2371,18 @@ class Graphiti {
         // Mark viewport as actively changing
         this.isViewportChanging = true;
         
+        // Cache current implicit function points ONLY if not already cached
+        this.getCurrentFunctions().forEach(func => {
+            if (func.expression && func.enabled && func.expression.includes('=')) {
+                // Only cache if we haven't already cached (prevents overwriting during rapid panning)
+                if (!func.cachedPoints && func.points && func.points.length > 0) {
+                    func.cachedPoints = [...func.points];
+                }
+                // Always clear visual points to prevent artifacts
+                func.points = [];
+            }
+        });
+        
         // Clear existing timer to restart the debounce period
         if (this.intersectionDebounceTimer) {
             clearTimeout(this.intersectionDebounceTimer);
@@ -1410,13 +2393,26 @@ class Graphiti {
             this.isViewportChanging = false;
             this.frozenIntersectionBadges = []; // Clear frozen badges
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
+            
+            // Clear cached points now that viewport has settled
+            this.getCurrentFunctions().forEach(func => {
+                if (func.cachedPoints) {
+                    delete func.cachedPoints;
+                }
+            });
+            
+            // Replot implicit functions asynchronously to avoid blocking UI
+            setTimeout(() => {
+                this.replotImplicitFunctions();
+            }, 0);
+            
             if (this.showIntersections) {
                 this.intersections = this.calculateIntersectionsWithWorker();
             }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
             }
-        }, 400); // Balanced delay for intersection calculations
+        }, 100); // Very short delay to minimize blocking period
     }
     
     findIntersections() {
@@ -1444,6 +2440,107 @@ class Graphiti {
     }
     
     findIntersectionsBetweenFunctions(func1, func2) {
+        const intersections = [];
+        const points1 = func1.points;
+        const points2 = func2.points;
+        
+        if (points1.length === 0 || points2.length === 0) {
+            return intersections;
+        }
+        
+        // Check if either function is implicit (has connected segments)
+        const func1IsImplicit = points1.some(p => p.connected);
+        const func2IsImplicit = points2.some(p => p.connected);
+        
+        if (func1IsImplicit || func2IsImplicit) {
+            // Use geometric intersection detection for implicit curves
+            return this.findIntersectionsGeometric(func1, func2);
+        }
+        
+        // Original method for explicit functions
+        return this.findIntersectionsExplicit(func1, func2);
+    }
+    
+    findIntersectionsGeometric(func1, func2) {
+        const intersections = [];
+        const points1 = func1.points;
+        const points2 = func2.points;
+        const tolerance = 0.05; // Intersection proximity threshold
+        
+        // Extract line segments from both functions
+        const segments1 = this.extractLineSegments(points1);
+        const segments2 = this.extractLineSegments(points2);
+        
+        // Check each segment from func1 against each segment from func2
+        for (const seg1 of segments1) {
+            for (const seg2 of segments2) {
+                const intersection = this.findSegmentIntersection(seg1, seg2);
+                if (intersection) {
+                    // Avoid duplicate intersections by checking proximity
+                    const isDuplicate = intersections.some(existing => 
+                        Math.abs(existing.x - intersection.x) < tolerance &&
+                        Math.abs(existing.y - intersection.y) < tolerance
+                    );
+                    
+                    if (!isDuplicate) {
+                        intersections.push({
+                            x: intersection.x,
+                            y: intersection.y,
+                            func1: func1,
+                            func2: func2,
+                            isApproximate: false
+                        });
+                    }
+                }
+            }
+        }
+        
+        return intersections;
+    }
+    
+    extractLineSegments(points) {
+        const segments = [];
+        
+        for (let i = 0; i < points.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
+            const start = points[i];
+            const end = points[i + 1];
+            
+            if (start && end && 
+                isFinite(start.x) && isFinite(start.y) &&
+                isFinite(end.x) && isFinite(end.y)) {
+                segments.push({ start, end });
+            }
+        }
+        
+        return segments;
+    }
+    
+    findSegmentIntersection(seg1, seg2) {
+        const { start: p1, end: p2 } = seg1;
+        const { start: p3, end: p4 } = seg2;
+        
+        // Calculate line intersection using parametric form
+        const denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+        
+        if (Math.abs(denom) < 1e-10) {
+            return null; // Lines are parallel
+        }
+        
+        const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+        const u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
+        
+        // Check if intersection point lies within both line segments
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+            return {
+                x: p1.x + t * (p2.x - p1.x),
+                y: p1.y + t * (p2.y - p1.y)
+            };
+        }
+        
+        return null;
+    }
+    
+    findIntersectionsExplicit(func1, func2) {
         const intersections = [];
         const points1 = func1.points;
         const points2 = func2.points;
@@ -2308,14 +3405,17 @@ class Graphiti {
                     // Update range inputs to reflect the pan (immediate for responsiveness)
                     this.updateRangeInputs();
                     
-                    // Immediate replot for visual continuity, without expensive intersection calculations
+                    // Only replot explicit functions for smooth panning performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
-                            this.plotFunction(func); // Use lightweight plotting without validation
+                        if (func.expression && func.enabled && !func.expression.includes('=')) {
+                            this.plotFunction(func); // Use lightweight plotting for explicit functions only
                         }
                     });
                     
-                    // Debounce the expensive intersection/turning point calculations
+                    // Redraw the entire canvas to ensure proper clearing and avoid ghost artifacts
+                    this.draw();
+                    
+                    // Debounce the expensive intersection/turning point calculations and implicit function replotting
                     this.handleViewportChange();
                 }
             }
@@ -2504,12 +3604,13 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Use lightweight plotting for pinch operations
+                    // Only replot explicit functions for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
+                        if (func.expression && func.enabled && !func.expression.includes('=')) {
                             this.plotFunction(func);
                         }
                     });
+                    this.draw();
                     this.handleViewportChange();
                 }
                 
@@ -2533,12 +3634,13 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Use lightweight plotting for pinch operations
+                    // Only replot explicit functions for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
+                        if (func.expression && func.enabled && !func.expression.includes('=')) {
                             this.plotFunction(func);
                         }
                     });
+                    this.draw();
                     this.handleViewportChange();
                 }
                 
@@ -2569,12 +3671,13 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Use lightweight plotting for pinch operations
+                    // Only replot explicit functions for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
+                        if (func.expression && func.enabled && !func.expression.includes('=')) {
                             this.plotFunction(func);
                         }
                     });
+                    this.draw();
                     this.handleViewportChange();
                 }
             }
@@ -2675,8 +3778,8 @@ class Graphiti {
         // Update the range input fields to reflect current viewport
         this.updateRangeInputs();
         
-        // Re-plot all functions when viewport changes
-        this.replotAllFunctions();
+        // Re-plot only explicit functions when viewport changes for smooth performance
+        this.replotAllFunctions(true); // true = only explicit functions
     }
     
     updateViewportScale() {
@@ -2740,12 +3843,13 @@ class Graphiti {
             this.updateViewportScale();
             this.updateRangeInputs();
             
-            // Use lightweight plotting for zoom operations
+            // Only replot explicit functions for smooth zoom performance
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled) {
+                if (func.expression && func.enabled && !func.expression.includes('=')) {
                     this.plotFunction(func);
                 }
             });
+            this.draw();
             this.handleViewportChange();
         }
     }
@@ -2773,12 +3877,13 @@ class Graphiti {
             this.updateViewportScale();
             this.updateRangeInputs();
             
-            // Use lightweight plotting for zoom operations
+            // Only replot explicit functions for smooth zoom performance
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled) {
+                if (func.expression && func.enabled && !func.expression.includes('=')) {
                     this.plotFunction(func);
                 }
             });
+            this.draw();
             this.handleViewportChange();
         }
     }
@@ -2999,6 +4104,8 @@ class Graphiti {
             if (this.plotMode === 'cartesian') {
                 this.addFunction('sin(2x + pi)');
                 this.addFunction('e^(-x^2)');
+                this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
+                this.addFunction('x^3+y^3=3xy'); // Folium of Descartes
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)'); // Cardioid - t will be converted to θ in UI
@@ -3006,6 +4113,9 @@ class Graphiti {
                 this.addFunction(''); // Empty function to show placeholder example text
             }
         }
+        
+        // Update virtual keyboards for the new mode
+        this.updateVirtualKeyboardsForMode();
         
         // Update function placeholders
         this.updateFunctionPlaceholders();
@@ -3067,6 +4177,59 @@ class Graphiti {
         });
     }
     
+    updateVirtualKeyboardsForMode() {
+        // Skip if virtual keyboard isn't initialized yet
+        if (!window.mathVirtualKeyboard || !this.customNumericLayout) {
+            return;
+        }
+        
+        // Update the variable keys based on current mode
+        const isCartesian = this.plotMode === 'cartesian';
+        
+        // Update all three keyboard layouts
+        const layouts = [this.customNumericLayout, this.functionsLayout, this.hyperbolicLayout];
+        
+        layouts.forEach(layout => {
+            layout.rows.forEach(row => {
+                row.forEach((key, index) => {
+                    // Find and update the 'x' key (which has variants)
+                    if (key.latex === 'x' && key.variants) {
+                        if (isCartesian) {
+                            // Cartesian mode: x stays as x, variants include y and theta
+                            key.variants = ['y', 'r', '\\theta', 't', 'a', 'b', 'c'];
+                        } else {
+                            // Polar mode: change x to r, variants include x and theta
+                            row[index] = { latex: 'r', variants: ['x', 'y', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' };
+                        }
+                    }
+                    
+                    // Find and update the r key (when switching back from polar to cartesian)
+                    if (key.latex === 'r' && key.variants) {
+                        if (isCartesian) {
+                            // Cartesian mode: change r back to x
+                            row[index] = { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' };
+                        }
+                        // Polar mode: r stays as r (already handled above)
+                    }
+                    
+                    // Find and update the second variable key (y/theta)
+                    if (key.latex === 'y' || key.latex === '\\theta') {
+                        if (isCartesian) {
+                            // In Cartesian mode, show y
+                            row[index] = { latex: 'y', label: 'y', class: 'variable-key' };
+                        } else {
+                            // In polar mode, show theta
+                            row[index] = { latex: '\\theta', label: 'θ', class: 'variable-key' };
+                        }
+                    }
+                });
+            });
+        });
+        
+        // Update the virtual keyboard with new layouts
+        window.mathVirtualKeyboard.layouts = [this.customNumericLayout, this.functionsLayout, this.hyperbolicLayout];
+    }
+    
     updateFunctionPlaceholders() {
         const mathFields = document.querySelectorAll('.function-item math-field');
         mathFields.forEach(mathField => {
@@ -3078,9 +4241,17 @@ class Graphiti {
         });
     }
     
-    replotAllFunctions() {
+    replotAllFunctions(onlyExplicit = false) {
         this.getCurrentFunctions().forEach(func => {
             if (func.expression && func.enabled) {
+                // Check if this is an implicit function
+                const isImplicit = func.expression.includes('=');
+                
+                // Skip implicit functions if onlyExplicit is true
+                if (onlyExplicit && isImplicit) {
+                    return;
+                }
+                
                 this.plotFunctionWithValidation(func);
                 
                 // If function has no points after validation, clear its badges
@@ -3097,14 +4268,63 @@ class Graphiti {
         
         this.draw();
     }
+
+    replotImplicitFunctions(immediate = false) {
+        // Get implicit functions to replot
+        const implicitFunctions = this.getCurrentFunctions().filter(func => 
+            func.expression && func.enabled && func.expression.includes('=')
+        );
+        
+        if (implicitFunctions.length === 0) {
+            this.draw();
+            return;
+        }
+        
+        // Process implicit functions asynchronously to prevent UI blocking
+        const replotNextFunction = async (index) => {
+            if (index >= implicitFunctions.length) {
+                // All functions processed, redraw
+                this.draw();
+                return;
+            }
+            
+            const func = implicitFunctions[index];
+            console.log(`Replotting implicit function: ${func.expression}`);
+            
+            // Plot this function asynchronously
+            await this.plotFunctionWithValidation(func);
+            
+            // If function has no points after validation, clear its badges
+            if (!func.points || func.points.length === 0) {
+                console.log(`Cleaning up badges for invalid implicit function ${func.id}`);
+                this.removeBadgesForFunction(func.id);
+                this.removeIntersectionBadgesForFunction(func.id);
+            }
+            
+            // Process next function - immediate during startup, delayed during viewport changes
+            if (immediate) {
+                await replotNextFunction(index + 1);
+            } else {
+                setTimeout(() => replotNextFunction(index + 1), 0);
+            }
+        };
+        
+        // Start processing the first function
+        replotNextFunction(0);
+    }
     
-    startGraphing() {
+    async startGraphing() {
         this.changeState(this.states.GRAPHING);
         // Add three initial function boxes when starting to show multiple plot capability
         if (this.getCurrentFunctions().length === 0) {
+            // Set startup flag for immediate implicit function rendering
+            this.isStartup = true;
+            
             if (this.plotMode === 'cartesian') {
                 this.addFunction('sin(2x + pi)');
                 this.addFunction('e^(-x^2)');
+                this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
+                this.addFunction('x^3+y^3=3xy'); // Folium of Descartes
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)'); // t will be converted to θ in UI
@@ -3123,14 +4343,17 @@ class Graphiti {
             // Update range inputs to reflect the smart viewport
             this.updateRangeInputs();
             
-            // Plot all functions after setting viewport
-            this.getCurrentFunctions().forEach(func => {
-                if (func.expression) {
-                    this.plotFunction(func);
-                }
-            });
+            // Plot all functions after setting viewport - plot in parallel for simultaneous appearance
+            const plotPromises = this.getCurrentFunctions()
+                .filter(func => func.expression)
+                .map(func => this.plotFunction(func));
             
-            // Calculate initial intersections
+            await Promise.all(plotPromises);
+            
+            // Clear startup flag after all functions are plotted
+            this.isStartup = false;
+            
+            // Calculate initial intersections after all functions are plotted
             if (this.showIntersections) {
                 this.intersections = this.calculateIntersectionsWithWorker();
             }
@@ -3139,13 +4362,14 @@ class Graphiti {
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
             }
-            
-            // Initialize intersection toggle button state
-            this.updateIntersectionToggleButton();
-            
-            // Initialize turning points toggle button state
-            this.updateTurningPointsToggleButton();
         }
+        
+        // Initialize intersection toggle button state
+        this.updateIntersectionToggleButton();
+        
+        // Initialize turning points toggle button state
+        this.updateTurningPointsToggleButton();
+        
         // Open the function panel by default so users can start immediately
         // Add a small delay on mobile to prevent touch event conflicts
         if (this.isTrueMobile()) {
@@ -3651,7 +4875,24 @@ class Graphiti {
                 
             case 'INTERSECTIONS_COMPLETE':
                 console.log(`Intersections calculated: ${data.intersections.length} found in ${data.calculationTime.toFixed(2)}ms`);
-                this.intersections = data.intersections;
+                
+                // Handle different calculation types
+                if (data.calculationType === 'explicit') {
+                    this.explicitIntersections = data.intersections;
+                    console.log(`Updated explicit intersections: ${this.explicitIntersections.length}`);
+                } else if (data.calculationType === 'implicit') {
+                    this.implicitIntersections = data.intersections;
+                    console.log(`Updated implicit intersections: ${this.implicitIntersections.length}`);
+                } else {
+                    // Legacy fallback
+                    this.intersections = data.intersections;
+                }
+                
+                // Update combined intersections and trigger redraw
+                if (data.calculationType === 'explicit' || data.calculationType === 'implicit') {
+                    this.updateCombinedIntersections();
+                }
+                
                 this.isWorkerCalculating = false;
                 
                 // After intersection calculation completes, clean up any intersection badges for invalid functions
@@ -3691,12 +4932,23 @@ class Graphiti {
         }
     }
 
-    calculateIntersectionsWithWorker() {
+    calculateIntersectionsWithWorker(immediate = false) {
         if (!this.intersectionWorker) {
             // Fallback to main thread if worker not available
-            return this.findIntersections();
+            return this.calculateExplicitIntersections();
         }
 
+        // Always calculate explicit intersections immediately (fast)
+        this.calculateExplicitIntersections();
+        
+        // Schedule implicit intersection calculation with immediate flag
+        this.scheduleImplicitIntersectionCalculation(immediate);
+
+        // Return empty array for now - results will come via message handlers
+        return [];
+    }
+
+    calculateExplicitIntersections() {
         // Cancel any previous calculation
         if (this.isWorkerCalculating) {
             console.log('Canceling previous intersection calculation...');
@@ -3704,12 +4956,24 @@ class Graphiti {
         }
 
         this.isWorkerCalculating = true;
-        console.log('Requesting intersection calculation from worker...');
+        console.log('Calculating explicit intersections...');
 
-        // Prepare data for worker
-        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        // Only process explicit functions for fast intersection detection
+        const explicitFunctions = this.getCurrentFunctions().filter(f => 
+            f.enabled && 
+            f.points.length > 0 && 
+            !f.expression.includes('=') // Exclude implicit functions
+        );
+
+        if (explicitFunctions.length < 2) {
+            this.explicitIntersections = [];
+            this.updateCombinedIntersections();
+            this.isWorkerCalculating = false;
+            return [];
+        }
+
         const workerData = {
-            functions: enabledFunctions.map(func => ({
+            functions: explicitFunctions.map(func => ({
                 id: func.id,
                 expression: func.expression,
                 points: func.points,
@@ -3725,7 +4989,8 @@ class Graphiti {
                 height: this.viewport.height
             },
             plotMode: this.plotMode,
-            maxResolution: 1000 // Current resolution cap
+            maxResolution: 1000,
+            calculationType: 'explicit' // Flag for explicit intersections
         };
 
         // Send calculation request to worker
@@ -3734,8 +4999,278 @@ class Graphiti {
             data: workerData
         });
 
-        // Return empty array for now - results will come via message handler
         return [];
+    }
+
+    scheduleImplicitIntersectionCalculation(immediate = false) {
+        // Clear any existing timer
+        if (this.implicitIntersectionTimer) {
+            clearTimeout(this.implicitIntersectionTimer);
+        }
+
+        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        const hasImplicitFunctions = allFunctions.some(f => f.expression.includes('='));
+        
+        if (!hasImplicitFunctions) {
+            this.implicitIntersections = [];
+            this.updateCombinedIntersections();
+            return;
+        }
+
+        console.log('Scheduling implicit intersection calculation...');
+        
+        // Calculate immediately or after delay based on flag
+        const delay = immediate ? 0 : this.implicitIntersectionDelay;
+        this.implicitIntersectionTimer = setTimeout(() => {
+            this.calculateImplicitIntersections();
+        }, delay);
+    }
+
+    async calculateImplicitIntersections() {
+        console.log('Starting high-resolution implicit intersection calculation...');
+        
+        // During viewport changes, use cached points; otherwise use current points
+        const allFunctions = this.getCurrentFunctions().filter(f => {
+            if (!f.enabled) return false;
+            const points = this.isViewportChanging ? (f.cachedPoints || []) : (f.points || []);
+            return points.length > 0;
+        });
+        const implicitFunctions = allFunctions.filter(f => f.expression.includes('='));
+        
+        // Need at least one implicit function and another function
+        if (implicitFunctions.length === 0 || allFunctions.length < 2) {
+            this.implicitIntersections = [];
+            this.updateCombinedIntersections();
+            return;
+        }
+
+        // Replot implicit functions at high resolution for intersection detection
+        console.log(`Re-plotting ${implicitFunctions.length} implicit functions at high resolution...`);
+        const highResFunctions = [];
+        
+        for (const func of allFunctions) {
+            if (func.expression.includes('=')) {
+                // Create a copy and replot at high resolution
+                const highResFunc = {
+                    ...func,
+                    points: [] // Will be filled by high-res plotting
+                };
+                await this.plotImplicitFunction(highResFunc, true, false); // true = high resolution, false = not startup
+                highResFunctions.push(highResFunc);
+                console.log(`High-res replot of "${func.expression}": ${highResFunc.points.length} points`);
+            } else {
+                // Use existing points for explicit functions (cached if viewport changing)
+                const funcPoints = this.isViewportChanging ? (func.cachedPoints || func.points || []) : (func.points || []);
+                highResFunctions.push({
+                    ...func,
+                    points: funcPoints
+                });
+            }
+        }
+
+        // Use worker for intersection calculation with high-res data
+        const workerData = {
+            functions: highResFunctions.map(func => ({
+                id: func.id,
+                expression: func.expression,
+                points: func.points,
+                color: func.color,
+                enabled: func.enabled,
+                isImplicit: func.expression.includes('=')
+            })),
+            viewport: {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY,
+                width: this.viewport.width,
+                height: this.viewport.height
+            },
+            plotMode: this.plotMode,
+            maxResolution: 1000,
+            calculationType: 'implicit' // Flag for implicit intersections
+        };
+
+        this.intersectionWorker.postMessage({
+            type: 'CALCULATE_INTERSECTIONS',
+            data: workerData
+        });
+    }
+
+    updateCombinedIntersections() {
+        // Combine explicit and implicit intersections for display
+        this.intersections = [...this.explicitIntersections, ...this.implicitIntersections];
+        console.log(`Combined intersections: ${this.explicitIntersections.length} explicit + ${this.implicitIntersections.length} implicit = ${this.intersections.length} total`);
+        
+        // Trigger redraw
+        this.draw();
+    }
+
+    // ================================
+    // INTERSECTION CACHING METHODS
+    // ================================
+
+    updateFunctionChangeTracking(functions) {
+        // Check each function for changes
+        for (const func of functions) {
+            // For implicit functions, only track expression changes, not point changes
+            // since points change with zoom but intersections remain the same
+            const isImplicit = func.expression.includes('=');
+            
+            let currentState;
+            if (isImplicit) {
+                // Only track expression for implicit functions
+                currentState = func.expression;
+            } else {
+                // Track both expression and points for explicit functions
+                currentState = `${func.expression}|${JSON.stringify(func.points.slice(0, 10))}`; // Sample of points
+            }
+            
+            const lastState = this.lastFunctionStates.get(func.id);
+            
+            if (lastState !== currentState) {
+                this.functionChangeFlags.set(func.id, true);
+                this.lastFunctionStates.set(func.id, currentState);
+                
+                // Only invalidate cache for actual expression changes
+                if (!lastState || lastState.split('|')[0] !== func.expression) {
+                    this.invalidateCacheForFunction(func.id);
+                }
+            }
+        }
+    }
+
+    invalidateCacheForFunction(functionId) {
+        // Remove all cached intersections involving this function
+        const keysToDelete = [];
+        for (const [key] of this.cachedIntersections) {
+            const [id1, id2] = key.split(',');
+            if (id1 === functionId.toString() || id2 === functionId.toString()) {
+                keysToDelete.push(key);
+            }
+        }
+        
+        for (const key of keysToDelete) {
+            this.cachedIntersections.delete(key);
+        }
+    }
+
+    getCachedIntersections(functions) {
+        const cached = [];
+        
+        // Collect all valid cached intersections
+        for (let i = 0; i < functions.length; i++) {
+            for (let j = i + 1; j < functions.length; j++) {
+                const func1 = functions[i];
+                const func2 = functions[j];
+                const key1 = `${func1.id},${func2.id}`;
+                const key2 = `${func2.id},${func1.id}`;
+                
+                const cachedIntersection = this.cachedIntersections.get(key1) || this.cachedIntersections.get(key2);
+                if (cachedIntersection) {
+                    // Add current function references to cached intersections
+                    cached.push(...cachedIntersection.map(intersection => ({
+                        ...intersection,
+                        func1: func1,
+                        func2: func2
+                    })));
+                }
+            }
+        }
+        
+        return cached;
+    }
+
+    getFunctionsNeedingRecalculation(functions) {
+        // Check if any functions have actually changed expressions (not just zoom/resolution)
+        const actuallyChanged = [];
+        
+        for (const func of functions) {
+            if (this.functionChangeFlags.get(func.id)) {
+                const isImplicit = func.expression.includes('=');
+                
+                // For implicit functions, check if we have any cached intersections
+                // If not, we need to calculate
+                if (isImplicit) {
+                    const hasCachedIntersections = this.hasCachedIntersectionsForFunction(func.id, functions);
+                    if (!hasCachedIntersections) {
+                        actuallyChanged.push(func);
+                    }
+                } else {
+                    // For explicit functions, always recalculate if changed
+                    actuallyChanged.push(func);
+                }
+            }
+        }
+        
+        // Clear change flags after processing
+        for (const func of functions) {
+            this.functionChangeFlags.set(func.id, false);
+        }
+        
+        // Return all functions if any need recalculation, or empty array if all cached
+        return actuallyChanged.length > 0 ? functions : [];
+    }
+
+    hasCachedIntersectionsForFunction(functionId, allFunctions) {
+        // Check if this function has cached intersections with any other enabled function
+        for (const otherFunc of allFunctions) {
+            if (otherFunc.id !== functionId) {
+                const key1 = `${functionId},${otherFunc.id}`;
+                const key2 = `${otherFunc.id},${functionId}`;
+                
+                if (this.cachedIntersections.has(key1) || this.cachedIntersections.has(key2)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    updateIntersectionCache(intersections) {
+        // Cache new intersection results by function pair
+        const functionPairs = new Set();
+        
+        for (const intersection of intersections) {
+            const id1 = intersection.func1.id;
+            const id2 = intersection.func2.id;
+            const key = id1 < id2 ? `${id1},${id2}` : `${id2},${id1}`;
+            
+            if (!functionPairs.has(key)) {
+                functionPairs.add(key);
+                // Find all intersections for this pair
+                const pairIntersections = intersections.filter(int => 
+                    (int.func1.id === id1 && int.func2.id === id2) ||
+                    (int.func1.id === id2 && int.func2.id === id1)
+                );
+                
+                // Check if we should update existing cache (higher resolution might be more accurate)
+                const existingCache = this.cachedIntersections.get(key);
+                let shouldUpdate = true;
+                
+                if (existingCache && existingCache.length > 0) {
+                    // Keep existing cache if it has more intersections (might be from higher resolution)
+                    // Unless new calculation has significantly different results
+                    const newCount = pairIntersections.length;
+                    const existingCount = existingCache.length;
+                    
+                    // Update if new calculation finds more intersections or similar count with better precision
+                    shouldUpdate = newCount > existingCount || Math.abs(newCount - existingCount) <= 2;
+                }
+                
+                if (shouldUpdate) {
+                    // Store in cache (without function references to avoid memory leaks)
+                    this.cachedIntersections.set(key, pairIntersections.map(int => ({
+                        x: int.x,
+                        y: int.y,
+                        isApproximate: int.isApproximate,
+                        isTangent: int.isTangent
+                    })));
+                    
+                    console.log(`Cached ${pairIntersections.length} intersections for functions ${id1}-${id2}`);
+                }
+            }
+        }
     }
     
     // ================================
@@ -3765,6 +5300,11 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
+                // Skip implicit functions (they contain equals signs)
+                if (func.expression.includes('=')) {
+                    continue; // Implicit functions don't have simple turning points
+                }
+                
                 // Clean the expression - remove "y=" prefix if present
                 let cleanExpression = func.expression.trim();
                 if (cleanExpression.toLowerCase().startsWith('y=')) {
@@ -4272,7 +5812,7 @@ class Graphiti {
         // If panning occurred, update range inputs and re-plot functions
         if (hasPanned) {
             this.updateRangeInputs();
-            this.replotAllFunctions();
+            this.replotAllFunctions(true); // true = only explicit functions for smooth panning
         }
     }
     
@@ -4312,7 +5852,16 @@ class Graphiti {
         // Draw functions from current mode only
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled && func.points && func.points.length > 0) {
-                this.drawFunction(func);
+                const functionType = this.detectFunctionType(func.expression);
+                if (functionType === 'implicit') {
+                    // Only draw implicit functions when viewport is stable
+                    if (!this.isViewportChanging) {
+                        this.drawImplicitFunction(func);
+                    }
+                } else {
+                    // Always draw explicit functions for smooth interaction
+                    this.drawFunction(func);
+                }
             }
         });
         
@@ -4954,6 +6503,144 @@ class Graphiti {
         }
     }
 
+    drawImplicitFunction(func) {
+        if (!func.points || func.points.length === 0) return;
+        
+        // Check if points should be connected (like for circles, ellipses, parabolas)
+        const hasConnectedPoints = func.points.some(p => p.connected);
+        
+        if (hasConnectedPoints) {
+            // For marching squares output, draw as individual line segments
+            this.ctx.strokeStyle = func.color;
+            this.ctx.lineWidth = 2;
+            
+            // Draw individual line segments (every pair of connected points)
+            for (let i = 0; i < func.points.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
+                const startPoint = func.points[i];
+                const endPoint = func.points[i + 1];
+                
+                if (startPoint && endPoint && 
+                    isFinite(startPoint.x) && isFinite(startPoint.y) &&
+                    isFinite(endPoint.x) && isFinite(endPoint.y)) {
+                    
+                    const startScreen = this.worldToScreen(startPoint.x, startPoint.y);
+                    const endScreen = this.worldToScreen(endPoint.x, endPoint.y);
+                    
+                    // Only draw if at least one endpoint is visible
+                    if ((startScreen.x >= -50 && startScreen.x <= this.viewport.width + 50 &&
+                         startScreen.y >= -50 && startScreen.y <= this.viewport.height + 50) ||
+                        (endScreen.x >= -50 && endScreen.x <= this.viewport.width + 50 &&
+                         endScreen.y >= -50 && endScreen.y <= this.viewport.height + 50)) {
+                        
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(startScreen.x, startScreen.y);
+                        this.ctx.lineTo(endScreen.x, endScreen.y);
+                        this.ctx.stroke();
+                    }
+                }
+            }
+        } else {
+            // Draw as discrete points (for hyperbolas or general implicit functions)
+            this.ctx.fillStyle = func.color;
+            const pointSize = 1.5;
+            
+            for (let i = 0; i < func.points.length; i++) {
+                const point = func.points[i];
+                if (!isFinite(point.x) || !isFinite(point.y)) continue;
+                
+                const screenPos = this.worldToScreen(point.x, point.y);
+                
+                if (screenPos.x >= -10 && screenPos.x <= this.viewport.width + 10 &&
+                    screenPos.y >= -10 && screenPos.y <= this.viewport.height + 10) {
+                    
+                    this.ctx.beginPath();
+                    this.ctx.arc(screenPos.x, screenPos.y, pointSize, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                }
+            }
+        }
+    }
+    
+    groupConnectedPoints(points) {
+        const connectedPoints = points.filter(p => p.connected);
+        if (connectedPoints.length === 0) return [];
+        
+        // Check if points have branch information (for hyperbolas)
+        const hasBranches = connectedPoints.some(p => p.branch);
+        
+        if (hasBranches) {
+            // Group by branch for hyperbolas
+            const branches = {};
+            connectedPoints.forEach(point => {
+                if (!branches[point.branch]) {
+                    branches[point.branch] = [];
+                }
+                branches[point.branch].push(point);
+            });
+            
+            // Sort each branch by parameter order
+            Object.keys(branches).forEach(branchName => {
+                branches[branchName].sort((a, b) => {
+                    // Sort by the primary coordinate for each branch
+                    if (branchName.includes('right') || branchName.includes('left')) {
+                        return a.y - b.y; // Sort by y for vertical spread
+                    } else {
+                        return a.x - b.x; // Sort by x for horizontal spread
+                    }
+                });
+            });
+            
+            return Object.values(branches);
+        } else {
+            // For circles, ellipses, parabolas - all points form one group
+            // General implicit functions will have connected: false, so won't reach here
+            return [connectedPoints];
+        }
+    }
+    
+    isClosedCurve(expression) {
+        const expr = expression.toLowerCase().replace(/\s/g, '');
+        // Circles and ellipses are closed curves
+        return this.isCircleEquation(expr) || this.isEllipseEquation(expr);
+    }
+    
+    groupImplicitPoints(sortedPoints) {
+        if (sortedPoints.length === 0) return [];
+        
+        const groups = [];
+        const tolerance = (this.viewport.maxY - this.viewport.minY) * 0.05; // 5% of viewport height
+        
+        let currentGroup = [sortedPoints[0]];
+        
+        for (let i = 1; i < sortedPoints.length; i++) {
+            const current = sortedPoints[i];
+            const previous = sortedPoints[i - 1];
+            
+            // Check if this point should be in the same group
+            // Points are in the same group if they're close in both x and y
+            const xGap = Math.abs(current.x - previous.x);
+            const yGap = Math.abs(current.y - previous.y);
+            const maxXGap = (this.viewport.maxX - this.viewport.minX) * 0.02; // 2% of viewport width
+            
+            if (xGap <= maxXGap && yGap <= tolerance) {
+                currentGroup.push(current);
+            } else {
+                // Start a new group
+                if (currentGroup.length > 0) {
+                    groups.push(currentGroup);
+                }
+                currentGroup = [current];
+            }
+        }
+        
+        // Add the last group
+        if (currentGroup.length > 0) {
+            groups.push(currentGroup);
+        }
+        
+        return groups;
+    }
+
     drawIntersectionMarkers() {
         // Early exit if no intersections
         if (!this.intersections || this.intersections.length === 0) {
@@ -5308,8 +6995,22 @@ class Graphiti {
     }
     
     handleIntersectionTap(intersection, screenX, screenY) {
+        // Validate intersection coordinates
+        if (isNaN(intersection.x) || isNaN(intersection.y) || 
+            !isFinite(intersection.x) || !isFinite(intersection.y)) {
+            console.log('Skipping intersection with invalid coordinates:', intersection);
+            return;
+        }
+        
         // Refine intersection using numerical method for precision
         const refinedIntersection = this.refineIntersection(intersection);
+        
+        // Validate refined coordinates
+        if (isNaN(refinedIntersection.x) || isNaN(refinedIntersection.y) || 
+            !isFinite(refinedIntersection.x) || !isFinite(refinedIntersection.y)) {
+            console.log('Skipping refined intersection with invalid coordinates:', refinedIntersection);
+            return;
+        }
         
         // Create a badge at the refined intersection point
         this.addIntersectionBadge(
@@ -5327,10 +7028,19 @@ class Graphiti {
             return { x: intersection.x, y: intersection.y };
         }
         
-        // Use bisection method to refine the intersection point for cartesian functions
+        // Check if either function is implicit (has no expression)
         const func1 = intersection.func1;
         const func2 = intersection.func2;
+        const func1IsImplicit = !func1.expression || func1.expression.includes('=');
+        const func2IsImplicit = !func2.expression || func2.expression.includes('=');
         
+        // If either function is implicit, don't refine - the line segment intersection is already accurate
+        if (func1IsImplicit || func2IsImplicit) {
+            console.log('Skipping refinement for implicit function intersection');
+            return { x: intersection.x, y: intersection.y };
+        }
+        
+        // Use bisection method to refine the intersection point for cartesian functions
         // Start with a small interval around the approximate intersection
         let x1 = intersection.x - 0.01;
         let x2 = intersection.x + 0.01;
