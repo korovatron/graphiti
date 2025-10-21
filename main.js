@@ -1008,8 +1008,12 @@ class Graphiti {
             // Try a simple test evaluation to catch syntax errors early
             try {
                 if (this.plotMode === 'polar') {
-                    // For polar mode, test with theta/t variable
-                    const processedExpression = this.convertFromLatex(func.expression);
+                    // For polar mode, test with theta/t variable - remove "r=" prefix if present
+                    let processedExpression = this.convertFromLatex(func.expression);
+                    processedExpression = processedExpression.trim();
+                    if (processedExpression.toLowerCase().startsWith('r=')) {
+                        processedExpression = processedExpression.substring(2).trim();
+                    }
                     math.evaluate(processedExpression, { t: 1, theta: 1 });
                 } else {
                     // For cartesian mode, test with x variable
@@ -1253,8 +1257,12 @@ class Graphiti {
     
     plotPolarFunction(func) {
         try {
-            // Prepare the expression for evaluation
-            let processedExpression = func.expression.toLowerCase();
+            // Prepare the expression for evaluation - remove "r=" prefix if present for consistency
+            let processedExpression = func.expression.trim();
+            if (processedExpression.toLowerCase().startsWith('r=')) {
+                processedExpression = processedExpression.substring(2).trim();
+            }
+            processedExpression = processedExpression.toLowerCase();
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
@@ -1993,9 +2001,9 @@ class Graphiti {
         
         // Click on canvas to close hamburger menu (mobile and tablet)
         this.canvas.addEventListener('click', (e) => {
-            // Close mobile menu on touch devices (phones and tablets) when tapping the graph
-            const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-            if (isTouchDevice) {
+            // Close function panel on narrow screens when clicking the graph area
+            const isNarrowScreen = window.innerWidth < 1024;
+            if (isNarrowScreen) {
                 const functionPanel = document.getElementById('function-panel');
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                     this.closeMobileMenu();
@@ -2003,12 +2011,12 @@ class Graphiti {
             }
         });
         
-        // Additional touchend handler for tablets that might not trigger the canvas touchend properly
+        // Additional touchend handler for narrow screens that might not trigger the canvas click properly
         this.canvas.addEventListener('touchend', (e) => {
-            // On tablets, also check if we should close the mobile menu
-            // This is a backup for cases where handleTouchEnd might not work properly
-            const isTablet = window.innerWidth > 500 && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-            if (isTablet && e.touches.length === 0) {
+            // On narrow screens, also check if we should close the function panel
+            // This is a backup for cases where click might not work properly on touch devices
+            const isNarrowScreen = window.innerWidth < 1024;
+            if (isNarrowScreen && e.touches.length === 0) {
                 const functionPanel = document.getElementById('function-panel');
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                     // Simple tap detection - if the touch was quick and didn't move much
@@ -2121,17 +2129,20 @@ class Graphiti {
                 const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
                 
                 if (isTap) {
-                    // Existing mobile menu tap logic
-                    const functionPanel = document.getElementById('function-panel');
-                    if (functionPanel && functionPanel.classList.contains('mobile-open')) {
-                        const rect = functionPanel.getBoundingClientRect();
-                        const tapX = this.input.startX;
-                        const tapY = this.input.startY;
-                        
-                        // If tap is outside the function panel, close it
-                        if (tapX < rect.left || tapX > rect.right || 
-                            tapY < rect.top || tapY > rect.bottom) {
-                            this.closeMobileMenu();
+                    // Close function panel on narrow screens when tapping outside it
+                    const isNarrowScreen = window.innerWidth < 1024;
+                    if (isNarrowScreen) {
+                        const functionPanel = document.getElementById('function-panel');
+                        if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                            const rect = functionPanel.getBoundingClientRect();
+                            const tapX = this.input.startX;
+                            const tapY = this.input.startY;
+                            
+                            // If tap is outside the function panel, close it
+                            if (tapX < rect.left || tapX > rect.right || 
+                                tapY < rect.top || tapY > rect.bottom) {
+                                this.closeMobileMenu();
+                            }
                         }
                     }
                 }
@@ -2577,11 +2588,13 @@ class Graphiti {
             const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
             
             if (isTap) {
-                // Since this touch event is on the canvas, close mobile menu if open
-                // This works for all touch devices including tablets
-                const functionPanel = document.getElementById('function-panel');
-                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
-                    this.closeMobileMenu();
+                // Close function panel on narrow screens when tapping the canvas
+                const isNarrowScreen = window.innerWidth < 1024;
+                if (isNarrowScreen) {
+                    const functionPanel = document.getElementById('function-panel');
+                    if (functionPanel && functionPanel.classList.contains('mobile-open')) {
+                        this.closeMobileMenu();
+                    }
                 }
             }
             
@@ -3752,16 +3765,22 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
+                // Clean the expression - remove "y=" prefix if present
+                let cleanExpression = func.expression.trim();
+                if (cleanExpression.toLowerCase().startsWith('y=')) {
+                    cleanExpression = cleanExpression.substring(2).trim();
+                }
+                
                 // Validate that the expression can be parsed before attempting derivatives
                 try {
-                    math.parse(func.expression);
+                    math.parse(cleanExpression);
                 } catch (parseError) {
                     console.warn(`Skipping turning points for invalid expression "${func.expression}":`, parseError.message);
                     continue;
                 }
                 
                 // Make function names case-insensitive for derivative calculation (same as evaluateFunction)
-                const processedExpression = func.expression.toLowerCase();
+                const processedExpression = cleanExpression.toLowerCase();
                 
                 // Get symbolic derivative using math.js
                 const derivative = math.derivative(processedExpression, 'x');
