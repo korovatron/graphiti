@@ -949,9 +949,25 @@
             font-style: italic;
             font-family: 'Times New Roman', 'STIX Two Math', serif;
         }
+
+        /* Force MathLive selection colors to always use dark theme regardless of OS theme */
+        math-field {
+            --selection-background-color: #4A90E2 !important;
+            --selection-color: white !important;
+            --contains-highlight-background-color: rgba(74, 144, 226, 0.3) !important;
+        }
+
+        /* Override OS theme detection for MathLive text selection */
+        @media (prefers-color-scheme: light) {
+            math-field {
+                --selection-background-color: #4A90E2 !important;
+                --selection-color: white !important;
+                --contains-highlight-background-color: rgba(74, 144, 226, 0.3) !important;
+            }
+        }
     </style>
 </head>
-<body>
+<body theme="dark">
     <div id="app-container">
         <canvas id="canvas"></canvas>
         

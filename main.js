@@ -167,7 +167,10 @@ class Graphiti {
         this.showIntersections = true; // Toggle for intersection display
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
-        this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
+        
+        // Implicit function calculation cancellation system
+        this.implicitCalculationId = 0; // Counter for tracking calculation sessions
+        this.currentImplicitCalculations = new Map(); // Track active calculations per function
         
         // Turning point detection
         this.turningPoints = []; // Store detected turning points (maxima/minima)
@@ -456,6 +459,9 @@ class Graphiti {
                         // Update keyboards for initial mode
                         this.updateVirtualKeyboardsForMode();
                         
+                        // Force dark mode on all math fields
+                        this.updateMathFieldColorSchemes();
+                        
                         // Monitor for layout tab clicks to reset shift state on numeric layout
                         const observer = new MutationObserver(() => {
                             // Check if we're on the numeric layout
@@ -573,6 +579,23 @@ class Graphiti {
                                 screen.orientation.addEventListener('change', closeKeyboardOnOrientationChange);
                             }
                         }
+                        
+                        // Force dark mode on the virtual keyboard after everything is set up
+                        setTimeout(() => {
+                            // Use MathLive's configuration API to force dark mode
+                            if (window.MathfieldElement) {
+                                // Set default options for all mathfields
+                                window.MathfieldElement.options = {
+                                    ...window.MathfieldElement.options,
+                                    colorScheme: 'dark'
+                                };
+                            }
+                            
+                            // Force all existing math fields to dark mode
+                            document.querySelectorAll('math-field').forEach(field => {
+                                field.setAttribute('color-scheme', 'dark');
+                            });
+                        }, 100);
                         
                         // Add HYP toggle functionality
 
@@ -734,7 +757,7 @@ class Graphiti {
             
             // Update intersections after adding this function (immediate calculation)
             if (this.showIntersections) {
-                this.intersections = this.calculateIntersectionsWithWorker(true); // true = immediate
+                this.calculateIntersectionsWithWorker(true); // true = immediate
             }
             
             // Update turning points after adding this function
@@ -760,6 +783,7 @@ class Graphiti {
                 smart-superscript="true"
                 virtual-keyboard-mode="auto"
                 virtual-keyboards="numeric functions symbols greek"
+                color-scheme="dark"
                 style="
                     width: 100%;
                     padding: 8px;
@@ -786,6 +810,9 @@ class Graphiti {
         
         // Get the MathLive element
         const mathField = funcDiv.querySelector('math-field');
+        
+        // Ensure dark mode for this specific field
+        mathField.setAttribute('color-scheme', 'dark');
         
         // Configure this specific mathfield's virtual keyboard
         setTimeout(() => {
@@ -1382,19 +1409,26 @@ class Graphiti {
     // ================================
 
     detectFunctionType(expression) {
-        // Clean expression first (remove y= prefix if present)
+        // Clean expression first
         let clean = expression.trim();
         
-        if (clean.toLowerCase().startsWith('y=')) {
-            return 'explicit'; // y=f(x) format
-        }
-        
-        // Check for equals sign (required for implicit)
+        // Check for equals sign first
         if (!clean.includes('=')) {
             return 'explicit'; // f(x) format - assume explicit
         }
         
-        // Has equals sign - check for variables
+        // Has equals sign - analyze the equation
+        if (clean.toLowerCase().startsWith('y=')) {
+            // For y= expressions, check if y appears on the right side too
+            const rightSide = clean.substring(2).trim(); // Remove 'y=' prefix
+            if (/y/.test(rightSide)) {
+                return 'implicit'; // y=f(x,y) format - implicit relationship
+            } else {
+                return 'explicit'; // y=f(x) format - explicit function
+            }
+        }
+        
+        // General case: check for variables
         const hasY = /y/.test(clean); // Contains 'y' variable anywhere
         const hasX = /x/.test(clean); // Contains 'x' variable anywhere
         
@@ -1416,6 +1450,10 @@ class Graphiti {
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
         try {
+            // Register this calculation
+            const calculationId = ++this.implicitCalculationId;
+            this.currentImplicitCalculations.set(func.id, calculationId);
+            
             let points = [];
             
             // Parse the implicit equation f(x,y) = g(x,y) into f(x,y) - g(x,y) = 0
@@ -1427,11 +1465,20 @@ class Graphiti {
                 return;
             }
             
-            // Use high resolution for intersection detection, normal resolution for display
+            // Check if calculation was cancelled before starting heavy computation
+            if (this.isCalculationCancelled(func.id, calculationId)) {
+                return;
+            }
+            
             if (highResForIntersections) {
-                points = await this.marchingSquaresHighResAsync(equation, immediate);
+                points = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
             } else {
-                points = await this.marchingSquaresAsync(equation, immediate);
+                points = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
+            }
+            
+            // Final cancellation check before setting results
+            if (this.isCalculationCancelled(func.id, calculationId)) {
+                return;
             }
             
             func.points = points;
@@ -1741,7 +1788,7 @@ class Graphiti {
         return this.marchingSquaresAtResolution(equation, resolution, stepX, stepY);
     }
 
-    async marchingSquaresAsync(equation, immediate = false) {
+    async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null) {
         const segments = [];
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
@@ -1749,33 +1796,33 @@ class Graphiti {
         // Balanced resolution scaling - performance vs quality
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
-        // Improved resolution scaling for smoother curves
+        // Reduced resolution for better performance with complex functions
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - maintain minimum quality
-            resolution = 80;
+            // Extremely zoomed out - minimum quality
+            resolution = 60;
         } else if (viewportSize > 50) {
-            // Very zoomed out - better resolution for smoothness
-            resolution = 100;
+            // Very zoomed out - low resolution for performance
+            resolution = 70;
         } else if (viewportSize > 20) {
-            // Normal zoom - high quality
-            resolution = 120;
+            // Normal zoom - balanced quality
+            resolution = 80;
         } else if (viewportSize > 10) {
-            // Zoomed in - very high detail
-            resolution = 140;
+            // Zoomed in - higher detail
+            resolution = 100;
         } else if (viewportSize > 5) {
-            // Very zoomed in - maximum detail
-            resolution = 160;
+            // Very zoomed in - good detail
+            resolution = 120;
         } else {
-            // Extremely zoomed in - ultra high detail
-            resolution = 180;
+            // Extremely zoomed in - maximum detail
+            resolution = 140;
         }
         
         console.log(`Async marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
         const stepX = viewportWidth / resolution;
         const stepY = viewportHeight / resolution;
         
-        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate);
+        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId);
     }
 
     marchingSquaresHighRes(equation) {
@@ -1792,7 +1839,7 @@ class Graphiti {
         return this.marchingSquaresAtResolution(equation, resolution, stepX, stepY);
     }
 
-    async marchingSquaresHighResAsync(equation, immediate = false) {
+    async marchingSquaresHighResAsync(equation, immediate = false, functionId = null, calculationId = null) {
         // Fixed high resolution for intersection detection - ignores zoom level
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
@@ -1803,7 +1850,7 @@ class Graphiti {
         const stepY = viewportHeight / resolution;
         
         console.log(`Async high-res marching squares for intersections: ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
-        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate);
+        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId);
     }
 
     marchingSquaresAtResolution(equation, resolution, stepX, stepY) {
@@ -1912,16 +1959,21 @@ class Graphiti {
         return segments;
     }
 
-    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false) {
+    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null) {
         const segments = [];
         
         // Create grid of function values
         const grid = [];
         
         // Process grid creation in chunks to prevent blocking
-        const chunkSize = 10; // Process 10 rows at a time
+        const chunkSize = 5; // Process 5 rows at a time for better responsiveness
         
         for (let chunkStart = 0; chunkStart <= resolution; chunkStart += chunkSize) {
+            // Check for cancellation before each chunk
+            if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return []; // Return empty array if cancelled
+            }
+            
             const chunkEnd = Math.min(chunkStart + chunkSize, resolution + 1);
             
             for (let i = chunkStart; i < chunkEnd; i++) {
@@ -1942,6 +1994,11 @@ class Graphiti {
         
         // Process each cell for marching squares in chunks
         for (let chunkStart = 0; chunkStart < resolution; chunkStart += chunkSize) {
+            // Check for cancellation before each chunk
+            if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return []; // Return empty array if cancelled
+            }
+            
             const chunkEnd = Math.min(chunkStart + chunkSize, resolution);
             
             for (let i = chunkStart; i < chunkEnd; i++) {
@@ -2265,12 +2322,16 @@ class Graphiti {
             let processedExpression = expression.toLowerCase();
             
             // Handle implicit multiplication for adjacent variables and numbers
-            // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
-            processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
-            processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
-            processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
-            processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
-            processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+            // BUT avoid breaking function names that are already properly formatted
+            // Skip this processing if the expression already contains properly formatted functions
+            if (!this.containsProperFunctions(processedExpression)) {
+                // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
+                processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
+                processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
+                processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
+                processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
+                processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+            }
             
             // Basic math.js compatible conversions
             processedExpression = processedExpression.replace(/\^/g, '^'); // Keep power notation
@@ -2288,6 +2349,13 @@ class Graphiti {
         } catch (error) {
             return null;
         }
+    }
+
+    containsProperFunctions(expression) {
+        // Check if expression contains properly formatted function calls
+        // This helps avoid breaking function names with the variable*variable regex
+        const functionPattern = /\b(sin|cos|tan|sec|csc|cot|asin|acos|atan|sinh|cosh|tanh|log|log10|exp|sqrt|cbrt|abs)\s*\(/;
+        return functionPattern.test(expression);
     }
     
     calculateDynamicPolarStep(thetaMin, thetaMax) {
@@ -2345,19 +2413,6 @@ class Graphiti {
     
     // Debounced intersection updates for smooth pan/zoom performance
     handleViewportChange() {
-        // Capture current intersections as frozen badges ONLY if viewport wasn't already changing
-        if (!this.isViewportChanging && this.showIntersections && this.intersections.length > 0) {
-            this.frozenIntersectionBadges = this.intersections.map(intersection => ({
-                x: intersection.x,
-                y: intersection.y,
-                functionPair: intersection.functionPair,
-                precision: intersection.precision || 'approximate'
-            }));
-        }
-        
-        // Schedule implicit intersection recalculation after viewport changes settle
-        this.scheduleImplicitIntersectionCalculation();
-        
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
         if (!this.isViewportChanging && this.showTurningPoints && this.turningPoints.length > 0) {
             this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
@@ -2368,18 +2423,22 @@ class Graphiti {
             }));
         }
         
-        // Mark viewport as actively changing
         this.isViewportChanging = true;
+        
+        // Schedule implicit intersection recalculation after viewport changes settle
+        this.scheduleImplicitIntersectionCalculation();
+        
+        // Cancel any ongoing implicit function calculations
+        this.cancelAllImplicitCalculations();
         
         // Cache current implicit function points ONLY if not already cached
         this.getCurrentFunctions().forEach(func => {
-            if (func.expression && func.enabled && func.expression.includes('=')) {
+            if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'implicit') {
                 // Only cache if we haven't already cached (prevents overwriting during rapid panning)
                 if (!func.cachedPoints && func.points && func.points.length > 0) {
                     func.cachedPoints = [...func.points];
                 }
-                // Always clear visual points to prevent artifacts
-                func.points = [];
+                // Keep current points visible during panning - rendering logic will use cached points for positioning
             }
         });
         
@@ -2391,7 +2450,6 @@ class Graphiti {
         // Set new timer to recalculate intersections and turning points after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
-            this.frozenIntersectionBadges = []; // Clear frozen badges
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
             
             // Clear cached points now that viewport has settled
@@ -2407,7 +2465,7 @@ class Graphiti {
             }, 0);
             
             if (this.showIntersections) {
-                this.intersections = this.calculateIntersectionsWithWorker();
+                this.calculateIntersectionsWithWorker();
             }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
@@ -2985,7 +3043,7 @@ class Graphiti {
                     // Recalculate and show intersections using Web Worker
                     this.intersections = this.calculateIntersectionsWithWorker();
                 } else {
-                    // Clear intersections and badges
+                    // Clear intersections
                     this.clearIntersections();
                 }
                 
@@ -3407,7 +3465,7 @@ class Graphiti {
                     
                     // Only replot explicit functions for smooth panning performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && !func.expression.includes('=')) {
+                        if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
                             this.plotFunction(func); // Use lightweight plotting for explicit functions only
                         }
                     });
@@ -3606,7 +3664,7 @@ class Graphiti {
                     
                     // Only replot explicit functions for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && !func.expression.includes('=')) {
+                        if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
                             this.plotFunction(func);
                         }
                     });
@@ -3673,7 +3731,7 @@ class Graphiti {
                     
                     // Only replot explicit functions for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && !func.expression.includes('=')) {
+                        if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
                             this.plotFunction(func);
                         }
                     });
@@ -3845,7 +3903,7 @@ class Graphiti {
             
             // Only replot explicit functions for smooth zoom performance
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled && !func.expression.includes('=')) {
+                if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
                     this.plotFunction(func);
                 }
             });
@@ -3879,7 +3937,7 @@ class Graphiti {
             
             // Only replot explicit functions for smooth zoom performance
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled && !func.expression.includes('=')) {
+                if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
                     this.plotFunction(func);
                 }
             });
@@ -4241,11 +4299,29 @@ class Graphiti {
         });
     }
     
+    // Update math field color schemes based on current theme
+    updateMathFieldColorSchemes() {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        const mathFields = document.querySelectorAll('math-field');
+        
+        mathFields.forEach(mathField => {
+            // Set basic theme variables only - let MathLive handle the rest
+            if (currentTheme === 'light') {
+                mathField.style.setProperty('--background', '#FDFDFD');
+                mathField.style.setProperty('--text-color', '#2C3E50');
+            } else {
+                mathField.style.setProperty('--background', '#3A4F6A');
+                mathField.style.setProperty('--text-color', '#E8F4FD');
+            }
+        });
+    }
+
+    
     replotAllFunctions(onlyExplicit = false) {
         this.getCurrentFunctions().forEach(func => {
             if (func.expression && func.enabled) {
                 // Check if this is an implicit function
-                const isImplicit = func.expression.includes('=');
+                const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
                 
                 // Skip implicit functions if onlyExplicit is true
                 if (onlyExplicit && isImplicit) {
@@ -4270,9 +4346,12 @@ class Graphiti {
     }
 
     replotImplicitFunctions(immediate = false) {
+        // Cancel any ongoing implicit calculations
+        this.cancelAllImplicitCalculations();
+        
         // Get implicit functions to replot
         const implicitFunctions = this.getCurrentFunctions().filter(func => 
-            func.expression && func.enabled && func.expression.includes('=')
+            func.expression && func.enabled && this.detectFunctionType(func.expression) === 'implicit'
         );
         
         if (implicitFunctions.length === 0) {
@@ -4311,6 +4390,18 @@ class Graphiti {
         
         // Start processing the first function
         replotNextFunction(0);
+    }
+    
+    // Cancel all ongoing implicit function calculations
+    cancelAllImplicitCalculations() {
+        this.implicitCalculationId++;
+        this.currentImplicitCalculations.clear();
+    }
+    
+    // Check if a calculation should be cancelled
+    isCalculationCancelled(functionId, calculationId) {
+        const currentId = this.currentImplicitCalculations.get(functionId);
+        return currentId !== calculationId;
     }
     
     async startGraphing() {
@@ -4628,31 +4719,27 @@ class Graphiti {
             // Simply convert the entire expression to lowercase
             let processedExpression = expression.toLowerCase();
             
-            // Convert input for regular trig functions if in degree mode
-            let evaluationX = x;
+            // Handle degree mode by preprocessing the expression
             if (this.angleMode === 'degrees') {
-                // Check if THIS specific expression contains regular trig functions that need x converted
+                // Check if THIS specific expression contains regular trig functions
                 const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
-                // Check if THIS specific expression contains inverse trig functions (which use regular number inputs)
-                const hasInverseTrigWithX = this.getCachedRegex('inverseTrigWithX').test(processedExpression);
                 
-                // Convert input x from degrees to radians for regular trig functions
                 if (hasRegularTrigWithX) {
-                    evaluationX = x * Math.PI / 180;
-                } else {
-                    // Keep x as-is for inverse trig and other functions
+                    // Preprocess the expression to wrap trig function arguments with degree conversion
+                    // Transform sin(xxx) to sin((xxx)*pi/180), cos(xxx) to cos((xxx)*pi/180), etc.
+                    processedExpression = this.convertTrigToDegreeMode(processedExpression);
                 }
             }
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
-            const result = compiledExpression.evaluate({ x: evaluationX });
+            const result = compiledExpression.evaluate({ x: x }); // Use x directly, no conversion needed
             
             // Ensure the result is a finite number
             if (typeof result === 'number' && isFinite(result)) {
                 // Convert result for inverse trig functions if in degree mode
                 if (this.angleMode === 'degrees') {
-                    const hasInverseTrig = this.getCachedRegex('inverseTrig').test(processedExpression);
+                    const hasInverseTrig = this.getCachedRegex('inverseTrig').test(expression.toLowerCase());
                     if (hasInverseTrig) {
                         const convertedResult = result * 180 / Math.PI; // Convert radians to degrees
                         return convertedResult;
@@ -4667,6 +4754,32 @@ class Graphiti {
             // This allows the graphing to skip invalid points gracefully
             return NaN;
         }
+    }
+
+    convertTrigToDegreeMode(expression) {
+        // Convert trigonometric functions to work with degrees
+        // Transform sin(xxx) to sin((xxx)*pi/180), cos(xxx) to cos((xxx)*pi/180), etc.
+        
+        // Regular trig functions that need degree conversion
+        const trigFunctions = ['sin', 'cos', 'tan', 'sec', 'csc', 'cosec', 'cot'];
+        
+        let result = expression;
+        
+        for (const func of trigFunctions) {
+            // Use a simpler approach to avoid infinite loops
+            // Match the pattern: func(anything) where anything doesn't contain the same func
+            const pattern = new RegExp(`\\b${func}\\s*\\(([^()]+|\\([^()]*\\))\\)`, 'g');
+            
+            result = result.replace(pattern, (match, argument) => {
+                // Only wrap if not already wrapped with degree conversion
+                if (argument.includes('*pi/180')) {
+                    return match; // Already converted
+                }
+                return `${func}((${argument})*pi/180)`;
+            });
+        }
+        
+        return result;
     }
     
     worldToScreen(worldX, worldY) {
@@ -4811,13 +4924,18 @@ class Graphiti {
         if (beforeCount !== afterCount) {
             console.log(`[${this.plotMode}] Removed ${beforeCount - afterCount} intersection badges for function ${functionId}`);
         }
-    }    clearIntersections() {
+    }
+
+    clearIntersections() {
         // Remove all intersection badges (those with functionId === null or badgeType === 'intersection')
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             badge.functionId !== null && badge.badgeType !== 'intersection'
         );
-        // Also clear the intersection markers themselves
+        
+        // Clear the intersection arrays
         this.intersections = [];
+        this.explicitIntersections = [];
+        this.implicitIntersections = [];
     }
 
     // ================================
@@ -4872,7 +4990,8 @@ class Graphiti {
                 break;
                 
             case 'INTERSECTIONS_COMPLETE':
-                console.log(`Intersections calculated: ${data.intersections.length} found in ${data.calculationTime.toFixed(2)}ms`);
+                console.log(`=== INTERSECTIONS_COMPLETE received ===`);
+                console.log(`Type: ${data.calculationType}, Count: ${data.intersections.length}, Time: ${data.calculationTime.toFixed(2)}ms`);
                 
                 // Handle different calculation types
                 if (data.calculationType === 'explicit') {
@@ -4931,7 +5050,10 @@ class Graphiti {
     }
 
     calculateIntersectionsWithWorker(immediate = false) {
+        console.log(`=== calculateIntersectionsWithWorker START (immediate: ${immediate}) ===`);
+        
         if (!this.intersectionWorker) {
+            console.log('No worker available, using main thread fallback');
             // Fallback to main thread if worker not available
             return this.calculateExplicitIntersections();
         }
@@ -4947,6 +5069,8 @@ class Graphiti {
     }
 
     calculateExplicitIntersections() {
+        console.log('=== calculateExplicitIntersections START ===');
+        
         // Cancel any previous calculation
         if (this.isWorkerCalculating) {
             console.log('Canceling previous intersection calculation...');
@@ -4954,19 +5078,23 @@ class Graphiti {
         }
 
         this.isWorkerCalculating = true;
-        console.log('Calculating explicit intersections...');
+        console.log('Setting isWorkerCalculating = true');
 
         // Only process explicit functions for fast intersection detection
         const explicitFunctions = this.getCurrentFunctions().filter(f => 
             f.enabled && 
             f.points.length > 0 && 
-            !f.expression.includes('=') // Exclude implicit functions
+            this.detectFunctionType(f.expression) === 'explicit' // Use proper function type detection
         );
 
+        console.log(`Found ${explicitFunctions.length} explicit functions to check for intersections`);
+
         if (explicitFunctions.length < 2) {
+            console.log('Not enough explicit functions for intersections, clearing and updating');
             this.explicitIntersections = [];
             this.updateCombinedIntersections();
             this.isWorkerCalculating = false;
+            console.log('Setting isWorkerCalculating = false');
             return [];
         }
 
@@ -5007,7 +5135,7 @@ class Graphiti {
         }
 
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
-        const hasImplicitFunctions = allFunctions.some(f => f.expression.includes('='));
+        const hasImplicitFunctions = allFunctions.some(f => this.detectFunctionType(f.expression) === 'implicit');
         
         if (!hasImplicitFunctions) {
             this.implicitIntersections = [];
@@ -5033,7 +5161,7 @@ class Graphiti {
             const points = this.isViewportChanging ? (f.cachedPoints || []) : (f.points || []);
             return points.length > 0;
         });
-        const implicitFunctions = allFunctions.filter(f => f.expression.includes('='));
+        const implicitFunctions = allFunctions.filter(f => this.detectFunctionType(f.expression) === 'implicit');
         
         // Need at least one implicit function and another function
         if (implicitFunctions.length === 0 || allFunctions.length < 2) {
@@ -5047,7 +5175,7 @@ class Graphiti {
         const highResFunctions = [];
         
         for (const func of allFunctions) {
-            if (func.expression.includes('=')) {
+            if (this.detectFunctionType(func.expression) === 'implicit') {
                 // Create a copy and replot at high resolution
                 const highResFunc = {
                     ...func,
@@ -5074,7 +5202,7 @@ class Graphiti {
                 points: func.points,
                 color: func.color,
                 enabled: func.enabled,
-                isImplicit: func.expression.includes('=')
+                isImplicit: this.detectFunctionType(func.expression) === 'implicit'
             })),
             viewport: {
                 minX: this.viewport.minX,
@@ -5098,9 +5226,6 @@ class Graphiti {
     updateCombinedIntersections() {
         // Combine explicit and implicit intersections for display
         this.intersections = [...this.explicitIntersections, ...this.implicitIntersections];
-        console.log(`Combined intersections: ${this.explicitIntersections.length} explicit + ${this.implicitIntersections.length} implicit = ${this.intersections.length} total`);
-        
-        // Trigger redraw
         this.draw();
     }
 
@@ -5113,7 +5238,7 @@ class Graphiti {
         for (const func of functions) {
             // For implicit functions, only track expression changes, not point changes
             // since points change with zoom but intersections remain the same
-            const isImplicit = func.expression.includes('=');
+            const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
             
             let currentState;
             if (isImplicit) {
@@ -5185,7 +5310,7 @@ class Graphiti {
         
         for (const func of functions) {
             if (this.functionChangeFlags.get(func.id)) {
-                const isImplicit = func.expression.includes('=');
+                const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
                 
                 // For implicit functions, check if we have any cached intersections
                 // If not, we need to calculate
@@ -5298,8 +5423,9 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
-                // Skip implicit functions (they contain equals signs)
-                if (func.expression.includes('=')) {
+                // Skip implicit functions - use proper function type detection
+                const functionType = this.detectFunctionType(func.expression);
+                if (functionType === 'implicit') {
                     continue; // Implicit functions don't have simple turning points
                 }
                 
@@ -5352,6 +5478,12 @@ class Graphiti {
         // Use numerical method to find roots of f'(x) = 0
         const roots = this.findRootsInRange(derivativeStr, xMin, xMax);
         
+        // Debug logging for sin(x-45) case
+        if (func.expression.includes('sin') && func.expression.includes('45')) {
+            console.log(`  Search range: xMin=${xMin}, xMax=${xMax}`);
+            console.log(`  Root finding results: found ${roots.length} roots:`, roots);
+        }
+        
         for (const x of roots) {
             try {
                 // Calculate y value at this x using same approach as evaluateFunction
@@ -5360,11 +5492,16 @@ class Graphiti {
                 // Classify using second derivative test (also needs degree handling)
                 let secondDerivValue;
                 if (this.angleMode === 'degrees') {
-                    // Apply same degree transformation for second derivative evaluation
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(secondDerivativeStr);
-                    const evaluationX = hasRegularTrigWithX ? x * Math.PI / 180 : x;
-                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
-                    secondDerivValue = compiledSecondDeriv.evaluate({x: evaluationX});
+                    // Apply same preprocessing as evaluateFunction for degree mode
+                    let processedSecondDerivExpr = secondDerivativeStr.toLowerCase();
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedSecondDerivExpr);
+                    
+                    if (hasRegularTrigWithX) {
+                        processedSecondDerivExpr = this.convertTrigToDegreeMode(processedSecondDerivExpr);
+                    }
+                    
+                    const compiledSecondDeriv = this.getCompiledExpression(processedSecondDerivExpr);
+                    secondDerivValue = compiledSecondDeriv.evaluate({x: x}); // Use x directly
                 } else {
                     const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
                     secondDerivValue = compiledSecondDeriv.evaluate({x: x});
@@ -5403,21 +5540,24 @@ class Graphiti {
         
         // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
         const evaluateDerivative = (expr, xValue) => {
-            // Apply the same degree transformation logic as evaluateFunction
-            let evaluationX = xValue;
+            // Apply the same preprocessing as evaluateFunction for degree mode
+            let processedExpr = expr.toLowerCase();
+            
             if (this.angleMode === 'degrees') {
-                // Check if this derivative expression contains regular trig functions that need x converted
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(expr);
+                // Check if this derivative expression contains regular trig functions
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpr);
                 
-                // Convert input x from degrees to radians for regular trig functions in derivatives
                 if (hasRegularTrigWithX) {
-                    evaluationX = xValue * Math.PI / 180;
+                    // Preprocess the expression to wrap trig function arguments with degree conversion
+                    processedExpr = this.convertTrigToDegreeMode(processedExpr);
                 }
             }
             
             // Use cached compiled expression for better performance
-            const compiledExpression = this.getCompiledExpression(expr);
-            return compiledExpression.evaluate({x: evaluationX});
+            const compiledExpression = this.getCompiledExpression(processedExpr);
+            const result = compiledExpression.evaluate({x: xValue});
+            
+            return result;
         };
         
         // Special case: check if x=0 is in range and if derivative is approximately 0 there
@@ -5472,21 +5612,22 @@ class Graphiti {
     bisectionMethod(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
         // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
         const evaluateDerivative = (expr, xValue) => {
-            // Apply the same degree transformation logic as evaluateFunction
-            let evaluationX = xValue;
+            // Apply the same preprocessing as evaluateFunction for degree mode
+            let processedExpr = expr.toLowerCase();
+            
             if (this.angleMode === 'degrees') {
-                // Check if this derivative expression contains regular trig functions that need x converted
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(expr);
+                // Check if this derivative expression contains regular trig functions
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpr);
                 
-                // Convert input x from degrees to radians for regular trig functions in derivatives
                 if (hasRegularTrigWithX) {
-                    evaluationX = xValue * Math.PI / 180;
+                    // Preprocess the expression to wrap trig function arguments with degree conversion
+                    processedExpr = this.convertTrigToDegreeMode(processedExpr);
                 }
             }
             
             // Use cached compiled expression for better performance
-            const compiledExpression = this.getCompiledExpression(expr);
-            return compiledExpression.evaluate({x: evaluationX});
+            const compiledExpression = this.getCompiledExpression(processedExpr);
+            return compiledExpression.evaluate({x: xValue});
         };
         
         try {
@@ -5849,27 +5990,27 @@ class Graphiti {
         
         // Draw functions from current mode only
         this.getCurrentFunctions().forEach(func => {
-            if (func.enabled && func.points && func.points.length > 0) {
+            if (func.enabled) {
                 const functionType = this.detectFunctionType(func.expression);
                 if (functionType === 'implicit') {
-                    // Only draw implicit functions when viewport is stable
-                    if (!this.isViewportChanging) {
+                    // Draw implicit functions using cached points during viewport changes
+                    const pointsToCheck = this.isViewportChanging ? (func.cachedPoints || func.points) : func.points;
+                    if (pointsToCheck && pointsToCheck.length > 0) {
                         this.drawImplicitFunction(func);
                     }
                 } else {
                     // Always draw explicit functions for smooth interaction
-                    this.drawFunction(func);
+                    if (func.points && func.points.length > 0) {
+                        this.drawFunction(func);
+                    }
                 }
             }
         });
         
-        // Draw intersection markers if enabled and viewport is stable
+        // Draw intersection markers if enabled
         if (this.showIntersections) {
-            if (this.isViewportChanging && this.frozenIntersectionBadges.length > 0) {
-                // During viewport changes, show frozen intersection badges for visual continuity
-                this.drawFrozenIntersectionBadges();
-            } else if (!this.isViewportChanging && this.intersections.length > 0) {
-                // When viewport is stable, show actual intersection markers
+            // Draw current intersections
+            if (this.intersections.length > 0) {
                 this.drawIntersectionMarkers();
             }
         }
@@ -6502,10 +6643,13 @@ class Graphiti {
     }
 
     drawImplicitFunction(func) {
-        if (!func.points || func.points.length === 0) return;
+        // Use cached points during viewport changes, regular points otherwise
+        const pointsToUse = this.isViewportChanging ? (func.cachedPoints || func.points) : func.points;
+        
+        if (!pointsToUse || pointsToUse.length === 0) return;
         
         // Check if points should be connected (like for circles, ellipses, parabolas)
-        const hasConnectedPoints = func.points.some(p => p.connected);
+        const hasConnectedPoints = pointsToUse.some(p => p.connected);
         
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
@@ -6513,9 +6657,9 @@ class Graphiti {
             this.ctx.lineWidth = 2;
             
             // Draw individual line segments (every pair of connected points)
-            for (let i = 0; i < func.points.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
-                const startPoint = func.points[i];
-                const endPoint = func.points[i + 1];
+            for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
+                const startPoint = pointsToUse[i];
+                const endPoint = pointsToUse[i + 1];
                 
                 if (startPoint && endPoint && 
                     isFinite(startPoint.x) && isFinite(startPoint.y) &&
@@ -6542,8 +6686,8 @@ class Graphiti {
             this.ctx.fillStyle = func.color;
             const pointSize = 1.5;
             
-            for (let i = 0; i < func.points.length; i++) {
-                const point = func.points[i];
+            for (let i = 0; i < pointsToUse.length; i++) {
+                const point = pointsToUse[i];
                 if (!isFinite(point.x) || !isFinite(point.y)) continue;
                 
                 const screenPos = this.worldToScreen(point.x, point.y);
@@ -6784,70 +6928,19 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawFrozenIntersectionBadges() {
-        for (const frozenBadge of this.frozenIntersectionBadges) {
-            const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
-            
-            // Only draw if within viewport
-            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
-                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
-                
-                // Draw as simple markers (like the original intersection dots) but in red
-                this.ctx.save();
-                
-                // Outer circle (white/light background for contrast)
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                // Inner circle (same black color as regular intersections)
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Same black as regular intersections
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                this.ctx.restore();
-            }
-        }
-    }
-    
     findIntersectionAtScreenPoint(screenX, screenY) {
         const tolerance = 15; // pixels - tolerance for tap detection
         
-        // First check regular intersections (when viewport is stable)
-        if (!this.isViewportChanging) {
-            for (const intersection of this.intersections) {
-                const intersectionScreen = this.worldToScreen(intersection.x, intersection.y);
-                const distance = Math.sqrt(
-                    Math.pow(screenX - intersectionScreen.x, 2) + 
-                    Math.pow(screenY - intersectionScreen.y, 2)
-                );
-                
-                if (distance <= tolerance) {
-                    return intersection;
-                }
-            }
-        }
-        
-        // During viewport changes, check frozen intersection badges
-        if (this.isViewportChanging && this.frozenIntersectionBadges.length > 0) {
-            for (const frozenBadge of this.frozenIntersectionBadges) {
-                const badgeScreen = this.worldToScreen(frozenBadge.x, frozenBadge.y);
-                const distance = Math.sqrt(
-                    Math.pow(screenX - badgeScreen.x, 2) + 
-                    Math.pow(screenY - badgeScreen.y, 2)
-                );
-                
-                if (distance <= tolerance) {
-                    // Return in the same format as regular intersections
-                    return {
-                        x: frozenBadge.x,
-                        y: frozenBadge.y,
-                        functionPair: frozenBadge.functionPair,
-                        precision: frozenBadge.precision
-                    };
-                }
+        // Check regular intersections
+        for (const intersection of this.intersections) {
+            const intersectionScreen = this.worldToScreen(intersection.x, intersection.y);
+            const distance = Math.sqrt(
+                Math.pow(screenX - intersectionScreen.x, 2) + 
+                Math.pow(screenY - intersectionScreen.y, 2)
+            );
+            
+            if (distance <= tolerance) {
+                return intersection;
             }
         }
         
@@ -7026,11 +7119,11 @@ class Graphiti {
             return { x: intersection.x, y: intersection.y };
         }
         
-        // Check if either function is implicit (has no expression)
+        // Check if either function is implicit
         const func1 = intersection.func1;
         const func2 = intersection.func2;
-        const func1IsImplicit = !func1.expression || func1.expression.includes('=');
-        const func2IsImplicit = !func2.expression || func2.expression.includes('=');
+        const func1IsImplicit = !func1.expression || this.detectFunctionType(func1.expression) === 'implicit';
+        const func2IsImplicit = !func2.expression || this.detectFunctionType(func2.expression) === 'implicit';
         
         // If either function is implicit, don't refine - the line segment intersection is already accurate
         if (func1IsImplicit || func2IsImplicit) {
@@ -8204,8 +8297,6 @@ class Graphiti {
     convertFromLatex(latex) {
         if (!latex) return '';
         
-        console.log('Converting LaTeX:', latex);
-        
         let expression = latex;
         
         // FIRST: Handle LaTeX parentheses before any other processing
@@ -8215,8 +8306,6 @@ class Graphiti {
         expression = expression.replace(/\\right\]/g, ']');
         expression = expression.replace(/\\left\{/g, '{');
         expression = expression.replace(/\\right\}/g, '}');
-        
-        console.log('After parentheses conversion:', expression);
         
         // Convert LaTeX back to math.js expressions
         // Fractions: \frac{a}{b} -> (a)/(b) - handle nested braces properly
@@ -8253,8 +8342,6 @@ class Graphiti {
         expression = expression.replace(/\\arcsin/g, 'asin');
         expression = expression.replace(/\\arccos/g, 'acos');
         expression = expression.replace(/\\arctan/g, 'atan');
-        
-        console.log('After trig functions conversion:', expression);
         
         // Inverse trigonometric functions using \operatorname
         expression = expression.replace(/\\operatorname\{arcsec\}/g, 'asec');
@@ -8325,8 +8412,18 @@ class Graphiti {
         // 2x -> 2*x, 3sin(x) -> 3*sin(x)
         expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
         expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
-        // DON'T add multiplication between function names and parentheses
-        // expression = expression.replace(/([a-zA-Z])(\()/g, '$1*$2'); // REMOVED this line
+        
+        // Handle implicit multiplication between variables and function names
+        // ysin(x) -> y*sin(x), xcos(t) -> x*cos(t), etc.
+        const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 
+                              'sinh', 'cosh', 'tanh', 'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+        
+        for (const func of functionNames) {
+            // Match: single variable + functionname( -> variable*functionname(
+            // Check for the specific pattern: letter+functionname+openParen
+            const pattern = new RegExp(`([a-zA-Z])(${func})\\(`, 'g');
+            expression = expression.replace(pattern, '$1*$2(');
+        }
         
         // Remove spaces
         expression = expression.replace(/\s+/g, '');
