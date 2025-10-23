@@ -1470,10 +1470,13 @@ class Graphiti {
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
         try {
-            // Clear any existing points and cached points to force fresh calculation
-            func.points = [];
-            if (func.cachedPoints) {
-                delete func.cachedPoints;
+            // During viewport changes, keep existing points visible until new ones are ready
+            // Only clear points if we're not actively panning/zooming
+            if (!this.isViewportChanging) {
+                func.points = [];
+                if (func.cachedPoints) {
+                    delete func.cachedPoints;
+                }
             }
             
             // Register this calculation and update debug overlay
@@ -2488,19 +2491,19 @@ class Graphiti {
         // Schedule implicit intersection recalculation after viewport changes settle
         this.scheduleImplicitIntersectionCalculation();
         
-        // Cancel any ongoing implicit function calculations
-        this.cancelAllImplicitCalculations();
-        
-        // Cache current implicit function points ONLY if not already cached
+        // Cache current implicit function points BEFORE canceling calculations
         this.getCurrentFunctions().forEach(func => {
             if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'implicit') {
                 // Only cache if we haven't already cached (prevents overwriting during rapid panning)
                 if (!func.cachedPoints && func.points && func.points.length > 0) {
                     func.cachedPoints = [...func.points];
                 }
-                // Keep current points visible during panning - rendering logic will use cached points for positioning
+                // Keep current points visible during panning - rendering will use these
             }
         });
+        
+        // Cancel any ongoing implicit function calculations (won't clear points during viewport changes)
+        this.cancelAllImplicitCalculations();
         
         // Clear existing timer to restart the debounce period
         if (this.intersectionDebounceTimer) {
@@ -4471,15 +4474,17 @@ class Graphiti {
         this.implicitCalculationId++;
         this.currentImplicitCalculations.clear();
         
-        // Clear points and cached points for all implicit functions to prevent stale data
-        this.getCurrentFunctions().forEach(func => {
-            if (func.expression && this.detectFunctionType(func.expression) === 'implicit') {
-                func.points = [];
-                if (func.cachedPoints) {
-                    delete func.cachedPoints;
+        // Only clear points if NOT during viewport changes - otherwise keep them visible
+        if (!this.isViewportChanging) {
+            this.getCurrentFunctions().forEach(func => {
+                if (func.expression && this.detectFunctionType(func.expression) === 'implicit') {
+                    func.points = [];
+                    if (func.cachedPoints) {
+                        delete func.cachedPoints;
+                    }
                 }
-            }
-        });
+            });
+        }
     }
     
     // Check if a calculation should be cancelled
