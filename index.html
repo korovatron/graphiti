@@ -1156,6 +1156,68 @@
     
     <!-- Math.js library for safe mathematical expression evaluation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+    
+    <!-- Custom power function to handle real-valued fractional powers -->
+    <script>
+        // Custom pow function for real-valued results with negative bases and fractional exponents
+        function realPow(x, y) {
+            // Handle special cases
+            if (x === 0) return y === 0 ? 1 : 0;
+            if (y === 0) return 1;
+            if (y === 1) return x;
+            
+            // For integer exponents, use standard behavior
+            if (Number.isInteger(y)) {
+                return Math.pow(x, y);
+            }
+            
+            // For negative base with fractional exponent
+            if (x < 0) {
+                // Try to interpret as a rational number (fraction)
+                const yStr = y.toString();
+                const frac = yStr.split('/');
+                
+                if (frac.length === 2) {
+                    // Explicit fraction like 2/3
+                    const numerator = parseInt(frac[0], 10);
+                    const denominator = parseInt(frac[1], 10);
+                    
+                    if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
+                        const absX = Math.abs(x);
+                        const result = Math.pow(absX, numerator / denominator);
+                        
+                        // If numerator is odd, preserve the sign
+                        return (numerator % 2 !== 0) ? -result : result;
+                    }
+                }
+                
+                // Try to detect if decimal is close to a simple fraction
+                const tolerance = 1e-10;
+                for (let denom = 2; denom <= 12; denom++) {
+                    for (let num = 1; num < denom; num++) {
+                        if (Math.abs(y - num/denom) < tolerance) {
+                            const absX = Math.abs(x);
+                            const result = Math.pow(absX, num / denom);
+                            return (num % 2 !== 0) ? -result : result;
+                        }
+                    }
+                }
+                
+                // For other fractional exponents with negative base, return NaN
+                // (avoiding complex number domain)
+                return NaN;
+            }
+            
+            // For positive base, use standard power function
+            return Math.pow(x, y);
+        }
+        
+        // Override math.js pow function
+        if (typeof math !== 'undefined') {
+            math.import({ pow: realPow }, { override: true });
+        }
+    </script>
+    
     <script src="main.js"></script>
     
     <!-- Service Worker Registration -->

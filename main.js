@@ -4818,6 +4818,12 @@ class Graphiti {
         for (const func of this.getCurrentFunctions()) {
             if (!func.enabled || !func.expression.trim()) continue;
             
+            // Only allow tracing on explicit functions (cartesian and polar)
+            const functionType = this.detectFunctionType(func.expression);
+            if (functionType === 'implicit') {
+                continue; // Skip implicit functions - they can't be traced with y=f(x) approach
+            }
+            
             try {
                 if (func.mode === 'polar') {
                     // Special handling for polar functions
