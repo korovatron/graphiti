@@ -185,6 +185,14 @@ class Graphiti {
         this.isWorkerCalculating = false;
         this.initializeIntersectionWorker();
         
+        // Debug overlay for calculation status (toggle with TAB key)
+        this.debugOverlay = {
+            enabled: false,
+            plotting: new Set(), // Functions currently plotting
+            calculatingExplicit: false,
+            calculatingImplicit: false
+        };
+        
         // Animation
         this.lastFrameTime = 0;
         this.deltaTime = 0;
@@ -912,9 +920,19 @@ class Graphiti {
             // Replot all functions to ensure proper display with new state
             this.replotAllFunctions();
             
+            // Clear intersection arrays before recalculating to prevent stale data
+            this.intersections = [];
+            this.explicitIntersections = [];
+            this.implicitIntersections = [];
+            this.frozenIntersectionBadges = [];
+            
             // Recalculate intersections and turning points with the new function state
-            if (this.showIntersections || this.showTurningPoints) {
-                this.handleViewportChange();
+            if (this.showIntersections) {
+                this.calculateIntersectionsWithWorker();
+            }
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+                this.draw();
             }
         });
         
@@ -1452,9 +1470,16 @@ class Graphiti {
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
         try {
-            // Register this calculation
+            // Clear any existing points and cached points to force fresh calculation
+            func.points = [];
+            if (func.cachedPoints) {
+                delete func.cachedPoints;
+            }
+            
+            // Register this calculation and update debug overlay
             const calculationId = ++this.implicitCalculationId;
             this.currentImplicitCalculations.set(func.id, calculationId);
+            this.debugOverlay.plotting.add(func.id);
             
             let points = [];
             
@@ -1464,11 +1489,13 @@ class Graphiti {
             if (!equation) {
                 console.warn('Could not parse implicit equation:', func.expression);
                 func.points = [];
+                this.debugOverlay.plotting.delete(func.id);
                 return;
             }
             
             // Check if calculation was cancelled before starting heavy computation
             if (this.isCalculationCancelled(func.id, calculationId)) {
+                this.debugOverlay.plotting.delete(func.id);
                 return;
             }
             
@@ -1480,14 +1507,17 @@ class Graphiti {
             
             // Final cancellation check before setting results
             if (this.isCalculationCancelled(func.id, calculationId)) {
+                this.debugOverlay.plotting.delete(func.id);
                 return;
             }
             
             func.points = points;
+            this.debugOverlay.plotting.delete(func.id);
             
         } catch (error) {
             console.error('Error plotting implicit function:', error);
             func.points = [];
+            this.debugOverlay.plotting.delete(func.id);
         }
     }
 
@@ -1761,26 +1791,36 @@ class Graphiti {
         // Balanced resolution scaling - performance vs quality
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
-        // Improved resolution scaling for smoother curves
+        // Improved resolution scaling for smoother curves - matching async version
+        // Higher minimum resolution to ensure curves don't disappear at any zoom level
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - maintain minimum quality
-            resolution = 80;
-        } else if (viewportSize > 50) {
-            // Very zoomed out - better resolution for smoothness
-            resolution = 100;
-        } else if (viewportSize > 20) {
-            // Normal zoom - high quality
+            // Extremely zoomed out - good base quality
             resolution = 120;
-        } else if (viewportSize > 10) {
-            // Zoomed in - very high detail
+        } else if (viewportSize > 50) {
+            // Very zoomed out - high base quality
             resolution = 140;
-        } else if (viewportSize > 5) {
-            // Very zoomed in - maximum detail
+        } else if (viewportSize > 20) {
+            // Normal zoom - very high quality
             resolution = 160;
-        } else {
-            // Extremely zoomed in - ultra high detail
+        } else if (viewportSize > 10) {
+            // Zoomed in - higher detail
             resolution = 180;
+        } else if (viewportSize > 5) {
+            // Very zoomed in - excellent detail
+            resolution = 200;
+        } else if (viewportSize > 2) {
+            // Extremely zoomed in - high detail for busy regions
+            resolution = 240;
+        } else if (viewportSize > 1) {
+            // Very close - very high detail
+            resolution = 300;
+        } else if (viewportSize > 0.5) {
+            // Ultra close - maximum detail for sharp features
+            resolution = 360;
+        } else {
+            // Extreme magnification - ultra-high detail
+            resolution = 420;
         }
         
         console.log(`Marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}`);
@@ -1798,26 +1838,36 @@ class Graphiti {
         // Balanced resolution scaling - performance vs quality
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
-        // Reduced resolution for better performance with complex functions
+        // Improved resolution scaling with better base quality for busy curves
+        // Higher minimum resolution to ensure curves don't disappear at any zoom level
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - minimum quality
-            resolution = 60;
+            // Extremely zoomed out - good base quality
+            resolution = 120;
         } else if (viewportSize > 50) {
-            // Very zoomed out - low resolution for performance
-            resolution = 70;
+            // Very zoomed out - high base quality
+            resolution = 140;
         } else if (viewportSize > 20) {
-            // Normal zoom - balanced quality
-            resolution = 80;
+            // Normal zoom - very high quality
+            resolution = 160;
         } else if (viewportSize > 10) {
             // Zoomed in - higher detail
-            resolution = 100;
+            resolution = 180;
         } else if (viewportSize > 5) {
-            // Very zoomed in - good detail
-            resolution = 120;
+            // Very zoomed in - excellent detail
+            resolution = 200;
+        } else if (viewportSize > 2) {
+            // Extremely zoomed in - high detail for busy regions
+            resolution = 240;
+        } else if (viewportSize > 1) {
+            // Very close - very high detail
+            resolution = 300;
+        } else if (viewportSize > 0.5) {
+            // Ultra close - maximum detail for sharp features
+            resolution = 360;
         } else {
-            // Extremely zoomed in - maximum detail
-            resolution = 140;
+            // Extreme magnification - ultra-high detail
+            resolution = 420;
         }
         
         console.log(`Async marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
@@ -2948,6 +2998,13 @@ class Graphiti {
                     e.preventDefault();
                     this.startGraphing();
                 }
+            }
+            
+            // Toggle debug overlay with TAB key (only in graphing mode)
+            if (e.code === 'Tab' && this.currentState === this.states.GRAPHING) {
+                e.preventDefault();
+                this.debugOverlay.enabled = !this.debugOverlay.enabled;
+                this.draw(); // Redraw to show/hide overlay
             }
         });
 
@@ -4177,10 +4234,10 @@ class Graphiti {
         
         if (this.getCurrentFunctions().length === 0 && !wasCleared) {
             if (this.plotMode === 'cartesian') {
-                this.addFunction('sin(2x + pi)');
-                this.addFunction('e^(-x^2)');
                 this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
                 this.addFunction('x^3+y^3=3xy'); // Folium of Descartes
+                this.addFunction('y^2=x^3-4x'); // Devil's Curve
+                this.addFunction('(x^2/4+y^2/9)=1'); // Ellipse/Oval
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)'); // Cardioid - t will be converted to θ in UI
@@ -4413,6 +4470,16 @@ class Graphiti {
     cancelAllImplicitCalculations() {
         this.implicitCalculationId++;
         this.currentImplicitCalculations.clear();
+        
+        // Clear points and cached points for all implicit functions to prevent stale data
+        this.getCurrentFunctions().forEach(func => {
+            if (func.expression && this.detectFunctionType(func.expression) === 'implicit') {
+                func.points = [];
+                if (func.cachedPoints) {
+                    delete func.cachedPoints;
+                }
+            }
+        });
     }
     
     // Check if a calculation should be cancelled
@@ -4423,14 +4490,16 @@ class Graphiti {
     
     async startGraphing() {
         this.changeState(this.states.GRAPHING);
-        // Add three initial function boxes when starting to show multiple plot capability
+        // Add initial function boxes when starting to show multiple plot capability
         if (this.getCurrentFunctions().length === 0) {
             // Set startup flag for immediate implicit function rendering
             this.isStartup = true;
             
             if (this.plotMode === 'cartesian') {
-                this.addFunction('sin(2x + pi)');
-                this.addFunction('e^(-x^2)');
+                this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
+                this.addFunction('x^3+y^3=3xy'); // Folium of Descartes
+                this.addFunction('y^2=x^3-4x'); // Devil's Curve
+                this.addFunction('(x^2/4+y^2/9)=1'); // Ellipse/Oval
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)'); // t will be converted to θ in UI
@@ -5019,10 +5088,12 @@ class Graphiti {
                 // Handle different calculation types
                 if (data.calculationType === 'explicit') {
                     this.explicitIntersections = data.intersections;
+                    this.debugOverlay.calculatingExplicit = false;
                     console.log(`Updated explicit intersections: ${this.explicitIntersections.length}`);
                 } else if (data.calculationType === 'implicit') {
                     this.implicitIntersections = data.intersections;
                     this.implicitIntersectionsPending = false; // Clear pending flag
+                    this.debugOverlay.calculatingImplicit = false;
                     console.log(`Updated implicit intersections: ${this.implicitIntersections.length}`);
                 } else {
                     // Legacy fallback
@@ -5102,6 +5173,7 @@ class Graphiti {
         }
 
         this.isWorkerCalculating = true;
+        this.debugOverlay.calculatingExplicit = true;
         console.log('Setting isWorkerCalculating = true');
 
         // Only process explicit functions for fast intersection detection
@@ -5118,6 +5190,7 @@ class Graphiti {
             this.explicitIntersections = [];
             this.updateCombinedIntersections();
             this.isWorkerCalculating = false;
+            this.debugOverlay.calculatingExplicit = false;
             console.log('Setting isWorkerCalculating = false');
             return [];
         }
@@ -5182,6 +5255,7 @@ class Graphiti {
 
     async calculateImplicitIntersections() {
         console.log('Starting high-resolution implicit intersection calculation...');
+        this.debugOverlay.calculatingImplicit = true;
         
         // During viewport changes, use cached points; otherwise use current points
         const allFunctions = this.getCurrentFunctions().filter(f => {
@@ -6074,6 +6148,11 @@ class Graphiti {
         // Draw all persistent badges
         this.updateBadgeScreenPositions();
         this.drawPersistentBadges();
+        
+        // Draw debug overlay if enabled
+        if (this.debugOverlay.enabled) {
+            this.drawDebugOverlay();
+        }
         
         // UI overlays removed - cleaner interface
     }
@@ -7433,6 +7512,89 @@ class Graphiti {
     drawTracingIndicator() {
         this.drawActiveTracingIndicator();
         this.drawPersistentBadges();
+    }
+    
+    drawDebugOverlay() {
+        const ctx = this.ctx;
+        const lineHeight = 20;
+        const boxPadding = 10;
+        
+        // Prepare status lines
+        const lines = [];
+        lines.push('DEBUG OVERLAY (TAB to toggle)');
+        lines.push('');
+        
+        // Plotting status
+        if (this.debugOverlay.plotting.size > 0) {
+            lines.push(`Plotting: ${this.debugOverlay.plotting.size} function(s)`);
+            this.debugOverlay.plotting.forEach(funcId => {
+                const func = this.getCurrentFunctions().find(f => f.id === funcId);
+                if (func) {
+                    const expr = func.expression.length > 30 ? func.expression.substring(0, 30) + '...' : func.expression;
+                    lines.push(`  • ${expr}`);
+                }
+            });
+        } else {
+            lines.push('Plotting: idle');
+        }
+        
+        lines.push('');
+        
+        // Explicit intersections
+        if (this.debugOverlay.calculatingExplicit) {
+            lines.push('Explicit Intersections: calculating...');
+        } else {
+            lines.push(`Explicit Intersections: ${this.explicitIntersections.length} found`);
+        }
+        
+        // Implicit intersections
+        if (this.debugOverlay.calculatingImplicit) {
+            lines.push('Implicit Intersections: calculating...');
+        } else if (this.implicitIntersectionsPending) {
+            lines.push('Implicit Intersections: pending...');
+        } else {
+            lines.push(`Implicit Intersections: ${this.implicitIntersections.length} found`);
+        }
+        
+        lines.push('');
+        lines.push(`Total Intersections: ${this.intersections.length}`);
+        lines.push(`Frozen Badges: ${this.frozenIntersectionBadges.length}`);
+        
+        // Calculate box dimensions
+        ctx.font = '14px monospace';
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const width = ctx.measureText(line).width;
+            if (width > maxWidth) maxWidth = width;
+        });
+        
+        const boxWidth = maxWidth + boxPadding * 2;
+        const boxHeight = lines.length * lineHeight + boxPadding * 2;
+        
+        // Position in bottom right corner
+        const x = this.viewport.width - boxWidth - 15;
+        const y = this.viewport.height - boxHeight - 15;
+        
+        // Draw semi-transparent background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(x, y, boxWidth, boxHeight);
+        
+        // Draw border
+        ctx.strokeStyle = '#4A90E2';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, boxWidth, boxHeight);
+        
+        // Draw text
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        
+        lines.forEach((line, index) => {
+            const textY = y + boxPadding + index * lineHeight;
+            ctx.fillText(line, x + boxPadding, textY);
+        });
+        
+        ctx.restore();
     }
     
     formatCoordinates(worldX, worldY) {
