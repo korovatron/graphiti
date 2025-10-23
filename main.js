@@ -156,6 +156,7 @@ class Graphiti {
         // Implicit intersection timing control
         this.implicitIntersectionTimer = null;
         this.implicitIntersectionDelay = 500; // ms after pan/zoom stops
+        this.implicitIntersectionsPending = false; // Track if implicit calculation is expected
         this.lastViewportState = null; // Track viewport changes
         
         // Implicit function viewport caching for smooth pan/zoom performance
@@ -2460,7 +2461,7 @@ class Graphiti {
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
-            this.frozenIntersectionBadges = []; // Clear frozen intersection badges
+            // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
             // Clear cached points now that viewport has settled
             this.getCurrentFunctions().forEach(func => {
@@ -5021,6 +5022,7 @@ class Graphiti {
                     console.log(`Updated explicit intersections: ${this.explicitIntersections.length}`);
                 } else if (data.calculationType === 'implicit') {
                     this.implicitIntersections = data.intersections;
+                    this.implicitIntersectionsPending = false; // Clear pending flag
                     console.log(`Updated implicit intersections: ${this.implicitIntersections.length}`);
                 } else {
                     // Legacy fallback
@@ -5161,11 +5163,15 @@ class Graphiti {
         
         if (!hasImplicitFunctions) {
             this.implicitIntersections = [];
+            this.implicitIntersectionsPending = false;
             this.updateCombinedIntersections();
             return;
         }
 
         console.log('Scheduling implicit intersection calculation...');
+        
+        // Mark that implicit intersections are pending
+        this.implicitIntersectionsPending = true;
         
         // Calculate immediately or after delay based on flag
         const delay = immediate ? 0 : this.implicitIntersectionDelay;
@@ -5249,9 +5255,12 @@ class Graphiti {
         // Combine explicit and implicit intersections for display
         this.intersections = [...this.explicitIntersections, ...this.implicitIntersections];
         
-        // Only trigger redraw if viewport is not changing
+        // Only trigger redraw if viewport is not changing AND no implicit intersections are pending
         // During viewport changes, we use frozen cache for visual continuity
-        if (!this.isViewportChanging) {
+        // When implicit intersections are pending, wait for them to complete to avoid premature redraw
+        if (!this.isViewportChanging && !this.implicitIntersectionsPending) {
+            // Clear frozen intersection badges now that all intersection calculations are complete
+            this.frozenIntersectionBadges = [];
             this.draw();
         }
     }
@@ -6037,11 +6046,11 @@ class Graphiti {
         
         // Draw intersection markers if enabled
         if (this.showIntersections) {
-            if (this.isViewportChanging && this.frozenIntersectionBadges.length > 0) {
-                // During viewport changes, show frozen intersection badges for visual continuity
+            if (this.frozenIntersectionBadges.length > 0) {
+                // Show frozen intersection badges whenever they exist (for visual continuity)
                 this.drawFrozenIntersectionBadges();
-            } else if (!this.isViewportChanging && this.intersections.length > 0) {
-                // When viewport is stable, show actual intersection markers
+            } else if (this.intersections.length > 0) {
+                // When no frozen badges, show actual intersection markers
                 this.drawIntersectionMarkers();
             }
         }
