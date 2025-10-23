@@ -779,7 +779,7 @@ class Graphiti {
         funcDiv.innerHTML = `
             <math-field 
                 class="mathlive-input" 
-                placeholder="\\text{Enter } f(x)"
+                placeholder="\\text{Enter } f(x) \\text{ or } f(x,y)"
                 default-mode="math"
                 smart-fence="true"
                 smart-superscript="true"
@@ -4311,7 +4311,7 @@ class Graphiti {
             if (this.plotMode === 'polar') {
                 mathField.setAttribute('placeholder', '\\text{Enter } f(\\theta)');
             } else {
-                mathField.setAttribute('placeholder', '\\text{Enter } f(x)');
+                mathField.setAttribute('placeholder', '\\text{Enter } f(x) \\text{ or } f(x,y)');
             }
         });
     }
