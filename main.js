@@ -4496,10 +4496,9 @@ class Graphiti {
             this.isStartup = true;
             
             if (this.plotMode === 'cartesian') {
+                this.addFunction('x^2'); // Quadratic
+                this.addFunction('sin(x)'); // Trigonometric
                 this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
-                this.addFunction('x^3+y^3=3xy'); // Folium of Descartes
-                this.addFunction('y^2=x^3-4x'); // Devil's Curve
-                this.addFunction('(x^2/4+y^2/9)=1'); // Ellipse/Oval
                 this.addFunction(''); // Empty function to show placeholder example text
             } else {
                 this.addFunction('1 + cos(t)'); // t will be converted to θ in UI
