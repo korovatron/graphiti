@@ -177,6 +177,7 @@ class Graphiti {
         this.showTurningPoints = true; // Toggle for turning point display (on by default)
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
+        this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -2423,6 +2424,14 @@ class Graphiti {
             }));
         }
         
+        // Create frozen intersection badges for visual continuity during viewport changes
+        if (!this.isViewportChanging && this.intersections.length > 0) {
+            this.frozenIntersectionBadges = this.intersections.map(intersection => ({
+                x: intersection.x,
+                y: intersection.y
+            }));
+        }
+        
         this.isViewportChanging = true;
         
         // Schedule implicit intersection recalculation after viewport changes settle
@@ -2451,6 +2460,7 @@ class Graphiti {
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
+            this.frozenIntersectionBadges = []; // Clear frozen intersection badges
             
             // Clear cached points now that viewport has settled
             this.getCurrentFunctions().forEach(func => {
@@ -3540,6 +3550,12 @@ class Graphiti {
         
         this.input.tracing.active = false;
         this.input.tracing.functionId = null;
+        
+        // If we were dragging (panning), trigger viewport change handling
+        // This ensures intersection markers are recalculated immediately like zoom operations
+        if (this.input.dragging) {
+            this.handleViewportChange();
+        }
         
         this.input.mouse.down = false;
         this.input.dragging = false;
@@ -5232,7 +5248,12 @@ class Graphiti {
     updateCombinedIntersections() {
         // Combine explicit and implicit intersections for display
         this.intersections = [...this.explicitIntersections, ...this.implicitIntersections];
-        this.draw();
+        
+        // Only trigger redraw if viewport is not changing
+        // During viewport changes, we use frozen cache for visual continuity
+        if (!this.isViewportChanging) {
+            this.draw();
+        }
     }
 
     // ================================
@@ -5671,6 +5692,7 @@ class Graphiti {
         // Clear turning point markers and frozen badges
         this.turningPoints = [];
         this.frozenTurningPointBadges = [];
+        this.frozenIntersectionBadges = [];
         
         // Remove all turning point badges (those with badgeType indicating turning points)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
@@ -6015,8 +6037,11 @@ class Graphiti {
         
         // Draw intersection markers if enabled
         if (this.showIntersections) {
-            // Draw current intersections
-            if (this.intersections.length > 0) {
+            if (this.isViewportChanging && this.frozenIntersectionBadges.length > 0) {
+                // During viewport changes, show frozen intersection badges for visual continuity
+                this.drawFrozenIntersectionBadges();
+            } else if (!this.isViewportChanging && this.intersections.length > 0) {
+                // When viewport is stable, show actual intersection markers
                 this.drawIntersectionMarkers();
             }
         }
@@ -7045,6 +7070,34 @@ class Graphiti {
                 this.ctx.fill();
                 
                 // Inner circle (same neutral color as intersections)
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            }
+        }
+    }
+    
+    drawFrozenIntersectionBadges() {
+        for (const frozenBadge of this.frozenIntersectionBadges) {
+            const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+            
+            // Only draw if within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                // Draw intersection marker (same style as normal intersections)
+                this.ctx.save();
+                
+                // Outer circle (white/light background for contrast)
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                // Inner circle (darker color to indicate intersection)
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.beginPath();
                 this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
