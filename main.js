@@ -758,6 +758,9 @@ class Graphiti {
                 this.turningPoints = this.findTurningPoints();
             }
         }
+        
+        // Save functions to localStorage
+        this.saveFunctionsToLocalStorage();
     }
     
     createFunctionUI(func) {
@@ -869,6 +872,9 @@ class Graphiti {
                 
                 // Debounced plotting
                 this.debouncePlot(func);
+                
+                // Save functions to localStorage after expression changes
+                this.saveFunctionsToLocalStorage();
             } catch (error) {
                 console.warn('Error getting mathfield value:', error);
             }
@@ -1182,6 +1188,71 @@ class Graphiti {
         
         // Redraw to update the display immediately
         this.draw();
+        
+        // Save functions to localStorage
+        this.saveFunctionsToLocalStorage();
+    }
+    
+    // Save functions to localStorage
+    saveFunctionsToLocalStorage() {
+        try {
+            // Save cartesian functions
+            const cartesianData = this.cartesianFunctions.map(func => ({
+                expression: func.expression,
+                enabled: func.enabled
+            }));
+            localStorage.setItem('graphiti_cartesian_functions', JSON.stringify(cartesianData));
+            
+            // Save polar functions
+            const polarData = this.polarFunctions.map(func => ({
+                expression: func.expression,
+                enabled: func.enabled
+            }));
+            localStorage.setItem('graphiti_polar_functions', JSON.stringify(polarData));
+        } catch (error) {
+            // Silently handle localStorage errors (e.g., quota exceeded, private browsing)
+            console.warn('Could not save functions to localStorage:', error);
+        }
+    }
+    
+    // Load functions from localStorage
+    loadFunctionsFromLocalStorage() {
+        try {
+            let cartesianResult = null;
+            let hasSavedCartesian = false;
+            let polarResult = null;
+            let hasSavedPolar = false;
+            
+            // Load cartesian functions if available
+            const cartesianData = localStorage.getItem('graphiti_cartesian_functions');
+            if (cartesianData) {
+                const parsedCartesian = JSON.parse(cartesianData);
+                if (Array.isArray(parsedCartesian) && parsedCartesian.length > 0) {
+                    cartesianResult = parsedCartesian;
+                    hasSavedCartesian = true;
+                }
+            }
+            
+            // Load polar functions if available
+            const polarData = localStorage.getItem('graphiti_polar_functions');
+            if (polarData) {
+                const parsedPolar = JSON.parse(polarData);
+                if (Array.isArray(parsedPolar) && parsedPolar.length > 0) {
+                    polarResult = parsedPolar;
+                    hasSavedPolar = true;
+                }
+            }
+            
+            return { 
+                cartesian: cartesianResult, 
+                polar: polarResult, 
+                hasSavedCartesian: hasSavedCartesian, 
+                hasSavedPolar: hasSavedPolar 
+            };
+        } catch (error) {
+            console.warn('Could not load functions from localStorage:', error);
+            return { cartesian: null, polar: null, hasSavedCartesian: false, hasSavedPolar: false };
+        }
     }
     
     clearAllFunctions() {
@@ -4191,23 +4262,56 @@ class Graphiti {
         // Clear existing function UI and recreate for current mode
         this.refreshFunctionUI();
 
-        // Add pre-populated functions if the current mode has no functions
-        // BUT only if user hasn't intentionally cleared all functions
+        // Add functions if the current mode has no functions
+        // Try to load from localStorage first, then use defaults if needed
         const isCartesian = this.plotMode === 'cartesian';
         const wasCleared = isCartesian ? this.cartesianFunctionsCleared : this.polarFunctionsCleared;
         
         if (this.getCurrentFunctions().length === 0 && !wasCleared) {
-            if (this.plotMode === 'cartesian') {
-                this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
-                this.addFunction('x^3+y^3=3xy'); // Folium of Descartes
-                this.addFunction('y^2=x^3-4x'); // Devil's Curve
-                this.addFunction('(x^2/4+y^2/9)=1'); // Ellipse/Oval
-                this.addFunction(''); // Empty function to show placeholder example text
+            // Try to load saved functions from localStorage
+            const savedData = this.loadFunctionsFromLocalStorage();
+            let functionsToLoad = [];
+            
+            if (this.plotMode === 'cartesian' && savedData.hasSavedCartesian) {
+                // Load saved cartesian functions
+                functionsToLoad = savedData.cartesian;
+            } else if (this.plotMode === 'polar' && savedData.hasSavedPolar) {
+                // Load saved polar functions
+                functionsToLoad = savedData.polar;
             } else {
-                this.addFunction('1 + cos(t)'); // Cardioid - t will be converted to θ in UI
-                this.addFunction('2cos(3t)'); // Three-petaled rose  
-                this.addFunction(''); // Empty function to show placeholder example text
+                // No saved functions - use defaults
+                if (this.plotMode === 'cartesian') {
+                    functionsToLoad = [
+                        { expression: 'x^2', enabled: true },
+                        { expression: '2x+1', enabled: true },
+                        { expression: '', enabled: true }
+                    ];
+                } else {
+                    functionsToLoad = [
+                        { expression: '1 + cos(t)', enabled: true },
+                        { expression: '2cos(3t)', enabled: true },
+                        { expression: '', enabled: true }
+                    ];
+                }
             }
+            
+            // Add all functions without triggering save (to avoid overwriting on mode switch)
+            functionsToLoad.forEach(funcData => {
+                const id = this.nextFunctionId++;
+                const color = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+                
+                const func = {
+                    id: id,
+                    expression: funcData.expression,
+                    points: [],
+                    color: color,
+                    enabled: funcData.enabled,
+                    mode: this.plotMode
+                };
+                
+                this.getCurrentFunctions().push(func);
+                this.createFunctionUI(func);
+            });
         }
         
         // Update virtual keyboards for the new mode
@@ -4453,21 +4557,58 @@ class Graphiti {
     
     async startGraphing() {
         this.changeState(this.states.GRAPHING);
+        
+        // Try to load saved functions from localStorage
+        const savedData = this.loadFunctionsFromLocalStorage();
+        
         // Add initial function boxes when starting to show multiple plot capability
         if (this.getCurrentFunctions().length === 0) {
             // Set startup flag for immediate implicit function rendering
             this.isStartup = true;
             
-            if (this.plotMode === 'cartesian') {
-                this.addFunction('x^2'); // Quadratic
-                this.addFunction('sin(x)'); // Trigonometric
-                this.addFunction('(x^2+y^2)^2=25*(x^2-y^2)'); // Lemniscate (figure-8)
-                this.addFunction(''); // Empty function to show placeholder example text
+            // Check if we have saved functions for current mode
+            let functionsToLoad = [];
+            
+            if (this.plotMode === 'cartesian' && savedData.hasSavedCartesian) {
+                // Load saved cartesian functions
+                functionsToLoad = savedData.cartesian;
+            } else if (this.plotMode === 'polar' && savedData.hasSavedPolar) {
+                // Load saved polar functions
+                functionsToLoad = savedData.polar;
             } else {
-                this.addFunction('1 + cos(t)'); // t will be converted to θ in UI
-                this.addFunction('cos(3t)');
-                this.addFunction(''); // Empty function to show placeholder example text
+                // No saved functions - use defaults
+                if (this.plotMode === 'cartesian') {
+                    functionsToLoad = [
+                        { expression: 'x^2', enabled: true },
+                        { expression: '2x+1', enabled: true },
+                        { expression: '', enabled: true }
+                    ];
+                } else {
+                    functionsToLoad = [
+                        { expression: '1 + cos(t)', enabled: true },
+                        { expression: '2cos(3t)', enabled: true },
+                        { expression: '', enabled: true }
+                    ];
+                }
             }
+            
+            // Add all functions
+            functionsToLoad.forEach(funcData => {
+                const id = this.nextFunctionId++;
+                const color = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+                
+                const func = {
+                    id: id,
+                    expression: funcData.expression,
+                    points: [],
+                    color: color,
+                    enabled: funcData.enabled,
+                    mode: this.plotMode
+                };
+                
+                this.getCurrentFunctions().push(func);
+                this.createFunctionUI(func);
+            });
             
             // Use the same smart reset viewport logic as the reset button for consistency
             const smartViewport = this.getSmartResetViewport();
