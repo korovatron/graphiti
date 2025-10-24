@@ -4282,14 +4282,14 @@ class Graphiti {
                 // No saved functions - use defaults
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
-                        { expression: 'x^2', enabled: true },
-                        { expression: '2x+1', enabled: true },
+                        { expression: 'y=x^2', enabled: true },
+                        { expression: 'y=2x+1', enabled: true },
                         { expression: '', enabled: true }
                     ];
                 } else {
                     functionsToLoad = [
-                        { expression: '1 + cos(t)', enabled: true },
-                        { expression: '2cos(3t)', enabled: true },
+                        { expression: 'r=1 + cos(t)', enabled: true },
+                        { expression: 'r=2cos(3t)', enabled: true },
                         { expression: '', enabled: true }
                     ];
                 }
@@ -4579,14 +4579,14 @@ class Graphiti {
                 // No saved functions - use defaults
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
-                        { expression: 'x^2', enabled: true },
-                        { expression: '2x+1', enabled: true },
+                        { expression: 'y=x^2', enabled: true },
+                        { expression: 'y=2x+1', enabled: true },
                         { expression: '', enabled: true }
                     ];
                 } else {
                     functionsToLoad = [
-                        { expression: '1 + cos(t)', enabled: true },
-                        { expression: '2cos(3t)', enabled: true },
+                        { expression: 'r=1 + cos(t)', enabled: true },
+                        { expression: 'r=2cos(3t)', enabled: true },
                         { expression: '', enabled: true }
                     ];
                 }
