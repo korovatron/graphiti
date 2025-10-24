@@ -13,8 +13,6 @@ let isCancelled = false;
 self.onmessage = function(event) {
     const { type, data } = event.data;
     
-    console.log('Worker received message:', type);
-    
     switch (type) {
         case 'TEST_COMMUNICATION':
             // Simple test to verify worker communication works
@@ -27,7 +25,6 @@ self.onmessage = function(event) {
         case 'CANCEL_CALCULATION':
             // Set cancellation flag to abort current calculation
             isCancelled = true;
-            console.log('Worker: Calculation cancelled');
             self.postMessage({
                 type: 'CALCULATION_CANCELLED',
                 data: { timestamp: Date.now() }
@@ -38,22 +35,16 @@ self.onmessage = function(event) {
             try {
                 // Reset cancellation flag for new calculation
                 isCancelled = false;
-                console.log('Starting intersection calculations...');
                 const startTime = performance.now();
                 
                 // Extract data from main thread
                 const { functions, viewport, plotMode, maxResolution, calculationType } = data;
-                
-                // Apply adaptive resolution based on function count
-                const adaptiveResolution = functions.length > 10 ? 400 : functions.length > 6 ? 600 : 1000;
-                console.log(`Using adaptive resolution: ${adaptiveResolution} points for ${functions.length} functions (${calculationType || 'mixed'} calculation)`);
                 
                 // Calculate intersections using the same logic as main thread
                 const intersections = findIntersections(functions, plotMode);
                 
                 // Check if calculation was cancelled before sending results
                 if (isCancelled) {
-                    console.log('Worker: Calculation was cancelled, not sending results');
                     return;
                 }
                 
@@ -105,16 +96,10 @@ function findIntersections(functions, plotMode) {
     const intersections = [];
     const enabledFunctions = functions.filter(f => f.enabled && f.points.length > 0);
     
-    console.log(`Worker: Processing ${enabledFunctions.length} functions for intersections`);
-    enabledFunctions.forEach((f, i) => {
-        console.log(`  Function ${i}: ${f.expression} (${f.points.length} points, implicit: ${f.isImplicit || f.expression.includes('=')})`);
-    });
-    
     // Check all pairs of functions
     for (let i = 0; i < enabledFunctions.length; i++) {
         // Check for cancellation between function pairs
         if (isCancelled) {
-            console.log('Worker: Intersection calculation cancelled');
             return [];
         }
         
@@ -122,15 +107,11 @@ function findIntersections(functions, plotMode) {
             const func1 = enabledFunctions[i];
             const func2 = enabledFunctions[j];
             
-            console.log(`Worker: Checking intersections between "${func1.expression}" and "${func2.expression}"`);
-            
             const pairIntersections = findIntersectionsBetweenFunctions(func1, func2, plotMode);
-            console.log(`  Found ${pairIntersections.length} intersections`);
             intersections.push(...pairIntersections);
         }
     }
     
-    console.log(`Worker: Total intersections found: ${intersections.length}`);
     return intersections;
 }
 
@@ -150,16 +131,13 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
     // Handle different combinations of function types
     if (isImplicit1 && isImplicit2) {
         // Both implicit - use line segment intersection
-        console.log('  Both functions are implicit - using segment intersection');
         return findImplicitIntersections(func1, func2);
     } else if (isImplicit1 || isImplicit2) {
         // Mixed explicit/implicit - use hybrid method
-        console.log('  Mixed explicit/implicit - using hybrid intersection');
         return findMixedIntersections(func1, func2, isImplicit1);
     }
     
     // Both explicit - use original interpolation method
-    console.log('  Both functions are explicit - using interpolation method');
     
     // Original logic for explicit functions
     if (plotMode === 'cartesian') {
@@ -333,13 +311,8 @@ function findMixedIntersections(func1, func2, func1IsImplicit) {
     const explicitFunc = func1IsImplicit ? func2 : func1;
     const implicitFunc = func1IsImplicit ? func1 : func2;
     
-    console.log(`  Explicit function has ${explicitFunc.points.length} points`);
-    console.log(`  Implicit function has ${implicitFunc.points.length} points`);
-    
     // Get line segments from implicit function
     const implicitSegments = getLineSegments(implicitFunc.points);
-    
-    console.log(`  Found ${implicitSegments.length} implicit segments`);
     
     // For each implicit segment, check intersection with explicit function curve
     for (const segment of implicitSegments) {
@@ -348,7 +321,6 @@ function findMixedIntersections(func1, func2, func1IsImplicit) {
         intersections.push(...segmentIntersections);
     }
     
-    console.log(`  Found ${intersections.length} mixed intersections`);
     return intersections;
 }
 
@@ -358,7 +330,6 @@ function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
     
     // Validate segment coordinates
     if (isNaN(segStart.x) || isNaN(segStart.y) || isNaN(segEnd.x) || isNaN(segEnd.y)) {
-        console.log('  Skipping invalid segment with NaN coordinates');
         return intersections;
     }
     
@@ -378,7 +349,6 @@ function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
         if (intersection) {
             // Validate intersection coordinates
             if (isNaN(intersection.x) || isNaN(intersection.y)) {
-                console.log('  Skipping intersection with NaN coordinates:', intersection);
                 continue;
             }
             

@@ -200,13 +200,10 @@ class Graphiti {
     configureMathLive() {
         // Wait for both DOMContentLoaded and MathLive to be available
         const setupKeyboard = () => {
-            console.log('Setting up custom virtual keyboard...');
-            
             // Wait a bit more to ensure MathLive is fully loaded
             setTimeout(() => {
                 if (window.mathVirtualKeyboard) {
                     try {
-                        console.log('MathLive detected, configuring custom layouts...');
                         
                         // Create a custom numeric layout (replacing the default)
                         const customNumericLayout = {
@@ -500,16 +497,10 @@ class Graphiti {
                             }
                         }, 1000);
                         
-                        console.log('Custom virtual keyboard layouts configured successfully!');
-                        console.log('Current layouts:', window.mathVirtualKeyboard.layouts);
-                        console.log('Custom numeric layout:', customNumericLayout);
-                        console.log('Functions layout:', functionsLayout);
-                        
                         // Configure virtual keyboard behavior for mobile
                         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                         if (isMobile) {
                             window.mathVirtualKeyboard.container = document.body;
-                            console.log('Mobile keyboard container configured');
                             
                             // Close virtual keyboard on orientation change to prevent corruption
                             let lastOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
@@ -529,7 +520,6 @@ class Graphiti {
                                             if (focused) {
                                                 focused.blur();
                                             }
-                                            console.log('Keyboard closed due to orientation change:', currentOrientation);
                                         }
                                         
                                         // Clean up any lingering MathLive backdrop elements
@@ -565,7 +555,6 @@ class Graphiti {
                             
                             // For PWA mode, use additional detection methods
                             if (isPWA) {
-                                console.log('PWA mode detected, using enhanced orientation detection');
                                 
                                 // More frequent checking in PWA mode
                                 let resizeTimeout;
@@ -604,13 +593,11 @@ class Graphiti {
                         }, 100);
                         
                         // Add HYP toggle functionality
-
                         
                     } catch (error) {
                         console.error('Error configuring custom virtual keyboard layouts:', error);
                     }
                 } else {
-                    console.log('MathLive not yet available, retrying...');
                     // Retry after another delay
                     setTimeout(setupKeyboard, 500);
                 }
@@ -826,7 +813,7 @@ class Graphiti {
                 // Virtual keyboard layouts are configured globally in configureMathLive()
                 // Menu toggle is hidden via CSS to save space on all devices
             } catch (error) {
-                console.log('Virtual keyboard setup:', error);
+                // Silently handle keyboard setup errors
             }
         }, 100);
         
@@ -1133,14 +1120,11 @@ class Graphiti {
             if (funcDiv) {
                 // Remove error class instead of trying to manipulate styles directly
                 funcDiv.classList.remove('function-error');
-                console.log('Removed error class from function', func.id);
             }
             
         } catch (error) {
             // Expression is invalid, clear points and show visual feedback
             func.points = [];
-            
-            console.log('Error in plotFunctionWithValidation:', error.message);
             
             // Clear badges for this invalid function
             this.removeBadgesForFunction(func.id);
@@ -1161,7 +1145,6 @@ class Graphiti {
             if (funcDiv) {
                 // Add error class instead of trying to manipulate styles directly
                 funcDiv.classList.add('function-error');
-                console.log('Added error class to function', func.id);
             }
         }
     }
@@ -1247,8 +1230,6 @@ class Graphiti {
             await this.plotImplicitFunction(func, false, this.isStartup);
             return;
         }
-        
-        console.log('Using explicit function plotting');
         
         // Cartesian plotting (existing code)
         try {
@@ -1822,7 +1803,6 @@ class Graphiti {
             resolution = 420;
         }
         
-        console.log(`Marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}`);
         const stepX = viewportWidth / resolution;
         const stepY = viewportHeight / resolution;
         
@@ -1869,7 +1849,6 @@ class Graphiti {
             resolution = 420;
         }
         
-        console.log(`Async marching squares: viewport ${viewportSize.toFixed(1)}, resolution ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
         const stepX = viewportWidth / resolution;
         const stepY = viewportHeight / resolution;
         
@@ -1886,7 +1865,6 @@ class Graphiti {
         const stepX = viewportWidth / resolution;
         const stepY = viewportHeight / resolution;
         
-        console.log(`High-res marching squares for intersections: ${resolution}x${resolution}`);
         return this.marchingSquaresAtResolution(equation, resolution, stepX, stepY);
     }
 
@@ -1900,7 +1878,6 @@ class Graphiti {
         const stepX = viewportWidth / resolution;
         const stepY = viewportHeight / resolution;
         
-        console.log(`Async high-res marching squares for intersections: ${resolution}x${resolution}${immediate ? ' (immediate)' : ''}`);
         return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId);
     }
 
@@ -2285,11 +2262,6 @@ class Graphiti {
                 lastValue = currentValue;
                 lastY = y;
             }
-        }
-        
-        // Debug: Log for x=0 to see what's happening
-        if (Math.abs(x) < 0.01) {
-            console.log(`For x=${x}, found ${zerosFound} y values:`, yValues);
         }
         
         return yValues;
@@ -4398,7 +4370,6 @@ class Graphiti {
                 
                 // If function has no points after validation, clear its badges
                 if (!func.points || func.points.length === 0) {
-                    console.log(`Cleaning up badges for invalid function ${func.id} in ${this.plotMode} mode`);
                     this.removeBadgesForFunction(func.id);
                     this.removeIntersectionBadgesForFunction(func.id);
                 }
@@ -4434,14 +4405,12 @@ class Graphiti {
             }
             
             const func = implicitFunctions[index];
-            console.log(`Replotting implicit function: ${func.expression}`);
             
             // Plot this function asynchronously
             await this.plotFunctionWithValidation(func);
             
             // If function has no points after validation, clear its badges
             if (!func.points || func.points.length === 0) {
-                console.log(`Cleaning up badges for invalid implicit function ${func.id}`);
                 this.removeBadgesForFunction(func.id);
                 this.removeIntersectionBadgesForFunction(func.id);
             }
@@ -4993,22 +4962,13 @@ class Graphiti {
     removeBadgesForFunction(functionId) {
         const beforeCount = this.input.persistentBadges.length;
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
-        const afterCount = this.input.persistentBadges.length;
-        if (beforeCount !== afterCount) {
-            console.log(`[${this.plotMode}] Removed ${beforeCount - afterCount} badges for function ${functionId}`);
-        }
     }
 
     removeIntersectionBadgesForFunction(functionId) {
         // Remove intersection badges that involve the specified function
-        const beforeCount = this.input.persistentBadges.length;
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             !(badge.badgeType === 'intersection' && (badge.func1Id === functionId || badge.func2Id === functionId))
         );
-        const afterCount = this.input.persistentBadges.length;
-        if (beforeCount !== afterCount) {
-            console.log(`[${this.plotMode}] Removed ${beforeCount - afterCount} intersection badges for function ${functionId}`);
-        }
     }
 
     clearIntersections() {
@@ -5056,7 +5016,6 @@ class Graphiti {
 
     testWorkerCommunication() {
         if (this.intersectionWorker) {
-            console.log('Testing worker communication...');
             this.intersectionWorker.postMessage({
                 type: 'TEST_COMMUNICATION',
                 data: { message: 'Hello from main thread' }
@@ -5067,25 +5026,18 @@ class Graphiti {
     handleWorkerMessage(message) {
         const { type, data } = message;
         
-        console.log('Main thread received message:', type);
-        
         switch (type) {
             case 'TEST_RESPONSE':
-                console.log('Worker communication test successful:', data);
+                // Worker communication successful
                 break;
                 
             case 'INTERSECTIONS_COMPLETE':
-                console.log(`=== INTERSECTIONS_COMPLETE received ===`);
-                console.log(`Type: ${data.calculationType}, Count: ${data.intersections.length}, Time: ${data.calculationTime.toFixed(2)}ms`);
-                
                 // Handle different calculation types
                 if (data.calculationType === 'explicit') {
                     this.explicitIntersections = data.intersections;
-                    console.log(`Updated explicit intersections: ${this.explicitIntersections.length}`);
                 } else if (data.calculationType === 'implicit') {
                     this.implicitIntersections = data.intersections;
                     this.implicitIntersectionsPending = false; // Clear pending flag
-                    console.log(`Updated implicit intersections: ${this.implicitIntersections.length}`);
                 } else {
                     // Legacy fallback
                     this.intersections = data.intersections;
@@ -5102,7 +5054,6 @@ class Graphiti {
                 if (this.plotMode === 'polar') {
                     this.getCurrentFunctions().forEach(func => {
                         if (!func.points || func.points.length === 0) {
-                            console.log(`[${this.plotMode}] Post-intersection cleanup for invalid function ${func.id}`);
                             this.removeIntersectionBadgesForFunction(func.id);
                         }
                     });
@@ -5126,7 +5077,6 @@ class Graphiti {
                 break;
                 
             case 'CALCULATION_CANCELLED':
-                console.log('Worker calculation was cancelled');
                 this.isWorkerCalculating = false;
                 break;
                 
@@ -5136,10 +5086,8 @@ class Graphiti {
     }
 
     calculateIntersectionsWithWorker(immediate = false) {
-        console.log(`=== calculateIntersectionsWithWorker START (immediate: ${immediate}) ===`);
         
         if (!this.intersectionWorker) {
-            console.log('No worker available, using main thread fallback');
             // Fallback to main thread if worker not available
             return this.calculateExplicitIntersections();
         }
@@ -5155,16 +5103,12 @@ class Graphiti {
     }
 
     calculateExplicitIntersections() {
-        console.log('=== calculateExplicitIntersections START ===');
-        
         // Cancel any previous calculation
         if (this.isWorkerCalculating) {
-            console.log('Canceling previous intersection calculation...');
             this.intersectionWorker.postMessage({ type: 'CANCEL_CALCULATION' });
         }
 
         this.isWorkerCalculating = true;
-        console.log('Setting isWorkerCalculating = true');
 
         // Only process explicit functions for fast intersection detection
         const explicitFunctions = this.getCurrentFunctions().filter(f => 
@@ -5173,14 +5117,10 @@ class Graphiti {
             this.detectFunctionType(f.expression) === 'explicit' // Use proper function type detection
         );
 
-        console.log(`Found ${explicitFunctions.length} explicit functions to check for intersections`);
-
         if (explicitFunctions.length < 2) {
-            console.log('Not enough explicit functions for intersections, clearing and updating');
             this.explicitIntersections = [];
             this.updateCombinedIntersections();
             this.isWorkerCalculating = false;
-            console.log('Setting isWorkerCalculating = false');
             return [];
         }
 
@@ -5230,8 +5170,6 @@ class Graphiti {
             return;
         }
 
-        console.log('Scheduling implicit intersection calculation...');
-        
         // Mark that implicit intersections are pending
         this.implicitIntersectionsPending = true;
         
@@ -5243,8 +5181,6 @@ class Graphiti {
     }
 
     async calculateImplicitIntersections() {
-        console.log('Starting high-resolution implicit intersection calculation...');
-        
         // During viewport changes, use cached points; otherwise use current points
         const allFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled) return false;
@@ -5261,7 +5197,6 @@ class Graphiti {
         }
 
         // Replot implicit functions at high resolution for intersection detection
-        console.log(`Re-plotting ${implicitFunctions.length} implicit functions at high resolution...`);
         const highResFunctions = [];
         
         for (const func of allFunctions) {
@@ -5273,7 +5208,6 @@ class Graphiti {
                 };
                 await this.plotImplicitFunction(highResFunc, true, false); // true = high resolution, false = not startup
                 highResFunctions.push(highResFunc);
-                console.log(`High-res replot of "${func.expression}": ${highResFunc.points.length} points`);
             } else {
                 // Use existing points for explicit functions (cached if viewport changing)
                 const funcPoints = this.isViewportChanging ? (func.cachedPoints || func.points || []) : (func.points || []);
@@ -5487,8 +5421,6 @@ class Graphiti {
                         isApproximate: int.isApproximate,
                         isTangent: int.isTangent
                     })));
-                    
-                    console.log(`Cached ${pairIntersections.length} intersections for functions ${id1}-${id2}`);
                 }
             }
         }
@@ -5575,12 +5507,6 @@ class Graphiti {
         
         // Use numerical method to find roots of f'(x) = 0
         const roots = this.findRootsInRange(derivativeStr, xMin, xMax);
-        
-        // Debug logging for sin(x-45) case
-        if (func.expression.includes('sin') && func.expression.includes('45')) {
-            console.log(`  Search range: xMin=${xMin}, xMax=${xMax}`);
-            console.log(`  Root finding results: found ${roots.length} roots:`, roots);
-        }
         
         for (const x of roots) {
             try {
@@ -5818,11 +5744,8 @@ class Graphiti {
             let closestWorldX = 0;
             let closestWorldY = 0;
             
-            console.log('Polar plotting - Original expression:', func.expression);
             const processedExpression = this.convertFromLatex(func.expression);
-            console.log('Polar plotting - Processed expression:', processedExpression);
             const compiled = math.compile(processedExpression);
-            console.log('Polar plotting - Compiled successfully');
             
             // Use dynamic step sizing for performance with higher resolution
             const baseThetaStep = this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax);
@@ -5928,9 +5851,7 @@ class Graphiti {
             // Sample the polar function and find closest point to worldX
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
-                    console.log('Polar intersection - Original expression:', func.expression);
                     let processedExpression = this.convertFromLatex(func.expression);
-                    console.log('Polar intersection - Processed expression:', processedExpression);
                     const compiled = math.compile(processedExpression);
                     const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
                     
@@ -7225,7 +7146,6 @@ class Graphiti {
         // Validate intersection coordinates
         if (isNaN(intersection.x) || isNaN(intersection.y) || 
             !isFinite(intersection.x) || !isFinite(intersection.y)) {
-            console.log('Skipping intersection with invalid coordinates:', intersection);
             return;
         }
         
@@ -7235,7 +7155,6 @@ class Graphiti {
         // Validate refined coordinates
         if (isNaN(refinedIntersection.x) || isNaN(refinedIntersection.y) || 
             !isFinite(refinedIntersection.x) || !isFinite(refinedIntersection.y)) {
-            console.log('Skipping refined intersection with invalid coordinates:', refinedIntersection);
             return;
         }
         
@@ -7263,7 +7182,6 @@ class Graphiti {
         
         // If either function is implicit, don't refine - the line segment intersection is already accurate
         if (func1IsImplicit || func2IsImplicit) {
-            console.log('Skipping refinement for implicit function intersection');
             return { x: intersection.x, y: intersection.y };
         }
         
@@ -7303,8 +7221,6 @@ class Graphiti {
         // Use a unique color for intersection badges that's not used by any function
         // Function colors: #4A90E2, #E74C3C, #27AE60, #F39C12, #9B59B6, #1ABC9C, #E67E22, #34495E, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4
         const intersectionColor = '#D63384'; // Pink/magenta color not in function palette
-        
-        console.log(`[${this.plotMode}] Adding intersection badge between functions ${func1.id} and ${func2.id} at (${worldX.toFixed(3)}, ${worldY.toFixed(3)})`);
         
         // Create intersection badge with both function IDs stored
         const badge = {
@@ -8583,8 +8499,6 @@ class Graphiti {
         expression = expression.replace(/\\cdot/g, '*');
         expression = expression.replace(/\\times/g, '*');
         
-        console.log('After theta conversion:', expression);
-        
         // Add implicit multiplication for common cases
         // 2x -> 2*x, 3sin(x) -> 3*sin(x)
         expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
@@ -8604,8 +8518,6 @@ class Graphiti {
         
         // Remove spaces
         expression = expression.replace(/\s+/g, '');
-        
-        console.log('Final converted expression:', expression);
         
         return expression;
     }
@@ -8641,16 +8553,12 @@ class Graphiti {
             const latex = element.getValue();
             if (!latex) return NaN;
             
-            console.log('Range input - LaTeX:', latex);
-            
             // Convert LaTeX expressions to numbers
             const expression = this.convertFromLatex(latex);
-            console.log('Range input - Converted expression:', expression);
             
             try {
                 // Use math.js to evaluate the expression
                 const result = window.math.evaluate(expression);
-                console.log('Range input - Evaluated result:', result);
                 
                 // Make sure result is a finite number
                 if (typeof result === 'number' && isFinite(result)) {
@@ -8674,7 +8582,6 @@ class Graphiti {
                     return numValue;
                 }
                 
-                console.warn('Range input - Returning NaN for invalid expression');
                 return NaN;
             }
         }
