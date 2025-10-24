@@ -186,12 +186,8 @@ class Graphiti {
         this.initializeIntersectionWorker();
         
         // Debug overlay for calculation status (toggle with TAB key)
-        this.debugOverlay = {
-            enabled: false,
-            plotting: new Set(), // Functions currently plotting
-            calculatingExplicit: false,
-            calculatingImplicit: false
-        };
+        // Track active implicit function calculations (for calculation indicator)
+        this.activeImplicitCalculations = new Set();
         
         // Animation
         this.lastFrameTime = 0;
@@ -1482,7 +1478,7 @@ class Graphiti {
             // Register this calculation and update debug overlay
             const calculationId = ++this.implicitCalculationId;
             this.currentImplicitCalculations.set(func.id, calculationId);
-            this.debugOverlay.plotting.add(func.id);
+            this.activeImplicitCalculations.add(func.id);
             
             let points = [];
             
@@ -1492,13 +1488,13 @@ class Graphiti {
             if (!equation) {
                 console.warn('Could not parse implicit equation:', func.expression);
                 func.points = [];
-                this.debugOverlay.plotting.delete(func.id);
+                this.activeImplicitCalculations.delete(func.id);
                 return;
             }
             
             // Check if calculation was cancelled before starting heavy computation
             if (this.isCalculationCancelled(func.id, calculationId)) {
-                this.debugOverlay.plotting.delete(func.id);
+                this.activeImplicitCalculations.delete(func.id);
                 return;
             }
             
@@ -1510,17 +1506,17 @@ class Graphiti {
             
             // Final cancellation check before setting results
             if (this.isCalculationCancelled(func.id, calculationId)) {
-                this.debugOverlay.plotting.delete(func.id);
+                this.activeImplicitCalculations.delete(func.id);
                 return;
             }
             
             func.points = points;
-            this.debugOverlay.plotting.delete(func.id);
+            this.activeImplicitCalculations.delete(func.id);
             
         } catch (error) {
             console.error('Error plotting implicit function:', error);
             func.points = [];
-            this.debugOverlay.plotting.delete(func.id);
+            this.activeImplicitCalculations.delete(func.id);
         }
     }
 
@@ -3001,13 +2997,6 @@ class Graphiti {
                     e.preventDefault();
                     this.startGraphing();
                 }
-            }
-            
-            // Toggle debug overlay with TAB key (only in graphing mode)
-            if (e.code === 'Tab' && this.currentState === this.states.GRAPHING) {
-                e.preventDefault();
-                this.debugOverlay.enabled = !this.debugOverlay.enabled;
-                this.draw(); // Redraw to show/hide overlay
             }
         });
 
@@ -5092,12 +5081,10 @@ class Graphiti {
                 // Handle different calculation types
                 if (data.calculationType === 'explicit') {
                     this.explicitIntersections = data.intersections;
-                    this.debugOverlay.calculatingExplicit = false;
                     console.log(`Updated explicit intersections: ${this.explicitIntersections.length}`);
                 } else if (data.calculationType === 'implicit') {
                     this.implicitIntersections = data.intersections;
                     this.implicitIntersectionsPending = false; // Clear pending flag
-                    this.debugOverlay.calculatingImplicit = false;
                     console.log(`Updated implicit intersections: ${this.implicitIntersections.length}`);
                 } else {
                     // Legacy fallback
@@ -5177,7 +5164,6 @@ class Graphiti {
         }
 
         this.isWorkerCalculating = true;
-        this.debugOverlay.calculatingExplicit = true;
         console.log('Setting isWorkerCalculating = true');
 
         // Only process explicit functions for fast intersection detection
@@ -5194,7 +5180,6 @@ class Graphiti {
             this.explicitIntersections = [];
             this.updateCombinedIntersections();
             this.isWorkerCalculating = false;
-            this.debugOverlay.calculatingExplicit = false;
             console.log('Setting isWorkerCalculating = false');
             return [];
         }
@@ -5259,7 +5244,6 @@ class Graphiti {
 
     async calculateImplicitIntersections() {
         console.log('Starting high-resolution implicit intersection calculation...');
-        this.debugOverlay.calculatingImplicit = true;
         
         // During viewport changes, use cached points; otherwise use current points
         const allFunctions = this.getCurrentFunctions().filter(f => {
@@ -6153,9 +6137,10 @@ class Graphiti {
         this.updateBadgeScreenPositions();
         this.drawPersistentBadges();
         
-        // Draw debug overlay if enabled
-        if (this.debugOverlay.enabled) {
-            this.drawDebugOverlay();
+        // Draw calculation indicator if implicit functions are actively being recalculated
+        // This happens AFTER viewport change ends, during the brief period when curves disappear
+        if (this.hasActiveImplicitCalculations()) {
+            this.drawCalculationIndicator();
         }
         
         // UI overlays removed - cleaner interface
@@ -7518,88 +7503,6 @@ class Graphiti {
         this.drawPersistentBadges();
     }
     
-    drawDebugOverlay() {
-        const ctx = this.ctx;
-        const lineHeight = 20;
-        const boxPadding = 10;
-        
-        // Prepare status lines
-        const lines = [];
-        lines.push('DEBUG OVERLAY (TAB to toggle)');
-        lines.push('');
-        
-        // Plotting status
-        if (this.debugOverlay.plotting.size > 0) {
-            lines.push(`Plotting: ${this.debugOverlay.plotting.size} function(s)`);
-            this.debugOverlay.plotting.forEach(funcId => {
-                const func = this.getCurrentFunctions().find(f => f.id === funcId);
-                if (func) {
-                    const expr = func.expression.length > 30 ? func.expression.substring(0, 30) + '...' : func.expression;
-                    lines.push(`  • ${expr}`);
-                }
-            });
-        } else {
-            lines.push('Plotting: idle');
-        }
-        
-        lines.push('');
-        
-        // Explicit intersections
-        if (this.debugOverlay.calculatingExplicit) {
-            lines.push('Explicit Intersections: calculating...');
-        } else {
-            lines.push(`Explicit Intersections: ${this.explicitIntersections.length} found`);
-        }
-        
-        // Implicit intersections
-        if (this.debugOverlay.calculatingImplicit) {
-            lines.push('Implicit Intersections: calculating...');
-        } else if (this.implicitIntersectionsPending) {
-            lines.push('Implicit Intersections: pending...');
-        } else {
-            lines.push(`Implicit Intersections: ${this.implicitIntersections.length} found`);
-        }
-        
-        lines.push('');
-        lines.push(`Total Intersections: ${this.intersections.length}`);
-        lines.push(`Frozen Badges: ${this.frozenIntersectionBadges.length}`);
-        
-        // Calculate box dimensions
-        ctx.font = '14px monospace';
-        let maxWidth = 0;
-        lines.forEach(line => {
-            const width = ctx.measureText(line).width;
-            if (width > maxWidth) maxWidth = width;
-        });
-        
-        const boxWidth = maxWidth + boxPadding * 2;
-        const boxHeight = lines.length * lineHeight + boxPadding * 2;
-        
-        // Position in bottom right corner
-        const x = this.viewport.width - boxWidth - 15;
-        const y = this.viewport.height - boxHeight - 15;
-        
-        // Draw semi-transparent background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(x, y, boxWidth, boxHeight);
-        
-        // Draw border
-        ctx.strokeStyle = '#4A90E2';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, boxWidth, boxHeight);
-        
-        // Draw text
-        ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        
-        lines.forEach((line, index) => {
-            const textY = y + boxPadding + index * lineHeight;
-            ctx.fillText(line, x + boxPadding, textY);
-        });
-        
-        ctx.restore();
-    }
     
     formatCoordinates(worldX, worldY) {
         if (this.plotMode === 'polar') {
@@ -7837,6 +7740,46 @@ class Graphiti {
             func.expression && 
             inverseTrigRegex.test(func.expression)
         );
+    }
+    
+    hasImplicitFunctions() {
+        // Check if any enabled functions are implicit
+        return this.getCurrentFunctions().some(func => 
+            func.enabled && 
+            func.expression && 
+            this.detectFunctionType(func.expression) === 'implicit'
+        );
+    }
+    
+    hasActiveImplicitCalculations() {
+        // Check if any implicit functions are currently being calculated
+        // This means they have no points yet (disappeared) and calculation is in progress
+        return this.getCurrentFunctions().some(func => {
+            if (!func.enabled || !func.expression) return false;
+            if (this.detectFunctionType(func.expression) !== 'implicit') return false;
+            // Check if this function is actively being calculated and has no points
+            return this.activeImplicitCalculations.has(func.id) && (!func.points || func.points.length === 0);
+        });
+    }
+    
+    drawCalculationIndicator() {
+        const padding = 15;
+        const size = 40;
+        const x = this.viewport.width - size - padding;
+        const y = this.viewport.height - size - padding;
+        
+        // Semi-transparent background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(x - 5, y - 5, size + 10, size + 10, 8);
+        this.ctx.fill();
+        
+        // Hourglass icon
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '24px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('⏳', x + size/2, y + size/2);
     }
     
     getSmartResetViewport() {
