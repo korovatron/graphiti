@@ -5754,11 +5754,21 @@ class Graphiti {
         };
         
         // Special case: check if x=0 is in range and if derivative is approximately 0 there
+        // But also verify the derivative actually changes sign (to avoid constant zero derivatives)
         if (xMin <= 0 && xMax >= 0) {
             try {
                 const valueAtZero = evaluateDerivative(expression, 0);
                 if (Math.abs(valueAtZero) < 1e-10) {
-                    roots.push(0);
+                    // Check nearby points to ensure derivative isn't constantly zero
+                    const delta = stepSize * 0.1; // Small offset
+                    const valueLeft = evaluateDerivative(expression, -delta);
+                    const valueRight = evaluateDerivative(expression, delta);
+                    
+                    // Only add x=0 as a root if derivative changes around it
+                    // (not constantly zero like in horizontal lines)
+                    if (Math.abs(valueLeft) > 1e-10 || Math.abs(valueRight) > 1e-10) {
+                        roots.push(0);
+                    }
                 }
             } catch {
                 // Ignore if evaluation fails
