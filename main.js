@@ -4666,9 +4666,9 @@ class Graphiti {
     
     replotAllFunctions(onlyExplicit = false) {
         this.getCurrentFunctions().forEach(func => {
-            if (func.expression && func.enabled) {
+            if (func.enabled) {
                 // Check if this is an implicit function
-                const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+                const isImplicit = func.expression && this.detectFunctionType(func.expression) === 'implicit';
                 
                 // Skip implicit functions if onlyExplicit is true
                 if (onlyExplicit && isImplicit) {
