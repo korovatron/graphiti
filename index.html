@@ -1048,13 +1048,23 @@
 
                     <!-- Turning Points Toggle Button -->
                     <button id="turning-points-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; display: flex; align-items: center; justify-content: center;" title="Toggle turning point detection">
-                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <!-- Cartesian mode icon: sine wave with turning points -->
+                        <svg id="turning-points-icon-cartesian" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
                             <!-- Taller sine wave using more vertical space -->
                             <path d="M1 16 Q8 4, 16 16 Q24 28, 31 16" stroke="currentColor" fill="none" stroke-width="1.5"></path>
                             <!-- Maximum point marker (adjusted to actual curve peak) -->
                             <circle cx="8" cy="10" r="2.5" fill="currentColor"></circle>
                             <!-- Minimum point marker (adjusted to actual curve trough) -->
                             <circle cx="24" cy="22" r="2.5" fill="currentColor"></circle>
+                        </svg>
+                        <!-- Polar mode icon: r=1+sin(2θ) with turning points -->
+                        <svg id="turning-points-icon-polar" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" style="display: none;">
+                            <!-- Modified lemniscate with fuller petals in 1st and 3rd quadrants -->
+                            <polyline points="23.0,16.0 24.7,14.8 26.1,13.3 27.0,11.4 27.3,9.5 26.9,7.6 25.9,6.1 24.4,5.1 22.5,4.7 20.6,5.0 18.7,5.9 17.2,7.3 16.0,9.0 15.3,10.9 15.1,12.6 15.2,14.1 15.5,15.2 15.9,15.8 16.0,16.0 15.8,15.9 15.2,15.5 14.1,15.2 12.6,15.1 10.9,15.3 9.0,16.0 7.3,17.2 5.9,18.7 5.0,20.6 4.7,22.5 5.1,24.4 6.1,25.9 7.6,26.9 9.5,27.3 11.4,27.0 13.3,26.1 14.8,24.7 16.0,23.0 16.7,21.1 16.9,19.4 16.8,17.9 16.5,16.8 16.1,16.2 16.0,16.0 16.2,16.1 16.8,16.5 17.9,16.8 19.4,16.9 21.1,16.7 23.0,16.0" 
+                                      stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"></polyline>
+                            <!-- Turning point markers at θ=45° and θ=225° where dr/dθ = 0 -->
+                            <circle cx="25.9" cy="6.1" r="2.5" fill="currentColor"></circle>
+                            <circle cx="6.1" cy="25.9" r="2.5" fill="currentColor"></circle>
                         </svg>
                     </button>
                 </div>

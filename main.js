@@ -1418,6 +1418,14 @@ class Graphiti {
             }
             processedExpression = processedExpression.toLowerCase();
             
+            // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+            processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+            
+            // Note: In polar mode, theta is already in the correct units (degrees or radians)
+            // We don't need convertTrigToDegreeMode because math.js trig functions work with radians
+            // and we'll convert theta to radians when needed for Math.cos/sin
+            
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
             
@@ -1430,10 +1438,13 @@ class Graphiti {
             
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
+                    // Convert theta to radians if in degree mode, since math.js trig functions expect radians
+                    let thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    
                     // Support both 'theta' and 't' as variable names
                     const scope = { 
-                        theta: theta, 
-                        t: theta,
+                        theta: thetaForEval, 
+                        t: thetaForEval,
                         pi: Math.PI,
                         e: Math.E
                     };
@@ -1445,7 +1456,9 @@ class Graphiti {
                         if (this.polarSettings.plotNegativeR) {
                             // Plot negative r at opposite angle
                             r = Math.abs(r);
-                            theta += Math.PI;
+                            // Update both theta and thetaForEval
+                            theta += (this.angleMode === 'degrees' ? 180 : Math.PI);
+                            thetaForEval += Math.PI; // Always add PI in radians
                         } else {
                             // Skip negative r values
                             continue;
@@ -1453,8 +1466,9 @@ class Graphiti {
                     }
                     
                     // Convert polar to cartesian
-                    const x = r * Math.cos(theta);
-                    const y = r * Math.sin(theta);
+                    // Use thetaForEval which is already in radians
+                    const x = r * Math.cos(thetaForEval);
+                    const y = r * Math.sin(thetaForEval);
                     
                     // Check if point is within reasonable bounds
                     if (isFinite(x) && isFinite(y)) {
@@ -3743,7 +3757,10 @@ class Graphiti {
             const minScale = 0.001;
             const maxScale = 10000;
             
-            if (this.input.pinch.direction === 'horizontal') {
+            // In polar mode, force uniform zoom to maintain equal x/y scaling (square pixels)
+            const effectiveDirection = this.plotMode === 'polar' ? 'uniform' : this.input.pinch.direction;
+            
+            if (effectiveDirection === 'horizontal') {
                 // Horizontal pinch - zoom X axis only, keep Y axis unchanged
                 const xZoomFactor = currentDx / this.input.pinch.initialDx;
                 
@@ -3773,7 +3790,7 @@ class Graphiti {
                     this.handleViewportChange();
                 }
                 
-            } else if (this.input.pinch.direction === 'vertical') {
+            } else if (effectiveDirection === 'vertical') {
                 // Vertical pinch - zoom Y axis only, keep X axis unchanged
                 const yZoomFactor = currentDy / this.input.pinch.initialDy;
                 
@@ -4218,6 +4235,19 @@ class Graphiti {
             }
 
             // Keep button background consistent - don't change color
+        }
+        
+        // Update turning points toggle icon based on plot mode
+        const cartesianTurningIcon = document.getElementById('turning-points-icon-cartesian');
+        const polarTurningIcon = document.getElementById('turning-points-icon-polar');
+        if (cartesianTurningIcon && polarTurningIcon) {
+            if (this.plotMode === 'cartesian') {
+                cartesianTurningIcon.style.display = 'block';
+                polarTurningIcon.style.display = 'none';
+            } else {
+                cartesianTurningIcon.style.display = 'none';
+                polarTurningIcon.style.display = 'block';
+            }
         }
         
         // Update Add Function button text based on coordinate system
@@ -4881,8 +4911,14 @@ class Graphiti {
             }
         }
         
+        // Update polar theta range if in polar mode
+        if (this.plotMode === 'polar') {
+            this.resetPolarRange();
+        }
+        
         // Only adjust viewport if there are trig functions that would be affected
-        if (this.containsTrigFunctions()) {
+        // BUT: Don't adjust viewport in polar mode - must maintain equal aspect ratio
+        if (this.plotMode !== 'polar' && this.containsTrigFunctions()) {
             // Use the same smart viewport logic as the reset button for consistency
             const smartViewport = this.getSmartResetViewport();
             this.viewport.minX = smartViewport.minX;
@@ -5693,7 +5729,11 @@ class Graphiti {
                 }
                 
                 // Make function names case-insensitive for derivative calculation
-                const processedExpression = cleanExpression.toLowerCase();
+                let processedExpression = cleanExpression.toLowerCase();
+                
+                // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
                 
                 // Get symbolic derivative dr/dtheta using math.js
                 // Try both theta and t as variable names
@@ -5809,12 +5849,21 @@ class Graphiti {
                 if (cleanExpression.toLowerCase().startsWith('r=')) {
                     cleanExpression = cleanExpression.substring(2).trim();
                 }
-                const processedExpression = cleanExpression.toLowerCase();
+                let processedExpression = cleanExpression.toLowerCase();
+                
+                // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+                
+                // Note: No need for convertTrigToDegreeMode in polar - we convert theta itself
                 const compiledExpression = this.getCompiledExpression(processedExpression);
                 
+                // Convert theta to radians if in degree mode
+                const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                
                 const scope = { 
-                    theta: theta, 
-                    t: theta,
+                    theta: thetaForEval, 
+                    t: thetaForEval,
                     pi: Math.PI,
                     e: Math.E
                 };
@@ -5823,10 +5872,13 @@ class Graphiti {
                 
                 // Handle negative r values
                 let adjustedTheta = theta;
+                let adjustedThetaForEval = thetaForEval;
                 if (r < 0) {
                     if (this.polarSettings.plotNegativeR) {
                         r = Math.abs(r);
-                        adjustedTheta = theta + Math.PI;
+                        // Add PI in correct units
+                        adjustedTheta = theta + (this.angleMode === 'degrees' ? 180 : Math.PI);
+                        adjustedThetaForEval = thetaForEval + Math.PI;
                     } else {
                         // Skip negative r values
                         continue;
@@ -5834,8 +5886,9 @@ class Graphiti {
                 }
                 
                 // Convert polar to cartesian for display
-                const x = r * Math.cos(adjustedTheta);
-                const y = r * Math.sin(adjustedTheta);
+                // Use adjustedThetaForEval which is in radians
+                const x = r * Math.cos(adjustedThetaForEval);
+                const y = r * Math.sin(adjustedThetaForEval);
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
                 if (isFinite(x) && isFinite(y) && isFinite(r)) {
@@ -5999,14 +6052,19 @@ class Graphiti {
     findPolarRootsInRange(expression, thetaMin, thetaMax, steps = 200) {
         // Numerical root finding for polar derivatives dr/dtheta = 0
         const roots = [];
-        const stepSize = (thetaMax - thetaMin) / steps;
+        
+        // Convert range to radians if in degree mode for consistent internal calculations
+        const thetaMinRad = this.angleMode === 'degrees' ? thetaMin * Math.PI / 180 : thetaMin;
+        const thetaMaxRad = this.angleMode === 'degrees' ? thetaMax * Math.PI / 180 : thetaMax;
+        const stepSize = (thetaMaxRad - thetaMinRad) / steps;
         
         // Helper function to evaluate polar derivative expression
         const evaluatePolarDerivative = (expr, thetaValue) => {
             let processedExpr = expr.toLowerCase();
             
-            // No degree conversion needed - theta is already in radians in polar mode
+            // Note: thetaValue is already in radians here
             const compiledExpression = this.getCompiledExpression(processedExpr);
+            
             const scope = {
                 theta: thetaValue,
                 t: thetaValue,
@@ -6019,7 +6077,7 @@ class Graphiti {
         
         // Special case: check if theta=0 is in range and if derivative is approximately 0 there
         // But also verify the derivative actually changes sign (to avoid constant zero derivatives)
-        if (thetaMin <= 0 && thetaMax >= 0) {
+        if (thetaMinRad <= 0 && thetaMaxRad >= 0) {
             try {
                 const valueAtZero = evaluatePolarDerivative(expression, 0);
                 if (Math.abs(valueAtZero) < 1e-10) {
@@ -6030,7 +6088,8 @@ class Graphiti {
                     
                     // Only add theta=0 as a root if derivative changes around it
                     if (Math.abs(valueLeft) > 1e-10 || Math.abs(valueRight) > 1e-10) {
-                        roots.push(0);
+                        // Convert back to original units (degrees if needed)
+                        roots.push(this.angleMode === 'degrees' ? 0 : 0);
                     }
                 }
             } catch {
@@ -6038,7 +6097,7 @@ class Graphiti {
             }
         }
         
-        let prevTheta = thetaMin;
+        let prevTheta = thetaMinRad;
         let prevValue;
         
         try {
@@ -6048,7 +6107,7 @@ class Graphiti {
         }
         
         for (let i = 1; i <= steps; i++) {
-            const currentTheta = thetaMin + i * stepSize;
+            const currentTheta = thetaMinRad + i * stepSize;
             let currentValue;
             
             try {
@@ -6062,9 +6121,13 @@ class Graphiti {
                 prevValue * currentValue < 0) {
                 
                 // Use bisection method to refine the root
-                const root = this.polarBisectionMethod(expression, prevTheta, currentTheta);
-                if (root !== null && !roots.some(r => Math.abs(r - root) < 1e-6)) {
-                    roots.push(root);
+                const rootRad = this.polarBisectionMethod(expression, prevTheta, currentTheta);
+                if (rootRad !== null) {
+                    // Convert back to original units (degrees if needed)
+                    const root = this.angleMode === 'degrees' ? rootRad * 180 / Math.PI : rootRad;
+                    if (!roots.some(r => Math.abs(r - root) < 1e-6)) {
+                        roots.push(root);
+                    }
                 }
             }
             
@@ -6077,9 +6140,13 @@ class Graphiti {
     
     polarBisectionMethod(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
         // Bisection method for polar derivatives
+        // Note: a and b are in radians
         const evaluatePolarDerivative = (expr, thetaValue) => {
             let processedExpr = expr.toLowerCase();
+            
+            // Note: thetaValue is in radians
             const compiledExpression = this.getCompiledExpression(processedExpr);
+            
             const scope = {
                 theta: thetaValue,
                 t: thetaValue,
