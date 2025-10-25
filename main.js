@@ -145,6 +145,10 @@ class Graphiti {
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.rangeTimer = null; // For debouncing range updates
         
+        // Axis intercepts detection
+        this.intercepts = []; // Store detected axis intercept points
+        this.showIntercepts = true; // Toggle for intercept display
+        
         // Intersection detection
         this.intersections = []; // Store detected intersection points
         
@@ -179,6 +183,7 @@ class Graphiti {
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
+        this.frozenInterceptBadges = []; // Store intercept badges during viewport changes
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -757,6 +762,11 @@ class Graphiti {
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
             }
+            
+            // Update intercepts after adding this function
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+            }
         }
         
         // Save functions to localStorage
@@ -921,6 +931,10 @@ class Graphiti {
             }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
+                this.draw();
+            }
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
                 this.draw();
             }
         });
@@ -1121,6 +1135,11 @@ class Graphiti {
                 this.turningPoints = this.findTurningPoints();
             }
             
+            // Update intercepts after plotting this function
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+            }
+            
             // Update UI to show success (remove any error styling)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
             if (funcDiv) {
@@ -1144,6 +1163,9 @@ class Graphiti {
             // }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
+            }
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
             }
             
             // Update UI to show error (subtle visual feedback)
@@ -2525,6 +2547,16 @@ class Graphiti {
     
     // Debounced intersection updates for smooth pan/zoom performance
     handleViewportChange() {
+        // Capture current intercepts as frozen badges ONLY if viewport wasn't already changing
+        if (!this.isViewportChanging && this.showIntercepts && this.intercepts.length > 0) {
+            this.frozenInterceptBadges = this.intercepts.map(intercept => ({
+                x: intercept.x,
+                y: intercept.y,
+                type: intercept.type,
+                functionColor: '#808080' // Neutral gray color for intercepts
+            }));
+        }
+        
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
         if (!this.isViewportChanging && this.showTurningPoints && this.turningPoints.length > 0) {
             this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
@@ -2590,6 +2622,9 @@ class Graphiti {
             }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
+            }
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
             }
         }, 100); // Very short delay to minimize blocking period
     }
@@ -3151,6 +3186,34 @@ class Graphiti {
             });
         }
         
+        // Axis Intercepts Toggle
+        const interceptsToggleButton = document.getElementById('intercepts-toggle');
+        if (interceptsToggleButton) {
+            interceptsToggleButton.addEventListener('click', () => {
+                // Toggle intercept detection
+                this.showIntercepts = !this.showIntercepts;
+                
+                // Update button visual state
+                this.updateInterceptsToggleButton();
+                
+                if (this.showIntercepts) {
+                    // Recalculate and show intercepts
+                    this.intercepts = this.findAxisIntercepts();
+                } else {
+                    // Clear intercepts
+                    this.clearIntercepts();
+                }
+                
+                // Close the function panel only on mobile devices
+                if (this.isTrueMobile()) {
+                    this.closeMobileMenu();
+                }
+                
+                // Redraw to show/hide intercept markers
+                this.draw();
+            });
+        }
+        
         // Intersection Toggle
         if (intersectionToggleButton) {
             intersectionToggleButton.addEventListener('click', () => {
@@ -3494,7 +3557,15 @@ class Graphiti {
                 return; // Don't process any other input logic
             }
             
-            // Third, check for turning point marker tap (only if no intersection was clicked)
+            // Third, check for intercept marker tap (only if no intersection was clicked)
+            const tappedIntercept = this.findInterceptAtScreenPoint(x, y);
+            if (tappedIntercept) {
+                // Handle intercept tap and exit early
+                this.handleInterceptTap(tappedIntercept, x, y);
+                return; // Don't process any other input logic
+            }
+            
+            // Fourth, check for turning point marker tap (only if no intersection/intercept was clicked)
             const tappedTurningPoint = this.findTurningPointAtScreenPoint(x, y);
             if (tappedTurningPoint) {
                 // Handle turning point tap and exit early
@@ -4273,6 +4344,9 @@ class Graphiti {
         // Update turning points button state
         this.updateTurningPointsToggleButton();
         
+        // Update intercepts button state (only enabled in Cartesian mode)
+        this.updateInterceptsToggleButton();
+        
         // Clear existing function UI and recreate for current mode
         this.refreshFunctionUI();
 
@@ -4682,7 +4756,18 @@ class Graphiti {
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
             }
+            
+            // Calculate initial intercepts
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+            }
         }
+        
+        // Initialize intercepts toggle button state
+        this.updateInterceptsToggleButton();
+        
+        // Initialize intercepts toggle button state
+        this.updateInterceptsToggleButton();
         
         // Initialize intersection toggle button state
         this.updateIntersectionToggleButton();
@@ -5616,6 +5701,229 @@ class Graphiti {
     }
     
     // ================================
+    // AXIS INTERCEPT DETECTION METHODS
+    // ================================
+    
+    findAxisIntercepts() {
+        // Early exit if intercept detection is disabled
+        if (!this.showIntercepts) {
+            return [];
+        }
+        
+        if (this.plotMode === 'cartesian') {
+            return this.findCartesianAxisIntercepts();
+        } else if (this.plotMode === 'polar') {
+            return this.findPolarAxisIntercepts();
+        }
+        
+        return [];
+    }
+    
+    findCartesianAxisIntercepts() {
+        const intercepts = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+            // Filter for enabled functions with valid expressions and points
+            if (!f.enabled || !f.points || f.points.length === 0) {
+                return false;
+            }
+            
+            // Check that the expression is valid
+            if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // Find intercepts for each enabled function
+        for (const func of enabledFunctions) {
+            // Find x-intercepts (where y = 0)
+            const xIntercepts = this.findXInterceptsForFunction(func);
+            intercepts.push(...xIntercepts);
+            
+            // Find y-intercept (where x = 0)
+            const yIntercept = this.findYInterceptForFunction(func);
+            if (yIntercept) {
+                intercepts.push(yIntercept);
+            }
+        }
+        
+        return intercepts;
+    }
+    
+    findXInterceptsForFunction(func) {
+        const xIntercepts = [];
+        const minDistance = 0.01; // Minimum distance between distinct intercepts (in world coordinates)
+        
+        // For explicit functions (y = f(x)), find where y crosses zero
+        const points = func.points;
+        
+        for (let i = 0; i < points.length - 1; i++) {
+            const x1 = points[i].x;
+            const y1 = points[i].y;
+            const x2 = points[i + 1].x;
+            const y2 = points[i + 1].y;
+            
+            // Check for valid points
+            if (!isFinite(y1) || !isFinite(y2)) continue;
+            
+            // Check for sign change (zero crossing) or exact zero
+            if ((y1 * y2 < 0) || (y1 === 0 && y2 !== 0)) {
+                // Use bisection method to find more accurate zero
+                const xIntercept = y1 === 0 ? x1 : this.bisectionMethod(func.expression, x1, x2, 'y');
+                if (xIntercept !== null) {
+                    // Check if this intercept is far enough from existing ones
+                    const isDuplicate = xIntercepts.some(existing => 
+                        Math.abs(existing.x - xIntercept) < minDistance
+                    );
+                    
+                    if (!isDuplicate) {
+                        xIntercepts.push({
+                            x: xIntercept,
+                            y: 0,
+                            type: 'x-intercept',
+                            functionId: func.id,
+                            color: func.color
+                        });
+                    }
+                }
+            }
+        }
+        
+        return xIntercepts;
+    }
+    
+    findYInterceptForFunction(func) {
+        // Y-intercept occurs where x = 0
+        // Evaluate the function at x = 0
+        try {
+            const expr = func.expression;
+            const scope = { x: 0 };
+            const y = math.evaluate(expr, scope);
+            
+            if (isFinite(y) && Math.abs(y) < 1000) { // Reasonable bounds check
+                return {
+                    x: 0,
+                    y: y,
+                    type: 'y-intercept',
+                    functionId: func.id,
+                    color: func.color
+                };
+            }
+        } catch (error) {
+            // If evaluation fails, no y-intercept
+            return null;
+        }
+        
+        return null;
+    }
+    
+    bisectionMethod(expression, x1, x2, variable = 'y') {
+        // Use bisection to find where the function crosses zero
+        const maxIterations = 50;
+        const tolerance = 0.0001;
+        
+        for (let i = 0; i < maxIterations; i++) {
+            const xMid = (x1 + x2) / 2;
+            
+            try {
+                const scope = { x: xMid };
+                const yMid = math.evaluate(expression, scope);
+                
+                if (!isFinite(yMid)) return null;
+                
+                if (Math.abs(yMid) < tolerance) {
+                    return xMid;
+                }
+                
+                const scope1 = { x: x1 };
+                const y1 = math.evaluate(expression, scope1);
+                
+                if (y1 * yMid < 0) {
+                    x2 = xMid;
+                } else {
+                    x1 = xMid;
+                }
+            } catch (error) {
+                return null;
+            }
+        }
+        
+        return (x1 + x2) / 2;
+    }
+    
+    findPolarAxisIntercepts() {
+        const intercepts = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+            if (!f.enabled || !f.points || f.points.length === 0) {
+                return false;
+            }
+            if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
+                return false;
+            }
+            return true;
+        });
+        
+        // For each function, find where it crosses the Cartesian axes
+        // (positive x-axis at θ=0°, positive y-axis at θ=90°, negative x-axis at θ=180°, negative y-axis at θ=270°)
+        for (const func of enabledFunctions) {
+            const points = func.points;
+            
+            // Look for crossings near each axis angle
+            // We check where the curve crosses horizontal line (y=0) and vertical line (x=0) in Cartesian coords
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                
+                // Skip invalid points or discontinuities
+                if (!isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) {
+                    continue;
+                }
+                
+                // Check for x-axis crossing (y changes sign)
+                if (p1.y * p2.y < 0) {
+                    // Linear interpolation to find crossing point
+                    const t = -p1.y / (p2.y - p1.y);
+                    const x = p1.x + t * (p2.x - p1.x);
+                    const y = 0;
+                    
+                    // Determine which side of x-axis (positive or negative x)
+                    const type = x > 0 ? 'x-axis-positive' : 'x-axis-negative';
+                    
+                    intercepts.push({
+                        x: x,
+                        y: y,
+                        type: type,
+                        functionId: func.id,
+                        color: func.color
+                    });
+                }
+                
+                // Check for y-axis crossing (x changes sign)
+                if (p1.x * p2.x < 0) {
+                    // Linear interpolation to find crossing point
+                    const t = -p1.x / (p2.x - p1.x);
+                    const x = 0;
+                    const y = p1.y + t * (p2.y - p1.y);
+                    
+                    // Determine which side of y-axis (positive or negative y)
+                    const type = y > 0 ? 'y-axis-positive' : 'y-axis-negative';
+                    
+                    intercepts.push({
+                        x: x,
+                        y: y,
+                        type: type,
+                        functionId: func.id,
+                        color: func.color
+                    });
+                }
+            }
+        }
+        
+        return intercepts;
+    }
+    
+    // ================================
     // TURNING POINT DETECTION METHODS
     // ================================
     
@@ -6208,6 +6516,32 @@ class Graphiti {
         }
     }
     
+    clearIntercepts() {
+        // Clear intercept markers and frozen badges
+        this.intercepts = [];
+        this.frozenInterceptBadges = [];
+        
+        // Remove all intercept badges (Cartesian and polar types)
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+            !badge.badgeType || (
+                badge.badgeType !== 'x-intercept' && 
+                badge.badgeType !== 'y-intercept' &&
+                badge.badgeType !== 'x-axis-positive' &&
+                badge.badgeType !== 'x-axis-negative' &&
+                badge.badgeType !== 'y-axis-positive' &&
+                badge.badgeType !== 'y-axis-negative'
+            )
+        );
+    }
+    
+    updateInterceptsToggleButton() {
+        const button = document.getElementById('intercepts-toggle');
+        if (button) {
+            // Enabled in both Cartesian and Polar modes
+            button.style.opacity = this.showIntercepts ? '1' : '0.6';
+        }
+    }
+    
     clearAllBadges() {
         this.input.persistentBadges = [];
     }
@@ -6542,6 +6876,17 @@ class Graphiti {
             } else if (!this.isViewportChanging && this.turningPoints.length > 0) {
                 // When viewport is stable, show actual turning point markers
                 this.drawTurningPointMarkers();
+            }
+        }
+        
+        // Draw axis intercept markers if enabled and viewport is stable
+        if (this.showIntercepts) {
+            if (this.isViewportChanging && this.frozenInterceptBadges && this.frozenInterceptBadges.length > 0) {
+                // During viewport changes, show frozen intercept badges for visual continuity
+                this.drawFrozenInterceptBadges();
+            } else if (!this.isViewportChanging && this.intercepts.length > 0) {
+                // When viewport is stable, show actual intercept markers
+                this.drawInterceptMarkers();
             }
         }
         
@@ -7574,6 +7919,110 @@ class Graphiti {
         }
     }
     
+    // ================================
+    // AXIS INTERCEPT RENDERING METHODS
+    // ================================
+    
+    drawInterceptMarkers() {
+        // Convert to screen coordinates and filter by viewport, then apply density culling
+        const markersInViewport = [];
+        
+        for (const intercept of this.intercepts) {
+            const screenPos = this.worldToScreen(intercept.x, intercept.y);
+            
+            // Only consider markers within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    intercept: intercept
+                });
+            }
+        }
+        
+        // Apply density-based culling: skip markers too close to each other
+        const minDistance = 40; // Minimum pixel distance between markers
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Check if this marker is too close to any already accepted marker
+            for (const accepted of culledMarkers) {
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            this.drawInterceptMarker(marker.screenX, marker.screenY, marker.intercept);
+        }
+    }
+    
+    drawInterceptMarker(screenX, screenY, intercept) {
+        // Draw a marker with same style as turning points/intersections
+        this.ctx.save();
+        
+        // Outer circle (white/light background for contrast)
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        // Inner circle (same neutral color as intersections)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        this.ctx.restore();
+    }
+    
+    drawFrozenInterceptBadges() {
+        if (!this.frozenInterceptBadges) return;
+        
+        for (const frozenBadge of this.frozenInterceptBadges) {
+            const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+            
+            // Only draw if within viewport
+            if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
+                screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
+                
+                // Draw as simple markers
+                this.ctx.save();
+                
+                // Outer circle (white/light background for contrast)
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                // Inner circle (same neutral color as intersections)
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.fill();
+                
+                this.ctx.restore();
+            }
+        }
+    }
+    
     drawFrozenIntersectionBadges() {
         for (const frozenBadge of this.frozenIntersectionBadges) {
             const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
@@ -7636,6 +8085,102 @@ class Graphiti {
         }
         
         return null;
+    }
+    
+    findInterceptAtScreenPoint(screenX, screenY) {
+        const tolerance = 15; // pixels - tolerance for tap detection
+        
+        // First check regular intercepts (when viewport is stable)
+        if (!this.isViewportChanging) {
+            for (const intercept of this.intercepts) {
+                const interceptScreen = this.worldToScreen(intercept.x, intercept.y);
+                const distance = Math.sqrt(
+                    Math.pow(screenX - interceptScreen.x, 2) + 
+                    Math.pow(screenY - interceptScreen.y, 2)
+                );
+                
+                if (distance <= tolerance) {
+                    return intercept;
+                }
+            }
+        }
+        
+        // During viewport changes, check frozen intercept badges
+        if (this.isViewportChanging && this.frozenInterceptBadges && this.frozenInterceptBadges.length > 0) {
+            for (const frozenBadge of this.frozenInterceptBadges) {
+                const badgeScreen = this.worldToScreen(frozenBadge.x, frozenBadge.y);
+                const distance = Math.sqrt(
+                    Math.pow(screenX - badgeScreen.x, 2) + 
+                    Math.pow(screenY - badgeScreen.y, 2)
+                );
+                
+                if (distance <= tolerance) {
+                    return frozenBadge;
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    handleInterceptTap(intercept, screenX, screenY) {
+        // Validate intercept coordinates
+        if (isNaN(intercept.x) || isNaN(intercept.y) || 
+            !isFinite(intercept.x) || !isFinite(intercept.y)) {
+            return;
+        }
+        
+        // Create a badge at the intercept point
+        this.addInterceptBadge(intercept.x, intercept.y, intercept.type);
+    }
+    
+    addInterceptBadge(x, y, interceptType) {
+        // Calculate screen position
+        const screenPos = this.worldToScreen(x, y);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists, don't add another
+            return;
+        }
+        
+        // Format coordinates based on the intercept type and plot mode
+        let label;
+        if (this.plotMode === 'polar') {
+            // For polar intercepts, show (r, θ) coordinates
+            const r = Math.sqrt(x * x + y * y);
+            let theta = Math.atan2(y, x);
+            
+            // Convert to degrees for display
+            let thetaDeg = theta * 180 / Math.PI;
+            if (thetaDeg < 0) thetaDeg += 360;
+            
+            label = `(${this.formatNumber(r)}, ${this.formatNumber(thetaDeg)}°)`;
+        } else {
+            // Cartesian mode
+            if (interceptType === 'x-intercept') {
+                // X-intercept: format as (x, 0)
+                label = `(${this.formatNumber(x)}, 0)`;
+            } else {
+                // Y-intercept: format as (0, y)
+                label = `(0, ${this.formatNumber(y)})`;
+            }
+        }
+        
+        // Create and add badge
+        const badge = {
+            worldX: x,
+            worldY: y,
+            screenX: screenPos.x,
+            screenY: screenPos.y,
+            label: label,
+            functionColor: '#808080', // Neutral gray color for intercepts
+            badgeType: interceptType // 'x-intercept', 'y-intercept', or polar axis types
+        };
+        
+        this.input.persistentBadges.push(badge);
+        this.draw();
     }
     
     handleIntersectionTap(intersection, screenX, screenY) {

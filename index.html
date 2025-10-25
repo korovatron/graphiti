@@ -1033,6 +1033,23 @@
 
                 <!-- Bottom Row: Mathematical Analysis Features -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;">
+                    <!-- Axis Intercepts Toggle Button -->
+                    <button id="intercepts-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; display: flex; align-items: center; justify-content: center;" title="Toggle axis intercept detection">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <!-- First quadrant axes (origin at bottom-left) -->
+                            <!-- Y-axis (vertical) -->
+                            <line x1="6" y1="26" x2="6" y2="4" stroke="currentColor" stroke-width="1.5" opacity="0.6"></line>
+                            <!-- X-axis (horizontal) -->
+                            <line x1="6" y1="26" x2="30" y2="26" stroke="currentColor" stroke-width="1.5" opacity="0.6"></line>
+                            <!-- Linear graph from y-intercept to x-intercept -->
+                            <line x1="6" y1="10" x2="24" y2="26" stroke="currentColor" stroke-width="2"></line>
+                            <!-- Y-intercept marker (where line crosses y-axis) -->
+                            <circle cx="6" cy="10" r="2" fill="currentColor"></circle>
+                            <!-- X-intercept marker (where line crosses x-axis) -->
+                            <circle cx="24" cy="26" r="2" fill="currentColor"></circle>
+                        </svg>
+                    </button>
+                    
                     <!-- Intersection Toggle Button -->
                     <button id="intersection-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; display: flex; align-items: center; justify-content: center;" title="Toggle intersection detection">
                         <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
