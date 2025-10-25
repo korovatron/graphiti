@@ -5487,12 +5487,12 @@ class Graphiti {
 
         this.isWorkerCalculating = true;
 
-        // Only process explicit functions for fast intersection detection
-        const explicitFunctions = this.getCurrentFunctions().filter(f => 
-            f.enabled && 
-            f.points.length > 0 && 
-            this.detectFunctionType(f.expression) === 'explicit' // Use proper function type detection
-        );
+        // Process explicit functions and theta-constant rays for fast intersection detection
+        const explicitFunctions = this.getCurrentFunctions().filter(f => {
+            if (!f.enabled || f.points.length === 0) return false;
+            const functionType = this.detectFunctionType(f.expression);
+            return functionType === 'explicit' || functionType === 'theta-constant';
+        });
 
         if (explicitFunctions.length < 2) {
             this.explicitIntersections = [];
