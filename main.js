@@ -807,7 +807,7 @@ class Graphiti {
                     --selection-background-color: var(--accent-color);
                     --selection-color: #fff;
                     --contains-highlight-background-color: var(--accent-color);
-                ">${this.convertToLatex(func.expression)}</math-field>
+                ">${func.expression}</math-field>
             <div class="function-controls">
                 <div class="color-indicator" style="background-color: ${func.color}; opacity: ${func.enabled ? '1' : '0.3'}; filter: ${func.enabled ? 'none' : 'grayscale(100%)'}" title="Click to ${func.enabled ? 'hide' : 'show'} function"></div>
                 <button class="remove-btn" title="Delete function">×</button>
@@ -879,11 +879,10 @@ class Graphiti {
         });
 
         mathField.addEventListener('input', () => {
-            // Convert LaTeX to math.js expression
+            // Store LaTeX directly instead of converting
             try {
                 const latex = mathField.getValue();
-                const expression = this.convertFromLatex(latex);
-                func.expression = expression;
+                func.expression = latex; // Store LaTeX format
                 
                 // Clear expression cache when function expression changes
                 this.clearExpressionCache();
@@ -903,8 +902,7 @@ class Graphiti {
                 // Force immediate plotting on Enter, bypassing debounce
                 try {
                     const latex = mathField.getValue();
-                    const expression = this.convertFromLatex(latex);
-                    func.expression = expression;
+                    func.expression = latex; // Store LaTeX format
                     
                     // Clear expression cache when function expression changes
                     this.clearExpressionCache();
@@ -1119,7 +1117,11 @@ class Graphiti {
                         }
                     } else {
                         // For explicit functions, test with x variable
-                        const processedExpression = this.convertFromLatex(func.expression);
+                        let processedExpression = this.convertFromLatex(func.expression);
+                        // Strip y= prefix if present (since we store full equations now)
+                        if (processedExpression.toLowerCase().startsWith('y=')) {
+                            processedExpression = processedExpression.substring(2).trim();
+                        }
                         math.evaluate(processedExpression, { x: 1 });
                         
                         // Additional validation: try to evaluate at x=0 for explicit functions only
@@ -1448,8 +1450,8 @@ class Graphiti {
         }
         
         try {
-            // Prepare the expression for evaluation - remove "r=" prefix if present for consistency
-            let processedExpression = func.expression.trim();
+            // Convert from LaTeX first, then prepare the expression for evaluation
+            let processedExpression = this.convertFromLatex(func.expression).trim();
             if (processedExpression.toLowerCase().startsWith('r=')) {
                 processedExpression = processedExpression.substring(2).trim();
             }
@@ -1529,8 +1531,11 @@ class Graphiti {
     
     plotPolarRay(func) {
         try {
+            // Convert from LaTeX first since we now store LaTeX format
+            const convertedExpression = this.convertFromLatex(func.expression).trim();
+            
             // Extract the theta value from "theta = <expression>" or "θ = <expression>" or "t = <expression>"
-            const thetaMatch = func.expression.trim().match(/^(θ|theta|t)\s*=\s*(.+)$/i);
+            const thetaMatch = convertedExpression.match(/^(θ|theta|t)\s*=\s*(.+)$/i);
             if (!thetaMatch) {
                 func.points = [];
                 return;
@@ -1584,8 +1589,8 @@ class Graphiti {
     // ================================
 
     detectFunctionType(expression) {
-        // Clean expression first
-        let clean = expression.trim();
+        // Convert from LaTeX first since we now store LaTeX format
+        const clean = this.convertFromLatex(expression).trim();
         
         // Check for equals sign first
         if (!clean.includes('=')) {
@@ -4475,17 +4480,17 @@ class Graphiti {
                 // Load saved polar functions
                 functionsToLoad = savedData.polar;
             } else {
-                // No saved functions - use defaults
+                // No saved functions - use defaults (in LaTeX format)
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
-                        { expression: 'y=x^2', enabled: true },
+                        { expression: 'y=x^{2}', enabled: true },
                         { expression: 'y=2x+1', enabled: true }
                     ];
                 } else {
                     functionsToLoad = [
-                        { expression: 'r=1 + cos(t)', enabled: true },
-                        { expression: 'r=2cos(3t)', enabled: true },
-                        { expression: 't=pi/4', enabled: true }
+                        { expression: 'r=1+\\cos\\left(\\theta\\right)', enabled: true },
+                        { expression: 'r=2\\cos\\left(3\\theta\\right)', enabled: true },
+                        { expression: '\\theta=\\frac{\\pi}{4}', enabled: true }
                     ];
                 }
             }
@@ -4785,17 +4790,17 @@ class Graphiti {
                 // Load saved polar functions
                 functionsToLoad = savedData.polar;
             } else {
-                // No saved functions - use defaults
+                // No saved functions - use defaults (in LaTeX format)
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
-                        { expression: 'y=x^2', enabled: true },
+                        { expression: 'y=x^{2}', enabled: true },
                         { expression: 'y=2x+1', enabled: true }
                     ];
                 } else {
                     functionsToLoad = [
-                        { expression: 'r=1 + cos(t)', enabled: true },
-                        { expression: 'r=2cos(3t)', enabled: true },
-                        { expression: 't=pi/4', enabled: true }
+                        { expression: 'r=1+\\cos\\left(\\theta\\right)', enabled: true },
+                        { expression: 'r=2\\cos\\left(3\\theta\\right)', enabled: true },
+                        { expression: '\\theta=\\frac{\\pi}{4}', enabled: true }
                     ];
                 }
             }
@@ -5143,9 +5148,17 @@ class Graphiti {
     
     evaluateFunction(expression, x) {
         try {
+            // Convert from LaTeX format first (since we now store LaTeX)
+            let processedExpression = this.convertFromLatex(expression);
+            
+            // Remove y= prefix if present (since we store full equations now)
+            if (processedExpression.toLowerCase().startsWith('y=')) {
+                processedExpression = processedExpression.substring(2);
+            }
+            
             // Make function names case-insensitive for mobile compatibility
             // Simply convert the entire expression to lowercase
-            let processedExpression = expression.toLowerCase();
+            processedExpression = processedExpression.toLowerCase();
             
             // Handle degree mode by preprocessing the expression
             if (this.angleMode === 'degrees') {
@@ -5903,7 +5916,8 @@ class Graphiti {
         // Y-intercept occurs where x = 0
         // Evaluate the function at x = 0
         try {
-            const expr = func.expression;
+            // Convert from LaTeX first since we now store LaTeX format
+            const expr = this.convertFromLatex(func.expression);
             const scope = { x: 0 };
             const y = math.evaluate(expr, scope);
             
@@ -5925,6 +5939,9 @@ class Graphiti {
     }
     
     bisectionMethod(expression, x1, x2, variable = 'y') {
+        // Convert from LaTeX first since expression might be in LaTeX format
+        const convertedExpression = this.convertFromLatex(expression);
+        
         // Use bisection to find where the function crosses zero
         const maxIterations = 50;
         const tolerance = 0.0001;
@@ -5934,7 +5951,7 @@ class Graphiti {
             
             try {
                 const scope = { x: xMid };
-                const yMid = math.evaluate(expression, scope);
+                const yMid = math.evaluate(convertedExpression, scope);
                 
                 if (!isFinite(yMid)) return null;
                 
@@ -5943,7 +5960,7 @@ class Graphiti {
                 }
                 
                 const scope1 = { x: x1 };
-                const y1 = math.evaluate(expression, scope1);
+                const y1 = math.evaluate(convertedExpression, scope1);
                 
                 if (y1 * yMid < 0) {
                     x2 = xMid;
@@ -6076,8 +6093,11 @@ class Graphiti {
                     continue; // Implicit functions don't have simple turning points
                 }
                 
+                // Convert from LaTeX first since we now store LaTeX format
+                const convertedExpression = this.convertFromLatex(func.expression);
+                
                 // Clean the expression - remove "y=" prefix if present
-                let cleanExpression = func.expression.trim();
+                let cleanExpression = convertedExpression.trim();
                 if (cleanExpression.toLowerCase().startsWith('y=')) {
                     cleanExpression = cleanExpression.substring(2).trim();
                 }
@@ -6139,8 +6159,11 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
+                // Convert from LaTeX first since we now store LaTeX format
+                const convertedExpression = this.convertFromLatex(func.expression);
+                
                 // Clean the expression - remove "r=" prefix if present
-                let cleanExpression = func.expression.trim();
+                let cleanExpression = convertedExpression.trim();
                 if (cleanExpression.toLowerCase().startsWith('r=')) {
                     cleanExpression = cleanExpression.substring(2).trim();
                 }
@@ -6269,8 +6292,11 @@ class Graphiti {
         
         for (const theta of roots) {
             try {
+                // Convert from LaTeX first since we now store LaTeX format
+                const convertedExpression = this.convertFromLatex(func.expression);
+                
                 // Evaluate r at this theta
-                let cleanExpression = func.expression.trim();
+                let cleanExpression = convertedExpression.trim();
                 if (cleanExpression.toLowerCase().startsWith('r=')) {
                     cleanExpression = cleanExpression.substring(2).trim();
                 }
@@ -9476,10 +9502,12 @@ class Graphiti {
         latex = latex.replace(/\^(\w)/g, '^{$1}');
         latex = latex.replace(/\^(\([^)]+\))/g, '^{$1}');
         
+        // Constants (do this BEFORE fraction conversion so \pi is properly handled in fractions)
+        latex = latex.replace(/\bpi\b/g, '\\pi');
+        latex = latex.replace(/\be\b/g, 'e');
+        
         // Fractions: (a)/(b) -> \frac{a}{b}
         latex = latex.replace(/\(([^)]+)\)\/\(([^)]+)\)/g, '\\frac{$1}{$2}');
-        // Simple fractions: a/b -> \frac{a}{b} (for numbers, pi, variables)
-        latex = latex.replace(/(\b\w+|\\\w+)\/(\b\w+)/g, '\\frac{$1}{$2}');
         
         // Square roots: sqrt(x) -> \sqrt{x}
         latex = latex.replace(/sqrt\(([^)]+)\)/g, '\\sqrt{$1}');
@@ -9495,10 +9523,6 @@ class Graphiti {
         // Logarithms
         latex = latex.replace(/\blog\(/g, '\\log(');
         latex = latex.replace(/\bln\(/g, '\\ln(');
-        
-        // Constants
-        latex = latex.replace(/\bpi\b/g, '\\pi');
-        latex = latex.replace(/\be\b/g, 'e');
         
         // Exponential: e^x -> e^{x}
         latex = latex.replace(/\be\^(\w)/g, 'e^{$1}');
@@ -9569,6 +9593,12 @@ class Graphiti {
     
     convertFromLatex(latex) {
         if (!latex) return '';
+        
+        // If the expression doesn't contain any LaTeX commands (no backslashes),
+        // assume it's already in math.js format and return as-is
+        if (!latex.includes('\\')) {
+            return latex;
+        }
         
         let expression = latex;
         
