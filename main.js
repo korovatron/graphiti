@@ -2495,8 +2495,11 @@ class Graphiti {
 
     parseImplicitEquation(expression) {
         try {
+            // Convert from LaTeX first since we now store LaTeX format
+            const convertedExpression = this.convertFromLatex(expression);
+            
             // Split on equals sign
-            const parts = expression.split('=');
+            const parts = convertedExpression.split('=');
             if (parts.length !== 2) {
                 return null;
             }
