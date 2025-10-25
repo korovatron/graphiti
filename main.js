@@ -1303,14 +1303,6 @@ class Graphiti {
         container.innerHTML = '';
     }
     
-    replotAllFunctions() {
-        this.functions.forEach(func => {
-            if (func.expression && func.enabled) {
-                this.plotFunction(func);
-            }
-        });
-    }
-    
     async plotFunction(func) {
         // Check if math.js is available
         if (typeof math === 'undefined') {
@@ -4483,7 +4475,7 @@ class Graphiti {
                 // No saved functions - use defaults (in LaTeX format)
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
-                        { expression: 'y=x^{2}', enabled: true },
+                        { expression: 'y=x^2', enabled: true },
                         { expression: 'y=2x+1', enabled: true }
                     ];
                 } else {
@@ -4793,7 +4785,7 @@ class Graphiti {
                 // No saved functions - use defaults (in LaTeX format)
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
-                        { expression: 'y=x^{2}', enabled: true },
+                        { expression: 'y=x^2', enabled: true },
                         { expression: 'y=2x+1', enabled: true }
                     ];
                 } else {
@@ -4851,7 +4843,7 @@ class Graphiti {
             // Plot all functions after setting viewport - plot in parallel for simultaneous appearance
             const plotPromises = this.getCurrentFunctions()
                 .filter(func => func.expression)
-                .map(func => this.plotFunction(func));
+                .map(func => this.plotFunctionWithValidation(func));
             
             await Promise.all(plotPromises);
             
