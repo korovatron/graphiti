@@ -147,7 +147,7 @@ class Graphiti {
         
         // Axis intercepts detection
         this.intercepts = []; // Store detected axis intercept points
-        this.showIntercepts = true; // Toggle for intercept display
+        this.showIntercepts = false; // Toggle for intercept display (off by default to reduce clutter)
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
@@ -179,7 +179,7 @@ class Graphiti {
         
         // Turning point detection
         this.turningPoints = []; // Store detected turning points (maxima/minima)
-        this.showTurningPoints = true; // Toggle for turning point display (on by default)
+        this.showTurningPoints = false; // Toggle for turning point display (off by default to reduce clutter)
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
@@ -977,18 +977,11 @@ class Graphiti {
     updateIntersectionToggleButton() {
         const intersectionToggleButton = document.getElementById('intersection-toggle');
         if (intersectionToggleButton) {
-            const svg = intersectionToggleButton.querySelector('svg');
-            if (svg) {
-                if (this.showIntersections) {
-                    // Active state - intersection detection enabled (bright icon)
-                    svg.style.opacity = '1';
-                    intersectionToggleButton.title = 'Intersection detection enabled (click to disable)';
-                } else {
-                    // Inactive state - intersection detection disabled (dim icon)
-                    svg.style.opacity = '0.3';
-                    intersectionToggleButton.title = 'Intersection detection disabled (click to enable)';
-                }
-            }
+            intersectionToggleButton.style.background = this.showIntersections ? '#2A3F5A' : '#1a2a3f';
+            intersectionToggleButton.style.opacity = this.showIntersections ? '1' : '0.6';
+            intersectionToggleButton.title = this.showIntersections 
+                ? 'Intersection detection enabled (click to disable)' 
+                : 'Intersection detection disabled (click to enable)';
         }
     }
     
@@ -4408,13 +4401,20 @@ class Graphiti {
         // Update turning points toggle icon based on plot mode
         const cartesianTurningIcon = document.getElementById('turning-points-icon-cartesian');
         const polarTurningIcon = document.getElementById('turning-points-icon-polar');
-        if (cartesianTurningIcon && polarTurningIcon) {
+        const cartesianNotation = document.getElementById('turning-points-notation-cartesian');
+        const polarNotation = document.getElementById('turning-points-notation-polar');
+        
+        if (cartesianTurningIcon && polarTurningIcon && cartesianNotation && polarNotation) {
             if (this.plotMode === 'cartesian') {
                 cartesianTurningIcon.style.display = 'block';
                 polarTurningIcon.style.display = 'none';
+                cartesianNotation.style.display = 'inline-flex';
+                polarNotation.style.display = 'none';
             } else {
                 cartesianTurningIcon.style.display = 'none';
                 polarTurningIcon.style.display = 'block';
+                cartesianNotation.style.display = 'none';
+                polarNotation.style.display = 'inline-flex';
             }
         }
         
@@ -4475,6 +4475,7 @@ class Graphiti {
                     functionsToLoad = [
                         { expression: 'r=1 + cos(t)', enabled: true },
                         { expression: 'r=2cos(3t)', enabled: true },
+                        { expression: 't=pi/4', enabled: true },
                         { expression: '', enabled: true }
                     ];
                 }
@@ -4786,6 +4787,7 @@ class Graphiti {
                     functionsToLoad = [
                         { expression: 'r=1 + cos(t)', enabled: true },
                         { expression: 'r=2cos(3t)', enabled: true },
+                        { expression: 't=pi/4', enabled: true },
                         { expression: '', enabled: true }
                     ];
                 }
@@ -6619,6 +6621,7 @@ class Graphiti {
         const button = document.getElementById('turning-points-toggle');
         if (button) {
             // Enable in both Cartesian and polar modes now
+            button.style.background = this.showTurningPoints ? '#2A3F5A' : '#1a2a3f';
             button.style.opacity = this.showTurningPoints ? '1' : '0.6';
             button.style.pointerEvents = 'auto';
         }
@@ -6646,6 +6649,7 @@ class Graphiti {
         const button = document.getElementById('intercepts-toggle');
         if (button) {
             // Enabled in both Cartesian and Polar modes
+            button.style.background = this.showIntercepts ? '#2A3F5A' : '#1a2a3f';
             button.style.opacity = this.showIntercepts ? '1' : '0.6';
         }
     }
@@ -9467,6 +9471,8 @@ class Graphiti {
         
         // Fractions: (a)/(b) -> \frac{a}{b}
         latex = latex.replace(/\(([^)]+)\)\/\(([^)]+)\)/g, '\\frac{$1}{$2}');
+        // Simple fractions: a/b -> \frac{a}{b} (for numbers, pi, variables)
+        latex = latex.replace(/(\b\w+|\\\w+)\/(\b\w+)/g, '\\frac{$1}{$2}');
         
         // Square roots: sqrt(x) -> \sqrt{x}
         latex = latex.replace(/sqrt\(([^)]+)\)/g, '\\sqrt{$1}');
