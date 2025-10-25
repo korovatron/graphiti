@@ -783,7 +783,7 @@ class Graphiti {
         funcDiv.innerHTML = `
             <math-field 
                 class="mathlive-input" 
-                placeholder="\\text{Enter } f(x) \\text{ or } f(x,y)"
+                placeholder="\\text{Enter f(x) or f(x,y)}"
                 default-mode="math"
                 smart-fence="true"
                 smart-superscript="true"
@@ -809,13 +809,21 @@ class Graphiti {
                     --contains-highlight-background-color: var(--accent-color);
                 ">${this.convertToLatex(func.expression)}</math-field>
             <div class="function-controls">
-                <div class="color-indicator" style="background-color: ${func.color}" title="Click to show/hide function"></div>
+                <div class="color-indicator" style="background-color: ${func.color}; opacity: ${func.enabled ? '1' : '0.3'}; filter: ${func.enabled ? 'none' : 'grayscale(100%)'}" title="Click to ${func.enabled ? 'hide' : 'show'} function"></div>
                 <button class="remove-btn" title="Delete function">×</button>
             </div>
         `;
         
         // Get the MathLive element
         const mathField = funcDiv.querySelector('math-field');
+        
+        // Set initial opacity based on enabled state
+        if (mathField) mathField.style.opacity = func.enabled ? '1' : '0.6';
+        
+        // Add disabled class if needed
+        if (!func.enabled) {
+            funcDiv.classList.add('disabled');
+        }
         
         // Ensure dark mode for this specific field
         mathField.setAttribute('color-scheme', 'dark');
@@ -915,6 +923,9 @@ class Graphiti {
             this.removeIntersectionBadgesForFunction(func.id);
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
+            
+            // Save the updated enabled state to localStorage
+            this.saveFunctionsToLocalStorage();
             
             // Replot all functions to ensure proper display with new state
             this.replotAllFunctions();
@@ -4468,15 +4479,13 @@ class Graphiti {
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
                         { expression: 'y=x^2', enabled: true },
-                        { expression: 'y=2x+1', enabled: true },
-                        { expression: '', enabled: true }
+                        { expression: 'y=2x+1', enabled: true }
                     ];
                 } else {
                     functionsToLoad = [
                         { expression: 'r=1 + cos(t)', enabled: true },
                         { expression: 'r=2cos(3t)', enabled: true },
-                        { expression: 't=pi/4', enabled: true },
-                        { expression: '', enabled: true }
+                        { expression: 't=pi/4', enabled: true }
                     ];
                 }
             }
@@ -4634,9 +4643,9 @@ class Graphiti {
         const mathFields = document.querySelectorAll('.function-item math-field');
         mathFields.forEach(mathField => {
             if (this.plotMode === 'polar') {
-                mathField.setAttribute('placeholder', '\\text{Enter } f(\\theta)');
+                mathField.setAttribute('placeholder', '\\text{Enter f(θ)}');
             } else {
-                mathField.setAttribute('placeholder', '\\text{Enter } f(x) \\text{ or } f(x,y)');
+                mathField.setAttribute('placeholder', '\\text{Enter f(x) or f(x,y)}');
             }
         });
     }
@@ -4780,15 +4789,13 @@ class Graphiti {
                 if (this.plotMode === 'cartesian') {
                     functionsToLoad = [
                         { expression: 'y=x^2', enabled: true },
-                        { expression: 'y=2x+1', enabled: true },
-                        { expression: '', enabled: true }
+                        { expression: 'y=2x+1', enabled: true }
                     ];
                 } else {
                     functionsToLoad = [
                         { expression: 'r=1 + cos(t)', enabled: true },
                         { expression: 'r=2cos(3t)', enabled: true },
-                        { expression: 't=pi/4', enabled: true },
-                        { expression: '', enabled: true }
+                        { expression: 't=pi/4', enabled: true }
                     ];
                 }
             }
