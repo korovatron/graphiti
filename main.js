@@ -3167,22 +3167,14 @@ class Graphiti {
         // Turning Points Toggle
         if (turningPointsToggleButton) {
             turningPointsToggleButton.addEventListener('click', () => {
-                // Don't allow toggling in polar mode
-                if (this.plotMode === 'polar') {
-                    return;
-                }
-                
-                // Toggle turning point detection
+                // Toggle turning point detection (now works in both modes)
                 this.showTurningPoints = !this.showTurningPoints;
-                
-                // Save state for Cartesian mode
-                this.showTurningPointsCartesian = this.showTurningPoints;
                 
                 // Update button visual state
                 this.updateTurningPointsToggleButton();
                 
                 if (this.showTurningPoints) {
-                    // Recalculate and show turning points
+                    // Recalculate and show turning points (works for both Cartesian and polar)
                     this.turningPoints = this.findTurningPoints();
                 } else {
                     // Clear turning points and badges
@@ -4198,16 +4190,8 @@ class Graphiti {
         // Clear all badges when switching modes since coordinate systems are different
         this.clearAllBadges();
         
-        // Handle turning points state when switching modes
-        if (this.plotMode === 'cartesian') {
-            // Switching from Cartesian to Polar: save state and disable
-            this.showTurningPointsCartesian = this.showTurningPoints;
-            this.showTurningPoints = false;
-            this.turningPoints = [];
-        } else {
-            // Switching from Polar to Cartesian: restore saved state
-            this.showTurningPoints = this.showTurningPointsCartesian;
-        }
+        // Clear turning points when switching modes (will be recalculated in new mode)
+        this.turningPoints = [];
         
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
@@ -5600,11 +5584,20 @@ class Graphiti {
     // ================================
     
     findTurningPoints() {
-        // Early exit if turning point detection is disabled or in polar mode
-        if (!this.showTurningPoints || this.plotMode === 'polar') {
+        // Early exit if turning point detection is disabled
+        if (!this.showTurningPoints) {
             return [];
         }
         
+        // Route to appropriate method based on plot mode
+        if (this.plotMode === 'polar') {
+            return this.findPolarTurningPoints();
+        } else {
+            return this.findCartesianTurningPoints();
+        }
+    }
+    
+    findCartesianTurningPoints() {
         const turningPoints = [];
         const enabledFunctions = this.getCurrentFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
@@ -5667,6 +5660,79 @@ class Graphiti {
         return turningPoints;
     }
     
+    findPolarTurningPoints() {
+        const turningPoints = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+            // Filter for enabled functions with valid expressions and points
+            if (!f.enabled || !f.points || f.points.length === 0) {
+                return false;
+            }
+            
+            // Also check that the expression doesn't end with operators (invalid)
+            if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
+                return false;
+            }
+            
+            return true;
+        });
+        
+        for (const func of enabledFunctions) {
+            try {
+                // Clean the expression - remove "r=" prefix if present
+                let cleanExpression = func.expression.trim();
+                if (cleanExpression.toLowerCase().startsWith('r=')) {
+                    cleanExpression = cleanExpression.substring(2).trim();
+                }
+                
+                // Validate that the expression can be parsed before attempting derivatives
+                try {
+                    math.parse(cleanExpression);
+                } catch (parseError) {
+                    console.warn(`Skipping polar turning points for invalid expression "${func.expression}":`, parseError.message);
+                    continue;
+                }
+                
+                // Make function names case-insensitive for derivative calculation
+                const processedExpression = cleanExpression.toLowerCase();
+                
+                // Get symbolic derivative dr/dtheta using math.js
+                // Try both theta and t as variable names
+                let derivative;
+                let derivativeStr;
+                try {
+                    // Try theta first
+                    derivative = math.derivative(processedExpression, 'theta');
+                    derivativeStr = derivative.toString();
+                    
+                    // If derivative is just "0", try with 't' instead
+                    if (derivativeStr === '0') {
+                        derivative = math.derivative(processedExpression, 't');
+                        derivativeStr = derivative.toString();
+                    }
+                    
+                    // If still "0", it's probably a constant function
+                    if (derivativeStr === '0') {
+                        continue;
+                    }
+                } catch (e) {
+                    console.warn(`Could not compute derivative for polar function ${func.expression}:`, e);
+                    continue;
+                }
+                
+                // Find turning points by finding roots of dr/dtheta = 0
+                const functionTurningPoints = this.findPolarTurningPointsForFunction(func, derivativeStr);
+                turningPoints.push(...functionTurningPoints);
+                
+            } catch (error) {
+                console.warn(`Could not find polar turning points for function ${func.expression}:`, error);
+                // Skip this function if derivative calculation fails
+                continue;
+            }
+        }
+        
+        return turningPoints;
+    }
+    
     findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr) {
         const turningPoints = [];
         
@@ -5715,6 +5781,72 @@ class Graphiti {
                         type: type, // 'minimum', 'maximum', or 'inflection'
                         derivative: derivativeStr,
                         secondDerivative: secondDerivativeStr
+                    });
+                }
+            } catch (error) {
+                // Skip this root if evaluation fails
+                continue;
+            }
+        }
+        
+        return turningPoints;
+    }
+    
+    findPolarTurningPointsForFunction(func, derivativeStr) {
+        const turningPoints = [];
+        
+        // Get theta range from polar settings
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        
+        // Use numerical method to find roots of dr/dtheta = 0
+        const roots = this.findPolarRootsInRange(derivativeStr, thetaMin, thetaMax);
+        
+        for (const theta of roots) {
+            try {
+                // Evaluate r at this theta
+                let cleanExpression = func.expression.trim();
+                if (cleanExpression.toLowerCase().startsWith('r=')) {
+                    cleanExpression = cleanExpression.substring(2).trim();
+                }
+                const processedExpression = cleanExpression.toLowerCase();
+                const compiledExpression = this.getCompiledExpression(processedExpression);
+                
+                const scope = { 
+                    theta: theta, 
+                    t: theta,
+                    pi: Math.PI,
+                    e: Math.E
+                };
+                
+                let r = compiledExpression.evaluate(scope);
+                
+                // Handle negative r values
+                let adjustedTheta = theta;
+                if (r < 0) {
+                    if (this.polarSettings.plotNegativeR) {
+                        r = Math.abs(r);
+                        adjustedTheta = theta + Math.PI;
+                    } else {
+                        // Skip negative r values
+                        continue;
+                    }
+                }
+                
+                // Convert polar to cartesian for display
+                const x = r * Math.cos(adjustedTheta);
+                const y = r * Math.sin(adjustedTheta);
+                
+                // Only add if point is reasonable (not NaN, finite, etc.)
+                if (isFinite(x) && isFinite(y) && isFinite(r)) {
+                    turningPoints.push({
+                        x: x,
+                        y: y,
+                        func: func,
+                        type: 'critical', // Don't classify as min/max in polar mode
+                        theta: theta, // Store original theta
+                        r: r,
+                        derivative: derivativeStr
                     });
                 }
             } catch (error) {
@@ -5864,6 +5996,130 @@ class Graphiti {
         }
     }
     
+    findPolarRootsInRange(expression, thetaMin, thetaMax, steps = 200) {
+        // Numerical root finding for polar derivatives dr/dtheta = 0
+        const roots = [];
+        const stepSize = (thetaMax - thetaMin) / steps;
+        
+        // Helper function to evaluate polar derivative expression
+        const evaluatePolarDerivative = (expr, thetaValue) => {
+            let processedExpr = expr.toLowerCase();
+            
+            // No degree conversion needed - theta is already in radians in polar mode
+            const compiledExpression = this.getCompiledExpression(processedExpr);
+            const scope = {
+                theta: thetaValue,
+                t: thetaValue,
+                pi: Math.PI,
+                e: Math.E
+            };
+            
+            return compiledExpression.evaluate(scope);
+        };
+        
+        // Special case: check if theta=0 is in range and if derivative is approximately 0 there
+        // But also verify the derivative actually changes sign (to avoid constant zero derivatives)
+        if (thetaMin <= 0 && thetaMax >= 0) {
+            try {
+                const valueAtZero = evaluatePolarDerivative(expression, 0);
+                if (Math.abs(valueAtZero) < 1e-10) {
+                    // Check nearby points to ensure derivative isn't constantly zero
+                    const delta = stepSize * 0.1;
+                    const valueLeft = evaluatePolarDerivative(expression, -delta);
+                    const valueRight = evaluatePolarDerivative(expression, delta);
+                    
+                    // Only add theta=0 as a root if derivative changes around it
+                    if (Math.abs(valueLeft) > 1e-10 || Math.abs(valueRight) > 1e-10) {
+                        roots.push(0);
+                    }
+                }
+            } catch {
+                // Ignore if evaluation fails
+            }
+        }
+        
+        let prevTheta = thetaMin;
+        let prevValue;
+        
+        try {
+            prevValue = evaluatePolarDerivative(expression, prevTheta);
+        } catch {
+            prevValue = NaN;
+        }
+        
+        for (let i = 1; i <= steps; i++) {
+            const currentTheta = thetaMin + i * stepSize;
+            let currentValue;
+            
+            try {
+                currentValue = evaluatePolarDerivative(expression, currentTheta);
+            } catch {
+                currentValue = NaN;
+            }
+            
+            // Check for sign change (indicating a root)
+            if (isFinite(prevValue) && isFinite(currentValue) && 
+                prevValue * currentValue < 0) {
+                
+                // Use bisection method to refine the root
+                const root = this.polarBisectionMethod(expression, prevTheta, currentTheta);
+                if (root !== null && !roots.some(r => Math.abs(r - root) < 1e-6)) {
+                    roots.push(root);
+                }
+            }
+            
+            prevTheta = currentTheta;
+            prevValue = currentValue;
+        }
+        
+        return roots;
+    }
+    
+    polarBisectionMethod(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
+        // Bisection method for polar derivatives
+        const evaluatePolarDerivative = (expr, thetaValue) => {
+            let processedExpr = expr.toLowerCase();
+            const compiledExpression = this.getCompiledExpression(processedExpr);
+            const scope = {
+                theta: thetaValue,
+                t: thetaValue,
+                pi: Math.PI,
+                e: Math.E
+            };
+            return compiledExpression.evaluate(scope);
+        };
+        
+        try {
+            let fa = evaluatePolarDerivative(expression, a);
+            let fb = evaluatePolarDerivative(expression, b);
+            
+            if (fa * fb > 0) {
+                return null; // No root in interval
+            }
+            
+            for (let i = 0; i < maxIterations; i++) {
+                const c = (a + b) / 2;
+                const fc = evaluatePolarDerivative(expression, c);
+                
+                if (Math.abs(fc) < tolerance || Math.abs(b - a) < tolerance) {
+                    return c;
+                }
+                
+                if (fa * fc < 0) {
+                    b = c;
+                    fb = fc;
+                } else {
+                    a = c;
+                    fa = fc;
+                }
+            }
+            
+            return (a + b) / 2; // Return best approximation
+        } catch {
+            return null;
+        }
+    }
+    
     clearTurningPoints() {
         // Clear turning point markers and frozen badges
         this.turningPoints = [];
@@ -5879,15 +6135,9 @@ class Graphiti {
     updateTurningPointsToggleButton() {
         const button = document.getElementById('turning-points-toggle');
         if (button) {
-            if (this.plotMode === 'polar') {
-                // Disabled in polar mode
-                button.style.opacity = '0.3';
-                button.style.pointerEvents = 'none';
-            } else {
-                // Normal behavior in Cartesian mode
-                button.style.opacity = this.showTurningPoints ? '1' : '0.6';
-                button.style.pointerEvents = 'auto';
-            }
+            // Enable in both Cartesian and polar modes now
+            button.style.opacity = this.showTurningPoints ? '1' : '0.6';
+            button.style.pointerEvents = 'auto';
         }
     }
     
