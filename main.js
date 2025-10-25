@@ -1087,13 +1087,17 @@ class Graphiti {
             // Try a simple test evaluation to catch syntax errors early
             try {
                 if (this.plotMode === 'polar') {
-                    // For polar mode, test with theta/t variable - remove "r=" prefix if present
-                    let processedExpression = this.convertFromLatex(func.expression);
-                    processedExpression = processedExpression.trim();
-                    if (processedExpression.toLowerCase().startsWith('r=')) {
-                        processedExpression = processedExpression.substring(2).trim();
+                    // Skip validation for theta-constant rays (they're assignments, not evaluable expressions)
+                    const functionType = this.detectFunctionType(func.expression);
+                    if (functionType !== 'theta-constant') {
+                        // For polar mode, test with theta/t variable - remove "r=" prefix if present
+                        let processedExpression = this.convertFromLatex(func.expression);
+                        processedExpression = processedExpression.trim();
+                        if (processedExpression.toLowerCase().startsWith('r=')) {
+                            processedExpression = processedExpression.substring(2).trim();
+                        }
+                        math.evaluate(processedExpression, { t: 1, theta: 1 });
                     }
-                    math.evaluate(processedExpression, { t: 1, theta: 1 });
                 } else {
                     // For cartesian mode, check function type first
                     const functionType = this.detectFunctionType(func.expression);
@@ -1432,6 +1436,13 @@ class Graphiti {
     }
     
     plotPolarFunction(func) {
+        // Check if this is a theta = constant ray
+        const functionType = this.detectFunctionType(func.expression);
+        if (functionType === 'theta-constant') {
+            this.plotPolarRay(func);
+            return;
+        }
+        
         try {
             // Prepare the expression for evaluation - remove "r=" prefix if present for consistency
             let processedExpression = func.expression.trim();
@@ -1511,6 +1522,58 @@ class Graphiti {
             func.points = [];
         }
     }
+    
+    plotPolarRay(func) {
+        try {
+            // Extract the theta value from "theta = <expression>" or "θ = <expression>" or "t = <expression>"
+            const thetaMatch = func.expression.trim().match(/^(θ|theta|t)\s*=\s*(.+)$/i);
+            if (!thetaMatch) {
+                func.points = [];
+                return;
+            }
+            
+            const thetaExpression = thetaMatch[2].trim();
+            
+            // Evaluate the constant expression
+            let thetaValue;
+            try {
+                const scope = { pi: Math.PI, e: Math.E };
+                thetaValue = math.evaluate(thetaExpression, scope);
+            } catch (e) {
+                console.error('Error evaluating theta expression:', e);
+                func.points = [];
+                return;
+            }
+            
+            // Convert to radians if in degree mode
+            const thetaRad = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            
+            // Calculate the maximum radius needed to reach the edge of the viewport
+            // Get the distance to the farthest corner of the viewport
+            const maxViewportRadius = Math.max(
+                Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.minY * this.viewport.minY),
+                Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.minY * this.viewport.minY),
+                Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.maxY * this.viewport.maxY),
+                Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.maxY * this.viewport.maxY)
+            ) * 2; // Double it to ensure it extends well beyond viewport
+            
+            // Create points from origin to edge along the ray
+            const points = [];
+            const numPoints = 100; // Use more points to ensure proper rendering
+            
+            for (let i = 0; i < numPoints; i++) {
+                const r = (i / (numPoints - 1)) * maxViewportRadius;
+                const x = r * Math.cos(thetaRad);
+                const y = r * Math.sin(thetaRad);
+                points.push({ x, y, connected: true });
+            }
+            
+            func.points = points;
+        } catch (error) {
+            console.error('Error plotting polar ray:', error);
+            func.points = [];
+        }
+    }
 
     // ================================
     // FUNCTION TYPE DETECTION METHODS
@@ -1523,6 +1586,28 @@ class Graphiti {
         // Check for equals sign first
         if (!clean.includes('=')) {
             return 'explicit'; // f(x) format - assume explicit
+        }
+        
+        // Check for theta = constant (polar ray) in polar mode
+        if (this.plotMode === 'polar') {
+            // Match t= or theta= or θ=
+            const thetaMatch = clean.match(/^(θ|theta|t)\s*=\s*(.+)$/i);
+            if (thetaMatch) {
+                // Check if right side is a constant expression (no theta or t variable)
+                const rightSide = thetaMatch[2].trim().toLowerCase();
+                
+                // Check if there's 'theta' in the right side
+                const hasTheta = /theta/.test(rightSide);
+                
+                // Check if there's a standalone 't' (not part of another word)
+                // First remove 'theta' to avoid matching 't' inside it
+                const withoutTheta = rightSide.replace(/theta/g, '');
+                const hasT = /\bt\b/.test(withoutTheta);
+                
+                if (!hasT && !hasTheta) {
+                    return 'theta-constant';
+                }
+            }
         }
         
         // Has equals sign - analyze the equation
@@ -3647,10 +3732,13 @@ class Graphiti {
                     // Update range inputs to reflect the pan (immediate for responsiveness)
                     this.updateRangeInputs();
                     
-                    // Only replot explicit functions for smooth panning performance
+                    // Only replot explicit functions and theta-constant rays for smooth panning performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
-                            this.plotFunction(func); // Use lightweight plotting for explicit functions only
+                        if (func.expression && func.enabled) {
+                            const functionType = this.detectFunctionType(func.expression);
+                            if (functionType === 'explicit' || functionType === 'theta-constant') {
+                                this.plotFunction(func); // Use lightweight plotting for explicit functions and rays
+                            }
                         }
                     });
                     
@@ -4025,8 +4113,17 @@ class Graphiti {
         // Update the range input fields to reflect current viewport
         this.updateRangeInputs();
         
-        // Re-plot only explicit functions when viewport changes for smooth performance
-        this.replotAllFunctions(true); // true = only explicit functions
+        // Re-plot explicit functions and theta-constant rays when viewport changes for smooth performance
+        this.getCurrentFunctions().forEach(func => {
+            if (func.expression && func.enabled) {
+                const functionType = this.detectFunctionType(func.expression);
+                if (functionType === 'explicit' || functionType === 'theta-constant') {
+                    this.plotFunction(func);
+                }
+            }
+        });
+        this.draw();
+        this.handleViewportChange();
     }
     
     updateViewportScale() {
@@ -4090,10 +4187,13 @@ class Graphiti {
             this.updateViewportScale();
             this.updateRangeInputs();
             
-            // Only replot explicit functions for smooth zoom performance
+            // Only replot explicit functions and theta-constant rays for smooth zoom performance
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
-                    this.plotFunction(func);
+                if (func.expression && func.enabled) {
+                    const functionType = this.detectFunctionType(func.expression);
+                    if (functionType === 'explicit' || functionType === 'theta-constant') {
+                        this.plotFunction(func);
+                    }
                 }
             });
             this.draw();
@@ -4124,10 +4224,13 @@ class Graphiti {
             this.updateViewportScale();
             this.updateRangeInputs();
             
-            // Only replot explicit functions for smooth zoom performance
+            // Only replot explicit functions and theta-constant rays for smooth zoom performance
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
-                    this.plotFunction(func);
+                if (func.expression && func.enabled) {
+                    const functionType = this.detectFunctionType(func.expression);
+                    if (functionType === 'explicit' || functionType === 'theta-constant') {
+                        this.plotFunction(func);
+                    }
                 }
             });
             this.draw();
@@ -5861,6 +5964,11 @@ class Graphiti {
             if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
                 return false;
             }
+            // Skip theta-constant rays (they always pass through origin and don't have meaningful axis intercepts)
+            const functionType = this.detectFunctionType(f.expression);
+            if (functionType === 'theta-constant') {
+                return false;
+            }
             return true;
         });
         
@@ -6009,6 +6117,12 @@ class Graphiti {
         const enabledFunctions = this.getCurrentFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
             if (!f.enabled || !f.points || f.points.length === 0) {
+                return false;
+            }
+            
+            // Skip theta-constant rays (they don't have turning points)
+            const functionType = this.detectFunctionType(f.expression);
+            if (functionType === 'theta-constant') {
                 return false;
             }
             
