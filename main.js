@@ -139,7 +139,7 @@ class Graphiti {
         this.polarFunctionsCleared = false;
         this.functionColors = [
             '#4A90E2', '#27AE60', '#F39C12', 
-            '#9B59B6', '#1ABC9C', '#E67E22', '#34495E',
+            '#E91E63', '#1ABC9C', '#E67E22', '#34495E',
             '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#E74C3C'
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
@@ -1196,18 +1196,22 @@ class Graphiti {
     // Save functions to localStorage
     saveFunctionsToLocalStorage() {
         try {
-            // Save cartesian functions
-            const cartesianData = this.cartesianFunctions.map(func => ({
-                expression: func.expression,
-                enabled: func.enabled
-            }));
+            // Save cartesian functions (filter out empty ones)
+            const cartesianData = this.cartesianFunctions
+                .filter(func => func.expression && func.expression.trim() !== '')
+                .map(func => ({
+                    expression: func.expression,
+                    enabled: func.enabled
+                }));
             localStorage.setItem('graphiti_cartesian_functions', JSON.stringify(cartesianData));
             
-            // Save polar functions
-            const polarData = this.polarFunctions.map(func => ({
-                expression: func.expression,
-                enabled: func.enabled
-            }));
+            // Save polar functions (filter out empty ones)
+            const polarData = this.polarFunctions
+                .filter(func => func.expression && func.expression.trim() !== '')
+                .map(func => ({
+                    expression: func.expression,
+                    enabled: func.enabled
+                }));
             localStorage.setItem('graphiti_polar_functions', JSON.stringify(polarData));
         } catch (error) {
             // Silently handle localStorage errors (e.g., quota exceeded, private browsing)
@@ -3620,11 +3624,9 @@ class Graphiti {
             this.input.badgeInteraction.isHolding = false;
         }
         
-        // If we were dragging and not tracing, ensure final replot happens
-        if (this.input.dragging && !this.input.tracing.active) {
-            // Final complete replot with badge management
-            this.replotAllFunctions();
-        }
+        // Don't replot on pointer end - the debounced timer in handleViewportChange already handles
+        // implicit function replotting after panning stops. Calling replotAllFunctions here would
+        // cause duplicate calculations when you release the mouse/finger.
         
         // Exit tracing mode - add new badge for persistent display
         if (this.input.tracing.active) {
@@ -3644,11 +3646,9 @@ class Graphiti {
         this.input.tracing.active = false;
         this.input.tracing.functionId = null;
         
-        // If we were dragging (panning), trigger viewport change handling
-        // This ensures intersection markers are recalculated immediately like zoom operations
-        if (this.input.dragging) {
-            this.handleViewportChange();
-        }
+        // Don't trigger viewport change on pointer end - it's already handled by debounced timer
+        // The timer in handleViewportChange triggers when movement stops (even before pointer release)
+        // Calling it again here would cause duplicate calculations
         
         this.input.mouse.down = false;
         this.input.dragging = false;
@@ -4312,6 +4312,20 @@ class Graphiti {
                 this.getCurrentFunctions().push(func);
                 this.createFunctionUI(func);
             });
+            
+            // Always add an empty function box at the end as a visual indicator
+            const emptyId = this.nextFunctionId++;
+            const emptyColor = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+            const emptyFunc = {
+                id: emptyId,
+                expression: '',
+                points: [],
+                color: emptyColor,
+                enabled: true,
+                mode: this.plotMode
+            };
+            this.getCurrentFunctions().push(emptyFunc);
+            this.createFunctionUI(emptyFunc);
         }
         
         // Update virtual keyboards for the new mode
@@ -4609,6 +4623,20 @@ class Graphiti {
                 this.getCurrentFunctions().push(func);
                 this.createFunctionUI(func);
             });
+            
+            // Always add an empty function box at the end as a visual indicator
+            const emptyId = this.nextFunctionId++;
+            const emptyColor = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+            const emptyFunc = {
+                id: emptyId,
+                expression: '',
+                points: [],
+                color: emptyColor,
+                enabled: true,
+                mode: this.plotMode
+            };
+            this.getCurrentFunctions().push(emptyFunc);
+            this.createFunctionUI(emptyFunc);
             
             // Use the same smart reset viewport logic as the reset button for consistency
             const smartViewport = this.getSmartResetViewport();
@@ -6199,9 +6227,9 @@ class Graphiti {
         this.updateBadgeScreenPositions();
         this.drawPersistentBadges();
         
-        // Draw calculation indicator if implicit functions are actively being recalculated
-        // This happens AFTER viewport change ends, during the brief period when curves disappear
-        if (this.hasActiveImplicitCalculations()) {
+        // Draw calculation indicator during viewport changes and calculations
+        // Only shown when implicit functions are present
+        if (this.shouldShowCalculationIndicator()) {
             this.drawCalculationIndicator();
         }
         
@@ -6335,9 +6363,9 @@ class Graphiti {
     }
     
     drawPolarAngleLabels(center, maxViewportRadius, thetaSpacing) {
-        // Use yellow for angle labels to differentiate from axis labels and provide good contrast
+        // Use bright yellow/orange for angle labels to differentiate from axis labels and provide good contrast
         const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
-        const angleColor = isDarkMode ? '#FFD700' : '#B8860B'; // Gold in dark mode, dark goldenrod in light mode
+        const angleColor = isDarkMode ? '#FFD700' : '#FF8C00'; // Gold in dark mode, vibrant orange in light mode
 
         this.ctx.fillStyle = angleColor;
         this.ctx.font = '12px Arial';
@@ -7819,8 +7847,26 @@ class Graphiti {
         });
     }
     
+    hasEnabledImplicitFunctions() {
+        // Check if there are any enabled implicit functions in the current mode
+        return this.getCurrentFunctions().some(func => {
+            if (!func.enabled || !func.expression) return false;
+            return this.detectFunctionType(func.expression) === 'implicit';
+        });
+    }
+    
+    shouldShowCalculationIndicator() {
+        // Show hourglass if:
+        // 1. We have enabled implicit functions AND
+        // 2. Either viewport is changing OR implicit calculations are active
+        if (!this.hasEnabledImplicitFunctions()) {
+            return false;
+        }
+        return this.isViewportChanging || this.hasActiveImplicitCalculations();
+    }
+    
     drawCalculationIndicator() {
-        const padding = 15;
+        const padding = 25; // Increased from 15 to move away from edge
         const size = 40;
         const x = this.viewport.width - size - padding;
         const y = this.viewport.height - size - padding;
