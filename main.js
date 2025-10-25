@@ -3289,11 +3289,6 @@ class Graphiti {
                     this.clearIntercepts();
                 }
                 
-                // Close the function panel only on mobile devices
-                if (this.isTrueMobile()) {
-                    this.closeMobileMenu();
-                }
-                
                 // Redraw to show/hide intercept markers
                 this.draw();
             });
@@ -3316,11 +3311,6 @@ class Graphiti {
                     this.clearIntersections();
                 }
                 
-                // Close the function panel only on mobile devices
-                if (this.isTrueMobile()) {
-                    this.closeMobileMenu();
-                }
-                
                 // Redraw to show/hide intersection markers
                 this.draw();
             });
@@ -3341,11 +3331,6 @@ class Graphiti {
                 } else {
                     // Clear turning points and badges
                     this.clearTurningPoints();
-                }
-                
-                // Close the function panel only on mobile devices
-                if (this.isTrueMobile()) {
-                    this.closeMobileMenu();
                 }
                 
                 // Redraw to show/hide turning point markers
@@ -3939,10 +3924,13 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Only replot explicit functions for smooth pinch performance
+                    // Replot explicit functions and theta-constant rays for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
-                            this.plotFunction(func);
+                        if (func.expression && func.enabled) {
+                            const functionType = this.detectFunctionType(func.expression);
+                            if (functionType === 'explicit' || functionType === 'theta-constant') {
+                                this.plotFunction(func);
+                            }
                         }
                     });
                     this.draw();
@@ -3969,10 +3957,13 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Only replot explicit functions for smooth pinch performance
+                    // Replot explicit functions and theta-constant rays for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && !func.expression.includes('=')) {
-                            this.plotFunction(func);
+                        if (func.expression && func.enabled) {
+                            const functionType = this.detectFunctionType(func.expression);
+                            if (functionType === 'explicit' || functionType === 'theta-constant') {
+                                this.plotFunction(func);
+                            }
                         }
                     });
                     this.draw();
@@ -4006,10 +3997,13 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Only replot explicit functions for smooth pinch performance
+                    // Replot explicit functions and theta-constant rays for smooth pinch performance
                     this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'explicit') {
-                            this.plotFunction(func);
+                        if (func.expression && func.enabled) {
+                            const functionType = this.detectFunctionType(func.expression);
+                            if (functionType === 'explicit' || functionType === 'theta-constant') {
+                                this.plotFunction(func);
+                            }
                         }
                     });
                     this.draw();
