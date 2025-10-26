@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-offline-cache-25-10-2025-22:45';
+const CACHE_NAME = 'graphiti-offline-cache-26-10-2025-10:00';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -69,8 +69,8 @@ self.addEventListener('fetch', (event) => {
                         // Clone the response before caching
                         const responseClone = response.clone();
                         
-                        // Only cache successful responses
-                        if (response.status === 200) {
+                        // Only cache successful GET requests (Cache API doesn't support HEAD, POST, etc.)
+                        if (response.status === 200 && event.request.method === 'GET') {
                             caches.open(CACHE_NAME)
                                 .then((cache) => {
                                     cache.put(event.request, responseClone);
