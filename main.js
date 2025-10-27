@@ -5870,15 +5870,24 @@ class Graphiti {
         
         if (isImplicit) {
             // For implicit functions, find points where y is closest to 0
-            // First, collect all candidate points near the x-axis
+            // Strategy: Find regions where curve crosses x-axis, then pick closest point in each region
             const candidates = [];
-            for (let i = 0; i < points.length; i++) {
-                const x = points[i].x;
-                const y = points[i].y;
+            
+            for (let i = 0; i < points.length - 1; i++) {
+                const x1 = points[i].x;
+                const y1 = points[i].y;
+                const x2 = points[i + 1].x;
+                const y2 = points[i + 1].y;
                 
-                // Check if y is very close to 0 (on x-axis)
-                if (Math.abs(y) < 0.01) { // Tolerance for implicit functions
-                    candidates.push({ x, y: Math.abs(y) }); // Store absolute y for sorting
+                // Look for sign changes or points very close to zero
+                if ((y1 * y2 <= 0) || Math.abs(y1) < 0.1 || Math.abs(y2) < 0.1) {
+                    // This segment crosses or approaches the x-axis
+                    // Pick the point closest to y=0
+                    if (Math.abs(y1) < Math.abs(y2)) {
+                        candidates.push({ x: x1, y: Math.abs(y1) });
+                    } else {
+                        candidates.push({ x: x2, y: Math.abs(y2) });
+                    }
                 }
             }
             
@@ -5948,16 +5957,25 @@ class Graphiti {
         const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
         
         if (isImplicit) {
-            // For implicit functions, find all points where x is closest to 0
-            // First, collect all candidate points near the y-axis
+            // For implicit functions, find points where x is closest to 0
+            // Strategy: Find regions where curve crosses y-axis, then pick closest point in each region
             const candidates = [];
-            for (let i = 0; i < points.length; i++) {
-                const x = points[i].x;
-                const y = points[i].y;
+            
+            for (let i = 0; i < points.length - 1; i++) {
+                const x1 = points[i].x;
+                const y1 = points[i].y;
+                const x2 = points[i + 1].x;
+                const y2 = points[i + 1].y;
                 
-                // Check if x is very close to 0 (on y-axis)
-                if (Math.abs(x) < 0.01) { // Tolerance for implicit functions
-                    candidates.push({ x: Math.abs(x), y }); // Store absolute x for sorting
+                // Look for sign changes or points very close to zero
+                if ((x1 * x2 <= 0) || Math.abs(x1) < 0.1 || Math.abs(x2) < 0.1) {
+                    // This segment crosses or approaches the y-axis
+                    // Pick the point closest to x=0
+                    if (Math.abs(x1) < Math.abs(x2)) {
+                        candidates.push({ x: Math.abs(x1), y: y1 });
+                    } else {
+                        candidates.push({ x: Math.abs(x2), y: y2 });
+                    }
                 }
             }
             
