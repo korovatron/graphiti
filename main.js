@@ -5821,7 +5821,9 @@ class Graphiti {
         const intercepts = [];
         const enabledFunctions = this.getCurrentFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
-            if (!f.enabled || !f.points || f.points.length === 0) {
+            // Use displayPoints (stable buffer) if available, otherwise fall back to points
+            const pointsToCheck = f.displayPoints || f.points;
+            if (!f.enabled || !pointsToCheck || pointsToCheck.length === 0) {
                 return false;
             }
             
@@ -5839,11 +5841,9 @@ class Graphiti {
             const xIntercepts = this.findXInterceptsForFunction(func);
             intercepts.push(...xIntercepts);
             
-            // Find y-intercept (where x = 0)
-            const yIntercept = this.findYInterceptForFunction(func);
-            if (yIntercept) {
-                intercepts.push(yIntercept);
-            }
+            // Find y-intercepts (where x = 0)
+            const yIntercepts = this.findYInterceptsForFunction(func);
+            intercepts.push(...yIntercepts);
         }
         
         return intercepts;
@@ -5851,38 +5851,77 @@ class Graphiti {
     
     findXInterceptsForFunction(func) {
         const xIntercepts = [];
-        const minDistance = 0.01; // Minimum distance between distinct intercepts (in world coordinates)
+        const minDistance = 0.5; // Minimum distance between distinct intercepts (in world coordinates)
         
-        // For explicit functions (y = f(x)), find where y crosses zero
-        const points = func.points;
+        // Use displayPoints for implicit functions (double-buffering), fall back to points
+        const points = func.displayPoints || func.points;
         
-        for (let i = 0; i < points.length - 1; i++) {
-            const x1 = points[i].x;
-            const y1 = points[i].y;
-            const x2 = points[i + 1].x;
-            const y2 = points[i + 1].y;
+        // Check if it's an implicit function
+        const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+        
+        if (isImplicit) {
+            // For implicit functions, find points where y is closest to 0
+            // First, collect all candidate points near the x-axis
+            const candidates = [];
+            for (let i = 0; i < points.length; i++) {
+                const x = points[i].x;
+                const y = points[i].y;
+                
+                // Check if y is very close to 0 (on x-axis)
+                if (Math.abs(y) < 0.01) { // Tolerance for implicit functions
+                    candidates.push({ x, y: Math.abs(y) }); // Store absolute y for sorting
+                }
+            }
             
-            // Check for valid points
-            if (!isFinite(y1) || !isFinite(y2)) continue;
+            // Sort candidates by x position
+            candidates.sort((a, b) => a.x - b.x);
             
-            // Check for sign change (zero crossing) or exact zero
-            if ((y1 * y2 < 0) || (y1 === 0 && y2 !== 0)) {
-                // Use bisection method to find more accurate zero
-                const xIntercept = y1 === 0 ? x1 : this.bisectionMethod(func.expression, x1, x2, 'y');
-                if (xIntercept !== null) {
-                    // Check if this intercept is far enough from existing ones
-                    const isDuplicate = xIntercepts.some(existing => 
-                        Math.abs(existing.x - xIntercept) < minDistance
-                    );
-                    
-                    if (!isDuplicate) {
-                        xIntercepts.push({
-                            x: xIntercept,
-                            y: 0,
-                            type: 'x-intercept',
-                            functionId: func.id,
-                            color: func.color
-                        });
+            // Group candidates and pick the best from each group
+            for (const candidate of candidates) {
+                const isDuplicate = xIntercepts.some(existing => 
+                    Math.abs(existing.x - candidate.x) < minDistance
+                );
+                
+                if (!isDuplicate) {
+                    xIntercepts.push({
+                        x: candidate.x,
+                        y: 0,
+                        type: 'x-intercept',
+                        functionId: func.id,
+                        color: func.color
+                    });
+                }
+            }
+        } else {
+            // For explicit functions (y = f(x)), find where y crosses zero
+            for (let i = 0; i < points.length - 1; i++) {
+                const x1 = points[i].x;
+                const y1 = points[i].y;
+                const x2 = points[i + 1].x;
+                const y2 = points[i + 1].y;
+                
+                // Check for valid points
+                if (!isFinite(y1) || !isFinite(y2)) continue;
+                
+                // Check for sign change (zero crossing) or exact zero
+                if ((y1 * y2 < 0) || (y1 === 0 && y2 !== 0)) {
+                    // Use bisection method to find more accurate zero
+                    const xIntercept = y1 === 0 ? x1 : this.bisectionMethod(func.expression, x1, x2, 'y');
+                    if (xIntercept !== null) {
+                        // Check if this intercept is far enough from existing ones
+                        const isDuplicate = xIntercepts.some(existing => 
+                            Math.abs(existing.x - xIntercept) < minDistance
+                        );
+                        
+                        if (!isDuplicate) {
+                            xIntercepts.push({
+                                x: xIntercept,
+                                y: 0,
+                                type: 'x-intercept',
+                                functionId: func.id,
+                                color: func.color
+                            });
+                        }
                     }
                 }
             }
@@ -5891,30 +5930,71 @@ class Graphiti {
         return xIntercepts;
     }
     
-    findYInterceptForFunction(func) {
-        // Y-intercept occurs where x = 0
-        // Evaluate the function at x = 0
-        try {
-            // Convert from LaTeX first since we now store LaTeX format
-            const expr = this.convertFromLatex(func.expression);
-            const scope = { x: 0 };
-            const y = math.evaluate(expr, scope);
-            
-            if (isFinite(y) && Math.abs(y) < 1000) { // Reasonable bounds check
-                return {
-                    x: 0,
-                    y: y,
-                    type: 'y-intercept',
-                    functionId: func.id,
-                    color: func.color
-                };
+    findYInterceptsForFunction(func) {
+        const yIntercepts = [];
+        const minDistance = 0.5; // Minimum distance between distinct intercepts (in world coordinates)
+        
+        // Use displayPoints for implicit functions (double-buffering), fall back to points
+        const points = func.displayPoints || func.points;
+        const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+        
+        if (isImplicit) {
+            // For implicit functions, find all points where x is closest to 0
+            // First, collect all candidate points near the y-axis
+            const candidates = [];
+            for (let i = 0; i < points.length; i++) {
+                const x = points[i].x;
+                const y = points[i].y;
+                
+                // Check if x is very close to 0 (on y-axis)
+                if (Math.abs(x) < 0.01) { // Tolerance for implicit functions
+                    candidates.push({ x: Math.abs(x), y }); // Store absolute x for sorting
+                }
             }
-        } catch (error) {
-            // If evaluation fails, no y-intercept
-            return null;
+            
+            // Sort candidates by y position
+            candidates.sort((a, b) => a.y - b.y);
+            
+            // Group candidates and pick the best from each group
+            for (const candidate of candidates) {
+                const isDuplicate = yIntercepts.some(existing => 
+                    Math.abs(existing.y - candidate.y) < minDistance
+                );
+                
+                if (!isDuplicate) {
+                    yIntercepts.push({
+                        x: 0,
+                        y: candidate.y,
+                        type: 'y-intercept',
+                        functionId: func.id,
+                        color: func.color
+                    });
+                }
+            }
+        } else {
+            // Y-intercept occurs where x = 0
+            // Evaluate the explicit function at x = 0
+            try {
+                // Convert from LaTeX first since we now store LaTeX format
+                const expr = this.convertFromLatex(func.expression);
+                const scope = { x: 0 };
+                const y = math.evaluate(expr, scope);
+                
+                if (isFinite(y) && Math.abs(y) < 1000) { // Reasonable bounds check
+                    yIntercepts.push({
+                        x: 0,
+                        y: y,
+                        type: 'y-intercept',
+                        functionId: func.id,
+                        color: func.color
+                    });
+                }
+            } catch (error) {
+                // If evaluation fails, no y-intercept
+            }
         }
         
-        return null;
+        return yIntercepts;
     }
     
     bisectionMethod(expression, x1, x2, variable = 'y') {
