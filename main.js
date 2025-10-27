@@ -4070,7 +4070,16 @@ class Graphiti {
             case 'escape':
                 this.changeState(this.states.TITLE);
                 break;
-            // Removed zoom shortcuts (=, +, -) to prevent accidental zooming
+            case '=':  // Plus key (without needing Shift)
+            case '+':  // Plus key (with Shift or numpad)
+                e.preventDefault(); // Prevent browser zoom
+                this.zoomIn();
+                break;
+            case '-':  // Minus key (both main keyboard and numpad)
+            case '_':  // Underscore (Shift + minus, just in case)
+                e.preventDefault(); // Prevent browser zoom
+                this.zoomOut();
+                break;
         }
     }
     
