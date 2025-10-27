@@ -8335,11 +8335,11 @@ class Graphiti {
             return;
         }
         
-        // Create a badge at the intercept point
-        this.addInterceptBadge(intercept.x, intercept.y, intercept.type);
+        // Create a badge at the intercept point, passing the functionId
+        this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId);
     }
     
-    addInterceptBadge(x, y, interceptType) {
+    addInterceptBadge(x, y, interceptType, functionId) {
         // Calculate screen position
         const screenPos = this.worldToScreen(x, y);
         
@@ -8380,6 +8380,7 @@ class Graphiti {
             screenX: screenPos.x,
             screenY: screenPos.y,
             label: label,
+            functionId: functionId, // Link badge to the function for proper cleanup
             functionColor: '#808080', // Neutral gray color for intercepts
             badgeType: interceptType // 'x-intercept', 'y-intercept', or polar axis types
         };
