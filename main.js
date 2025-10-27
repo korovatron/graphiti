@@ -1644,15 +1644,6 @@ class Graphiti {
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
         try {
-            // During viewport changes, keep existing points visible until new ones are ready
-            // Only clear points if we're not actively panning/zooming
-            if (!this.isViewportChanging) {
-                func.points = [];
-                if (func.cachedPoints) {
-                    delete func.cachedPoints;
-                }
-            }
-            
             // Register this calculation and update debug overlay
             const calculationId = ++this.implicitCalculationId;
             this.currentImplicitCalculations.set(func.id, calculationId);
@@ -1665,7 +1656,7 @@ class Graphiti {
             
             if (!equation) {
                 console.warn('Could not parse implicit equation:', func.expression);
-                func.points = [];
+                // Don't clear existing points - keep them visible
                 this.activeImplicitCalculations.delete(func.id);
                 return;
             }
@@ -1673,6 +1664,7 @@ class Graphiti {
             // Check if calculation was cancelled before starting heavy computation
             if (this.isCalculationCancelled(func.id, calculationId)) {
                 this.activeImplicitCalculations.delete(func.id);
+                // Don't clear existing points - keep them visible during cancellation
                 return;
             }
             
@@ -1685,15 +1677,25 @@ class Graphiti {
             // Final cancellation check before setting results
             if (this.isCalculationCancelled(func.id, calculationId)) {
                 this.activeImplicitCalculations.delete(func.id);
+                // Don't clear existing points - keep them visible during cancellation
                 return;
             }
             
+            // Double-buffering: Calculate into working buffer, then atomically swap to display buffer
+            // This eliminates race conditions and ensures stable display during viewport changes
+            const oldCount = func.displayPoints?.length || 0;
+            func.calculatingPoints = points;
+            func.displayPoints = func.calculatingPoints;
+            func.calculatingPoints = null;
+            
+            // Also update func.points for backward compatibility (intersections, etc.)
             func.points = points;
+            
             this.activeImplicitCalculations.delete(func.id);
             
         } catch (error) {
             console.error('Error plotting implicit function:', error);
-            func.points = [];
+            // Don't clear existing points on error - keep them visible
             this.activeImplicitCalculations.delete(func.id);
         }
     }
@@ -2669,18 +2671,7 @@ class Graphiti {
         // Schedule implicit intersection recalculation after viewport changes settle
         this.scheduleImplicitIntersectionCalculation();
         
-        // Cache current implicit function points BEFORE canceling calculations
-        this.getCurrentFunctions().forEach(func => {
-            if (func.expression && func.enabled && this.detectFunctionType(func.expression) === 'implicit') {
-                // Only cache if we haven't already cached (prevents overwriting during rapid panning)
-                if (!func.cachedPoints && func.points && func.points.length > 0) {
-                    func.cachedPoints = [...func.points];
-                }
-                // Keep current points visible during panning - rendering will use these
-            }
-        });
-        
-        // Cancel any ongoing implicit function calculations (won't clear points during viewport changes)
+        // Cancel any ongoing implicit function calculations
         this.cancelAllImplicitCalculations();
         
         // Clear existing timer to restart the debounce period
@@ -2693,13 +2684,6 @@ class Graphiti {
             this.isViewportChanging = false;
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
-            
-            // Clear cached points now that viewport has settled
-            this.getCurrentFunctions().forEach(func => {
-                if (func.cachedPoints) {
-                    delete func.cachedPoints;
-                }
-            });
             
             // Replot implicit functions asynchronously to avoid blocking UI
             setTimeout(() => {
@@ -6983,8 +6967,8 @@ class Graphiti {
             if (func.enabled) {
                 const functionType = this.detectFunctionType(func.expression);
                 if (functionType === 'implicit') {
-                    // Draw implicit functions using cached points during viewport changes
-                    const pointsToCheck = this.isViewportChanging ? (func.cachedPoints || func.points) : func.points;
+                    // Draw implicit functions using displayPoints (stable during calculations)
+                    const pointsToCheck = func.displayPoints || func.points;
                     if (pointsToCheck && pointsToCheck.length > 0) {
                         this.drawImplicitFunction(func);
                     }
@@ -7653,8 +7637,9 @@ class Graphiti {
     }
 
     drawImplicitFunction(func) {
-        // Use cached points during viewport changes, regular points otherwise
-        const pointsToUse = this.isViewportChanging ? (func.cachedPoints || func.points) : func.points;
+        // Use stable displayPoints if available, otherwise fall back to points
+        // displayPoints won't change during viewport panning, eliminating "blink"
+        const pointsToUse = func.displayPoints || func.points;
         
         if (!pointsToUse || pointsToUse.length === 0) return;
         
