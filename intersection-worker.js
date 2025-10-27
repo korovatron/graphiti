@@ -9,6 +9,11 @@ importScripts('https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js
 // Global cancellation flag
 let isCancelled = false;
 
+// Intersection Detection Web Worker
+// Performs intersection calculations in a separate thread for better performance
+
+console.log('Intersection worker loaded');
+
 // Worker message handler
 self.onmessage = function(event) {
     const { type, data } = event.data;
@@ -50,8 +55,6 @@ self.onmessage = function(event) {
                 
                 const endTime = performance.now();
                 const calculationTime = endTime - startTime;
-                
-                console.log(`Intersection calculation completed: ${intersections.length} intersections found in ${calculationTime.toFixed(2)}ms`);
                 
                 // Send results back to main thread
                 self.postMessage({
@@ -462,5 +465,3 @@ function interpolateYAtX(func, targetX) {
     
     return null; // targetX is outside the function's domain
 }
-
-console.log('Intersection worker ready');

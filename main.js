@@ -9516,7 +9516,7 @@ class Graphiti {
         if ('serviceWorker' in navigator) {
             try {
                 const registration = await navigator.serviceWorker.register('./sw.js');
-                console.log('Service Worker registered:', registration);
+                console.log('Service Worker registered');
                 
                 // Handle updates quietly
                 registration.addEventListener('updatefound', () => {
@@ -9540,12 +9540,11 @@ class Graphiti {
                 // Handle service worker activation (when new version becomes controlling)
                 navigator.serviceWorker.addEventListener('controllerchange', () => {
                     // Service worker has been updated and is now controlling the page
-                    console.log('Service Worker updated and activated');
                     // No need to reload here as it will happen from the updatefound handler
                 });
                 
             } catch (error) {
-                console.log('Service Worker registration failed:', error);
+                console.error('Service Worker registration failed:', error);
             }
         }
     }

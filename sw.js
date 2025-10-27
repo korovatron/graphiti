@@ -19,15 +19,14 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => {
-                console.log('Caching assets...');
                 return cache.addAll(ASSETS_TO_CACHE);
             })
             .then(() => {
-                console.log('All assets cached successfully');
+                console.log('Assets cached successfully');
                 self.skipWaiting(); // Force activation
             })
             .catch((error) => {
-                console.log('Cache failed:', error);
+                console.error('Cache failed:', error);
                 throw error;
             })
     );
@@ -41,7 +40,6 @@ self.addEventListener('activate', (event) => {
             return Promise.all(
                 cacheNames.map((cacheName) => {
                     if (cacheName !== CACHE_NAME) {
-                        console.log('Deleting old cache:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
@@ -59,11 +57,9 @@ self.addEventListener('fetch', (event) => {
         caches.match(event.request)
             .then((response) => {
                 if (response) {
-                    console.log('Serving from cache:', event.request.url);
                     return response;
                 }
                 
-                console.log('Fetching from network:', event.request.url);
                 return fetch(event.request)
                     .then((response) => {
                         // Clone the response before caching
@@ -81,7 +77,6 @@ self.addEventListener('fetch', (event) => {
                     });
             })
             .catch((error) => {
-                console.log('Network and cache failed for:', event.request.url);
                 // If both cache and network fail, return fallback for documents
                 if (event.request.destination === 'document') {
                     return caches.match('./index.html');
