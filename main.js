@@ -9056,7 +9056,8 @@ class Graphiti {
     containsTrigFunctions() {
         // Check if any enabled function contains trigonometric functions
         // Include all trig functions: basic, reciprocal, inverse, and hyperbolic
-        const trigRegex = /\b(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)\s*\(/i;
+        // Matches both basic format: sin( and LaTeX format: \sin\left(
+        const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -9066,7 +9067,8 @@ class Graphiti {
 
     containsInverseTrigFunctions() {
         // Check if any enabled function contains inverse trigonometric functions
-        const inverseTrigRegex = /\b(asin|acos|atan|asec|acsc|acot)\s*\(/i;
+        // Matches both basic format: asin( and LaTeX format: \asin\left(
+        const inverseTrigRegex = /\\?(asin|acos|atan|asec|acsc|acot)(\s*\(|\\left\()/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -9076,7 +9078,8 @@ class Graphiti {
 
     containsRegularTrigFunctions() {
         // Check if any enabled function contains regular (non-inverse) trigonometric functions
-        const regularTrigRegex = /\b(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)\s*\(/i;
+        // Matches both basic format: sin( and LaTeX format: \sin\left(
+        const regularTrigRegex = /\\?(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)(\s*\(|\\left\()/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -9086,7 +9089,9 @@ class Graphiti {
     
     // Check trig functions in current mode only (for axis formatting)
     currentModeContainsRegularTrigFunctions() {
-        const regularTrigRegex = /\b(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)\s*\(/i;
+        // Check if any enabled function in current mode contains regular (non-inverse) trig functions
+        // Matches both basic format: sin( and LaTeX format: \sin\left(
+        const regularTrigRegex = /\\?(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)(\s*\(|\\left\()/i;
         return this.getCurrentFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -9095,7 +9100,9 @@ class Graphiti {
     }
     
     currentModeContainsInverseTrigFunctions() {
-        const inverseTrigRegex = /\b(asin|acos|atan|asec|acsc|acot)\s*\(/i;
+        // Check if any enabled function in current mode contains inverse trig functions
+        // Matches both basic format: asin( and LaTeX format: \asin\left(
+        const inverseTrigRegex = /\\?(asin|acos|atan|asec|acsc|acot)(\s*\(|\\left\()/i;
         return this.getCurrentFunctions().some(func => 
             func.enabled && 
             func.expression && 
