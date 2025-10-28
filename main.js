@@ -772,6 +772,65 @@ class Graphiti {
         // Save functions to localStorage
         this.saveFunctionsToLocalStorage();
     }
+
+    // Find the first empty function in the current mode's array
+    findFirstEmptyFunction() {
+        const functions = this.getCurrentFunctions();
+        return functions.find(func => !func.expression || func.expression.trim() === '');
+    }
+
+    // Add an example function - fills empty slot if available, otherwise adds new
+    addExampleFunction(expression) {
+        const emptyFunc = this.findFirstEmptyFunction();
+        
+        if (emptyFunc) {
+            // Fill the empty function slot
+            emptyFunc.expression = expression;
+            
+            // Update the UI for this function
+            const funcDiv = document.querySelector(`[data-function-id="${emptyFunc.id}"]`);
+            if (funcDiv) {
+                const mathField = funcDiv.querySelector('math-field');
+                if (mathField) {
+                    mathField.value = expression;
+                }
+            }
+            
+            // Plot the function
+            this.plotFunction(emptyFunc);
+            
+            // Update analysis features if enabled
+            if (this.showIntersections) {
+                this.calculateIntersectionsWithWorker(true); // true = immediate
+            }
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+            }
+        } else {
+            // No empty slot found, add as new function
+            this.addFunction(expression);
+        }
+        
+        // Ensure there's always an empty function available after adding
+        this.ensureEmptyFunction();
+        
+        // Save to localStorage
+        this.saveFunctionsToLocalStorage();
+    }
+
+    // Ensure there's at least one empty function in the current mode
+    ensureEmptyFunction() {
+        const functions = this.getCurrentFunctions();
+        const hasEmpty = functions.some(func => !func.expression || func.expression.trim() === '');
+        
+        if (!hasEmpty) {
+            // No empty function exists, add one
+            this.addFunction('');
+        }
+    }
     
     createFunctionUI(func) {
         const container = document.getElementById('functions-container');
@@ -3226,8 +3285,8 @@ class Graphiti {
                     this.clearIntersections();
                     
                     if (expression) {
-                        // Add example function
-                        this.addFunction(expression);
+                        // Add example function using smart slot-filling logic
+                        this.addExampleFunction(expression);
                     } else {
                         // Add blank function
                         this.addFunction('');
