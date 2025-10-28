@@ -780,10 +780,15 @@ class Graphiti {
         funcDiv.style.borderLeftColor = func.color;
         funcDiv.setAttribute('data-function-id', func.id);
 
+        // Set placeholder based on the function's mode
+        const placeholder = (func.mode === 'polar') 
+            ? '\\text{Enter f(θ)}' 
+            : '\\text{Enter f(x) or f(x,y)}';
+
         funcDiv.innerHTML = `
             <math-field 
                 class="mathlive-input" 
-                placeholder="\\text{Enter f(x) or f(x,y)}"
+                placeholder="${placeholder}"
                 default-mode="math"
                 smart-fence="true"
                 smart-superscript="true"
@@ -3180,6 +3185,60 @@ class Graphiti {
             });
         }
 
+        // Examples dropdown toggle
+        const examplesToggle = document.getElementById('examples-toggle');
+        const examplesDropdown = document.getElementById('examples-dropdown');
+        
+        if (examplesToggle && examplesDropdown && functionPanel) {
+            examplesToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                
+                // Position the dropdown to match the function panel width
+                const panelRect = functionPanel.getBoundingClientRect();
+                const toggleRect = examplesToggle.getBoundingClientRect();
+                
+                // Set dropdown width to match panel content width (minus padding)
+                const panelPadding = 40; // 20px padding on each side
+                examplesDropdown.style.width = `${panelRect.width - panelPadding}px`;
+                examplesDropdown.style.left = `${panelRect.left + 20}px`; // 20px padding
+                examplesDropdown.style.top = `${toggleRect.bottom + 4}px`;
+                
+                examplesDropdown.classList.toggle('show');
+                
+                // Update examples based on current mode
+                this.updateExamplesForMode();
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!examplesDropdown.contains(e.target) && e.target !== examplesToggle) {
+                    examplesDropdown.classList.remove('show');
+                }
+            });
+            
+            // Handle example item clicks
+            examplesDropdown.addEventListener('click', (e) => {
+                const exampleItem = e.target.closest('.example-item, .blank-function-item');
+                if (exampleItem) {
+                    const expression = exampleItem.dataset.expression;
+                    
+                    // Clear intersections when adding a function
+                    this.clearIntersections();
+                    
+                    if (expression) {
+                        // Add example function
+                        this.addFunction(expression);
+                    } else {
+                        // Add blank function
+                        this.addFunction('');
+                    }
+                    
+                    // Close dropdown
+                    examplesDropdown.classList.remove('show');
+                }
+            });
+        }
+
         // Mode toggle button
         const modeToggle = document.getElementById('mode-toggle');
         if (modeToggle) {
@@ -4522,22 +4581,11 @@ class Graphiti {
                 // Load saved polar functions
                 functionsToLoad = savedData.polar;
             } else {
-                // No saved functions - use defaults (in LaTeX format)
-                if (this.plotMode === 'cartesian') {
-                    functionsToLoad = [
-                        { expression: 'y=x^2', enabled: true },
-                        { expression: 'y=2x+1', enabled: true }
-                    ];
-                } else {
-                    functionsToLoad = [
-                        { expression: 'r=1+\\cos\\left(\\theta\\right)', enabled: true },
-                        { expression: 'r=2\\cos\\left(3\\theta\\right)', enabled: true },
-                        { expression: '\\theta=\\frac{\\pi}{4}', enabled: true }
-                    ];
-                }
+                // No saved functions - start with empty array
+                functionsToLoad = [];
             }
             
-            // Add all functions without triggering save (to avoid overwriting on mode switch)
+            // Add all saved functions without triggering save (to avoid overwriting on mode switch)
             functionsToLoad.forEach(funcData => {
                 const id = this.nextFunctionId++;
                 const color = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
@@ -4554,20 +4602,13 @@ class Graphiti {
                 this.getCurrentFunctions().push(func);
                 this.createFunctionUI(func);
             });
-            
-            // Always add an empty function box at the end as a visual indicator
-            const emptyId = this.nextFunctionId++;
-            const emptyColor = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
-            const emptyFunc = {
-                id: emptyId,
-                expression: '',
-                points: [],
-                color: emptyColor,
-                enabled: true,
-                mode: this.plotMode
-            };
-            this.getCurrentFunctions().push(emptyFunc);
-            this.createFunctionUI(emptyFunc);
+        }
+        
+        // Always ensure there's at least one blank function at the end
+        const currentFunctions = this.getCurrentFunctions();
+        const hasBlankFunction = currentFunctions.some(func => !func.expression || func.expression.trim() === '');
+        if (!hasBlankFunction) {
+            this.addFunction('');
         }
         
         // Update virtual keyboards for the new mode
@@ -4617,6 +4658,27 @@ class Graphiti {
         
         // Replot all functions in current mode
         this.replotAllFunctions();
+        
+        // Save functions to localStorage after mode switch
+        this.saveFunctionsToLocalStorage();
+    }
+    
+    updateExamplesForMode() {
+        const examplesHeader = document.getElementById('examples-mode-header');
+        const cartesianExamples = document.querySelector('.cartesian-examples');
+        const polarExamples = document.querySelector('.polar-examples');
+        
+        if (!examplesHeader || !cartesianExamples || !polarExamples) return;
+        
+        if (this.plotMode === 'cartesian') {
+            examplesHeader.textContent = 'Cartesian Examples';
+            cartesianExamples.style.display = 'block';
+            polarExamples.style.display = 'none';
+        } else {
+            examplesHeader.textContent = 'Polar Examples';
+            cartesianExamples.style.display = 'none';
+            polarExamples.style.display = 'block';
+        }
     }
     
     refreshFunctionUI() {
@@ -4817,40 +4879,12 @@ class Graphiti {
         // Try to load saved functions from localStorage
         const savedData = this.loadFunctionsFromLocalStorage();
         
-        // Add initial function boxes when starting to show multiple plot capability
-        if (this.getCurrentFunctions().length === 0) {
-            // Set startup flag for immediate implicit function rendering
-            this.isStartup = true;
-            
-            // Check if we have saved functions for current mode
-            let functionsToLoad = [];
-            
-            if (this.plotMode === 'cartesian' && savedData.hasSavedCartesian) {
-                // Load saved cartesian functions
-                functionsToLoad = savedData.cartesian;
-            } else if (this.plotMode === 'polar' && savedData.hasSavedPolar) {
-                // Load saved polar functions
-                functionsToLoad = savedData.polar;
-            } else {
-                // No saved functions - use defaults (in LaTeX format)
-                if (this.plotMode === 'cartesian') {
-                    functionsToLoad = [
-                        { expression: 'y=x^2', enabled: true },
-                        { expression: 'y=2x+1', enabled: true }
-                    ];
-                } else {
-                    functionsToLoad = [
-                        { expression: 'r=1+\\cos\\left(\\theta\\right)', enabled: true },
-                        { expression: 'r=2\\cos\\left(3\\theta\\right)', enabled: true },
-                        { expression: '\\theta=\\frac{\\pi}{4}', enabled: true }
-                    ];
-                }
-            }
-            
-            // Add all functions
-            functionsToLoad.forEach(funcData => {
+        // ALWAYS load both Cartesian and Polar functions from localStorage on startup
+        // This ensures both arrays are populated, even if we're only showing one mode
+        if (savedData.hasSavedCartesian) {
+            savedData.cartesian.forEach(funcData => {
                 const id = this.nextFunctionId++;
-                const color = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+                const color = this.functionColors[this.cartesianFunctions.length % this.functionColors.length];
                 
                 const func = {
                     id: id,
@@ -4858,62 +4892,83 @@ class Graphiti {
                     points: [],
                     color: color,
                     enabled: funcData.enabled,
-                    mode: this.plotMode
+                    mode: 'cartesian'
                 };
                 
-                this.getCurrentFunctions().push(func);
-                this.createFunctionUI(func);
+                this.cartesianFunctions.push(func);
+                // Only create UI for current mode
+                if (this.plotMode === 'cartesian') {
+                    this.createFunctionUI(func);
+                }
             });
-            
-            // Always add an empty function box at the end as a visual indicator
-            const emptyId = this.nextFunctionId++;
-            const emptyColor = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
-            const emptyFunc = {
-                id: emptyId,
-                expression: '',
-                points: [],
-                color: emptyColor,
-                enabled: true,
-                mode: this.plotMode
-            };
-            this.getCurrentFunctions().push(emptyFunc);
-            this.createFunctionUI(emptyFunc);
-            
-            // Use the same smart reset viewport logic as the reset button for consistency
-            const smartViewport = this.getSmartResetViewport();
-            this.viewport.minX = smartViewport.minX;
-            this.viewport.maxX = smartViewport.maxX;
-            this.viewport.minY = smartViewport.minY;
-            this.viewport.maxY = smartViewport.maxY;
-            this.viewport.scale = smartViewport.scale;
-            
-            // Update range inputs to reflect the smart viewport
-            this.updateRangeInputs();
-            
-            // Plot all functions after setting viewport - plot in parallel for simultaneous appearance
-            const plotPromises = this.getCurrentFunctions()
-                .filter(func => func.expression)
-                .map(func => this.plotFunctionWithValidation(func));
-            
-            await Promise.all(plotPromises);
-            
-            // Clear startup flag after all functions are plotted
-            this.isStartup = false;
-            
-            // Calculate initial intersections after all functions are plotted
-            if (this.showIntersections) {
-                this.intersections = this.calculateIntersectionsWithWorker();
-            }
-            
-            // Calculate initial turning points
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
-            }
-            
-            // Calculate initial intercepts
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-            }
+        }
+        
+        if (savedData.hasSavedPolar) {
+            savedData.polar.forEach(funcData => {
+                const id = this.nextFunctionId++;
+                const color = this.functionColors[this.polarFunctions.length % this.functionColors.length];
+                
+                const func = {
+                    id: id,
+                    expression: funcData.expression,
+                    points: [],
+                    color: color,
+                    enabled: funcData.enabled,
+                    mode: 'polar'
+                };
+                
+                this.polarFunctions.push(func);
+                // Only create UI for current mode
+                if (this.plotMode === 'polar') {
+                    this.createFunctionUI(func);
+                }
+            });
+        }
+        
+        // Set startup flag for immediate implicit function rendering
+        this.isStartup = true;
+        
+        // Always ensure there's at least one blank function at the end
+        const currentFunctions = this.getCurrentFunctions();
+        const hasBlankFunction = currentFunctions.some(func => !func.expression || func.expression.trim() === '');
+        if (!hasBlankFunction) {
+            this.addFunction('');
+        }
+        
+        // Use the same smart reset viewport logic as the reset button for consistency
+        const smartViewport = this.getSmartResetViewport();
+        this.viewport.minX = smartViewport.minX;
+        this.viewport.maxX = smartViewport.maxX;
+        this.viewport.minY = smartViewport.minY;
+        this.viewport.maxY = smartViewport.maxY;
+        this.viewport.scale = smartViewport.scale;
+        
+        // Update range inputs to reflect the smart viewport
+        this.updateRangeInputs();
+        
+        // Plot all functions after setting viewport - plot in parallel for simultaneous appearance
+        const plotPromises = this.getCurrentFunctions()
+            .filter(func => func.expression)
+            .map(func => this.plotFunctionWithValidation(func));
+        
+        await Promise.all(plotPromises);
+        
+        // Clear startup flag after all functions are plotted
+        this.isStartup = false;
+        
+        // Calculate initial intersections after all functions are plotted
+        if (this.showIntersections) {
+            this.intersections = this.calculateIntersectionsWithWorker();
+        }
+        
+        // Calculate initial turning points
+        if (this.showTurningPoints) {
+            this.turningPoints = this.findTurningPoints();
+        }
+        
+        // Calculate initial intercepts
+        if (this.showIntercepts) {
+            this.intercepts = this.findAxisIntercepts();
         }
         
         // Initialize intercepts toggle button state

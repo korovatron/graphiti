@@ -1106,6 +1106,127 @@
                 display: none !important;
             }
         }
+
+        /* Split button for Add Function with dropdown */
+        .split-button-container {
+            position: relative;
+            display: flex;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .split-button-main {
+            flex: 1;
+            border-radius: 4px 0 0 4px;
+            border-right: none !important;
+        }
+
+        .split-button-dropdown {
+            width: 30px;
+            border-radius: 0 4px 4px 0;
+            border-left: 1px solid #555 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .split-button-dropdown:hover {
+            background: #3A4F6A;
+        }
+
+        .examples-dropdown {
+            position: fixed;
+            margin-top: 4px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            display: none;
+            max-height: 400px;
+            overflow-y: auto;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+        }
+
+        .examples-dropdown::-webkit-scrollbar {
+            display: none; /* Chrome/Safari/Opera */
+        }
+
+        .examples-dropdown.show {
+            display: block;
+        }
+
+        .examples-header {
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #4A90E2;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .example-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: background 0.2s;
+        }
+
+        .example-item:last-child {
+            border-bottom: none;
+        }
+
+        .example-item:hover {
+            background: rgba(74, 144, 226, 0.1);
+        }
+
+        .example-formula {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+
+        .example-formula math-field {
+            font-size: 16px;
+            background: transparent !important;
+            color: #e0e0e0 !important;
+            border: none !important;
+            outline: none !important;
+            pointer-events: none !important;
+        }
+
+        .example-formula math-field::part(container) {
+            background: transparent !important;
+            color: #e0e0e0 !important;
+            border: none !important;
+            pointer-events: none !important;
+        }
+
+        .example-formula math-field::part(content) {
+            background: transparent !important;
+            color: #e0e0e0 !important;
+            pointer-events: none !important;
+        }
+
+        .example-description {
+            font-size: 12px;
+            color: #999;
+            margin-left: 0;
+        }
+
+        .blank-function-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+            background: rgba(42, 63, 90, 0.5);
+        }
+
+        .blank-function-item:hover {
+            background: rgba(42, 63, 90, 0.8);
+        }
     </style>
 </head>
 <body theme="dark">
@@ -1140,7 +1261,108 @@
                 
                 <!-- Top Row: Function Management + View Controls -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px;">
-                    <button id="add-function" style="padding: 8px; font-size: 14px; height: 40px; display: flex; align-items: center; flex: 1; min-width: 0; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">x</span>)</button>     
+                    <!-- Split Button: Add Function with Examples Dropdown -->
+                    <div class="split-button-container">
+                        <button id="add-function" class="split-button-main" style="padding: 8px; font-size: 14px; height: 40px; display: flex; align-items: center; justify-content: center; background: #2A3F5A; border: 1px solid #555;">+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">x</span>)</button>
+                        <button id="examples-toggle" class="split-button-dropdown" style="padding: 0; font-size: 14px; height: 40px; background: #2A3F5A; border: 1px solid #555;" title="Show example functions">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="2,4 6,8 10,4"></polyline>
+                            </svg>
+                        </button>
+                        
+                        <!-- Examples Dropdown Menu -->
+                        <div id="examples-dropdown" class="examples-dropdown">
+                            <div class="blank-function-item" data-example="blank">
+                                ➕ Add Blank Function
+                            </div>
+                            <div class="examples-header" id="examples-mode-header">Cartesian Examples</div>
+                            <!-- Cartesian examples -->
+                            <div class="cartesian-examples">
+                                <div class="example-item" data-expression="y=\sin(x)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">y=\sin(x)</math-field>
+                                    </div>
+                                    <div class="example-description">Trigonometric function</div>
+                                </div>
+                                <div class="example-item" data-expression="y=\sec(x)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">y=\sec(x)</math-field>
+                                    </div>
+                                    <div class="example-description">Secant function</div>
+                                </div>
+                                <div class="example-item" data-expression="y=\frac{1}{x}">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">y=\frac{1}{x}</math-field>
+                                    </div>
+                                    <div class="example-description">Rational function (hyperbola)</div>
+                                </div>
+                                <div class="example-item" data-expression="y=\sqrt{x}">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">y=\sqrt{x}</math-field>
+                                    </div>
+                                    <div class="example-description">Square root function</div>
+                                </div>
+                                <div class="example-item" data-expression="x^2+y^2=25">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">x^2+y^2=25</math-field>
+                                    </div>
+                                    <div class="example-description">Implicit: Circle</div>
+                                </div>
+                                <div class="example-item" data-expression="x^{\frac{2}{3}}+y^{\frac{2}{3}}=4">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">x^{\frac{2}{3}}+y^{\frac{2}{3}}=4</math-field>
+                                    </div>
+                                    <div class="example-description">Implicit: Astroid</div>
+                                </div>
+                                <div class="example-item" data-expression="(x^2+y^2)^2=2(x^2-y^2)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">(x^2+y^2)^2=2(x^2-y^2)</math-field>
+                                    </div>
+                                    <div class="example-description">Implicit: Lemniscate</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Polar examples (hidden by default) -->
+                            <div class="polar-examples" style="display: none;">
+                                <div class="example-item" data-expression="r=1+\cos(\theta)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">r=1+\cos(\theta)</math-field>
+                                    </div>
+                                    <div class="example-description">Cardioid (heart shape)</div>
+                                </div>
+                                <div class="example-item" data-expression="r=2\cos(3\theta)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">r=2\cos(3\theta)</math-field>
+                                    </div>
+                                    <div class="example-description">3-petaled rose</div>
+                                </div>
+                                <div class="example-item" data-expression="r=\theta">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">r=\theta</math-field>
+                                    </div>
+                                    <div class="example-description">Archimedean spiral</div>
+                                </div>
+                                <div class="example-item" data-expression="r=e^{0.1\theta}">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">r=e^{0.1\theta}</math-field>
+                                    </div>
+                                    <div class="example-description">Logarithmic spiral</div>
+                                </div>
+                                <div class="example-item" data-expression="\theta=\frac{\pi}{4}">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">\theta=\frac{\pi}{4}</math-field>
+                                    </div>
+                                    <div class="example-description">Radial line</div>
+                                </div>
+                                <div class="example-item" data-expression="r=\csc(\theta)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">r=\csc(\theta)</math-field>
+                                    </div>
+                                    <div class="example-description">Cosecant function</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     <button id="reset-view" style="padding: 8px; font-size: 10px; height: 40px; line-height: 1.2; background: #2A3F5A; border: 1px solid #555; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;" title="Reset View">RESET<br>AXES</button>
 
