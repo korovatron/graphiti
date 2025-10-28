@@ -6062,18 +6062,27 @@ class Graphiti {
                 }
             }
             
+            // Filter out invalid candidates (NaN or infinite values)
+            // Also exclude candidates very close to origin (edge case, visually obvious)
+            const validCandidates = candidates.filter(c => 
+                isFinite(c.x) && isFinite(c.y) && 
+                !(Math.abs(c.x) < 0.15 && c.y < 0.15)  // Exclude origin region
+            );
+            
             // Sort candidates by x position
-            candidates.sort((a, b) => a.x - b.x);
+            validCandidates.sort((a, b) => a.x - b.x);
             
             // Group candidates and pick the best from each group
-            for (const candidate of candidates) {
+            for (const candidate of validCandidates) {
+                const xValue = candidate.x;
+                
                 const isDuplicate = xIntercepts.some(existing => 
-                    Math.abs(existing.x - candidate.x) < minDistance
+                    Math.abs(existing.x - xValue) < minDistance
                 );
                 
                 if (!isDuplicate) {
                     xIntercepts.push({
-                        x: candidate.x,
+                        x: xValue,
                         y: 0,
                         type: 'x-intercept',
                         functionId: func.id,
@@ -6138,31 +6147,43 @@ class Graphiti {
                 const x2 = points[i + 1].x;
                 const y2 = points[i + 1].y;
                 
+                // Check for sign change (actual axis crossing)
+                const hasSignChange = x1 * x2 <= 0;
+                
                 // Look for sign changes or points very close to zero
-                if ((x1 * x2 <= 0) || Math.abs(x1) < 0.1 || Math.abs(x2) < 0.1) {
+                if (hasSignChange || Math.abs(x1) < 0.1 || Math.abs(x2) < 0.1) {
                     // This segment crosses or approaches the y-axis
                     // Pick the point closest to x=0
                     if (Math.abs(x1) < Math.abs(x2)) {
-                        candidates.push({ x: Math.abs(x1), y: y1 });
+                        candidates.push({ x: Math.abs(x1), y: y1, signChange: hasSignChange });
                     } else {
-                        candidates.push({ x: Math.abs(x2), y: y2 });
+                        candidates.push({ x: Math.abs(x2), y: y2, signChange: hasSignChange });
                     }
                 }
             }
             
+            // Filter out invalid candidates (NaN or infinite values)
+            // Also exclude candidates very close to origin (edge case, visually obvious)
+            const validCandidates = candidates.filter(c => 
+                isFinite(c.x) && isFinite(c.y) &&
+                !(c.x < 0.15 && Math.abs(c.y) < 0.15)  // Exclude origin region
+            );
+            
             // Sort candidates by y position
-            candidates.sort((a, b) => a.y - b.y);
+            validCandidates.sort((a, b) => a.y - b.y);
             
             // Group candidates and pick the best from each group
-            for (const candidate of candidates) {
+            for (const candidate of validCandidates) {
+                const yValue = candidate.y;
+                
                 const isDuplicate = yIntercepts.some(existing => 
-                    Math.abs(existing.y - candidate.y) < minDistance
+                    Math.abs(existing.y - yValue) < minDistance
                 );
                 
                 if (!isDuplicate) {
                     yIntercepts.push({
                         x: 0,
-                        y: candidate.y,
+                        y: yValue,
                         type: 'y-intercept',
                         functionId: func.id,
                         color: func.color
