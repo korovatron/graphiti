@@ -3335,6 +3335,17 @@ class Graphiti {
             });
         }
         
+        // Keyboard Shortcuts Overlay
+        const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+        if (shortcutsOverlay) {
+            // Close overlay when clicking outside the content
+            shortcutsOverlay.addEventListener('click', (e) => {
+                if (e.target === shortcutsOverlay) {
+                    this.toggleShortcutsOverlay();
+                }
+            });
+        }
+        
         // Angle Mode Toggle
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
@@ -4068,7 +4079,18 @@ class Graphiti {
         
         switch(e.key.toLowerCase()) {
             case 'escape':
-                this.changeState(this.states.TITLE);
+                // Close shortcuts overlay if open, otherwise go to title screen
+                const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+                if (shortcutsOverlay && shortcutsOverlay.classList.contains('show')) {
+                    this.toggleShortcutsOverlay();
+                } else {
+                    this.changeState(this.states.TITLE);
+                }
+                break;
+            case '?':
+            case '/':  // The key that produces ? when shift is pressed
+                e.preventDefault();
+                this.toggleShortcutsOverlay();
                 break;
             case '=':  // Plus key (without needing Shift)
             case '+':  // Plus key (with Shift or numpad)
@@ -4080,6 +4102,38 @@ class Graphiti {
                 e.preventDefault(); // Prevent browser zoom
                 this.zoomOut();
                 break;
+        }
+    }
+    
+    showKeyboardHint() {
+        // Only show on non-touch devices
+        const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+        if (isTouchDevice) {
+            return;
+        }
+        
+        const hint = document.getElementById('keyboard-hint');
+        if (!hint) return;
+        
+        // Show hint after a short delay
+        setTimeout(() => {
+            hint.classList.add('show');
+            
+            // Fade out after 4 seconds
+            setTimeout(() => {
+                hint.classList.remove('show');
+            }, 4000);
+        }, 500);
+    }
+    
+    toggleShortcutsOverlay() {
+        const overlay = document.getElementById('shortcuts-overlay');
+        if (!overlay) return;
+        
+        if (overlay.classList.contains('show')) {
+            overlay.classList.remove('show');
+        } else {
+            overlay.classList.add('show');
         }
     }
     
@@ -4883,6 +4937,9 @@ class Graphiti {
         } else {
             this.openMobileMenu();
         }
+        
+        // Show keyboard shortcuts hint after a short delay (only on non-touch devices)
+        this.showKeyboardHint();
     }
     
     changeState(newState) {

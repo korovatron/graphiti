@@ -965,6 +965,147 @@
                 --contains-highlight-background-color: rgba(74, 144, 226, 0.3) !important;
             }
         }
+
+        /* Keyboard shortcuts hint message */
+        .keyboard-hint {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 14px;
+            color: #ccc;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+        }
+
+        .keyboard-hint.show {
+            opacity: 1;
+        }
+
+        .keyboard-hint kbd {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #fff;
+        }
+
+        /* Hide hint on touch devices */
+        @media (hover: none) and (pointer: coarse) {
+            .keyboard-hint {
+                display: none;
+            }
+        }
+
+        /* Keyboard shortcuts overlay */
+        .shortcuts-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .shortcuts-overlay.show {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .shortcuts-content {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px 40px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .shortcuts-content h2 {
+            margin: 0 0 20px 0;
+            color: #fff;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        .shortcuts-section {
+            margin-bottom: 20px;
+        }
+
+        .shortcuts-section h3 {
+            color: #4A90E2;
+            font-size: 16px;
+            margin: 0 0 10px 0;
+            font-weight: 600;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .shortcut-item:last-child {
+            border-bottom: none;
+        }
+
+        .shortcut-description {
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .shortcut-keys {
+            display: flex;
+            gap: 5px;
+        }
+
+        .shortcut-keys kbd {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #fff;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        .shortcuts-close {
+            margin-top: 20px;
+            text-align: center;
+            color: #888;
+            font-size: 13px;
+        }
+
+        /* Hide shortcuts overlay on touch devices */
+        @media (hover: none) and (pointer: coarse) {
+            .shortcuts-overlay {
+                display: none !important;
+            }
+        }
     </style>
 </head>
 <body theme="dark">
@@ -1260,6 +1401,64 @@
             math.import({ pow: realPow }, { override: true });
         }
     </script>
+
+    <!-- Keyboard shortcuts hint (shown after leaving title screen) -->
+    <div id="keyboard-hint" class="keyboard-hint">
+        Press <kbd>?</kbd> for keyboard shortcuts
+    </div>
+
+    <!-- Keyboard shortcuts overlay -->
+    <div id="shortcuts-overlay" class="shortcuts-overlay">
+        <div class="shortcuts-content">
+            <h2>Keyboard Shortcuts</h2>
+            
+            <div class="shortcuts-section">
+                <h3>Navigation</h3>
+                <div class="shortcut-item">
+                    <span class="shortcut-description">Pan up</span>
+                    <div class="shortcut-keys">
+                        <kbd>↑</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>W</kbd>
+                    </div>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description">Pan down</span>
+                    <div class="shortcut-keys">
+                        <kbd>↓</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>S</kbd>
+                    </div>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description">Pan left</span>
+                    <div class="shortcut-keys">
+                        <kbd>←</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>A</kbd>
+                    </div>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description">Pan right</span>
+                    <div class="shortcut-keys">
+                        <kbd>→</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>D</kbd>
+                    </div>
+                </div>
+            </div>
+
+            <div class="shortcuts-section">
+                <h3>Zoom</h3>
+                <div class="shortcut-item">
+                    <span class="shortcut-description">Zoom in</span>
+                    <div class="shortcut-keys">
+                        <kbd>=</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>+</kbd>
+                    </div>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description">Zoom out</span>
+                    <div class="shortcut-keys">
+                        <kbd>-</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>_</kbd>
+                    </div>
+                </div>
+            </div>
+
+            <p class="shortcuts-close">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
+        </div>
+    </div>
     
     <script src="main.js"></script>
     
