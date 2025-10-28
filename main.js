@@ -1400,9 +1400,9 @@ class Graphiti {
             const points = [];
             // Apply adaptive resolution based on function count (balanced for quality and performance)
             const functionCount = this.getCurrentFunctions().filter(f => f.enabled).length;
-            const adaptiveResolution = functionCount > 10 ? 400 : functionCount > 6 ? 600 : 1000;
+            const adaptiveResolution = functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
             const maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
-            const step = (this.viewport.maxX - this.viewport.minX) / Math.min(this.viewport.width, maxPlotResolution);
+            const step = (this.viewport.maxX - this.viewport.minX) / maxPlotResolution;
             
             // Use a more precise approach to ensure we include the endpoint
             const numSteps = Math.ceil((this.viewport.maxX - this.viewport.minX) / step);
@@ -6101,15 +6101,54 @@ class Graphiti {
                 // Check for valid points
                 if (!isFinite(y1) || !isFinite(y2)) continue;
                 
+                // Debug logging for the problem function around x=-1
+                if (func.expression.includes('x^2+x') && Math.abs(x1 + 1) < 0.1) {
+                    console.log(`Checking intercept between x1=${x1.toFixed(6)}, y1=${y1.toFixed(6)} and x2=${x2.toFixed(6)}, y2=${y2.toFixed(6)}, product=${(y1*y2).toFixed(6)}`);
+                }
+                
                 // Check for sign change (zero crossing) or exact zero
-                if ((y1 * y2 < 0) || (y1 === 0 && y2 !== 0)) {
+                // Use <= to catch cases where one point is exactly zero
+                if ((y1 * y2 <= 0) && !(y1 === 0 && y2 === 0)) {
+                    // Extract just the right-hand side for bisection (e.g., "y=..." -> "...")
+                    let exprForBisection = func.expression;
+                    if (exprForBisection.includes('=')) {
+                        exprForBisection = exprForBisection.split('=')[1];
+                    }
+                    
+                    // Debug
+                    if (Math.abs(x1 + 1) < 0.1) {
+                        console.log(`  -> About to call bisection: exprForBisection="${exprForBisection}", y1=${y1}, y2=${y2}, y1===0?${y1===0}, y2===0?${y2===0}`);
+                    }
+                    
                     // Use bisection method to find more accurate zero
-                    const xIntercept = y1 === 0 ? x1 : this.bisectionMethod(func.expression, x1, x2, 'y');
+                    let xIntercept;
+                    try {
+                        xIntercept = y1 === 0 ? x1 : (y2 === 0 ? x2 : this.bisectionMethod(exprForBisection, x1, x2, 'y'));
+                        if (Math.abs(x1 + 1) < 0.1) {
+                            console.log(`  -> Bisection returned: ${xIntercept}`);
+                        }
+                    } catch (error) {
+                        if (Math.abs(x1 + 1) < 0.1) {
+                            console.log(`  -> Bisection threw error: ${error.message}`);
+                        }
+                        xIntercept = null;
+                    }
+                    
+                    // Debug logging
+                    if (func.expression.includes('x^2+x') && Math.abs(x1 + 1) < 0.1) {
+                        console.log(`  -> Sign change detected! xIntercept=${xIntercept}, y1=${y1}, y2=${y2}`);
+                    }
+                    
                     if (xIntercept !== null) {
                         // Check if this intercept is far enough from existing ones
                         const isDuplicate = xIntercepts.some(existing => 
                             Math.abs(existing.x - xIntercept) < minDistance
                         );
+                        
+                        // Debug logging
+                        if (func.expression.includes('x^2+x') && Math.abs(xIntercept + 1) < 0.1) {
+                            console.log(`  -> xIntercept=${xIntercept}, isDuplicate=${isDuplicate}, minDistance=${minDistance}`);
+                        }
                         
                         if (!isDuplicate) {
                             xIntercepts.push({
@@ -6217,8 +6256,11 @@ class Graphiti {
     }
     
     bisectionMethod(expression, x1, x2, variable = 'y') {
+        console.log(`BISECTION CALLED: expr="${expression.substring(0,30)}", x1=${x1.toFixed(4)}, x2=${x2.toFixed(4)}`);
+        
         // Convert from LaTeX first since expression might be in LaTeX format
         const convertedExpression = this.convertFromLatex(expression);
+        console.log(`BISECTION converted: "${convertedExpression.substring(0,30)}"`);
         
         // Use bisection to find where the function crosses zero
         const maxIterations = 50;
@@ -6231,7 +6273,9 @@ class Graphiti {
                 const scope = { x: xMid };
                 const yMid = math.evaluate(convertedExpression, scope);
                 
-                if (!isFinite(yMid)) return null;
+                if (!isFinite(yMid)) {
+                    return null;
+                }
                 
                 if (Math.abs(yMid) < tolerance) {
                     return xMid;
@@ -6286,12 +6330,24 @@ class Graphiti {
                     continue;
                 }
                 
-                // Check for x-axis crossing (y changes sign)
-                if (p1.y * p2.y < 0) {
-                    // Linear interpolation to find crossing point
-                    const t = -p1.y / (p2.y - p1.y);
-                    const x = p1.x + t * (p2.x - p1.x);
-                    const y = 0;
+                // Check for x-axis crossing (y changes sign or is very close to zero)
+                const yTolerance = 0.001;
+                if (p1.y * p2.y <= 0 && !(p1.y === 0 && p2.y === 0)) {
+                    let x, y;
+                    
+                    // Check if either point is already on the axis
+                    if (Math.abs(p1.y) < yTolerance) {
+                        x = p1.x;
+                        y = 0;
+                    } else if (Math.abs(p2.y) < yTolerance) {
+                        x = p2.x;
+                        y = 0;
+                    } else {
+                        // Linear interpolation to find crossing point
+                        const t = -p1.y / (p2.y - p1.y);
+                        x = p1.x + t * (p2.x - p1.x);
+                        y = 0;
+                    }
                     
                     // Determine which side of x-axis (positive or negative x)
                     const type = x > 0 ? 'x-axis-positive' : 'x-axis-negative';
@@ -6305,12 +6361,24 @@ class Graphiti {
                     });
                 }
                 
-                // Check for y-axis crossing (x changes sign)
-                if (p1.x * p2.x < 0) {
-                    // Linear interpolation to find crossing point
-                    const t = -p1.x / (p2.x - p1.x);
-                    const x = 0;
-                    const y = p1.y + t * (p2.y - p1.y);
+                // Check for y-axis crossing (x changes sign or is very close to zero)
+                const xTolerance = 0.001;
+                if (p1.x * p2.x <= 0 && !(p1.x === 0 && p2.x === 0)) {
+                    let x, y;
+                    
+                    // Check if either point is already on the axis
+                    if (Math.abs(p1.x) < xTolerance) {
+                        x = 0;
+                        y = p1.y;
+                    } else if (Math.abs(p2.x) < xTolerance) {
+                        x = 0;
+                        y = p2.y;
+                    } else {
+                        // Linear interpolation to find crossing point
+                        const t = -p1.x / (p2.x - p1.x);
+                        x = 0;
+                        y = p1.y + t * (p2.y - p1.y);
+                    }
                     
                     // Determine which side of y-axis (positive or negative y)
                     const type = y > 0 ? 'y-axis-positive' : 'y-axis-negative';
@@ -6713,7 +6781,7 @@ class Graphiti {
                 prevValue * currentValue < 0) {
                 
                 // Use bisection method to refine the root
-                const root = this.bisectionMethod(expression, prevX, currentX);
+                const root = this.bisectionMethodForTurningPoints(expression, prevX, currentX);
                 if (root !== null && !roots.some(r => Math.abs(r - root) < 1e-6)) {
                     roots.push(root);
                 }
@@ -6726,7 +6794,7 @@ class Graphiti {
         return roots;
     }
     
-    bisectionMethod(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
+    bisectionMethodForTurningPoints(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
         // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
         const evaluateDerivative = (expr, xValue) => {
             // Apply the same preprocessing as evaluateFunction for degree mode
