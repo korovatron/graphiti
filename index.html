@@ -1143,9 +1143,13 @@
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             z-index: 1000;
-            display: none;
             max-height: 400px;
             overflow-y: auto;
+            opacity: 0;
+            transform: translateY(-20px) scaleY(0.9);
+            transform-origin: top center;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
             scrollbar-width: none; /* Firefox */
             -ms-overflow-style: none; /* IE/Edge */
         }
@@ -1155,7 +1159,9 @@
         }
 
         .examples-dropdown.show {
-            display: block;
+            opacity: 1;
+            transform: translateY(0) scaleY(1);
+            pointer-events: auto;
         }
 
         .examples-header {
@@ -1273,7 +1279,7 @@
                         <!-- Examples Dropdown Menu -->
                         <div id="examples-dropdown" class="examples-dropdown">
                             <div class="blank-function-item" data-example="blank">
-                                ➕ Add Blank Function
+                                <strong>+</strong> Add Blank Function
                             </div>
                             <div class="examples-header" id="examples-mode-header">Cartesian Examples</div>
                             <!-- Cartesian examples -->
