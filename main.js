@@ -10068,11 +10068,6 @@ class Graphiti {
         expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
         expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
         
-        // Add implicit multiplication before opening parenthesis
-        // x( -> x*(, 2( -> 2*(, )( -> )*(
-        expression = expression.replace(/([a-zA-Z0-9])(\()/g, '$1*$2');
-        expression = expression.replace(/(\))(\()/g, '$1*$2');
-        
         // Handle implicit multiplication between variables and function names
         // ysin(x) -> y*sin(x), xcos(t) -> x*cos(t), etc.
         const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 
@@ -10084,6 +10079,12 @@ class Graphiti {
             const pattern = new RegExp(`([a-zA-Z])(${func})\\(`, 'g');
             expression = expression.replace(pattern, '$1*$2(');
         }
+        
+        // Add implicit multiplication before opening parenthesis (after function handling)
+        // x( -> x*(, 2( -> 2*(, )( -> )*(
+        // Use negative lookbehind to avoid matching function names
+        expression = expression.replace(/(?<![a-zA-Z]{2})([a-zA-Z0-9])(\()/g, '$1*$2');
+        expression = expression.replace(/(\))(\()/g, '$1*$2');
         
         // Remove spaces
         expression = expression.replace(/\s+/g, '');
