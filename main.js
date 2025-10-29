@@ -9948,12 +9948,6 @@ class Graphiti {
     convertFromLatex(latex) {
         if (!latex) return '';
         
-        // If the expression doesn't contain any LaTeX commands (no backslashes),
-        // assume it's already in math.js format and return as-is
-        if (!latex.includes('\\')) {
-            return latex;
-        }
-        
         let expression = latex;
         
         // FIRST: Handle LaTeX parentheses before any other processing
