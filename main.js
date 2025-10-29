@@ -4090,17 +4090,10 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Replot explicit functions and theta-constant rays for smooth pinch performance
-                    this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
-                            const functionType = this.detectFunctionType(func.expression);
-                            if (functionType === 'explicit' || functionType === 'theta-constant') {
-                                this.plotFunction(func);
-                            }
-                        }
-                    });
+                    // Don't recalculate functions during pinch for performance - just redraw existing points
+                    // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.draw();
-                    this.handleViewportChange();
+                    this.handleViewportChange(); // Debounced recalculation
                 }
                 
             } else if (effectiveDirection === 'vertical') {
@@ -4123,17 +4116,10 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Replot explicit functions and theta-constant rays for smooth pinch performance
-                    this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
-                            const functionType = this.detectFunctionType(func.expression);
-                            if (functionType === 'explicit' || functionType === 'theta-constant') {
-                                this.plotFunction(func);
-                            }
-                        }
-                    });
+                    // Don't recalculate functions during pinch for performance - just redraw existing points
+                    // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.draw();
-                    this.handleViewportChange();
+                    this.handleViewportChange(); // Debounced recalculation
                 }
                 
             } else {
@@ -4163,17 +4149,10 @@ class Graphiti {
                     this.updateViewportScale();
                     this.updateRangeInputs();
                     
-                    // Replot explicit functions and theta-constant rays for smooth pinch performance
-                    this.getCurrentFunctions().forEach(func => {
-                        if (func.expression && func.enabled) {
-                            const functionType = this.detectFunctionType(func.expression);
-                            if (functionType === 'explicit' || functionType === 'theta-constant') {
-                                this.plotFunction(func);
-                            }
-                        }
-                    });
+                    // Don't recalculate functions during pinch for performance - just redraw existing points
+                    // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.draw();
-                    this.handleViewportChange();
+                    this.handleViewportChange(); // Debounced recalculation
                 }
             }
         }
