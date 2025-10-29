@@ -5491,11 +5491,15 @@ class Graphiti {
     
     // Badge management methods for multi-badge tracing system
     addTraceBadge(functionId, worldX, worldY, functionColor, customText = null, badgeType = null) {
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
         const badge = {
             id: this.input.badgeIdCounter++,
             functionId: functionId,
-            worldX: worldX,
-            worldY: worldY,
+            worldX: snappedX,
+            worldY: snappedY,
             functionColor: functionColor,
             customText: customText, // For intersection badges
             badgeType: badgeType, // For turning point badges (maximum, minimum, etc.)
@@ -8627,8 +8631,12 @@ class Graphiti {
     }
     
     addInterceptBadge(x, y, interceptType, functionId) {
-        // Calculate screen position
-        const screenPos = this.worldToScreen(x, y);
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(x);
+        const snappedY = this.snapCoordinateForDisplay(y);
+        
+        // Calculate screen position using snapped coordinates
+        const screenPos = this.worldToScreen(snappedX, snappedY);
         
         // Check if a badge already exists at this location (within tolerance)
         const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
@@ -8660,10 +8668,10 @@ class Graphiti {
             }
         }
         
-        // Create and add badge
+        // Create and add badge using snapped coordinates
         const badge = {
-            worldX: x,
-            worldY: y,
+            worldX: snappedX,
+            worldY: snappedY,
             screenX: screenPos.x,
             screenY: screenPos.y,
             label: label,
@@ -8756,14 +8764,18 @@ class Graphiti {
         // Function colors: #4A90E2, #E74C3C, #27AE60, #F39C12, #9B59B6, #1ABC9C, #E67E22, #34495E, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4
         const intersectionColor = '#D63384'; // Pink/magenta color not in function palette
         
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
         // Create intersection badge with both function IDs stored
         const badge = {
             id: this.input.badgeIdCounter++,
             functionId: null, // Keep null for backward compatibility with existing code
             func1Id: func1.id, // Store first function ID
             func2Id: func2.id, // Store second function ID
-            worldX: worldX,
-            worldY: worldY,
+            worldX: snappedX,
+            worldY: snappedY,
             functionColor: intersectionColor,
             customText: null,
             badgeType: 'intersection',
@@ -9074,6 +9086,45 @@ class Graphiti {
         }
         
         return formatted;
+    }
+    
+    snapCoordinateForDisplay(value) {
+        // Snap coordinate values to zero if they're very small
+        // This matches the logic in formatCoordinate() but returns a number instead of a string
+        // Used to ensure marker positions and stored badge coordinates match displayed values
+        
+        const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
+        const xRange = currentViewport.maxX - currentViewport.minX;
+        const yRange = currentViewport.maxY - currentViewport.minY;
+        const typicalRange = Math.max(xRange, yRange);
+        
+        // Calculate precision based on viewport scale (same as formatCoordinate)
+        let precision;
+        if (typicalRange >= 1000) {
+            precision = 0;
+        } else if (typicalRange >= 100) {
+            precision = 1;
+        } else if (typicalRange >= 10) {
+            precision = 2;
+        } else if (typicalRange >= 1) {
+            precision = 3;
+        } else if (typicalRange >= 0.1) {
+            precision = 4;
+        } else if (typicalRange >= 0.01) {
+            precision = 5;
+        } else if (typicalRange >= 0.001) {
+            precision = 6;
+        } else if (typicalRange >= 0.0001) {
+            precision = 7;
+        } else {
+            precision = 8;
+        }
+        
+        // Zero threshold - same as formatCoordinate
+        const zeroThreshold = Math.pow(10, -(precision + 3));
+        if (Math.abs(value) < zeroThreshold) return 0;
+        
+        return value;
     }
     
     getGridSpacing() {
