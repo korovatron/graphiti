@@ -194,6 +194,17 @@ class Graphiti {
         // Track active implicit function calculations (for calculation indicator)
         this.activeImplicitCalculations = new Set();
         
+        // Performance monitoring
+        this.performance = {
+            enabled: false, // Toggle with Ctrl+Shift+P
+            fps: 0,
+            frameCount: 0,
+            lastFpsUpdate: 0,
+            plotTimes: new Map(), // functionId -> milliseconds
+            intersectionTime: 0,
+            lastFrameTime: 0
+        };
+        
         // Animation
         this.lastFrameTime = 0;
         this.deltaTime = 0;
@@ -1368,6 +1379,8 @@ class Graphiti {
     }
     
     async plotFunction(func) {
+        const startTime = performance.now();
+        
         // Check if math.js is available
         if (typeof math === 'undefined') {
             console.error('Math.js library not loaded!');
@@ -1377,12 +1390,19 @@ class Graphiti {
         
         if (!func.expression.trim()) {
             func.points = [];
+            if (this.performance.enabled) {
+                this.performance.plotTimes.set(func.id, 0);
+            }
             return;
         }
         
         // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
             this.plotPolarFunction(func);
+            if (this.performance.enabled) {
+                const elapsed = performance.now() - startTime;
+                this.performance.plotTimes.set(func.id, elapsed);
+            }
             return;
         }
         
@@ -1494,6 +1514,12 @@ class Graphiti {
             console.error('Error parsing function:', error);
             // Silent error for better UX during typing - no alert popup
             func.points = [];
+        }
+        
+        // Track plotting time for performance monitoring
+        if (this.performance.enabled) {
+            const elapsed = performance.now() - startTime;
+            this.performance.plotTimes.set(func.id, elapsed);
         }
     }
     
@@ -4179,6 +4205,17 @@ class Graphiti {
     }
     
     handleKeyboard(e) {
+        // Performance overlay toggle (Ctrl+Shift+P) - works even when input is focused
+        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p') {
+            e.preventDefault();
+            this.performance.enabled = !this.performance.enabled;
+            if (this.performance.enabled) {
+                this.performance.lastFpsUpdate = performance.now();
+                this.performance.frameCount = 0;
+            }
+            return;
+        }
+        
         // Check if any input field is currently focused, including MathLive fields
         const activeElement = document.activeElement;
         const isInputFocused = activeElement && (
@@ -5588,6 +5625,11 @@ class Graphiti {
                 break;
                 
             case 'INTERSECTIONS_COMPLETE':
+                // Track intersection calculation time for performance monitoring
+                if (this.performance.enabled && data.calculationTime) {
+                    this.performance.intersectionTime = data.calculationTime;
+                }
+                
                 // Handle different calculation types
                 if (data.calculationType === 'explicit') {
                     this.explicitIntersections = data.intersections;
@@ -7217,6 +7259,17 @@ class Graphiti {
             this.deltaTime = currentTime - this.lastFrameTime;
             this.lastFrameTime = currentTime;
             
+            // Track FPS if performance monitoring is enabled
+            if (this.performance.enabled) {
+                this.performance.frameCount++;
+                const elapsed = currentTime - this.performance.lastFpsUpdate;
+                if (elapsed >= 1000) { // Update FPS every second
+                    this.performance.fps = Math.round((this.performance.frameCount * 1000) / elapsed);
+                    this.performance.frameCount = 0;
+                    this.performance.lastFpsUpdate = currentTime;
+                }
+            }
+            
             this.update(this.deltaTime);
             this.draw();
             
@@ -7398,6 +7451,11 @@ class Graphiti {
         // Only shown when implicit functions are present
         if (this.shouldShowCalculationIndicator()) {
             this.drawCalculationIndicator();
+        }
+        
+        // Draw performance overlay if enabled
+        if (this.performance.enabled) {
+            this.drawPerformanceOverlay();
         }
         
         // UI overlays removed - cleaner interface
@@ -9125,6 +9183,63 @@ class Graphiti {
         if (Math.abs(value) < zeroThreshold) return 0;
         
         return value;
+    }
+    
+    drawPerformanceOverlay() {
+        const padding = 10;
+        const lineHeight = 20;
+        let y = padding + lineHeight;
+        
+        // Semi-transparent background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const overlayHeight = 120 + (this.performance.plotTimes.size * lineHeight);
+        this.ctx.fillRect(padding, padding, 250, overlayHeight);
+        
+        // Title
+        this.ctx.fillStyle = '#00FF00';
+        this.ctx.font = 'bold 14px monospace';
+        this.ctx.fillText('Performance Monitor', padding + 10, y);
+        y += lineHeight + 5;
+        
+        // FPS
+        this.ctx.fillStyle = this.performance.fps >= 30 ? '#00FF00' : '#FF0000';
+        this.ctx.font = '12px monospace';
+        this.ctx.fillText(`FPS: ${this.performance.fps}`, padding + 10, y);
+        y += lineHeight;
+        
+        // Total points rendered
+        const totalPoints = this.getCurrentFunctions()
+            .filter(f => f.enabled && f.points)
+            .reduce((sum, f) => sum + (f.points.length || 0), 0);
+        this.ctx.fillStyle = '#00FF00';
+        this.ctx.fillText(`Points: ${totalPoints.toLocaleString()}`, padding + 10, y);
+        y += lineHeight;
+        
+        // Intersection time
+        if (this.performance.intersectionTime > 0) {
+            this.ctx.fillStyle = '#FFFF00';
+            this.ctx.fillText(`Intersections: ${this.performance.intersectionTime.toFixed(1)}ms`, padding + 10, y);
+            y += lineHeight;
+        }
+        
+        // Plot times per function
+        if (this.performance.plotTimes.size > 0) {
+            this.ctx.fillStyle = '#AAAAAA';
+            this.ctx.fillText('Plot Times:', padding + 10, y);
+            y += lineHeight;
+            
+            const functions = this.getCurrentFunctions();
+            for (const [funcId, time] of this.performance.plotTimes) {
+                const func = functions.find(f => f.id === funcId);
+                if (func) {
+                    const funcName = func.expression.substring(0, 15) + (func.expression.length > 15 ? '...' : '');
+                    const color = time > 50 ? '#FF0000' : time > 20 ? '#FFFF00' : '#00FF00';
+                    this.ctx.fillStyle = color;
+                    this.ctx.fillText(`  ${funcName}: ${time.toFixed(1)}ms`, padding + 10, y);
+                    y += lineHeight;
+                }
+            }
+        }
     }
     
     getGridSpacing() {
