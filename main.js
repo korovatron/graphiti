@@ -184,6 +184,7 @@ class Graphiti {
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
         this.frozenInterceptBadges = []; // Store intercept badges during viewport changes
+        this.culledInterceptMarkers = []; // Cache culled intercept markers for performance
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -2814,6 +2815,7 @@ class Graphiti {
             }
             if (this.showIntercepts) {
                 this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
             }
         }, 100); // Very short delay to minimize blocking period
     }
@@ -3442,6 +3444,7 @@ class Graphiti {
                 if (this.showIntercepts) {
                     // Recalculate and show intercepts
                     this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 } else {
                     // Clear intercepts
                     this.clearIntercepts();
@@ -5071,6 +5074,7 @@ class Graphiti {
         // Calculate initial intercepts
         if (this.showIntercepts) {
             this.intercepts = this.findAxisIntercepts();
+            this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
         }
         
         // Initialize intercepts toggle button state
@@ -6153,11 +6157,6 @@ class Graphiti {
                 // Check for valid points
                 if (!isFinite(y1) || !isFinite(y2)) continue;
                 
-                // Debug logging for the problem function around x=-1
-                if (func.expression.includes('x^2+x') && Math.abs(x1 + 1) < 0.1) {
-                    console.log(`Checking intercept between x1=${x1.toFixed(6)}, y1=${y1.toFixed(6)} and x2=${x2.toFixed(6)}, y2=${y2.toFixed(6)}, product=${(y1*y2).toFixed(6)}`);
-                }
-                
                 // Check for sign change (zero crossing) or exact zero
                 // Use <= to catch cases where one point is exactly zero
                 if ((y1 * y2 <= 0) && !(y1 === 0 && y2 === 0)) {
@@ -6167,28 +6166,12 @@ class Graphiti {
                         exprForBisection = exprForBisection.split('=')[1];
                     }
                     
-                    // Debug
-                    if (Math.abs(x1 + 1) < 0.1) {
-                        console.log(`  -> About to call bisection: exprForBisection="${exprForBisection}", y1=${y1}, y2=${y2}, y1===0?${y1===0}, y2===0?${y2===0}`);
-                    }
-                    
                     // Use bisection method to find more accurate zero
                     let xIntercept;
                     try {
                         xIntercept = y1 === 0 ? x1 : (y2 === 0 ? x2 : this.bisectionMethod(exprForBisection, x1, x2, 'y'));
-                        if (Math.abs(x1 + 1) < 0.1) {
-                            console.log(`  -> Bisection returned: ${xIntercept}`);
-                        }
                     } catch (error) {
-                        if (Math.abs(x1 + 1) < 0.1) {
-                            console.log(`  -> Bisection threw error: ${error.message}`);
-                        }
                         xIntercept = null;
-                    }
-                    
-                    // Debug logging
-                    if (func.expression.includes('x^2+x') && Math.abs(x1 + 1) < 0.1) {
-                        console.log(`  -> Sign change detected! xIntercept=${xIntercept}, y1=${y1}, y2=${y2}`);
                     }
                     
                     if (xIntercept !== null) {
@@ -6196,11 +6179,6 @@ class Graphiti {
                         const isDuplicate = xIntercepts.some(existing => 
                             Math.abs(existing.x - xIntercept) < minDistance
                         );
-                        
-                        // Debug logging
-                        if (func.expression.includes('x^2+x') && Math.abs(xIntercept + 1) < 0.1) {
-                            console.log(`  -> xIntercept=${xIntercept}, isDuplicate=${isDuplicate}, minDistance=${minDistance}`);
-                        }
                         
                         if (!isDuplicate) {
                             xIntercepts.push({
@@ -6308,11 +6286,8 @@ class Graphiti {
     }
     
     bisectionMethod(expression, x1, x2, variable = 'y') {
-        console.log(`BISECTION CALLED: expr="${expression.substring(0,30)}", x1=${x1.toFixed(4)}, x2=${x2.toFixed(4)}`);
-        
         // Convert from LaTeX first since expression might be in LaTeX format
         const convertedExpression = this.convertFromLatex(expression);
-        console.log(`BISECTION converted: "${convertedExpression.substring(0,30)}"`);
         
         // Use bisection to find where the function crosses zero
         const maxIterations = 50;
@@ -8486,8 +8461,9 @@ class Graphiti {
     // AXIS INTERCEPT RENDERING METHODS
     // ================================
     
-    drawInterceptMarkers() {
+    cullInterceptMarkers() {
         // Convert to screen coordinates and filter by viewport, then apply density culling
+        // This is called only when intercepts change, not on every frame
         const markersInViewport = [];
         
         for (const intercept of this.intercepts) {
@@ -8531,8 +8507,14 @@ class Graphiti {
             }
         }
         
-        // Draw the culled set of markers
-        for (const marker of culledMarkers) {
+        // Cache the culled markers
+        this.culledInterceptMarkers = culledMarkers;
+    }
+    
+    drawInterceptMarkers() {
+        // Draw the pre-culled cached markers for performance
+        // Culling is done only when intercepts change, not on every frame
+        for (const marker of this.culledInterceptMarkers) {
             this.drawInterceptMarker(marker.screenX, marker.screenY, marker.intercept);
         }
     }
