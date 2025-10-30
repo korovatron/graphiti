@@ -5307,15 +5307,8 @@ class Graphiti {
         // Initialize turning points toggle button state
         this.updateTurningPointsToggleButton();
         
-        // Open the function panel by default so users can start immediately
-        // Add a small delay on mobile to prevent touch event conflicts
-        if (this.isTrueMobile()) {
-            setTimeout(() => {
-                this.openMobileMenu();
-            }, 100);
-        } else {
-            this.openMobileMenu();
-        }
+        // Panel opens automatically via changeState() - no need to call openMobileMenu()
+        // It adds mobile-open class which triggers the CSS slide-in animation
         
         // Show keyboard shortcuts hint after a short delay (only on non-touch devices)
         this.showKeyboardHint();
@@ -5339,7 +5332,12 @@ class Graphiti {
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
-                if (functionPanel) functionPanel.classList.remove('hidden');
+                if (functionPanel) {
+                    functionPanel.classList.remove('hidden');
+                    // Force a reflow to ensure the element is visible before starting transition
+                    functionPanel.offsetHeight;
+                    functionPanel.classList.add('mobile-open');
+                }
                 if (hamburgerMenu) hamburgerMenu.style.display = '';
                 break;
         }
