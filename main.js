@@ -5238,30 +5238,61 @@ class Graphiti {
         // Update range inputs to reflect the viewport (skip saving during startup)
         this.updateRangeInputs(true);
         
-        // Plot all functions after setting viewport - plot in parallel for simultaneous appearance
-        const plotPromises = this.getCurrentFunctions()
-            .filter(func => func.expression)
-            .map(func => this.plotFunctionWithValidation(func));
+        // Draw immediately to show empty graph paper
+        this.draw();
         
-        await Promise.all(plotPromises);
+        // Plot functions asynchronously in the background without blocking navigation
+        const allFunctions = this.getCurrentFunctions().filter(func => func.expression && func.enabled);
         
-        // Clear startup flag after all functions are plotted
-        this.isStartup = false;
+        // Separate explicit and implicit functions
+        const explicitFunctions = allFunctions.filter(func => this.detectFunctionType(func.expression) !== 'implicit');
+        const implicitFunctions = allFunctions.filter(func => this.detectFunctionType(func.expression) === 'implicit');
         
-        // Calculate initial intersections after all functions are plotted
-        if (this.showIntersections) {
-            this.intersections = this.calculateIntersectionsWithWorker();
-        }
+        // Start explicit functions immediately in parallel (they're fast)
+        setTimeout(() => {
+            explicitFunctions.forEach(func => {
+                this.plotFunctionWithValidation(func).then(() => this.draw());
+            });
+        }, 0);
         
-        // Calculate initial turning points
-        if (this.showTurningPoints) {
-            this.turningPoints = this.findTurningPoints();
-        }
+        // Plot implicit functions sequentially with progressive appearance
+        const plotNextImplicit = async (index) => {
+            if (index >= implicitFunctions.length) {
+                // All implicit functions done
+                this.isStartup = false;
+                
+                // Calculate initial intersections after all functions are plotted
+                if (this.showIntersections) {
+                    this.intersections = this.calculateIntersectionsWithWorker();
+                }
+                
+                // Calculate initial turning points
+                if (this.showTurningPoints) {
+                    this.turningPoints = this.findTurningPoints();
+                }
+                
+                // Calculate initial intercepts
+                if (this.showIntercepts) {
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                }
+                
+                // Final draw to show everything
+                this.draw();
+                return;
+            }
+            
+            const func = implicitFunctions[index];
+            await this.plotFunctionWithValidation(func);
+            this.draw(); // Show this implicit function
+            
+            // Schedule next implicit function with longer delay to reduce stuttering
+            setTimeout(() => plotNextImplicit(index + 1), 16);
+        };
         
-        // Calculate initial intercepts
-        if (this.showIntercepts) {
-            this.intercepts = this.findAxisIntercepts();
-            this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+        // Start plotting implicit functions after panel transition completes (300ms)
+        if (implicitFunctions.length > 0) {
+            setTimeout(() => plotNextImplicit(0), 350);
         }
         
         // Initialize intercepts toggle button state
