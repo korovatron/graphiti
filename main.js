@@ -8418,7 +8418,7 @@ class Graphiti {
         }
         
         // Apply density-based culling: skip markers too close to each other
-        const minDistance = 40; // Minimum pixel distance between markers
+        const minDistance = 20; // Minimum pixel distance between markers
         const culledMarkers = [];
         
         for (const marker of markersInViewport) {
@@ -8473,7 +8473,7 @@ class Graphiti {
         }
         
         // Apply simplified culling for performance
-        const minDistance = 40;
+        const minDistance = 20;
         const culledMarkers = [];
         
         for (const marker of markersInViewport) {
@@ -8566,7 +8566,7 @@ class Graphiti {
         }
         
         // Apply density-based culling: skip markers too close to each other
-        const minDistance = 40; // Minimum pixel distance between markers
+        const minDistance = 20; // Minimum pixel distance between markers
         const culledMarkers = [];
         
         for (const marker of markersInViewport) {
@@ -8669,7 +8669,7 @@ class Graphiti {
         }
         
         // Apply density-based culling: skip markers too close to each other
-        const minDistance = 40; // Minimum pixel distance between markers
+        const minDistance = 20; // Minimum pixel distance between markers
         const culledMarkers = [];
         
         for (const marker of markersInViewport) {
