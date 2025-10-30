@@ -140,29 +140,35 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
         return findMixedIntersections(func1, func2, isImplicit1);
     }
     
-    // Both explicit - use original interpolation method
+    // Both explicit - use point-based intersection detection
     
     // Original logic for explicit functions
     if (plotMode === 'cartesian') {
-        // For cartesian functions, use x-axis interpolation method
-        const allX = [...new Set([...points1.map(p => p.x), ...points2.map(p => p.x)])].sort((a, b) => a - b);
-        
-        for (let i = 0; i < allX.length - 1; i++) {
-            // Check for cancellation every 100 iterations to avoid excessive checking
+        // For cartesian functions, check consecutive points in both functions
+        // Use the existing function points for efficiency
+        for (let i = 0; i < points1.length - 1; i++) {
+            // Check for cancellation every 100 iterations
             if (i % 100 === 0 && isCancelled) {
                 return [];
             }
             
-            const x1 = allX[i];
-            const x2 = allX[i + 1];
+            const p1_current = points1[i];
+            const p1_next = points1[i + 1];
             
-            // Interpolate y values for both functions at these x points
-            const y1_at_x1 = interpolateYAtX(func1, x1);
-            const y1_at_x2 = interpolateYAtX(func1, x2);
+            if (!p1_current || !p1_next) continue;
+            if (!isFinite(p1_current.x) || !isFinite(p1_current.y)) continue;
+            if (!isFinite(p1_next.x) || !isFinite(p1_next.y)) continue;
+            
+            const x1 = p1_current.x;
+            const x2 = p1_next.x;
+            
+            // Interpolate y values for func2 at these x points
+            const y1_at_x1 = p1_current.y;
+            const y1_at_x2 = p1_next.y;
             const y2_at_x1 = interpolateYAtX(func2, x1);
             const y2_at_x2 = interpolateYAtX(func2, x2);
             
-            if (y1_at_x1 !== null && y1_at_x2 !== null && y2_at_x1 !== null && y2_at_x2 !== null) {
+            if (y2_at_x1 !== null && y2_at_x2 !== null) {
                 // Check for sign change in (func1 - func2)
                 const diff1 = y1_at_x1 - y2_at_x1;
                 const diff2 = y1_at_x2 - y2_at_x2;
@@ -180,59 +186,6 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
                         func2: func2,
                         isApproximate: true
                     });
-                }
-            }
-        }
-        
-        // Second pass: look for tangent intersections using local minima detection
-        // Sample every 10th point to avoid dense detection
-        for (let i = 10; i < allX.length - 10; i += 5) {
-            // Check for cancellation every 50 iterations
-            if (i % 50 === 0 && isCancelled) {
-                return [];
-            }
-            
-            const x0 = allX[i - 5];
-            const x1 = allX[i];
-            const x2 = allX[i + 5];
-            
-            const y1_at_x0 = interpolateYAtX(func1, x0);
-            const y1_at_x1 = interpolateYAtX(func1, x1);
-            const y1_at_x2 = interpolateYAtX(func1, x2);
-            const y2_at_x0 = interpolateYAtX(func2, x0);
-            const y2_at_x1 = interpolateYAtX(func2, x1);
-            const y2_at_x2 = interpolateYAtX(func2, x2);
-            
-            if (y1_at_x0 !== null && y1_at_x1 !== null && y1_at_x2 !== null && 
-                y2_at_x0 !== null && y2_at_x1 !== null && y2_at_x2 !== null) {
-                
-                // Calculate distances between functions at these points
-                const dist0 = Math.abs(y1_at_x0 - y2_at_x0);
-                const dist1 = Math.abs(y1_at_x1 - y2_at_x1);
-                const dist2 = Math.abs(y1_at_x2 - y2_at_x2);
-                
-                // Check if x1 is a local minimum in distance
-                if (dist1 < dist0 && dist1 < dist2) {
-                    // Define threshold for tangent detection
-                    const threshold = 0.02; // Fallback threshold for worker
-                    
-                    if (dist1 <= threshold) {
-                        // Check if this is too close to existing intersections
-                        const tooClose = intersections.some(existing => 
-                            Math.abs(existing.x - x1) < Math.abs(x2 - x0) * 0.5
-                        );
-                        
-                        if (!tooClose) {
-                            intersections.push({
-                                x: x1,
-                                y: (y1_at_x1 + y2_at_x1) / 2,
-                                func1: func1,
-                                func2: func2,
-                                isApproximate: true,
-                                isTangent: true
-                            });
-                        }
-                    }
                 }
             }
         }
@@ -379,15 +332,26 @@ function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
 function getLineSegments(points) {
     const segments = [];
     
-    // Process points in groups of 3 (start, end, NaN)
-    for (let i = 0; i < points.length - 1; i += 3) {
-        const start = points[i];
-        const end = points[i + 1];
+    // Extract continuous runs of valid points, create segments between consecutive points
+    let i = 0;
+    while (i < points.length) {
+        // Skip NaN separators
+        while (i < points.length && (!points[i] || !isFinite(points[i].x) || !isFinite(points[i].y))) {
+            i++;
+        }
         
-        if (start && end && 
-            isFinite(start.x) && isFinite(start.y) &&
-            isFinite(end.x) && isFinite(end.y)) {
-            segments.push({ start, end });
+        // Collect continuous run of valid points
+        const runStart = i;
+        while (i < points.length && points[i] && isFinite(points[i].x) && isFinite(points[i].y)) {
+            i++;
+        }
+        
+        // Create segments from consecutive points in this run
+        for (let j = runStart; j < i - 1; j++) {
+            segments.push({
+                start: points[j],
+                end: points[j + 1]
+            });
         }
     }
     
@@ -451,12 +415,28 @@ function interpolateYAtX(func, targetX) {
         return closestPoint ? closestPoint.y : null;
     }
     
-    // For explicit functions, use original interpolation logic
+    // For explicit functions, use interpolation with asymptote detection
     for (let i = 0; i < points.length - 1; i++) {
         const p1 = points[i];
         const p2 = points[i + 1];
         
-        if (p1.x <= targetX && targetX <= p2.x && p1.connected && p2.connected) {
+        // Check if targetX is between these points
+        if (p1.x <= targetX && targetX <= p2.x) {
+            // Check if both points are finite (not NaN)
+            if (!isFinite(p1.y) || !isFinite(p2.y)) {
+                return null; // Can't interpolate across discontinuity
+            }
+            
+            // Check for large jumps (asymptotes) - use conservative threshold
+            // Without viewport context, use absolute threshold
+            const yDiff = Math.abs(p2.y - p1.y);
+            const xDiff = Math.abs(p2.x - p1.x);
+            
+            // Detect asymptotes: very large Y change over small X change
+            if (xDiff > 0 && yDiff / xDiff > 100) {
+                return null; // Don't interpolate across likely asymptote
+            }
+            
             // Linear interpolation
             const ratio = (targetX - p1.x) / (p2.x - p1.x);
             return p1.y + ratio * (p2.y - p1.y);
