@@ -24,6 +24,12 @@ class Graphiti {
         // Startup state tracking for immediate implicit function rendering
         this.isStartup = false;
         
+        // Flag to prevent saving bounds while loading from localStorage
+        this.isLoadingBounds = false;
+        
+        // Flag to prevent saving bounds during initial setup (before loadAndApplyViewportBounds runs)
+        this.isInitialSetup = true;
+        
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
         
@@ -1364,6 +1370,175 @@ class Graphiti {
         } catch (error) {
             console.warn('Could not load functions from localStorage:', error);
             return { cartesian: null, polar: null, hasSavedCartesian: false, hasSavedPolar: false };
+        }
+    }
+
+    // Save viewport bounds to localStorage
+    saveViewportBounds() {
+        // Don't save if we're currently loading bounds from localStorage
+        if (this.isLoadingBounds) {
+            return;
+        }
+        
+        // Don't save during initial setup (before loadAndApplyViewportBounds runs)
+        if (this.isInitialSetup) {
+            return;
+        }
+        
+        try {
+            // Save current plot mode
+            localStorage.setItem('graphiti_plot_mode', this.plotMode);
+            
+            // Always save cartesian viewport bounds (from viewport object, not inputs)
+            const cartesianBounds = {
+                xMin: this.cartesianViewport.minX.toString(),
+                xMax: this.cartesianViewport.maxX.toString(),
+                yMin: this.cartesianViewport.minY.toString(),
+                yMax: this.cartesianViewport.maxY.toString(),
+                scale: this.cartesianViewport.scale
+            };
+            localStorage.setItem('graphiti_cartesian_bounds', JSON.stringify(cartesianBounds));
+
+            // Always save polar viewport bounds (from viewport object and polarSettings)
+            const polarBounds = {
+                thetaMin: this.polarSettings.thetaMin.toString(),
+                thetaMax: this.polarSettings.thetaMax.toString(),
+                viewportMinX: this.polarViewport.minX,
+                viewportMaxX: this.polarViewport.maxX,
+                viewportMinY: this.polarViewport.minY,
+                viewportMaxY: this.polarViewport.maxY,
+                scale: this.polarViewport.scale
+            };
+            localStorage.setItem('graphiti_polar_bounds', JSON.stringify(polarBounds));
+        } catch (error) {
+            console.warn('Could not save viewport bounds to localStorage:', error);
+        }
+    }
+
+    // Load and apply viewport bounds from localStorage
+    // Returns true if bounds were loaded and applied, false otherwise
+    loadAndApplyViewportBounds() {
+        try {
+            let boundsApplied = false;
+            
+            // Always load cartesian bounds (regardless of current mode)
+            const cartesianData = localStorage.getItem('graphiti_cartesian_bounds');
+            if (cartesianData) {
+                const bounds = JSON.parse(cartesianData);
+                
+                // Validate that all required fields exist
+                if (bounds.xMin !== undefined && bounds.xMax !== undefined && 
+                    bounds.yMin !== undefined && bounds.yMax !== undefined) {
+                    
+                    const xMin = parseFloat(bounds.xMin);
+                    const xMax = parseFloat(bounds.xMax);
+                    const yMin = parseFloat(bounds.yMin);
+                    const yMax = parseFloat(bounds.yMax);
+                    
+                    // Validate the values are valid numbers and make sense
+                    if (!isNaN(xMin) && !isNaN(xMax) && !isNaN(yMin) && !isNaN(yMax) &&
+                        xMin < xMax && yMin < yMax) {
+                        
+                        // Apply to cartesian viewport
+                        this.cartesianViewport.minX = xMin;
+                        this.cartesianViewport.maxX = xMax;
+                        this.cartesianViewport.minY = yMin;
+                        this.cartesianViewport.maxY = yMax;
+                        
+                        // Restore scale if saved, otherwise calculate it
+                        if (bounds.scale !== undefined) {
+                            const scale = parseFloat(bounds.scale);
+                            if (!isNaN(scale) && scale > 0) {
+                                this.cartesianViewport.scale = scale;
+                            }
+                        }
+                        
+                        // Update inputs only if in cartesian mode
+                        if (this.plotMode === 'cartesian') {
+                            const xMinInput = document.getElementById('x-min');
+                            const xMaxInput = document.getElementById('x-max');
+                            const yMinInput = document.getElementById('y-min');
+                            const yMaxInput = document.getElementById('y-max');
+                            
+                            // Temporarily disable saving while we load (to prevent input events from saving)
+                            this.isLoadingBounds = true;
+                            
+                            if (xMinInput) this.setRangeValue(xMinInput, bounds.xMin);
+                            if (xMaxInput) this.setRangeValue(xMaxInput, bounds.xMax);
+                            if (yMinInput) this.setRangeValue(yMinInput, bounds.yMin);
+                            if (yMaxInput) this.setRangeValue(yMaxInput, bounds.yMax);
+                            
+                            this.isLoadingBounds = false;
+                            
+                            boundsApplied = true;
+                        }
+                    }
+                }
+            }
+
+            // Always load polar bounds (regardless of current mode)
+            const polarData = localStorage.getItem('graphiti_polar_bounds');
+            if (polarData) {
+                const bounds = JSON.parse(polarData);
+                
+                if (bounds.thetaMin !== undefined && bounds.thetaMax !== undefined) {
+                    const thetaMin = parseFloat(bounds.thetaMin);
+                    const thetaMax = parseFloat(bounds.thetaMax);
+                    
+                    if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin < thetaMax) {
+                        this.polarSettings.thetaMin = thetaMin;
+                        this.polarSettings.thetaMax = thetaMax;
+                        
+                        // Also restore polar viewport ranges if they exist
+                        if (bounds.viewportMinX !== undefined && bounds.viewportMaxX !== undefined &&
+                            bounds.viewportMinY !== undefined && bounds.viewportMaxY !== undefined) {
+                            
+                            const vMinX = parseFloat(bounds.viewportMinX);
+                            const vMaxX = parseFloat(bounds.viewportMaxX);
+                            const vMinY = parseFloat(bounds.viewportMinY);
+                            const vMaxY = parseFloat(bounds.viewportMaxY);
+                            
+                            if (!isNaN(vMinX) && !isNaN(vMaxX) && !isNaN(vMinY) && !isNaN(vMaxY) &&
+                                vMinX < vMaxX && vMinY < vMaxY) {
+                                
+                                this.polarViewport.minX = vMinX;
+                                this.polarViewport.maxX = vMaxX;
+                                this.polarViewport.minY = vMinY;
+                                this.polarViewport.maxY = vMaxY;
+                                
+                                // Restore scale if saved
+                                if (bounds.scale !== undefined) {
+                                    const scale = parseFloat(bounds.scale);
+                                    if (!isNaN(scale) && scale > 0) {
+                                        this.polarViewport.scale = scale;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Update inputs only if in polar mode
+                        if (this.plotMode === 'polar') {
+                            const thetaMinInput = document.getElementById('theta-min');
+                            const thetaMaxInput = document.getElementById('theta-max');
+                            
+                            // Temporarily disable saving while we load
+                            this.isLoadingBounds = true;
+                            
+                            if (thetaMinInput) this.setRangeValue(thetaMinInput, bounds.thetaMin);
+                            if (thetaMaxInput) this.setRangeValue(thetaMaxInput, bounds.thetaMax);
+                            
+                            this.isLoadingBounds = false;
+                            
+                            boundsApplied = true;
+                        }
+                    }
+                }
+            }
+            
+            return boundsApplied;
+        } catch (error) {
+            console.warn('Could not load viewport bounds from localStorage:', error);
+            return false;
         }
     }
     
@@ -3335,6 +3510,7 @@ class Graphiti {
         if (thetaMinInput) {
             thetaMinInput.addEventListener('input', () => {
                 this.polarSettings.thetaMin = this.getRangeValue(thetaMinInput) || 0;
+                this.saveViewportBounds();
                 this.replotAllFunctions();
             });
         }
@@ -3342,6 +3518,7 @@ class Graphiti {
         if (thetaMaxInput) {
             thetaMaxInput.addEventListener('input', () => {
                 this.polarSettings.thetaMax = this.getRangeValue(thetaMaxInput) || 2 * Math.PI;
+                this.saveViewportBounds();
                 this.replotAllFunctions();
             });
         }
@@ -4499,6 +4676,9 @@ class Graphiti {
         // Use the smaller scale to ensure both axes fit
         this.viewport.scale = Math.min(xScale, yScale);
         
+        // Save viewport bounds to localStorage
+        this.saveViewportBounds();
+        
         // Re-plot all functions with new range
         this.replotAllFunctions();
     }
@@ -4508,7 +4688,7 @@ class Graphiti {
         this.validateAndSetRange();
     }
     
-    updateRangeInputs() {
+    updateRangeInputs(skipSave = false) {
         const xMinInput = document.getElementById('x-min');
         const xMaxInput = document.getElementById('x-max');
         const yMinInput = document.getElementById('y-min');
@@ -4529,6 +4709,11 @@ class Graphiti {
         if (yMaxInput) {
             this.setRangeValue(yMaxInput, this.viewport.maxY.toFixed(2));
             this.setInputError(yMaxInput, false);
+        }
+        
+        // Save the updated bounds to localStorage (unless we're loading initial state)
+        if (!skipSave) {
+            this.saveViewportBounds();
         }
     }
     
@@ -4927,6 +5112,54 @@ class Graphiti {
     async startGraphing() {
         this.changeState(this.states.GRAPHING);
         
+        // Load saved plot mode from localStorage
+        const savedMode = localStorage.getItem('graphiti_plot_mode');
+        if (savedMode && (savedMode === 'cartesian' || savedMode === 'polar')) {
+            this.plotMode = savedMode;
+            
+            // Update UI to reflect loaded mode
+            const modeToggle = document.getElementById('mode-toggle');
+            const cartesianRanges = document.getElementById('cartesian-ranges');
+            const cartesianRangesY = document.getElementById('cartesian-ranges-y');
+            const polarRanges = document.getElementById('polar-ranges');
+            const polarOptions = document.getElementById('polar-options');
+            
+            if (modeToggle) {
+                const cartesianIcon = document.getElementById('cartesian-icon');
+                const polarIcon = document.getElementById('polar-icon');
+                
+                if (cartesianIcon && polarIcon) {
+                    if (this.plotMode === 'cartesian') {
+                        cartesianIcon.style.opacity = '1';
+                        polarIcon.style.opacity = '0.3';
+                    } else {
+                        cartesianIcon.style.opacity = '0.3';
+                        polarIcon.style.opacity = '1';
+                    }
+                }
+            }
+            
+            if (cartesianRanges && cartesianRangesY) {
+                cartesianRanges.style.display = this.plotMode === 'cartesian' ? 'flex' : 'none';
+                cartesianRangesY.style.display = this.plotMode === 'cartesian' ? 'flex' : 'none';
+            }
+            
+            if (polarRanges && polarOptions) {
+                polarRanges.style.display = this.plotMode === 'polar' ? 'flex' : 'none';
+                polarOptions.style.display = this.plotMode === 'polar' ? 'block' : 'none';
+            }
+            
+            // Update Add Function button text
+            const addFunctionBtn = document.getElementById('add-function');
+            if (addFunctionBtn) {
+                if (this.plotMode === 'cartesian') {
+                    addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">x</span>)';
+                } else {
+                    addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">θ</span>)';
+                }
+            }
+        }
+        
         // Try to load saved functions from localStorage
         const savedData = this.loadFunctionsFromLocalStorage();
         
@@ -4986,16 +5219,24 @@ class Graphiti {
             this.addFunction('');
         }
         
-        // Use the same smart reset viewport logic as the reset button for consistency
-        const smartViewport = this.getSmartResetViewport();
-        this.viewport.minX = smartViewport.minX;
-        this.viewport.maxX = smartViewport.maxX;
-        this.viewport.minY = smartViewport.minY;
-        this.viewport.maxY = smartViewport.maxY;
-        this.viewport.scale = smartViewport.scale;
+        // Try to load saved viewport bounds from localStorage
+        const hasSavedBounds = this.loadAndApplyViewportBounds();
         
-        // Update range inputs to reflect the smart viewport
-        this.updateRangeInputs();
+        // Only use smart reset viewport if no saved bounds were found
+        if (!hasSavedBounds) {
+            const smartViewport = this.getSmartResetViewport();
+            this.viewport.minX = smartViewport.minX;
+            this.viewport.maxX = smartViewport.maxX;
+            this.viewport.minY = smartViewport.minY;
+            this.viewport.maxY = smartViewport.maxY;
+            this.viewport.scale = smartViewport.scale;
+        }
+        
+        // Initial setup is complete - now allow viewport bounds to be saved
+        this.isInitialSetup = false;
+        
+        // Update range inputs to reflect the viewport (skip saving during startup)
+        this.updateRangeInputs(true);
         
         // Plot all functions after setting viewport - plot in parallel for simultaneous appearance
         const plotPromises = this.getCurrentFunctions()
