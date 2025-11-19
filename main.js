@@ -8216,6 +8216,7 @@ class Graphiti {
         // Draw polar animation coordinates if animating or paused
         if (this.polarAnimation && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) && this.plotMode === 'polar') {
             this.drawPolarAnimationCoordinates();
+            this.drawPolarAnimationPoint();
         }
         
         // Draw performance overlay if enabled
@@ -10096,6 +10097,110 @@ class Graphiti {
         this.ctx.textBaseline = 'top';
         
         this.ctx.fillText(thetaText, x + innerPadding, y + innerPadding);
+        
+        this.ctx.restore();
+    }
+    
+    drawPolarAnimationPoint() {
+        // Safety check: ensure polarAnimation exists
+        if (!this.polarAnimation) {
+            return;
+        }
+        
+        const currentTheta = this.polarAnimation.currentTheta;
+        
+        // Convert theta to radians for calculation (regardless of display mode)
+        const thetaRad = this.angleMode === 'degrees' ? currentTheta * Math.PI / 180 : currentTheta;
+        
+        this.ctx.save();
+        
+        // Draw a pulsating point at the current position for each polar function
+        const polarFuncs = this.getCurrentFunctions();
+        
+        polarFuncs.forEach(func => {
+            if (!func.enabled || !func.expression || func.expression.trim() === '') {
+                return;
+            }
+            
+            try {
+                // Evaluate r at current theta
+                let r;
+                if (func.expression.includes('theta=') || func.expression.includes('θ=')) {
+                    // For theta = constant functions, skip drawing point (it's a line)
+                    return;
+                } else {
+                    // Standard r = f(theta) function
+                    // Process expression the same way as plotPolarFunction does
+                    let processedExpression = this.convertFromLatex(func.expression).trim();
+                    if (processedExpression.toLowerCase().startsWith('r=')) {
+                        processedExpression = processedExpression.substring(2).trim();
+                    }
+                    processedExpression = processedExpression.toLowerCase();
+                    
+                    // Add implicit multiplication
+                    processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                    processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+                    
+                    const scope = { 
+                        theta: thetaRad, 
+                        t: thetaRad,
+                        pi: Math.PI,
+                        e: Math.E
+                    };
+                    const compiled = this.getCompiledExpression(processedExpression);
+                    const result = compiled.evaluate(scope);
+                    r = typeof result === 'number' ? result : (result.re !== undefined ? result.re : NaN);
+                }
+                
+                if (isNaN(r) || !isFinite(r)) {
+                    return;
+                }
+                
+                // Convert polar to cartesian
+                const x = r * Math.cos(thetaRad);
+                const y = r * Math.sin(thetaRad);
+                
+                // Convert to screen coordinates
+                const screenPos = this.worldToScreen(x, y);
+                
+                // Create pulsating effect using timestamp
+                const pulseSpeed = 3; // Speed of pulsation
+                const minRadius = 4;
+                const maxRadius = 8;
+                const pulseRadius = minRadius + (maxRadius - minRadius) * 
+                    (0.5 + 0.5 * Math.sin(Date.now() * pulseSpeed / 1000));
+                
+                // Draw outer glow
+                const gradient = this.ctx.createRadialGradient(
+                    screenPos.x, screenPos.y, 0,
+                    screenPos.x, screenPos.y, pulseRadius * 2
+                );
+                gradient.addColorStop(0, func.color);
+                gradient.addColorStop(0.5, func.color + '88'); // Semi-transparent
+                gradient.addColorStop(1, func.color + '00'); // Fully transparent
+                
+                this.ctx.fillStyle = gradient;
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, pulseRadius * 2, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw solid inner point
+                this.ctx.fillStyle = func.color;
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw bright center highlight
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                this.ctx.beginPath();
+                this.ctx.arc(screenPos.x, screenPos.y, pulseRadius * 0.4, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+            } catch (error) {
+                // Skip this function if evaluation fails
+                return;
+            }
+        });
         
         this.ctx.restore();
     }
