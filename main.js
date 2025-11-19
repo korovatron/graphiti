@@ -2158,9 +2158,13 @@ class Graphiti {
         
         // Calculate theta increment based on speed and time
         // Base speed: complete animation in ~3 seconds at 1x speed
+        // Normalize to degrees for consistent speed across angle modes
         const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
-        const baseIncrement = (thetaRange / 3000) * deltaTime; // theta per millisecond
-        const increment = baseIncrement * this.polarAnimation.animationSpeed;
+        const normalizedRange = this.angleMode === 'radians' ? thetaRange * (180 / Math.PI) : thetaRange;
+        const baseIncrement = (normalizedRange / 3000) * deltaTime; // theta per millisecond (normalized to degrees)
+        const normalizedIncrement = baseIncrement * this.polarAnimation.animationSpeed;
+        // Convert back to radians if needed
+        const increment = this.angleMode === 'radians' ? normalizedIncrement * (Math.PI / 180) : normalizedIncrement;
         
         // Update current theta
         this.polarAnimation.currentTheta += increment;
