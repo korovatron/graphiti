@@ -3262,6 +3262,11 @@ class Graphiti {
         const thetaMinInput = document.getElementById('theta-min');
         const thetaMaxInput = document.getElementById('theta-max');
         
+        // Stop any running animation to prevent state inconsistencies
+        if (this.polarAnimation.isAnimating) {
+            this.stopPolarAnimation();
+        }
+        
         if (this.angleMode === 'degrees') {
             // Reset to 0 to 360 degrees
             this.polarSettings.thetaMin = 0;
@@ -3273,6 +3278,10 @@ class Graphiti {
             if (thetaMaxInput) {
                 this.setRangeValue(thetaMaxInput, '360');
             }
+            
+            // Reset animation state to match
+            this.polarAnimation.storedThetaMax = 360;
+            this.polarAnimation.currentTheta = 0;
         } else {
             // Reset to 0 to 2π radians (default)
             this.polarSettings.thetaMin = 0;
@@ -3285,6 +3294,10 @@ class Graphiti {
                 const value = (2 * Math.PI).toFixed(6);
                 this.setRangeValue(thetaMaxInput, value);
             }
+            
+            // Reset animation state to match
+            this.polarAnimation.storedThetaMax = 2 * Math.PI;
+            this.polarAnimation.currentTheta = 0;
         }
     }
     
@@ -6080,6 +6093,12 @@ class Graphiti {
         // Store old mode for conversion
         const oldMode = this.angleMode;
         
+        // Stop animation before switching modes to prevent mixed unit states
+        const wasAnimating = this.polarAnimation.isAnimating;
+        if (wasAnimating) {
+            this.stopPolarAnimation();
+        }
+        
         if (this.angleMode === 'degrees') {
             this.angleMode = 'radians';
             if (degreesIcon && radiansIcon) {
@@ -6111,11 +6130,11 @@ class Graphiti {
                     this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(6));
                 }
                 
-                // Also convert storedThetaMax for animation
-                if (this.polarAnimation.storedThetaMax) {
+                // Also convert animation state if it was initialized
+                if (this.polarAnimation.storedThetaMax !== undefined && this.polarAnimation.storedThetaMax !== 0) {
                     this.polarAnimation.storedThetaMax = this.polarAnimation.storedThetaMax * Math.PI / 180;
                 }
-                if (this.polarAnimation.currentTheta) {
+                if (this.polarAnimation.currentTheta !== undefined && this.polarAnimation.currentTheta !== 0) {
                     this.polarAnimation.currentTheta = this.polarAnimation.currentTheta * Math.PI / 180;
                 }
             } else if (oldMode === 'radians' && this.angleMode === 'degrees') {
@@ -6130,11 +6149,11 @@ class Graphiti {
                     this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(2));
                 }
                 
-                // Also convert storedThetaMax for animation
-                if (this.polarAnimation.storedThetaMax) {
+                // Also convert animation state if it was initialized
+                if (this.polarAnimation.storedThetaMax !== undefined && this.polarAnimation.storedThetaMax !== 0) {
                     this.polarAnimation.storedThetaMax = this.polarAnimation.storedThetaMax * 180 / Math.PI;
                 }
-                if (this.polarAnimation.currentTheta) {
+                if (this.polarAnimation.currentTheta !== undefined && this.polarAnimation.currentTheta !== 0) {
                     this.polarAnimation.currentTheta = this.polarAnimation.currentTheta * 180 / Math.PI;
                 }
             }
