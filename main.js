@@ -48,6 +48,7 @@ class Graphiti {
         // Polar animation state
         this.polarAnimation = {
             isAnimating: false,
+            isPaused: false, // Track pause state separately
             animationSpeed: 1.0, // 1x speed by default
             shouldLoop: false,
             currentTheta: 0, // Current animation theta position
@@ -1923,6 +1924,29 @@ class Graphiti {
             polarStopButton.style.background = '#2A3F5A';
         }
         
+        // Disable step buttons when animating
+        const stepBackBtn = document.getElementById('polar-step-back');
+        const stepForwardBtn = document.getElementById('polar-step-forward');
+        if (stepBackBtn) {
+            stepBackBtn.disabled = true;
+            stepBackBtn.style.opacity = '0.6';
+            stepBackBtn.style.background = '#1a2a3f';
+        }
+        if (stepForwardBtn) {
+            stepForwardBtn.disabled = true;
+            stepForwardBtn.style.opacity = '0.6';
+            stepForwardBtn.style.background = '#1a2a3f';
+        }
+        
+        // Disable angle mode toggle during animation
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        if (angleModeToggle) {
+            angleModeToggle.disabled = true;
+            angleModeToggle.style.opacity = '0.6';
+            angleModeToggle.style.background = '#1a2a3f';
+            angleModeToggle.style.cursor = 'not-allowed';
+        }
+        
         // Only initialize if starting fresh (not resuming from pause)
         if (this.polarAnimation.currentTheta === 0 || this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax) {
             this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
@@ -1959,6 +1983,29 @@ class Graphiti {
             polarStopButton.style.background = '#2A3F5A';
         }
         
+        // Enable step buttons when paused
+        const stepBackBtn = document.getElementById('polar-step-back');
+        const stepForwardBtn = document.getElementById('polar-step-forward');
+        if (stepBackBtn) {
+            stepBackBtn.disabled = false;
+            stepBackBtn.style.opacity = '1';
+            stepBackBtn.style.background = '#2A3F5A';
+        }
+        if (stepForwardBtn) {
+            stepForwardBtn.disabled = false;
+            stepForwardBtn.style.opacity = '1';
+            stepForwardBtn.style.background = '#2A3F5A';
+        }
+        
+        // Re-enable angle mode toggle when paused
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        if (angleModeToggle) {
+            angleModeToggle.disabled = false;
+            angleModeToggle.style.opacity = '1';
+            angleModeToggle.style.background = '#2A3F5A';
+            angleModeToggle.style.cursor = 'pointer';
+        }
+        
         // Cancel animation frame if active
         if (this.polarAnimation.animationFrameId) {
             cancelAnimationFrame(this.polarAnimation.animationFrameId);
@@ -1976,6 +2023,46 @@ class Graphiti {
         this.polarAnimation.isAnimating = false;
         this.polarAnimation.isPaused = false;
         
+        // Update play/pause button to show Play state
+        const playIcon = document.getElementById('play-icon');
+        const pauseIcon = document.getElementById('pause-icon');
+        const playPauseText = document.getElementById('play-pause-text');
+        if (playIcon && pauseIcon && playPauseText) {
+            playIcon.style.display = 'block';
+            pauseIcon.style.display = 'none';
+            playPauseText.textContent = 'Play';
+        }
+        
+        // Dim Stop button (inactive state)
+        const stopBtn = document.getElementById('polar-stop-animation');
+        if (stopBtn) {
+            stopBtn.style.opacity = '0.6';
+            stopBtn.style.background = '#1a2a3f';
+        }
+        
+        // Disable step buttons when stopped
+        const stepBackBtn = document.getElementById('polar-step-back');
+        const stepForwardBtn = document.getElementById('polar-step-forward');
+        if (stepBackBtn) {
+            stepBackBtn.disabled = true;
+            stepBackBtn.style.opacity = '0.6';
+            stepBackBtn.style.background = '#1a2a3f';
+        }
+        if (stepForwardBtn) {
+            stepForwardBtn.disabled = true;
+            stepForwardBtn.style.opacity = '0.6';
+            stepForwardBtn.style.background = '#1a2a3f';
+        }
+        
+        // Re-enable angle mode toggle (no longer animating)
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        if (angleModeToggle) {
+            angleModeToggle.disabled = false;
+            angleModeToggle.style.opacity = '1';
+            angleModeToggle.style.background = '#2A3F5A';
+            angleModeToggle.style.cursor = 'pointer';
+        }
+        
         // Cancel animation frame if active
         if (this.polarAnimation.animationFrameId) {
             cancelAnimationFrame(this.polarAnimation.animationFrameId);
@@ -1986,6 +2073,48 @@ class Graphiti {
         this.polarSettings.thetaMax = this.polarAnimation.storedThetaMax;
         
         // Replot all functions with full range and re-enable badge calculations
+        this.replotAllPolarFunctions();
+    }
+
+    stepPolarAnimationForward() {
+        // Only allow stepping when paused
+        if (!this.polarAnimation.isPaused) return;
+        
+        // Calculate step size based on the full theta range
+        const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
+        const stepSize = thetaRange * 0.02; // 2% of total range per step
+        
+        // Move forward one step
+        this.polarAnimation.currentTheta = Math.min(
+            this.polarAnimation.currentTheta + stepSize,
+            this.polarAnimation.storedThetaMax
+        );
+        
+        // Update thetaMax for plotting
+        this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
+        
+        // Replot with new position
+        this.replotAllPolarFunctions();
+    }
+
+    stepPolarAnimationBackward() {
+        // Only allow stepping when paused
+        if (!this.polarAnimation.isPaused) return;
+        
+        // Calculate step size based on the full theta range
+        const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
+        const stepSize = thetaRange * 0.02; // 2% of total range per step
+        
+        // Move backward one step, but not before thetaMin
+        this.polarAnimation.currentTheta = Math.max(
+            this.polarAnimation.currentTheta - stepSize,
+            this.polarSettings.thetaMin
+        );
+        
+        // Update thetaMax for plotting
+        this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
+        
+        // Replot with new position
         this.replotAllPolarFunctions();
     }
 
@@ -3811,6 +3940,8 @@ class Graphiti {
         // Polar animation controls
         const polarPlayPauseButton = document.getElementById('polar-play-pause');
         const polarStopButton = document.getElementById('polar-stop-animation');
+        const polarStepBackButton = document.getElementById('polar-step-back');
+        const polarStepForwardButton = document.getElementById('polar-step-forward');
         const polarSpeedSlider = document.getElementById('polar-speed-slider');
         const polarLoopToggle = document.getElementById('polar-loop-toggle');
         const speedDisplay = document.getElementById('speed-display');
@@ -3818,10 +3949,20 @@ class Graphiti {
         const pauseIcon = document.getElementById('pause-icon');
         const playPauseText = document.getElementById('play-pause-text');
         
-        // Initialize Stop button as dimmed (inactive state)
+        // Initialize Stop button and step buttons as dimmed (inactive state)
         if (polarStopButton) {
             polarStopButton.style.opacity = '0.6';
             polarStopButton.style.background = '#1a2a3f';
+        }
+        if (polarStepBackButton) {
+            polarStepBackButton.style.opacity = '0.6';
+            polarStepBackButton.style.background = '#1a2a3f';
+            polarStepBackButton.disabled = true;
+        }
+        if (polarStepForwardButton) {
+            polarStepForwardButton.style.opacity = '0.6';
+            polarStepForwardButton.style.background = '#1a2a3f';
+            polarStepForwardButton.disabled = true;
         }
         
         if (polarPlayPauseButton) {
@@ -3854,6 +3995,18 @@ class Graphiti {
                 // Dim Stop button since it's now inactive
                 polarStopButton.style.opacity = '0.6';
                 polarStopButton.style.background = '#1a2a3f';
+            });
+        }
+        
+        if (polarStepBackButton) {
+            polarStepBackButton.addEventListener('click', () => {
+                this.stepPolarAnimationBackward();
+            });
+        }
+        
+        if (polarStepForwardButton) {
+            polarStepForwardButton.addEventListener('click', () => {
+                this.stepPolarAnimationForward();
             });
         }
         
@@ -4005,6 +4158,11 @@ class Graphiti {
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
             angleModeToggle.addEventListener('click', () => {
+                // Don't allow angle mode change during animation
+                if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+                    return;
+                }
+                
                 // Clear all badges when changing angle mode (coordinate system change)
                 this.clearAllBadges();
                 this.toggleAngleMode();
@@ -4311,6 +4469,12 @@ class Graphiti {
                 this.input.tracing.tolerance.mouse;
             
             const curvePoint = this.findClosestCurvePoint(x, y, tolerance);
+            
+            // Don't allow tracing during polar animation or pause
+            if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+                this.input.tracing.active = false;
+                return;
+            }
             
             if (curvePoint) {
                 // Enter tracing mode (don't clear existing badges)
@@ -5056,10 +5220,52 @@ class Graphiti {
     }
     
     togglePlotMode() {
-        // Stop polar animation if running when switching away from polar mode
-        if (this.plotMode === 'polar' && this.polarAnimation.isAnimating) {
+        // Always stop and fully reset polar animation when switching modes (from either direction)
+        // This ensures clean state whether switching from polar or back to polar
+        if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
             this.stopPolarAnimation();
         }
+        
+        // Additionally reset animation button states to ensure consistency
+        const playIcon = document.getElementById('play-icon');
+        const pauseIcon = document.getElementById('pause-icon');
+        const playPauseText = document.getElementById('play-pause-text');
+        if (playIcon && pauseIcon && playPauseText) {
+            playIcon.style.display = 'block';
+            pauseIcon.style.display = 'none';
+            playPauseText.textContent = 'Play';
+        }
+        
+        const stopBtn = document.getElementById('polar-stop-animation');
+        if (stopBtn) {
+            stopBtn.style.opacity = '0.6';
+            stopBtn.style.background = '#1a2a3f';
+        }
+        
+        const stepBackBtn = document.getElementById('polar-step-back');
+        const stepForwardBtn = document.getElementById('polar-step-forward');
+        if (stepBackBtn) {
+            stepBackBtn.disabled = true;
+            stepBackBtn.style.opacity = '0.6';
+            stepBackBtn.style.background = '#1a2a3f';
+        }
+        if (stepForwardBtn) {
+            stepForwardBtn.disabled = true;
+            stepForwardBtn.style.opacity = '0.6';
+            stepForwardBtn.style.background = '#1a2a3f';
+        }
+        
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        if (angleModeToggle) {
+            angleModeToggle.disabled = false;
+            angleModeToggle.style.opacity = '1';
+            angleModeToggle.style.background = '#2A3F5A';
+            angleModeToggle.style.cursor = 'pointer';
+        }
+        
+        // Reset animation position to start
+        this.polarAnimation.currentTheta = 0;
+        this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
         
         // Clear all badges when switching modes since coordinate systems are different
         this.clearAllBadges();
@@ -7995,14 +8201,21 @@ class Graphiti {
             this.drawActiveTracingIndicator();
         }
         
-        // Draw all persistent badges
-        this.updateBadgeScreenPositions();
-        this.drawPersistentBadges();
+        // Draw all persistent badges (skip during polar animation or pause)
+        if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+            this.updateBadgeScreenPositions();
+            this.drawPersistentBadges();
+        }
         
         // Draw calculation indicator during viewport changes and calculations
         // Only shown when implicit functions are present
         if (this.shouldShowCalculationIndicator()) {
             this.drawCalculationIndicator();
+        }
+        
+        // Draw polar animation coordinates if animating or paused
+        if (this.polarAnimation && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) && this.plotMode === 'polar') {
+            this.drawPolarAnimationCoordinates();
         }
         
         // Draw performance overlay if enabled
@@ -9463,6 +9676,11 @@ class Graphiti {
     }
     
     drawPersistentBadges() {
+        // Skip drawing badges during polar animation or pause
+        if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+            return;
+        }
+        
         // Update badge screen positions before drawing
         this.updateBadgeScreenPositions();
         
@@ -9812,6 +10030,73 @@ class Graphiti {
         }
         
         // Restore context state
+        this.ctx.restore();
+    }
+
+    drawPolarAnimationCoordinates() {
+        // Safety check: ensure polarAnimation exists
+        if (!this.polarAnimation) {
+            return;
+        }
+        
+        // Get CSS variables for theme-aware colors
+        const bgColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--animation-coord-bg').trim();
+        const borderColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--animation-coord-border').trim();
+        const textColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--animation-coord-text').trim();
+        
+        const currentTheta = this.polarAnimation.currentTheta;
+        
+        // Format theta based on angle mode
+        // Note: currentTheta is already in the user's chosen unit system (degrees or radians)
+        let thetaDisplay;
+        let thetaLabel;
+        if (this.angleMode === 'degrees') {
+            // currentTheta is already in degrees, no conversion needed
+            thetaDisplay = currentTheta.toFixed(1) + '°';
+            thetaLabel = 'θ';
+        } else {
+            thetaDisplay = currentTheta.toFixed(3);
+            thetaLabel = 'θ';
+        }
+        
+        // Format text
+        const thetaText = `${thetaLabel} = ${thetaDisplay}`;
+        
+        this.ctx.save();
+        
+        // Set font and measure text
+        const fontSize = 14;
+        const fontFamily = 'Arial, sans-serif';
+        this.ctx.font = `${fontSize}px ${fontFamily}`;
+        
+        const textWidth = this.ctx.measureText(thetaText).width;
+        
+        // Position in bottom right corner with padding
+        const padding = 15;
+        const innerPadding = 10;
+        const boxWidth = textWidth + (innerPadding * 2);
+        const boxHeight = fontSize + (innerPadding * 2);
+        const x = this.viewport.width - boxWidth - padding;
+        const y = this.viewport.height - boxHeight - padding;
+        
+        // Draw background box with border
+        this.ctx.fillStyle = bgColor;
+        this.ctx.fillRect(x, y, boxWidth, boxHeight);
+        
+        this.ctx.strokeStyle = borderColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(x, y, boxWidth, boxHeight);
+        
+        // Draw text
+        this.ctx.fillStyle = textColor;
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        
+        this.ctx.fillText(thetaText, x + innerPadding, y + innerPadding);
+        
         this.ctx.restore();
     }
     
