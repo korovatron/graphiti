@@ -21,6 +21,9 @@ class Graphiti {
         this.currentState = this.states.TITLE;
         this.previousState = null;
         
+        // Flag to track if app has been initialized (prevents duplicate function loading)
+        this.hasInitialized = false;
+        
         // Startup state tracking for immediate implicit function rendering
         this.isStartup = false;
         
@@ -38,7 +41,7 @@ class Graphiti {
         this.polarSettings = {
             thetaMin: 0,
             thetaMax: 2 * Math.PI,
-            plotNegativeR: false,  // Default to not plotting negative r
+            plotNegativeR: true,  // Default to plotting negative r (matches checkbox default)
             step: 0.01 // theta increment
         };
         
@@ -1757,13 +1760,12 @@ class Graphiti {
                     let r = compiledExpression.evaluate(scope);
                     
                     // Handle negative r values based on setting
+                    let adjustedThetaForEval = thetaForEval; // Use separate variable to avoid modifying loop counter
                     if (r < 0) {
                         if (this.polarSettings.plotNegativeR) {
-                            // Plot negative r at opposite angle
+                            // Plot negative r at opposite angle (add π radians)
                             r = Math.abs(r);
-                            // Update both theta and thetaForEval
-                            theta += (this.angleMode === 'degrees' ? 180 : Math.PI);
-                            thetaForEval += Math.PI; // Always add PI in radians
+                            adjustedThetaForEval = thetaForEval + Math.PI;
                         } else {
                             // Skip negative r values
                             continue;
@@ -1771,9 +1773,9 @@ class Graphiti {
                     }
                     
                     // Convert polar to cartesian
-                    // Use thetaForEval which is already in radians
-                    const x = r * Math.cos(thetaForEval);
-                    const y = r * Math.sin(thetaForEval);
+                    // Use adjustedThetaForEval which accounts for negative r values
+                    const x = r * Math.cos(adjustedThetaForEval);
+                    const y = r * Math.sin(adjustedThetaForEval);
                     
                     // Check if point is within reasonable bounds
                     if (isFinite(x) && isFinite(y)) {
@@ -3527,7 +3529,7 @@ class Graphiti {
 
         if (negativeRToggle) {
             negativeRToggle.addEventListener('change', () => {
-                this.polarSettings.plotNegativeR = !negativeRToggle.checked;  // Invert checkbox state
+                this.polarSettings.plotNegativeR = negativeRToggle.checked;  // Checkbox checked = plot negative r
                 this.replotAllFunctions();
             });
         }
@@ -5110,6 +5112,15 @@ class Graphiti {
     }
     
     async startGraphing() {
+        // If already initialized, just change state and return
+        if (this.hasInitialized) {
+            this.changeState(this.states.GRAPHING);
+            return;
+        }
+        
+        // Mark as initialized to prevent duplicate function loading
+        this.hasInitialized = true;
+        
         this.changeState(this.states.GRAPHING);
         
         // Load saved plot mode from localStorage
