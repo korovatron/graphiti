@@ -6073,6 +6073,9 @@ class Graphiti {
         const degreesIcon = document.getElementById('degrees-icon');
         const radiansIcon = document.getElementById('radians-icon');
         
+        // Store old mode for conversion
+        const oldMode = this.angleMode;
+        
         if (this.angleMode === 'degrees') {
             this.angleMode = 'radians';
             if (degreesIcon && radiansIcon) {
@@ -6087,9 +6090,50 @@ class Graphiti {
             }
         }
         
-        // Update polar theta range if in polar mode
+        // Update polar theta range if in polar mode - convert values instead of resetting
         if (this.plotMode === 'polar') {
-            this.resetPolarRange();
+            const thetaMinInput = document.getElementById('theta-min');
+            const thetaMaxInput = document.getElementById('theta-max');
+            
+            if (oldMode === 'degrees' && this.angleMode === 'radians') {
+                // Convert degrees to radians
+                this.polarSettings.thetaMin = this.polarSettings.thetaMin * Math.PI / 180;
+                this.polarSettings.thetaMax = this.polarSettings.thetaMax * Math.PI / 180;
+                
+                if (thetaMinInput) {
+                    this.setRangeValue(thetaMinInput, this.polarSettings.thetaMin.toFixed(6));
+                }
+                if (thetaMaxInput) {
+                    this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(6));
+                }
+                
+                // Also convert storedThetaMax for animation
+                if (this.polarAnimation.storedThetaMax) {
+                    this.polarAnimation.storedThetaMax = this.polarAnimation.storedThetaMax * Math.PI / 180;
+                }
+                if (this.polarAnimation.currentTheta) {
+                    this.polarAnimation.currentTheta = this.polarAnimation.currentTheta * Math.PI / 180;
+                }
+            } else if (oldMode === 'radians' && this.angleMode === 'degrees') {
+                // Convert radians to degrees
+                this.polarSettings.thetaMin = this.polarSettings.thetaMin * 180 / Math.PI;
+                this.polarSettings.thetaMax = this.polarSettings.thetaMax * 180 / Math.PI;
+                
+                if (thetaMinInput) {
+                    this.setRangeValue(thetaMinInput, this.polarSettings.thetaMin.toFixed(2));
+                }
+                if (thetaMaxInput) {
+                    this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(2));
+                }
+                
+                // Also convert storedThetaMax for animation
+                if (this.polarAnimation.storedThetaMax) {
+                    this.polarAnimation.storedThetaMax = this.polarAnimation.storedThetaMax * 180 / Math.PI;
+                }
+                if (this.polarAnimation.currentTheta) {
+                    this.polarAnimation.currentTheta = this.polarAnimation.currentTheta * 180 / Math.PI;
+                }
+            }
         }
         
         // Only adjust viewport if there are trig functions that would be affected
