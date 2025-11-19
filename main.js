@@ -1997,13 +1997,13 @@ class Graphiti {
             stepForwardBtn.style.background = '#2A3F5A';
         }
         
-        // Re-enable angle mode toggle when paused
+        // Keep angle mode toggle disabled when paused (stays darkened)
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
-            angleModeToggle.disabled = false;
-            angleModeToggle.style.opacity = '1';
-            angleModeToggle.style.background = '#2A3F5A';
-            angleModeToggle.style.cursor = 'pointer';
+            angleModeToggle.disabled = true;
+            angleModeToggle.style.opacity = '0.6';
+            angleModeToggle.style.background = '#1a2a3f';
+            angleModeToggle.style.cursor = 'not-allowed';
         }
         
         // Cancel animation frame if active
