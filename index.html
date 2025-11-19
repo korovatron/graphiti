@@ -1518,10 +1518,50 @@
                 </div>
                 
                 <div id="polar-options" style="display: none; margin-bottom: 10px;">
-                    <label style="font-size: 14px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <label style="font-size: 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 10px;">
                         <input type="checkbox" id="negative-r-toggle" checked style="margin: 0;">
                         <span>Plot negative r values</span>
                     </label>
+                    
+                    <!-- Polar Animation Controls -->
+                    <div style="border-top: 1px solid #555; padding-top: 10px; margin-top: 5px;">
+                        <div style="font-size: 13px; margin-bottom: 8px; color: var(--text-primary); font-weight: 600;">Animation Controls</div>
+                        
+                        <!-- Play/Pause/Stop Row -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <button id="polar-play-pause" style="flex: 1; padding: 8px; font-size: 12px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Play/Pause animation">
+                                <svg id="play-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                                    <polygon points="2,1 2,11 10,6"></polygon>
+                                </svg>
+                                <svg id="pause-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style="display: none;">
+                                    <rect x="2" y="1" width="3" height="10"></rect>
+                                    <rect x="7" y="1" width="3" height="10"></rect>
+                                </svg>
+                                <span id="play-pause-text">Play</span>
+                            </button>
+                            <button id="polar-stop-animation" style="flex: 1; padding: 8px; font-size: 12px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Stop animation and show full graph">
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                                    <rect x="2" y="2" width="8" height="8"></rect>
+                                </svg>
+                                <span>Stop</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Speed Control -->
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 12px; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <span>Speed:</span>
+                                <span id="speed-display" style="color: var(--text-primary); font-weight: 600;">1.0x</span>
+                            </label>
+                            <input type="range" id="polar-speed-slider" min="0.25" max="5" step="0.25" value="1" style="width: 100%; cursor: pointer;">
+                        </div>
+                        
+                        <!-- Loop Toggle -->
+                        <label style="font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="polar-loop-toggle" style="margin: 0;">
+                            <span>Loop animation</span>
+                        </label>
+                    </div>
                 </div>
                 
                 <!-- Control Buttons Row -->

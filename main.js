@@ -45,6 +45,17 @@ class Graphiti {
             step: 0.01 // theta increment
         };
         
+        // Polar animation state
+        this.polarAnimation = {
+            isAnimating: false,
+            animationSpeed: 1.0, // 1x speed by default
+            shouldLoop: false,
+            currentTheta: 0, // Current animation theta position
+            animationFrameId: null, // requestAnimationFrame ID
+            storedThetaMax: 2 * Math.PI, // Store original thetaMax
+            lastTimestamp: 0 // For smooth animation timing
+        };
+        
         // Canvas and viewport properties - separate for each mode
         this.cartesianViewport = {
             width: 0,
@@ -766,6 +777,24 @@ class Graphiti {
             this.cartesianFunctionsCleared = false;
         } else {
             this.polarFunctionsCleared = false;
+            // Stop animation when adding a new function in polar mode
+            if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+                this.stopPolarAnimation();
+                // Update UI to show stopped state
+                const playIcon = document.getElementById('play-icon');
+                const pauseIcon = document.getElementById('pause-icon');
+                const playPauseText = document.getElementById('play-pause-text');
+                const polarStopButton = document.getElementById('polar-stop-animation');
+                if (playIcon && pauseIcon && playPauseText) {
+                    playIcon.style.display = 'block';
+                    pauseIcon.style.display = 'none';
+                    playPauseText.textContent = 'Play';
+                }
+                if (polarStopButton) {
+                    polarStopButton.style.opacity = '0.6';
+                    polarStopButton.style.background = '#1a2a3f';
+                }
+            }
         }
         
         this.createFunctionUI(func);
@@ -774,19 +803,22 @@ class Graphiti {
         if (expression) {
             this.plotFunction(func);
             
-            // Update intersections after adding this function (immediate calculation)
-            if (this.showIntersections) {
-                this.calculateIntersectionsWithWorker(true); // true = immediate
-            }
-            
-            // Update turning points after adding this function
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
-            }
-            
-            // Update intercepts after adding this function
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
+            // Skip badge calculations during polar animation or pause
+            if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+                // Update intersections after adding this function (immediate calculation)
+                if (this.showIntersections) {
+                    this.calculateIntersectionsWithWorker(true); // true = immediate
+                }
+                
+                // Update turning points after adding this function
+                if (this.showTurningPoints) {
+                    this.turningPoints = this.findTurningPoints();
+                }
+                
+                // Update intercepts after adding this function
+                if (this.showIntercepts) {
+                    this.intercepts = this.findAxisIntercepts();
+                }
             }
         }
         
@@ -820,15 +852,18 @@ class Graphiti {
             // Plot the function
             this.plotFunction(emptyFunc);
             
-            // Update analysis features if enabled
-            if (this.showIntersections) {
-                this.calculateIntersectionsWithWorker(true); // true = immediate
-            }
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
-            }
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
+            // Skip badge calculations during polar animation or pause
+            if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+                // Update analysis features if enabled
+                if (this.showIntersections) {
+                    this.calculateIntersectionsWithWorker(true); // true = immediate
+                }
+                if (this.showTurningPoints) {
+                    this.turningPoints = this.findTurningPoints();
+                }
+                if (this.showIntercepts) {
+                    this.intercepts = this.findAxisIntercepts();
+                }
             }
         } else {
             // No empty slot found, add as new function
@@ -971,6 +1006,25 @@ class Graphiti {
                 
                 // Clear expression cache when function expression changes
                 this.clearExpressionCache();
+                
+                // Stop animation when editing a function in polar mode
+                if (this.plotMode === 'polar' && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused)) {
+                    this.stopPolarAnimation();
+                    // Update UI to show stopped state
+                    const playIcon = document.getElementById('play-icon');
+                    const pauseIcon = document.getElementById('pause-icon');
+                    const playPauseText = document.getElementById('play-pause-text');
+                    const polarStopButton = document.getElementById('polar-stop-animation');
+                    if (playIcon && pauseIcon && playPauseText) {
+                        playIcon.style.display = 'block';
+                        pauseIcon.style.display = 'none';
+                        playPauseText.textContent = 'Play';
+                    }
+                    if (polarStopButton) {
+                        polarStopButton.style.opacity = '0.6';
+                        polarStopButton.style.background = '#1a2a3f';
+                    }
+                }
                 
                 // Debounced plotting
                 this.debouncePlot(func);
@@ -1850,6 +1904,187 @@ class Graphiti {
             console.error('Error plotting polar ray:', error);
             func.points = [];
         }
+    }
+
+    // ================================
+    // POLAR ANIMATION METHODS
+    // ================================
+
+    startPolarAnimation() {
+        if (this.polarAnimation.isAnimating) return;
+        
+        this.polarAnimation.isAnimating = true;
+        this.polarAnimation.isPaused = false;
+        
+        // Make Stop button fully visible since it's now functional
+        const polarStopButton = document.getElementById('polar-stop-animation');
+        if (polarStopButton) {
+            polarStopButton.style.opacity = '1';
+            polarStopButton.style.background = '#2A3F5A';
+        }
+        
+        // Only initialize if starting fresh (not resuming from pause)
+        if (this.polarAnimation.currentTheta === 0 || this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax) {
+            this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
+            
+            // Start currentTheta slightly ahead of thetaMin to show initial curve
+            const thetaRange = this.polarSettings.thetaMax - this.polarSettings.thetaMin;
+            const initialOffset = Math.min(thetaRange * 0.01, 0.1); // 1% of range or 0.1, whichever is smaller
+            this.polarAnimation.currentTheta = this.polarSettings.thetaMin + initialOffset;
+            
+            // Set initial thetaMax for first render
+            this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
+            
+            // Do initial plot to show starting position
+            this.replotAllPolarFunctions();
+        }
+        // If resuming from pause, currentTheta and thetaMax are already set correctly
+        
+        this.polarAnimation.lastTimestamp = 0; // Reset timestamp for smooth resumption
+        
+        // Start the animation loop with requestAnimationFrame
+        this.polarAnimation.animationFrameId = requestAnimationFrame((ts) => this.animatePolarFunctions(ts));
+    }
+
+    pausePolarAnimation() {
+        if (!this.polarAnimation.isAnimating) return;
+        
+        this.polarAnimation.isAnimating = false;
+        this.polarAnimation.isPaused = true;
+        
+        // Keep Stop button fully visible since it's still functional when paused
+        const polarStopButton = document.getElementById('polar-stop-animation');
+        if (polarStopButton) {
+            polarStopButton.style.opacity = '1';
+            polarStopButton.style.background = '#2A3F5A';
+        }
+        
+        // Cancel animation frame if active
+        if (this.polarAnimation.animationFrameId) {
+            cancelAnimationFrame(this.polarAnimation.animationFrameId);
+            this.polarAnimation.animationFrameId = null;
+        }
+        
+        // Keep currentTheta where it is - don't restore full range
+        // This allows resuming from the paused position
+    }
+
+    stopPolarAnimation() {
+        // Allow stopping from both animating and paused states
+        if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) return;
+        
+        this.polarAnimation.isAnimating = false;
+        this.polarAnimation.isPaused = false;
+        
+        // Cancel animation frame if active
+        if (this.polarAnimation.animationFrameId) {
+            cancelAnimationFrame(this.polarAnimation.animationFrameId);
+            this.polarAnimation.animationFrameId = null;
+        }
+        
+        // Restore original thetaMax
+        this.polarSettings.thetaMax = this.polarAnimation.storedThetaMax;
+        
+        // Replot all functions with full range and re-enable badge calculations
+        this.replotAllPolarFunctions();
+    }
+
+    resetPolarAnimation() {
+        const wasAnimating = this.polarAnimation.isAnimating;
+        
+        // Stop animation if running (clears both isAnimating and isPaused)
+        if (wasAnimating || this.polarAnimation.isPaused) {
+            this.stopPolarAnimation();
+        }
+        
+        // Reset to start position with small initial offset for visibility
+        const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
+        const initialOffset = Math.min(thetaRange * 0.01, 0.1);
+        this.polarAnimation.currentTheta = this.polarSettings.thetaMin + initialOffset;
+        this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
+        
+        // Replot to show reset state
+        this.replotAllPolarFunctions();
+        
+        // Restart if was animating
+        if (wasAnimating) {
+            this.startPolarAnimation();
+        }
+    }
+
+    animatePolarFunctions(timestamp) {
+        if (!this.polarAnimation.isAnimating) return;
+        
+        // Initialize timestamp on first frame
+        if (this.polarAnimation.lastTimestamp === 0) {
+            this.polarAnimation.lastTimestamp = timestamp;
+            // Request next frame to start actual animation
+            this.polarAnimation.animationFrameId = requestAnimationFrame((ts) => this.animatePolarFunctions(ts));
+            return;
+        }
+        
+        // Calculate time delta for smooth animation
+        const deltaTime = timestamp - this.polarAnimation.lastTimestamp;
+        this.polarAnimation.lastTimestamp = timestamp;
+        
+        // Calculate theta increment based on speed and time
+        // Base speed: complete animation in ~3 seconds at 1x speed
+        const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
+        const baseIncrement = (thetaRange / 3000) * deltaTime; // theta per millisecond
+        const increment = baseIncrement * this.polarAnimation.animationSpeed;
+        
+        // Update current theta
+        this.polarAnimation.currentTheta += increment;
+        
+        // Check if animation is complete
+        if (this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax) {
+            if (this.polarAnimation.shouldLoop) {
+                // Loop: reset to start
+                this.polarAnimation.currentTheta = this.polarSettings.thetaMin;
+            } else {
+                // Stop at end
+                this.polarAnimation.currentTheta = this.polarAnimation.storedThetaMax;
+                this.stopPolarAnimation();
+                
+                // Update UI to show play state
+                const playIcon = document.getElementById('play-icon');
+                const pauseIcon = document.getElementById('pause-icon');
+                const playPauseText = document.getElementById('play-pause-text');
+                const polarStopButton = document.getElementById('polar-stop-animation');
+                if (playIcon && pauseIcon && playPauseText) {
+                    playIcon.style.display = 'block';
+                    pauseIcon.style.display = 'none';
+                    playPauseText.textContent = 'Play';
+                }
+                // Dim Stop button since animation is now stopped
+                if (polarStopButton) {
+                    polarStopButton.style.opacity = '0.6';
+                    polarStopButton.style.background = '#1a2a3f';
+                }
+                return;
+            }
+        }
+        
+        // Update thetaMax for plotting
+        this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
+        
+        // Replot all polar functions with current animated thetaMax
+        this.replotAllPolarFunctions();
+        
+        // Continue animation
+        this.polarAnimation.animationFrameId = requestAnimationFrame((ts) => this.animatePolarFunctions(ts));
+    }
+
+    replotAllPolarFunctions() {
+        // Replot only polar functions
+        const polarFunctions = this.polarFunctions.filter(func => func.enabled);
+        
+        polarFunctions.forEach(func => {
+            this.plotFunction(func);
+        });
+        
+        // Redraw canvas
+        this.draw();
     }
 
     // ================================
@@ -2984,15 +3219,18 @@ class Graphiti {
                 this.replotImplicitFunctions();
             }, 0);
             
-            if (this.showIntersections) {
-                this.calculateIntersectionsWithWorker();
-            }
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
-            }
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-                this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+            // Skip badge calculations during polar animation or pause
+            if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+                if (this.showIntersections) {
+                    this.calculateIntersectionsWithWorker();
+                }
+                if (this.showTurningPoints) {
+                    this.turningPoints = this.findTurningPoints();
+                }
+                if (this.showIntercepts) {
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                }
             }
         }, 100); // Very short delay to minimize blocking period
     }
@@ -3511,6 +3749,24 @@ class Graphiti {
         
         if (thetaMinInput) {
             thetaMinInput.addEventListener('input', () => {
+                // Stop animation when changing theta range
+                if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+                    this.stopPolarAnimation();
+                    // Update UI to show stopped state
+                    const playIcon = document.getElementById('play-icon');
+                    const pauseIcon = document.getElementById('pause-icon');
+                    const playPauseText = document.getElementById('play-pause-text');
+                    const polarStopButton = document.getElementById('polar-stop-animation');
+                    if (playIcon && pauseIcon && playPauseText) {
+                        playIcon.style.display = 'block';
+                        pauseIcon.style.display = 'none';
+                        playPauseText.textContent = 'Play';
+                    }
+                    if (polarStopButton) {
+                        polarStopButton.style.opacity = '0.6';
+                        polarStopButton.style.background = '#1a2a3f';
+                    }
+                }
                 this.polarSettings.thetaMin = this.getRangeValue(thetaMinInput) || 0;
                 this.saveViewportBounds();
                 this.replotAllFunctions();
@@ -3519,6 +3775,24 @@ class Graphiti {
         
         if (thetaMaxInput) {
             thetaMaxInput.addEventListener('input', () => {
+                // Stop animation when changing theta range
+                if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+                    this.stopPolarAnimation();
+                    // Update UI to show stopped state
+                    const playIcon = document.getElementById('play-icon');
+                    const pauseIcon = document.getElementById('pause-icon');
+                    const playPauseText = document.getElementById('play-pause-text');
+                    const polarStopButton = document.getElementById('polar-stop-animation');
+                    if (playIcon && pauseIcon && playPauseText) {
+                        playIcon.style.display = 'block';
+                        pauseIcon.style.display = 'none';
+                        playPauseText.textContent = 'Play';
+                    }
+                    if (polarStopButton) {
+                        polarStopButton.style.opacity = '0.6';
+                        polarStopButton.style.background = '#1a2a3f';
+                    }
+                }
                 this.polarSettings.thetaMax = this.getRangeValue(thetaMaxInput) || 2 * Math.PI;
                 this.saveViewportBounds();
                 this.replotAllFunctions();
@@ -3531,6 +3805,68 @@ class Graphiti {
             negativeRToggle.addEventListener('change', () => {
                 this.polarSettings.plotNegativeR = negativeRToggle.checked;  // Checkbox checked = plot negative r
                 this.replotAllFunctions();
+            });
+        }
+
+        // Polar animation controls
+        const polarPlayPauseButton = document.getElementById('polar-play-pause');
+        const polarStopButton = document.getElementById('polar-stop-animation');
+        const polarSpeedSlider = document.getElementById('polar-speed-slider');
+        const polarLoopToggle = document.getElementById('polar-loop-toggle');
+        const speedDisplay = document.getElementById('speed-display');
+        const playIcon = document.getElementById('play-icon');
+        const pauseIcon = document.getElementById('pause-icon');
+        const playPauseText = document.getElementById('play-pause-text');
+        
+        // Initialize Stop button as dimmed (inactive state)
+        if (polarStopButton) {
+            polarStopButton.style.opacity = '0.6';
+            polarStopButton.style.background = '#1a2a3f';
+        }
+        
+        if (polarPlayPauseButton) {
+            polarPlayPauseButton.addEventListener('click', () => {
+                if (this.polarAnimation.isAnimating) {
+                    // Pause animation (keeps current position)
+                    this.pausePolarAnimation();
+                    playIcon.style.display = 'block';
+                    pauseIcon.style.display = 'none';
+                    playPauseText.textContent = 'Play';
+                } else {
+                    // Start or resume animation
+                    this.startPolarAnimation();
+                    playIcon.style.display = 'none';
+                    pauseIcon.style.display = 'block';
+                    playPauseText.textContent = 'Pause';
+                }
+            });
+        }
+        
+        if (polarStopButton) {
+            polarStopButton.addEventListener('click', () => {
+                this.stopPolarAnimation();
+                // Update UI to show stopped state
+                if (playIcon && pauseIcon && playPauseText) {
+                    playIcon.style.display = 'block';
+                    pauseIcon.style.display = 'none';
+                    playPauseText.textContent = 'Play';
+                }
+                // Dim Stop button since it's now inactive
+                polarStopButton.style.opacity = '0.6';
+                polarStopButton.style.background = '#1a2a3f';
+            });
+        }
+        
+        if (polarSpeedSlider && speedDisplay) {
+            polarSpeedSlider.addEventListener('input', () => {
+                this.polarAnimation.animationSpeed = parseFloat(polarSpeedSlider.value);
+                speedDisplay.textContent = `${this.polarAnimation.animationSpeed.toFixed(2)}x`;
+            });
+        }
+        
+        if (polarLoopToggle) {
+            polarLoopToggle.addEventListener('change', () => {
+                this.polarAnimation.shouldLoop = polarLoopToggle.checked;
             });
         }
 
@@ -4720,6 +5056,11 @@ class Graphiti {
     }
     
     togglePlotMode() {
+        // Stop polar animation if running when switching away from polar mode
+        if (this.plotMode === 'polar' && this.polarAnimation.isAnimating) {
+            this.stopPolarAnimation();
+        }
+        
         // Clear all badges when switching modes since coordinate systems are different
         this.clearAllBadges();
         
@@ -7616,8 +7957,8 @@ class Graphiti {
             }
         });
         
-        // Draw intersection markers if enabled
-        if (this.showIntersections) {
+        // Draw intersection markers if enabled (skip during polar animation or pause)
+        if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.frozenIntersectionBadges.length > 0) {
                 // Show frozen intersection badges whenever they exist (for visual continuity)
                 this.drawFrozenIntersectionBadges();
@@ -7627,8 +7968,8 @@ class Graphiti {
             }
         }
         
-        // Draw turning point markers if enabled and viewport is stable
-        if (this.showTurningPoints) {
+        // Draw turning point markers if enabled and viewport is stable (skip during polar animation or pause)
+        if (this.showTurningPoints && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.isViewportChanging && this.frozenTurningPointBadges.length > 0) {
                 // During viewport changes, show frozen turning point badges for visual continuity
                 this.drawFrozenTurningPointBadges();
@@ -7638,8 +7979,8 @@ class Graphiti {
             }
         }
         
-        // Draw axis intercept markers if enabled and viewport is stable
-        if (this.showIntercepts) {
+        // Draw axis intercept markers if enabled and viewport is stable (skip during polar animation or pause)
+        if (this.showIntercepts && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.isViewportChanging && this.frozenInterceptBadges && this.frozenInterceptBadges.length > 0) {
                 // During viewport changes, show frozen intercept badges for visual continuity
                 this.drawFrozenInterceptBadges();
