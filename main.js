@@ -800,25 +800,24 @@ class Graphiti {
     // ================================
     
     shouldRestrictLandscapeEditing() {
-        // Only restrict on mobile phones in landscape mode
-        // Allow tablets (iPad) and desktop to edit in landscape
-        const isMobilePhone = this.isMobilePhone();
+        // Restrict on mobile phones AND tablets in landscape mode
+        // Virtual keyboard often obscures the input field in landscape
+        const isMobileDevice = this.isMobileDevice();
         const isLandscape = window.innerWidth > window.innerHeight;
         
-        return isMobilePhone && isLandscape;
+        return isMobileDevice && isLandscape;
     }
     
-    isMobilePhone() {
-        // Detect mobile phones (exclude tablets and desktop)
+    isMobileDevice() {
+        // Detect mobile phones and tablets (exclude desktop)
         const userAgent = navigator.userAgent.toLowerCase();
         const isAndroidPhone = this.getCachedRegex('android').test(userAgent) && this.getCachedRegex('mobile').test(userAgent);
+        const isAndroidTablet = this.getCachedRegex('android').test(userAgent) && !this.getCachedRegex('mobile').test(userAgent);
         const isIPhone = this.getCachedRegex('iPhone').test(userAgent);
+        const isIPad = this.getCachedRegex('iPad').test(userAgent) || (this.getCachedRegex('Macintosh').test(userAgent) && navigator.maxTouchPoints > 1);
         const isWindowsPhone = this.getCachedRegex('windowsPhone').test(userAgent);
         
-        // Also check screen size - phones typically have smaller screens
-        const isSmallScreen = window.screen.width <= 500 || window.screen.height <= 500;
-        
-        return (isAndroidPhone || isIPhone || isWindowsPhone) && isSmallScreen;
+        return isAndroidPhone || isAndroidTablet || isIPhone || isIPad || isWindowsPhone;
     }
     
     showLandscapeEditingRestriction() {
@@ -833,10 +832,10 @@ class Graphiti {
         overlay.className = 'landscape-edit-overlay';
         overlay.innerHTML = `
             <div class="landscape-edit-message">
-                <h3>Function Editing Restricted</h3>
-                <div class="rotate-icon">Please rotate to portrait mode</div>
-                <p>Function editing is only available in portrait mode on mobile phones for the best experience.</p>
-                <p>Please rotate your device to portrait mode to edit functions.</p>
+                <h3>Editing Restricted in Landscape</h3>
+                <div class="rotate-icon">📱 ↻</div>
+                <p>Please rotate to portrait mode to edit functions and ranges.</p>
+                <p>The virtual keyboard often obscures input fields in landscape orientation.</p>
                 <button class="landscape-dismiss-btn">Got it</button>
             </div>
         `;
@@ -1376,6 +1375,8 @@ class Graphiti {
         this.regexCache.set('android', /android/i);
         this.regexCache.set('mobile', /mobile/i);
         this.regexCache.set('iPhone', /iphone/i);
+        this.regexCache.set('iPad', /ipad/i);
+        this.regexCache.set('Macintosh', /macintosh/i);
         this.regexCache.set('windowsPhone', /windows phone/i);
         this.regexCache.set('iOS', /iPad|iPhone|iPod/);
         this.regexCache.set('safari', /Safari/);
