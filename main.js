@@ -2072,6 +2072,10 @@ class Graphiti {
         // Restore original thetaMax
         this.polarSettings.thetaMax = this.polarAnimation.storedThetaMax;
         
+        // Reset animation state so next play starts fresh
+        this.polarAnimation.currentTheta = 0;
+        this.polarAnimation.storedThetaMax = 0;
+        
         // Replot all functions with full range and re-enable badge calculations
         this.replotAllPolarFunctions();
     }
@@ -2172,8 +2176,9 @@ class Graphiti {
         // Check if animation is complete
         if (this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax) {
             if (this.polarAnimation.shouldLoop) {
-                // Loop: reset to start
+                // Loop: reset to start and update storedThetaMax in case range changed
                 this.polarAnimation.currentTheta = this.polarSettings.thetaMin;
+                this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
             } else {
                 // Stop at end
                 this.polarAnimation.currentTheta = this.polarAnimation.storedThetaMax;
@@ -3912,6 +3917,9 @@ class Graphiti {
                         polarStopButton.style.opacity = '0.6';
                         polarStopButton.style.background = '#1a2a3f';
                     }
+                    // Reset stored animation state so new range is used on next play
+                    this.polarAnimation.storedThetaMax = 0;
+                    this.polarAnimation.currentTheta = 0;
                 }
                 this.polarSettings.thetaMin = this.getRangeValue(thetaMinInput) || 0;
                 this.saveViewportBounds();
@@ -3938,6 +3946,9 @@ class Graphiti {
                         polarStopButton.style.opacity = '0.6';
                         polarStopButton.style.background = '#1a2a3f';
                     }
+                    // Reset stored animation state so new range is used on next play
+                    this.polarAnimation.storedThetaMax = 0;
+                    this.polarAnimation.currentTheta = 0;
                 }
                 this.polarSettings.thetaMax = this.getRangeValue(thetaMaxInput) || 2 * Math.PI;
                 this.saveViewportBounds();
