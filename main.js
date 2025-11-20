@@ -694,6 +694,69 @@ class Graphiti {
         }
     }
     
+    initializeCartesianRangeFields() {
+        const xMin = document.getElementById('x-min');
+        const xMax = document.getElementById('x-max');
+        const yMin = document.getElementById('y-min');
+        const yMax = document.getElementById('y-max');
+        
+        if (xMin && xMax && yMin && yMax) {
+            // Get computed CSS variable values to match exactly
+            const computedStyle = getComputedStyle(document.documentElement);
+            const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#4A90E2';
+            const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+            const textPrimary = computedStyle.getPropertyValue('--text-primary').trim() || '#E8F4FD';
+            const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+            
+            // Force style properties directly on the element
+            const fields = [xMin, xMax, yMin, yMax];
+            fields.forEach(field => {
+                // Set via style attribute for direct properties
+                field.style.setProperty('background', inputBg, 'important');
+                field.style.setProperty('color', textPrimary, 'important');
+                field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                field.style.setProperty('outline', 'none', 'important');
+                
+                // Set CSS custom properties for MathLive shadow DOM
+                field.style.setProperty('--background', inputBg, 'important');
+                field.style.setProperty('--text-color', textPrimary, 'important');
+                field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                
+                // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
+                field.addEventListener('focusin', () => {
+                    field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                    field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                    field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    field.style.setProperty('outline', 'none', 'important');
+                });
+                
+                field.addEventListener('focusout', () => {
+                    field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                    field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    field.style.setProperty('box-shadow', 'none', 'important');
+                    field.style.setProperty('outline', 'none', 'important');
+                });
+                
+                // Add input event listener to capture LaTeX and validate
+                field.addEventListener('input', () => {
+                    // Capture LaTeX for localStorage
+                    if (field.id === 'x-min') {
+                        this.viewport.xMinLatex = field.getValue();
+                    } else if (field.id === 'x-max') {
+                        this.viewport.xMaxLatex = field.getValue();
+                    } else if (field.id === 'y-min') {
+                        this.viewport.yMinLatex = field.getValue();
+                    } else if (field.id === 'y-max') {
+                        this.viewport.yMaxLatex = field.getValue();
+                    }
+                    
+                    // Validate and update viewport
+                    this.validateAndSetRange();
+                });
+            });
+        }
+    }
+    
     // ================================
     // LANDSCAPE EDITING RESTRICTION
     // ================================
@@ -1531,6 +1594,11 @@ class Graphiti {
                 xMax: this.cartesianViewport.maxX.toString(),
                 yMin: this.cartesianViewport.minY.toString(),
                 yMax: this.cartesianViewport.maxY.toString(),
+                // Store LaTeX strings to preserve symbolic forms (e.g., "2\pi" instead of "6.283...")
+                xMinLatex: this.viewport.xMinLatex || this.cartesianViewport.minX.toString(),
+                xMaxLatex: this.viewport.xMaxLatex || this.cartesianViewport.maxX.toString(),
+                yMinLatex: this.viewport.yMinLatex || this.cartesianViewport.minY.toString(),
+                yMaxLatex: this.viewport.yMaxLatex || this.cartesianViewport.maxY.toString(),
                 scale: this.cartesianViewport.scale
             };
             localStorage.setItem('graphiti_cartesian_bounds', JSON.stringify(cartesianBounds));
@@ -1602,10 +1670,28 @@ class Graphiti {
                             // Temporarily disable saving while we load (to prevent input events from saving)
                             this.isLoadingBounds = true;
                             
-                            if (xMinInput) this.setRangeValue(xMinInput, bounds.xMin);
-                            if (xMaxInput) this.setRangeValue(xMaxInput, bounds.xMax);
-                            if (yMinInput) this.setRangeValue(yMinInput, bounds.yMin);
-                            if (yMaxInput) this.setRangeValue(yMaxInput, bounds.yMax);
+                            // Restore LaTeX strings if available (preserves symbolic form like "2\pi")
+                            // Otherwise fall back to numeric values for backward compatibility
+                            if (xMinInput) {
+                                const xMinValue = bounds.xMinLatex || bounds.xMin;
+                                xMinInput.setValue(xMinValue);
+                                this.viewport.xMinLatex = xMinValue;
+                            }
+                            if (xMaxInput) {
+                                const xMaxValue = bounds.xMaxLatex || bounds.xMax;
+                                xMaxInput.setValue(xMaxValue);
+                                this.viewport.xMaxLatex = xMaxValue;
+                            }
+                            if (yMinInput) {
+                                const yMinValue = bounds.yMinLatex || bounds.yMin;
+                                yMinInput.setValue(yMinValue);
+                                this.viewport.yMinLatex = yMinValue;
+                            }
+                            if (yMaxInput) {
+                                const yMaxValue = bounds.yMaxLatex || bounds.yMax;
+                                yMaxInput.setValue(yMaxValue);
+                                this.viewport.yMaxLatex = yMaxValue;
+                            }
                             
                             this.isLoadingBounds = false;
                             
@@ -3775,6 +3861,7 @@ class Graphiti {
         this.initializeTheme();
         this.initializeAngleMode();
         this.initializePolarRangeFields(); // Initialize polar range field styling
+        this.initializeCartesianRangeFields(); // Initialize Cartesian range field styling
         this.handleMobileLayout(true); // Force initial layout
         this.startAnimationLoop();
         
@@ -5319,20 +5406,48 @@ class Graphiti {
         const yMinInput = document.getElementById('y-min');
         const yMaxInput = document.getElementById('y-max');
         
+        // Helper function to convert numeric values to symbolic LaTeX when appropriate
+        const toSymbolicOrNumeric = (value) => {
+            // Check for common multiples of π
+            const piRatio = value / Math.PI;
+            const tolerance = 0.0001;
+            
+            // Check for common fractions of π
+            if (Math.abs(piRatio - 2) < tolerance) return '2\\pi';
+            if (Math.abs(piRatio - 1) < tolerance) return '\\pi';
+            if (Math.abs(piRatio - 0.5) < tolerance) return '\\frac{\\pi}{2}';
+            if (Math.abs(piRatio - (-0.5)) < tolerance) return '-\\frac{\\pi}{2}';
+            if (Math.abs(piRatio - (-1)) < tolerance) return '-\\pi';
+            if (Math.abs(piRatio - (-2)) < tolerance) return '-2\\pi';
+            if (Math.abs(piRatio - 1.5) < tolerance) return '\\frac{3\\pi}{2}';
+            if (Math.abs(piRatio - (-1.5)) < tolerance) return '-\\frac{3\\pi}{2}';
+            
+            // Otherwise return numeric value
+            return value.toFixed(2);
+        };
+        
         if (xMinInput) {
-            this.setRangeValue(xMinInput, this.viewport.minX.toFixed(2));
+            const xMinValue = toSymbolicOrNumeric(this.viewport.minX);
+            this.setRangeValue(xMinInput, xMinValue);
+            this.viewport.xMinLatex = xMinValue;
             this.setInputError(xMinInput, false);
         }
         if (xMaxInput) {
-            this.setRangeValue(xMaxInput, this.viewport.maxX.toFixed(2));
+            const xMaxValue = toSymbolicOrNumeric(this.viewport.maxX);
+            this.setRangeValue(xMaxInput, xMaxValue);
+            this.viewport.xMaxLatex = xMaxValue;
             this.setInputError(xMaxInput, false);
         }
         if (yMinInput) {
-            this.setRangeValue(yMinInput, this.viewport.minY.toFixed(2));
+            const yMinValue = toSymbolicOrNumeric(this.viewport.minY);
+            this.setRangeValue(yMinInput, yMinValue);
+            this.viewport.yMinLatex = yMinValue;
             this.setInputError(yMinInput, false);
         }
         if (yMaxInput) {
-            this.setRangeValue(yMaxInput, this.viewport.maxY.toFixed(2));
+            const yMaxValue = toSymbolicOrNumeric(this.viewport.maxY);
+            this.setRangeValue(yMaxInput, yMaxValue);
+            this.viewport.yMaxLatex = yMaxValue;
             this.setInputError(yMaxInput, false);
         }
         

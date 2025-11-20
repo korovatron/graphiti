@@ -587,32 +587,61 @@
             opacity: 0.7;
         }
         
-        /* Range input styling - HTML inputs for Cartesian, MathLive fields for Polar */
-        #cartesian-ranges input[type="number"],
-        #cartesian-ranges-y input[type="number"] {
-            flex: 1;
-            min-width: 80px;
-            font-size: 14px;
-            padding: 4px;
-            background: var(--input-bg);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            outline: none;
-            transition: border-color 0.2s ease;
+        /* Range input styling - MathLive fields for both Cartesian and Polar */
+        #cartesian-ranges math-field,
+        #cartesian-ranges-y math-field {
+            width: 100%;
+            max-width: 100%;
+            font-size: 16px !important;
+            padding: 2px 4px !important;
+            line-height: 1.2 !important;
+            min-height: auto;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+            --border-radius: 4px;
+            --border: 1px solid var(--border-color);
+            --background: var(--input-bg) !important;
+            --text-color: var(--text-primary);
+            --selection-background-color: var(--accent-color);
+            --selection-color: white;
+            --contains-highlight-background-color: rgba(74, 144, 226, 0.3);
+            --keyboard-zindex: 9999;
         }
         
-        #cartesian-ranges input[type="number"]:focus,
-        #cartesian-ranges-y input[type="number"]:focus {
-            border-color: var(--accent-color);
+        /* Hide scrollbar for Webkit browsers (Chrome, Safari) */
+        #cartesian-ranges math-field::-webkit-scrollbar,
+        #cartesian-ranges-y math-field::-webkit-scrollbar {
+            display: none;
         }
         
-        /* Error styling for range inputs (handled by JavaScript) */
-        #cartesian-ranges input[type="number"].input-error,
-        #cartesian-ranges-y input[type="number"].input-error {
-            border-color: #E74C3C !important;
-            background-color: rgba(231, 76, 60, 0.15) !important;
-            box-shadow: 0 0 0 1px rgba(231, 76, 60, 0.3) !important;
+        #cartesian-ranges math-field::part(content),
+        #cartesian-ranges-y math-field::part(content) {
+            font-size: 16px !important;
+            line-height: 1.2 !important;
+        }
+        
+        #cartesian-ranges math-field:focus-within,
+        #cartesian-ranges-y math-field:focus-within {
+            --border: 1px solid var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+        }
+        
+        /* Hide menu toggle button for Cartesian range fields */
+        #cartesian-ranges math-field::part(menu-toggle),
+        #cartesian-ranges-y math-field::part(menu-toggle) {
+            display: none;
+        }
+        
+        /* Hide virtual keyboard toggle on mobile for Cartesian range fields */
+        @media (hover: none) and (pointer: coarse) {
+            #cartesian-ranges math-field::part(virtual-keyboard-toggle),
+            #cartesian-ranges math-field::part(keyboard-toggle),
+            #cartesian-ranges-y math-field::part(virtual-keyboard-toggle),
+            #cartesian-ranges-y math-field::part(keyboard-toggle) {
+                display: none !important;
+            }
         }
         
         /* Polar range MathLive field styling - match function input styling */
@@ -1537,24 +1566,24 @@
                 
                 <!-- Cartesian Range Controls -->
                 <div id="cartesian-ranges" style="display: flex; gap: 10px; margin-bottom: 5px; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px;">
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 0;">
                         <label for="x-min" style="font-size: 14px; display: block; margin-bottom: 2px;">X min:</label>
-                        <input type="number" id="x-min" value="-10" step="any" inputmode="text" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+                        <math-field id="x-min">-10</math-field>
                     </div>
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 0;">
                         <label for="x-max" style="font-size: 14px; display: block; margin-bottom: 2px;">X max:</label>
-                        <input type="number" id="x-max" value="10" step="any" inputmode="text" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+                        <math-field id="x-max">10</math-field>
                     </div>
                 </div>
                 
                 <div id="cartesian-ranges-y" style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 0;">
                         <label for="y-min" style="font-size: 14px; display: block; margin-bottom: 2px;">Y min:</label>
-                        <input type="number" id="y-min" value="-10" step="any" inputmode="text" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+                        <math-field id="y-min">-10</math-field>
                     </div>
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 0;">
                         <label for="y-max" style="font-size: 14px; display: block; margin-bottom: 2px;">Y max:</label>
-                        <input type="number" id="y-max" value="10" step="any" inputmode="text" style="width: 100%; font-size: 14px; padding: 4px; background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+                        <math-field id="y-max">10</math-field>
                     </div>
                 </div>
                 
