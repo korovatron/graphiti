@@ -770,7 +770,7 @@
         /* Affects both iPhone and iPad in Safari browser mode, but not PWA mode */
         @media (hover: none) and (pointer: coarse) {
             #hamburger-menu {
-                position: fixed !important; /* More stable positioning on iOS Safari */
+                /* Keep position: absolute for better mobile compatibility */
                 transform: translateZ(0); /* Force hardware acceleration */
                 will-change: transform; /* Optimize for transforms */
             }
