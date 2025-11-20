@@ -649,7 +649,50 @@ class Graphiti {
         }
     }
     
-
+    // Initialize polar range MathLive fields with proper styling
+    initializePolarRangeFields() {
+        const thetaMin = document.getElementById('theta-min');
+        const thetaMax = document.getElementById('theta-max');
+        
+        if (thetaMin && thetaMax) {
+            // Get computed CSS variable values to match exactly
+            const computedStyle = getComputedStyle(document.documentElement);
+            const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#4A90E2';
+            const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+            const textPrimary = computedStyle.getPropertyValue('--text-primary').trim() || '#E8F4FD';
+            const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+            
+            // Force style properties directly on the element
+            const fields = [thetaMin, thetaMax];
+            fields.forEach(field => {
+                // Set via style attribute for direct properties
+                field.style.setProperty('background', inputBg, 'important');
+                field.style.setProperty('color', textPrimary, 'important');
+                field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                field.style.setProperty('outline', 'none', 'important');
+                
+                // Set CSS custom properties for MathLive shadow DOM
+                field.style.setProperty('--background', inputBg, 'important');
+                field.style.setProperty('--text-color', textPrimary, 'important');
+                field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                
+                // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
+                field.addEventListener('focusin', () => {
+                    field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                    field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                    field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    field.style.setProperty('outline', 'none', 'important');
+                });
+                
+                field.addEventListener('focusout', () => {
+                    field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                    field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    field.style.setProperty('box-shadow', 'none', 'important');
+                    field.style.setProperty('outline', 'none', 'important');
+                });
+            });
+        }
+    }
     
     // ================================
     // LANDSCAPE EDITING RESTRICTION
@@ -982,7 +1025,42 @@ class Graphiti {
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const removeBtn = funcDiv.querySelector('.remove-btn');
         
-        // Add focus listener to check for landscape editing restriction
+        // Get computed CSS variable values to match polar range fields exactly
+        const computedStyle = getComputedStyle(document.documentElement);
+        const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#4A90E2';
+        const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+        
+        // Add focus/blur listeners to apply consistent styling with polar range fields
+        mathField.addEventListener('focusin', () => {
+            // Check for landscape editing restriction first
+            if (this.shouldRestrictLandscapeEditing()) {
+                mathField.blur();
+                this.showLandscapeEditingRestriction();
+                return;
+            }
+            
+            // Prevent immediate refocus on tablets after closing mobile menu
+            if (mathField.getAttribute('data-blur-protected') === 'true') {
+                mathField.blur();
+                return;
+            }
+            
+            // Apply focus styling to match polar range fields
+            mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+            mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+            mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+            mathField.style.setProperty('outline', 'none', 'important');
+        });
+        
+        mathField.addEventListener('focusout', () => {
+            // Remove focus styling
+            mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+            mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+            mathField.style.setProperty('box-shadow', 'none', 'important');
+            mathField.style.setProperty('outline', 'none', 'important');
+        });
+        
+        // Keep old focus listener for backwards compatibility
         mathField.addEventListener('focus', (e) => {
             if (this.shouldRestrictLandscapeEditing()) {
                 e.preventDefault();
@@ -1461,6 +1539,9 @@ class Graphiti {
             const polarBounds = {
                 thetaMin: this.polarSettings.thetaMin.toString(),
                 thetaMax: this.polarSettings.thetaMax.toString(),
+                // Store LaTeX strings to preserve symbolic forms (e.g., "2\pi" instead of "6.283...")
+                thetaMinLatex: this.polarSettings.thetaMinLatex || this.polarSettings.thetaMin.toString(),
+                thetaMaxLatex: this.polarSettings.thetaMaxLatex || this.polarSettings.thetaMax.toString(),
                 viewportMinX: this.polarViewport.minX,
                 viewportMaxX: this.polarViewport.maxX,
                 viewportMinY: this.polarViewport.minY,
@@ -1582,10 +1663,18 @@ class Graphiti {
                             // Temporarily disable saving while we load
                             this.isLoadingBounds = true;
                             
-                            if (thetaMinInput) this.setRangeValue(thetaMinInput, bounds.thetaMin);
-                            if (thetaMaxInput) this.setRangeValue(thetaMaxInput, bounds.thetaMax);
-                            
-                            this.isLoadingBounds = false;
+                        // Restore LaTeX strings if available (preserves symbolic form like "2\pi")
+                        // Otherwise fall back to numeric values for backward compatibility
+                        if (thetaMinInput) {
+                            const thetaMinValue = bounds.thetaMinLatex || bounds.thetaMin;
+                            thetaMinInput.setValue(thetaMinValue);
+                            this.polarSettings.thetaMinLatex = thetaMinValue;
+                        }
+                        if (thetaMaxInput) {
+                            const thetaMaxValue = bounds.thetaMaxLatex || bounds.thetaMax;
+                            thetaMaxInput.setValue(thetaMaxValue);
+                            this.polarSettings.thetaMaxLatex = thetaMaxValue;
+                        }                            this.isLoadingBounds = false;
                             
                             boundsApplied = true;
                         }
@@ -3294,10 +3383,11 @@ class Graphiti {
             
             if (thetaMinInput) {
                 this.setRangeValue(thetaMinInput, '0');
+                this.polarSettings.thetaMinLatex = '0';
             }
             if (thetaMaxInput) {
-                const value = (2 * Math.PI).toFixed(6);
-                this.setRangeValue(thetaMaxInput, value);
+                this.setRangeValue(thetaMaxInput, '2\\pi');
+                this.polarSettings.thetaMaxLatex = '2\\pi';
             }
             
             // Reset animation state to match
@@ -3684,6 +3774,7 @@ class Graphiti {
         this.registerServiceWorker();
         this.initializeTheme();
         this.initializeAngleMode();
+        this.initializePolarRangeFields(); // Initialize polar range field styling
         this.handleMobileLayout(true); // Force initial layout
         this.startAnimationLoop();
         
@@ -3921,6 +4012,8 @@ class Graphiti {
                     this.polarAnimation.storedThetaMax = 0;
                     this.polarAnimation.currentTheta = 0;
                 }
+                // Store both the LaTeX string (for display) and numeric value (for calculations)
+                this.polarSettings.thetaMinLatex = thetaMinInput.getValue();
                 this.polarSettings.thetaMin = this.getRangeValue(thetaMinInput) || 0;
                 this.saveViewportBounds();
                 this.replotAllFunctions();
@@ -3950,6 +4043,8 @@ class Graphiti {
                     this.polarAnimation.storedThetaMax = 0;
                     this.polarAnimation.currentTheta = 0;
                 }
+                // Store both the LaTeX string (for display) and numeric value (for calculations)
+                this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
                 this.polarSettings.thetaMax = this.getRangeValue(thetaMaxInput) || 2 * Math.PI;
                 this.saveViewportBounds();
                 this.replotAllFunctions();
@@ -6131,14 +6226,32 @@ class Graphiti {
             
             if (oldMode === 'degrees' && this.angleMode === 'radians') {
                 // Convert degrees to radians
-                this.polarSettings.thetaMin = this.polarSettings.thetaMin * Math.PI / 180;
-                this.polarSettings.thetaMax = this.polarSettings.thetaMax * Math.PI / 180;
+                const oldMin = this.polarSettings.thetaMin;
+                const oldMax = this.polarSettings.thetaMax;
+                this.polarSettings.thetaMin = oldMin * Math.PI / 180;
+                this.polarSettings.thetaMax = oldMax * Math.PI / 180;
                 
                 if (thetaMinInput) {
-                    this.setRangeValue(thetaMinInput, this.polarSettings.thetaMin.toFixed(6));
+                    // Use symbolic form for common values
+                    let minValue;
+                    if (oldMin === 0) minValue = '0';
+                    else if (oldMin === 90) minValue = '\\frac{\\pi}{2}';
+                    else if (oldMin === 180) minValue = '\\pi';
+                    else if (oldMin === 270) minValue = '\\frac{3\\pi}{2}';
+                    else minValue = this.polarSettings.thetaMin.toFixed(6);
+                    this.setRangeValue(thetaMinInput, minValue);
+                    this.polarSettings.thetaMinLatex = minValue;
                 }
                 if (thetaMaxInput) {
-                    this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(6));
+                    // Use symbolic form for common values
+                    let maxValue;
+                    if (oldMax === 90) maxValue = '\\frac{\\pi}{2}';
+                    else if (oldMax === 180) maxValue = '\\pi';
+                    else if (oldMax === 270) maxValue = '\\frac{3\\pi}{2}';
+                    else if (oldMax === 360) maxValue = '2\\pi';
+                    else maxValue = this.polarSettings.thetaMax.toFixed(6);
+                    this.setRangeValue(thetaMaxInput, maxValue);
+                    this.polarSettings.thetaMaxLatex = maxValue;
                 }
                 
                 // Also convert animation state if it was initialized
@@ -6154,10 +6267,14 @@ class Graphiti {
                 this.polarSettings.thetaMax = this.polarSettings.thetaMax * 180 / Math.PI;
                 
                 if (thetaMinInput) {
-                    this.setRangeValue(thetaMinInput, this.polarSettings.thetaMin.toFixed(2));
+                    const minValue = this.polarSettings.thetaMin.toFixed(2);
+                    this.setRangeValue(thetaMinInput, minValue);
+                    this.polarSettings.thetaMinLatex = minValue;
                 }
                 if (thetaMaxInput) {
-                    this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(2));
+                    const maxValue = this.polarSettings.thetaMax.toFixed(2);
+                    this.setRangeValue(thetaMaxInput, maxValue);
+                    this.polarSettings.thetaMaxLatex = maxValue;
                 }
                 
                 // Also convert animation state if it was initialized
