@@ -4172,22 +4172,31 @@ class Graphiti {
                 const thetaMin = this.getRangeValue(thetaMinInput);
                 const thetaMax = this.getRangeValue(thetaMaxInput);
                 
+                console.log('[ThetaMin] Input event - thetaMin:', thetaMin, 'thetaMax:', thetaMax, 'latex:', thetaMinInput.getValue());
+                
                 // Check for NaN
                 if (isNaN(thetaMin)) {
+                    console.log('[ThetaMin] Setting error (NaN)');
                     this.setInputError(thetaMinInput, true);
                 } else {
-                    this.setInputError(thetaMinInput, false);
                     // Store both the LaTeX string (for display) and numeric value (for calculations)
                     this.polarSettings.thetaMinLatex = thetaMinInput.getValue();
                     this.polarSettings.thetaMin = thetaMin;
+                    
+                    // Only clear thetaMin error if it's valid AND logical constraints pass
+                    if (isNaN(thetaMax) || thetaMin < thetaMax) {
+                        console.log('[ThetaMin] Clearing error (valid)');
+                        this.setInputError(thetaMinInput, false);
+                    } else {
+                        console.log('[ThetaMin] NOT clearing error (logical constraint)');
+                    }
                 }
                 
                 // Check logical constraint: min >= max
                 if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin >= thetaMax) {
+                    console.log('[ThetaMin] Setting errors (min >= max)');
                     this.setInputError(thetaMinInput, true);
                     this.setInputError(thetaMaxInput, true);
-                } else if (!isNaN(thetaMax)) {
-                    this.setInputError(thetaMaxInput, false);
                 }
                 
                 this.saveViewportBounds();
@@ -4223,22 +4232,31 @@ class Graphiti {
                 const thetaMin = this.getRangeValue(thetaMinInput);
                 const thetaMax = this.getRangeValue(thetaMaxInput);
                 
+                console.log('[ThetaMax] Input event - thetaMin:', thetaMin, 'thetaMax:', thetaMax, 'latex:', thetaMaxInput.getValue());
+                
                 // Check for NaN
                 if (isNaN(thetaMax)) {
+                    console.log('[ThetaMax] Setting error (NaN)');
                     this.setInputError(thetaMaxInput, true);
                 } else {
-                    this.setInputError(thetaMaxInput, false);
                     // Store both the LaTeX string (for display) and numeric value (for calculations)
                     this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
                     this.polarSettings.thetaMax = thetaMax;
+                    
+                    // Only clear thetaMax error if it's valid AND logical constraints pass
+                    if (isNaN(thetaMin) || thetaMin < thetaMax) {
+                        console.log('[ThetaMax] Clearing error (valid)');
+                        this.setInputError(thetaMaxInput, false);
+                    } else {
+                        console.log('[ThetaMax] NOT clearing error (logical constraint)');
+                    }
                 }
                 
                 // Check logical constraint: min >= max
                 if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin >= thetaMax) {
+                    console.log('[ThetaMax] Setting errors (min >= max)');
                     this.setInputError(thetaMinInput, true);
                     this.setInputError(thetaMaxInput, true);
-                } else if (!isNaN(thetaMin)) {
-                    this.setInputError(thetaMinInput, false);
                 }
                 
                 this.saveViewportBounds();
@@ -4692,13 +4710,8 @@ class Graphiti {
                 input.addEventListener('input', () => {
                     this.clearAllBadges(); // Clear badges when viewport changes
                     
-                    // Immediate validation for invalid expressions
-                    const value = this.getRangeValue(input);
-                    if (isNaN(value)) {
-                        this.setInputError(input, true);
-                    } else {
-                        this.setInputError(input, false);
-                    }
+                    // Validation handled by validateAndSetRange() which is called via debounce
+                    // and also from the input listeners in initializeCartesianRangeFields()
                     
                     this.debounceRangeUpdate();
                 });
@@ -11704,11 +11717,8 @@ class Graphiti {
                 if (latex === '-\\pi') return -Math.PI;
                 if (latex === '-2\\pi') return -2 * Math.PI;
                 
-                // Try parsing as a simple number if conversion failed
-                const numValue = parseFloat(latex);
-                if (!isNaN(numValue) && isFinite(numValue)) {
-                    return numValue;
-                }
+                // Don't try parseFloat fallback - it's too permissive and will parse
+                // "23d" as "23", hiding syntax errors. Return NaN for any evaluation error.
                 
                 return NaN;
             }

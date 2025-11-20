@@ -583,6 +583,23 @@
             box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3) !important;
         }
         
+        /* Error styling for range MathLive fields */
+        #cartesian-ranges math-field.input-error,
+        #cartesian-ranges-y math-field.input-error,
+        #polar-ranges math-field.input-error {
+            background: rgba(231, 76, 60, 0.1) !important;
+            border: 2px solid #E74C3C !important;
+            border-radius: 4px !important;
+        }
+        
+        #cartesian-ranges math-field.input-error:focus-within,
+        #cartesian-ranges-y math-field.input-error:focus-within,
+        #polar-ranges math-field.input-error:focus-within {
+            background: rgba(231, 76, 60, 0.2) !important;
+            border: 2px solid #E74C3C !important;
+            box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3) !important;
+        }
+        
         .function-item.disabled {
             opacity: 0.7;
         }
