@@ -6287,7 +6287,10 @@ class Graphiti {
                     functionPanel.offsetHeight;
                     functionPanel.classList.add('mobile-open');
                 }
-                if (hamburgerMenu) hamburgerMenu.style.display = '';
+                // Always show hamburger in GRAPHING state (mobile and desktop)
+                if (hamburgerMenu) {
+                    hamburgerMenu.style.display = 'flex';
+                }
                 break;
         }
     }
@@ -11361,6 +11364,12 @@ class Graphiti {
             return;
         }
         
+        // Always ensure hamburger is visible in GRAPHING state on mobile
+        // This fixes the bug where hamburger disappears after orientation changes
+        if (this.currentState === this.states.GRAPHING && shouldBeMobile) {
+            hamburgerMenu.style.display = 'flex';
+        }
+        
         // Determine current state more reliably
         const hamburgerVisible = hamburgerMenu.style.display === 'flex' || 
                                  (hamburgerMenu.style.display === '' && shouldBeMobile);
@@ -11377,8 +11386,10 @@ class Graphiti {
                 functionPanel.classList.add('hidden');
                 functionPanel.classList.remove('mobile-open');
             } else {
-                // Switch to desktop mode
-                hamburgerMenu.style.display = 'none';
+                // Switch to desktop mode - keep hamburger visible in GRAPHING state
+                if (this.currentState === this.states.GRAPHING) {
+                    hamburgerMenu.style.display = 'flex';
+                }
                 functionPanel.classList.remove('hidden');
                 functionPanel.classList.remove('mobile-open');
             }
