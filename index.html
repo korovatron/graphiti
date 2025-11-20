@@ -827,6 +827,10 @@
         
         /* Mobile Styles - Use more specific targeting */
         @media (max-width: 500px), (max-height: 500px) {
+            #hamburger-menu {
+                position: fixed !important; /* Use fixed positioning on mobile for consistent placement */
+            }
+            
             #function-panel {
                 max-width: 330px !important; /* Force narrow width on mobile */
             }
