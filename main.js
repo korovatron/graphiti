@@ -678,16 +678,28 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
-                    field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
-                    field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                    field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    // Check if field has error - preserve error styling if present
+                    if (field.classList.contains('input-error')) {
+                        field.style.setProperty('border', '2px solid #E74C3C', 'important');
+                        field.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
+                    } else {
+                        field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                        field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                        field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    }
                     field.style.setProperty('outline', 'none', 'important');
                 });
                 
                 field.addEventListener('focusout', () => {
-                    field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                    field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                    field.style.setProperty('box-shadow', 'none', 'important');
+                    // Check if field has error - preserve error styling if present
+                    if (field.classList.contains('input-error')) {
+                        field.style.setProperty('border', '2px solid #E74C3C', 'important');
+                        field.style.setProperty('box-shadow', 'none', 'important');
+                    } else {
+                        field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                        field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                        field.style.setProperty('box-shadow', 'none', 'important');
+                    }
                     field.style.setProperty('outline', 'none', 'important');
                 });
             });
@@ -724,16 +736,28 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
-                    field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
-                    field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                    field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    // Check if field has error - preserve error styling if present
+                    if (field.classList.contains('input-error')) {
+                        field.style.setProperty('border', '2px solid #E74C3C', 'important');
+                        field.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
+                    } else {
+                        field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                        field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                        field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    }
                     field.style.setProperty('outline', 'none', 'important');
                 });
                 
                 field.addEventListener('focusout', () => {
-                    field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                    field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                    field.style.setProperty('box-shadow', 'none', 'important');
+                    // Check if field has error - preserve error styling if present
+                    if (field.classList.contains('input-error')) {
+                        field.style.setProperty('border', '2px solid #E74C3C', 'important');
+                        field.style.setProperty('box-shadow', 'none', 'important');
+                    } else {
+                        field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                        field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                        field.style.setProperty('box-shadow', 'none', 'important');
+                    }
                     field.style.setProperty('outline', 'none', 'important');
                 });
                 
@@ -1108,18 +1132,32 @@ class Graphiti {
                 return;
             }
             
-            // Apply focus styling to match polar range fields
-            mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
-            mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-            mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+            // Check if parent has error - preserve error styling if present
+            const funcDiv = mathField.closest('.function-item');
+            if (funcDiv && funcDiv.classList.contains('function-error')) {
+                mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
+                mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
+            } else {
+                // Apply focus styling to match polar range fields
+                mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+            }
             mathField.style.setProperty('outline', 'none', 'important');
         });
         
         mathField.addEventListener('focusout', () => {
-            // Remove focus styling
-            mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-            mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-            mathField.style.setProperty('box-shadow', 'none', 'important');
+            // Check if parent has error - preserve error styling if present
+            const funcDiv = mathField.closest('.function-item');
+            if (funcDiv && funcDiv.classList.contains('function-error')) {
+                mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
+                mathField.style.setProperty('box-shadow', 'none', 'important');
+            } else {
+                // Remove focus styling
+                mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                mathField.style.setProperty('box-shadow', 'none', 'important');
+            }
             mathField.style.setProperty('outline', 'none', 'important');
         });
         
@@ -1352,6 +1390,17 @@ class Graphiti {
                 const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
                 if (funcDiv) {
                     funcDiv.classList.remove('function-error');
+                    
+                    // Restore normal styling to math-field
+                    const mathField = funcDiv.querySelector('math-field');
+                    if (mathField) {
+                        const computedStyle = getComputedStyle(document.documentElement);
+                        const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+                        const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+                        mathField.style.setProperty('background', inputBg, 'important');
+                        mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                        mathField.style.setProperty('border-radius', '4px', 'important');
+                    }
                 }
                 return;
             }
@@ -1436,6 +1485,17 @@ class Graphiti {
             if (funcDiv) {
                 // Remove error class instead of trying to manipulate styles directly
                 funcDiv.classList.remove('function-error');
+                
+                // Restore normal styling to math-field
+                const mathField = funcDiv.querySelector('math-field');
+                if (mathField) {
+                    const computedStyle = getComputedStyle(document.documentElement);
+                    const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+                    const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+                    mathField.style.setProperty('background', inputBg, 'important');
+                    mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    mathField.style.setProperty('border-radius', '4px', 'important');
+                }
             }
             
         } catch (error) {
@@ -1464,6 +1524,14 @@ class Graphiti {
             if (funcDiv) {
                 // Add error class instead of trying to manipulate styles directly
                 funcDiv.classList.add('function-error');
+                
+                // Also apply direct styling to the math-field for immediate visual feedback
+                const mathField = funcDiv.querySelector('math-field');
+                if (mathField) {
+                    mathField.style.setProperty('background', 'rgba(231, 76, 60, 0.1)', 'important');
+                    mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
+                    mathField.style.setProperty('border-radius', '4px', 'important');
+                }
             }
         }
     }
@@ -4099,9 +4167,29 @@ class Graphiti {
                     this.polarAnimation.storedThetaMax = 0;
                     this.polarAnimation.currentTheta = 0;
                 }
-                // Store both the LaTeX string (for display) and numeric value (for calculations)
-                this.polarSettings.thetaMinLatex = thetaMinInput.getValue();
-                this.polarSettings.thetaMin = this.getRangeValue(thetaMinInput) || 0;
+                
+                // Validate theta ranges
+                const thetaMin = this.getRangeValue(thetaMinInput);
+                const thetaMax = this.getRangeValue(thetaMaxInput);
+                
+                // Check for NaN
+                if (isNaN(thetaMin)) {
+                    this.setInputError(thetaMinInput, true);
+                } else {
+                    this.setInputError(thetaMinInput, false);
+                    // Store both the LaTeX string (for display) and numeric value (for calculations)
+                    this.polarSettings.thetaMinLatex = thetaMinInput.getValue();
+                    this.polarSettings.thetaMin = thetaMin;
+                }
+                
+                // Check logical constraint: min >= max
+                if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin >= thetaMax) {
+                    this.setInputError(thetaMinInput, true);
+                    this.setInputError(thetaMaxInput, true);
+                } else if (!isNaN(thetaMax)) {
+                    this.setInputError(thetaMaxInput, false);
+                }
+                
                 this.saveViewportBounds();
                 this.replotAllFunctions();
             });
@@ -4130,9 +4218,29 @@ class Graphiti {
                     this.polarAnimation.storedThetaMax = 0;
                     this.polarAnimation.currentTheta = 0;
                 }
-                // Store both the LaTeX string (for display) and numeric value (for calculations)
-                this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
-                this.polarSettings.thetaMax = this.getRangeValue(thetaMaxInput) || 2 * Math.PI;
+                
+                // Validate theta ranges
+                const thetaMin = this.getRangeValue(thetaMinInput);
+                const thetaMax = this.getRangeValue(thetaMaxInput);
+                
+                // Check for NaN
+                if (isNaN(thetaMax)) {
+                    this.setInputError(thetaMaxInput, true);
+                } else {
+                    this.setInputError(thetaMaxInput, false);
+                    // Store both the LaTeX string (for display) and numeric value (for calculations)
+                    this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
+                    this.polarSettings.thetaMax = thetaMax;
+                }
+                
+                // Check logical constraint: min >= max
+                if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin >= thetaMax) {
+                    this.setInputError(thetaMinInput, true);
+                    this.setInputError(thetaMaxInput, true);
+                } else if (!isNaN(thetaMin)) {
+                    this.setInputError(thetaMinInput, false);
+                }
+                
                 this.saveViewportBounds();
                 this.replotAllFunctions();
             });
@@ -5355,16 +5463,33 @@ class Graphiti {
         
         if (hasError) {
             input.classList.add('input-error');
-            // Fallback for regular input elements
-            if (input.tagName.toLowerCase() !== 'math-field') {
+            // For MathLive fields, apply direct styling to penetrate shadow DOM
+            if (input.tagName.toLowerCase() === 'math-field') {
+                input.style.setProperty('background', 'rgba(231, 76, 60, 0.1)', 'important');
+                input.style.setProperty('border', '2px solid #E74C3C', 'important');
+                input.style.setProperty('border-radius', '4px', 'important');
+            } else {
+                // Fallback for regular input elements
                 input.style.borderColor = '#E74C3C';
                 input.style.backgroundColor = 'rgba(231, 76, 60, 0.15)';
                 input.style.boxShadow = '0 0 0 1px rgba(231, 76, 60, 0.3)';
             }
         } else {
             input.classList.remove('input-error');
-            // Clear fallback styles for regular input elements
-            if (input.tagName.toLowerCase() !== 'math-field') {
+            // Restore normal styling for MathLive fields
+            if (input.tagName.toLowerCase() === 'math-field') {
+                // Get computed CSS variable values to restore dark theme
+                const computedStyle = getComputedStyle(document.documentElement);
+                const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+                const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+                
+                // Restore dark background and border
+                input.style.setProperty('background', inputBg, 'important');
+                input.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                input.style.setProperty('border-radius', '4px', 'important');
+                input.style.setProperty('--background', inputBg, 'important');
+            } else {
+                // Clear fallback styles for regular input elements
                 input.style.borderColor = '';
                 input.style.backgroundColor = '';
                 input.style.boxShadow = '';
