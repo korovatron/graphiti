@@ -678,6 +678,13 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
+                    // Check for landscape editing restriction first
+                    if (this.shouldRestrictLandscapeEditing()) {
+                        field.blur();
+                        this.showLandscapeEditingRestriction();
+                        return;
+                    }
+                    
                     // Check if field has error - preserve error styling if present
                     if (field.classList.contains('input-error')) {
                         field.style.setProperty('border', '2px solid #E74C3C', 'important');
@@ -736,6 +743,13 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
+                    // Check for landscape editing restriction first
+                    if (this.shouldRestrictLandscapeEditing()) {
+                        field.blur();
+                        this.showLandscapeEditingRestriction();
+                        return;
+                    }
+                    
                     // Check if field has error - preserve error styling if present
                     if (field.classList.contains('input-error')) {
                         field.style.setProperty('border', '2px solid #E74C3C', 'important');
