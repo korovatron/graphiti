@@ -1693,6 +1693,7 @@ class Graphiti {
                 // Store LaTeX strings to preserve symbolic forms (e.g., "2\pi" instead of "6.283...")
                 thetaMinLatex: this.polarSettings.thetaMinLatex || this.polarSettings.thetaMin.toString(),
                 thetaMaxLatex: this.polarSettings.thetaMaxLatex || this.polarSettings.thetaMax.toString(),
+                angleMode: this.angleMode, // Save angle mode to prevent unit mismatch on reload
                 viewportMinX: this.polarViewport.minX,
                 viewportMaxX: this.polarViewport.maxX,
                 viewportMinY: this.polarViewport.minY,
@@ -1788,6 +1789,23 @@ class Graphiti {
             const polarData = localStorage.getItem('graphiti_polar_bounds');
             if (polarData) {
                 const bounds = JSON.parse(polarData);
+                
+                // Restore angle mode first if it was saved
+                if (bounds.angleMode !== undefined) {
+                    this.angleMode = bounds.angleMode;
+                    // Update UI to match restored angle mode
+                    const degreesIcon = document.getElementById('degrees-icon');
+                    const radiansIcon = document.getElementById('radians-icon');
+                    if (degreesIcon && radiansIcon) {
+                        if (this.angleMode === 'degrees') {
+                            degreesIcon.style.opacity = '1';
+                            radiansIcon.style.opacity = '0.3';
+                        } else {
+                            degreesIcon.style.opacity = '0.3';
+                            radiansIcon.style.opacity = '1';
+                        }
+                    }
+                }
                 
                 if (bounds.thetaMin !== undefined && bounds.thetaMax !== undefined) {
                     const thetaMin = parseFloat(bounds.thetaMin);
@@ -6581,17 +6599,39 @@ class Graphiti {
         // Always replot functions since angle mode affects trig function evaluation
         // But axis labels will only change if trig functions are present
         this.replotAllFunctions();
+        
+        // Save viewport bounds to persist angle mode change
+        // This is especially important for polar mode where updateRangeInputs() wasn't called
+        this.saveViewportBounds();
     }
     
     initializeAngleMode() {
-        // Always default to radians mode
+        // Check if there's a saved angle mode in localStorage (from polar bounds)
+        let savedAngleMode = 'radians'; // Default to radians
+        try {
+            const polarData = localStorage.getItem('graphiti_polar_bounds');
+            if (polarData) {
+                const bounds = JSON.parse(polarData);
+                if (bounds.angleMode !== undefined) {
+                    savedAngleMode = bounds.angleMode;
+                }
+            }
+        } catch (error) {
+            console.warn('Could not load angle mode from localStorage:', error);
+        }
+        
         const degreesIcon = document.getElementById('degrees-icon');
         const radiansIcon = document.getElementById('radians-icon');
         
-        this.angleMode = 'radians';
+        this.angleMode = savedAngleMode;
         if (degreesIcon && radiansIcon) {
-            degreesIcon.style.opacity = '0.3';  // Dim degrees icon
-            radiansIcon.style.opacity = '1';    // Bright radians icon
+            if (this.angleMode === 'degrees') {
+                degreesIcon.style.opacity = '1';    // Bright degrees icon
+                radiansIcon.style.opacity = '0.3';  // Dim radians icon
+            } else {
+                degreesIcon.style.opacity = '0.3';  // Dim degrees icon
+                radiansIcon.style.opacity = '1';    // Bright radians icon
+            }
         }
     }
     
