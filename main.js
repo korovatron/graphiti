@@ -10887,8 +10887,8 @@ class Graphiti {
             };
         }
         
-        const hasRegularTrig = this.containsRegularTrigFunctions();
-        const hasInverseTrig = this.containsInverseTrigFunctions();
+        const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+        const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
         const isDegreesMode = this.angleMode === 'degrees';
         
         if (hasInverseTrig && !hasRegularTrig) {
