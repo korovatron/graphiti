@@ -8924,20 +8924,30 @@ class Graphiti {
                 return rounded + 'π';
             }
             
-            // Handle common fractions like π/2, π/3, π/4, π/6
+            // Handle common fractions - expanded to include all multiples of π/12 (15°)
             const commonFractions = [
+                { value: 1/12, label: 'π/12' },
                 { value: 1/6, label: 'π/6' },
                 { value: 1/4, label: 'π/4' },
                 { value: 1/3, label: 'π/3' },
+                { value: 5/12, label: '5π/12' },
                 { value: 1/2, label: 'π/2' },
+                { value: 7/12, label: '7π/12' },
                 { value: 2/3, label: '2π/3' },
                 { value: 3/4, label: '3π/4' },
                 { value: 5/6, label: '5π/6' },
+                { value: 11/12, label: '11π/12' },
+                { value: 13/12, label: '13π/12' },
+                { value: 7/6, label: '7π/6' },
+                { value: 5/4, label: '5π/4' },
                 { value: 4/3, label: '4π/3' },
+                { value: 17/12, label: '17π/12' },
                 { value: 3/2, label: '3π/2' },
+                { value: 19/12, label: '19π/12' },
                 { value: 5/3, label: '5π/3' },
                 { value: 7/4, label: '7π/4' },
-                { value: 11/6, label: '11π/6' }
+                { value: 11/6, label: '11π/6' },
+                { value: 23/12, label: '23π/12' }
             ];
             
             for (let fraction of commonFractions) {
