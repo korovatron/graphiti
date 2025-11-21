@@ -8724,6 +8724,7 @@ class Graphiti {
         
         // Draw polar animation coordinates if animating or paused
         if (this.polarAnimation && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) && this.plotMode === 'polar') {
+            this.drawPolarAnimationSweepLine(); // Draw radar sweep line first (behind everything)
             this.drawPolarAnimationCoordinates();
             this.drawPolarAnimationPoint();
         }
@@ -10709,6 +10710,52 @@ class Graphiti {
                 return;
             }
         });
+        
+        this.ctx.restore();
+    }
+    
+    drawPolarAnimationSweepLine() {
+        // Safety check: ensure polarAnimation exists
+        if (!this.polarAnimation) {
+            return;
+        }
+        
+        const currentTheta = this.polarAnimation.currentTheta;
+        
+        // Convert theta to radians for calculation (regardless of display mode)
+        const thetaRad = this.angleMode === 'degrees' ? currentTheta * Math.PI / 180 : currentTheta;
+        
+        // Get the center point in screen coordinates
+        const center = this.worldToScreen(0, 0);
+        
+        // Calculate the maximum radius needed to reach viewport edge
+        const maxViewportRadius = Math.max(
+            Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.minY * this.viewport.minY),
+            Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.minY * this.viewport.minY),
+            Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.maxY * this.viewport.maxY),
+            Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.maxY * this.viewport.maxY)
+        );
+        
+        // Calculate end point of sweep line
+        const endX = center.x + maxViewportRadius * this.viewport.scale * Math.cos(thetaRad);
+        const endY = center.y - maxViewportRadius * this.viewport.scale * Math.sin(thetaRad); // Negative because screen Y is flipped
+        
+        this.ctx.save();
+        
+        // Draw the sweep line with a gradient fade effect for radar/sonar look
+        const gradient = this.ctx.createLinearGradient(center.x, center.y, endX, endY);
+        gradient.addColorStop(0, 'rgba(74, 144, 226, 0.6)'); // Bright blue at origin
+        gradient.addColorStop(0.7, 'rgba(74, 144, 226, 0.3)'); // Fade to semi-transparent
+        gradient.addColorStop(1, 'rgba(74, 144, 226, 0)'); // Fully transparent at edge
+        
+        this.ctx.strokeStyle = gradient;
+        this.ctx.lineWidth = 2;
+        this.ctx.lineCap = 'round';
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(center.x, center.y);
+        this.ctx.lineTo(endX, endY);
+        this.ctx.stroke();
         
         this.ctx.restore();
     }
