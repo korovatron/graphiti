@@ -10742,14 +10742,40 @@ class Graphiti {
         
         this.ctx.save();
         
+        // Pulsating neon colors - cycle through vibrant street art style colors
+        const time = Date.now() / 1000; // Convert to seconds
+        const pulseSpeed = 2; // Slower pulse for smoother color transition
+        
+        // Create color cycling effect through neon colors (hot pink, cyan, lime, orange)
+        const colorPhase = (Math.sin(time * pulseSpeed) + 1) / 2; // 0 to 1
+        let neonColor;
+        
+        if (colorPhase < 0.25) {
+            // Hot pink to cyan
+            const t = colorPhase / 0.25;
+            neonColor = `rgba(${Math.floor(255 * (1 - t) + 0 * t)}, ${Math.floor(20 * (1 - t) + 255 * t)}, ${Math.floor(147 * (1 - t) + 255 * t)}, `;
+        } else if (colorPhase < 0.5) {
+            // Cyan to lime
+            const t = (colorPhase - 0.25) / 0.25;
+            neonColor = `rgba(${Math.floor(0 * (1 - t) + 57 * t)}, ${255}, ${Math.floor(255 * (1 - t) + 255 * t)}, `;
+        } else if (colorPhase < 0.75) {
+            // Lime to orange
+            const t = (colorPhase - 0.5) / 0.25;
+            neonColor = `rgba(${Math.floor(57 * (1 - t) + 255 * t)}, ${Math.floor(255 * (1 - t) + 165 * t)}, ${Math.floor(255 * (1 - t) + 0 * t)}, `;
+        } else {
+            // Orange to hot pink
+            const t = (colorPhase - 0.75) / 0.25;
+            neonColor = `rgba(${255}, ${Math.floor(165 * (1 - t) + 20 * t)}, ${Math.floor(0 * (1 - t) + 147 * t)}, `;
+        }
+        
         // Draw the sweep line with a gradient fade effect for radar/sonar look
         const gradient = this.ctx.createLinearGradient(center.x, center.y, endX, endY);
-        gradient.addColorStop(0, 'rgba(74, 144, 226, 0.6)'); // Bright blue at origin
-        gradient.addColorStop(0.7, 'rgba(74, 144, 226, 0.3)'); // Fade to semi-transparent
-        gradient.addColorStop(1, 'rgba(74, 144, 226, 0)'); // Fully transparent at edge
+        gradient.addColorStop(0, neonColor + '0.8)'); // Vibrant neon at origin
+        gradient.addColorStop(0.7, neonColor + '0.4)'); // Fade to semi-transparent
+        gradient.addColorStop(1, neonColor + '0)'); // Fully transparent at edge
         
         this.ctx.strokeStyle = gradient;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 3; // Slightly thicker for more presence
         this.ctx.lineCap = 'round';
         
         this.ctx.beginPath();
