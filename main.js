@@ -8978,20 +8978,9 @@ class Graphiti {
     }
     
     getPolarAngleSpacing() {
-        // Angle spacing based on angle mode and zoom level
-        const viewportRange = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY);
-        
-        if (this.angleMode === 'degrees') {
-            // Use common degree increments
-            if (viewportRange > 20) return Math.PI / 6; // 30°
-            if (viewportRange > 10) return Math.PI / 8; // 22.5°
-            return Math.PI / 12; // 15°
-        } else {
-            // Use radian increments
-            if (viewportRange > 20) return Math.PI / 4; // π/4
-            if (viewportRange > 10) return Math.PI / 6; // π/6
-            return Math.PI / 8; // π/8
-        }
+        // Fixed angle spacing like Desmos - 15° or π/12 radians (24 radial lines)
+        // This provides consistent visual reference regardless of zoom level
+        return Math.PI / 12; // 15° = π/12 radians
     }
     
     drawAxes() {
