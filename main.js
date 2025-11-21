@@ -6290,6 +6290,9 @@ class Graphiti {
                 // Always show hamburger in GRAPHING state (mobile and desktop)
                 if (hamburgerMenu) {
                     hamburgerMenu.style.display = 'flex';
+                    // Set hamburger to show red close cross when panel opens
+                    hamburgerMenu.classList.add('active');
+                    hamburgerMenu.classList.add('panel-open');
                 }
                 break;
         }
@@ -11385,6 +11388,9 @@ class Graphiti {
                 hamburgerMenu.style.display = 'flex';
                 functionPanel.classList.add('hidden');
                 functionPanel.classList.remove('mobile-open');
+                // Update hamburger appearance to match closed panel state
+                hamburgerMenu.classList.remove('active');
+                hamburgerMenu.classList.remove('panel-open');
             } else {
                 // Switch to desktop mode - keep hamburger visible in GRAPHING state
                 if (this.currentState === this.states.GRAPHING) {
@@ -11392,6 +11398,9 @@ class Graphiti {
                 }
                 functionPanel.classList.remove('hidden');
                 functionPanel.classList.remove('mobile-open');
+                // Update hamburger appearance to match closed panel state
+                hamburgerMenu.classList.remove('active');
+                hamburgerMenu.classList.remove('panel-open');
             }
         }
     }
