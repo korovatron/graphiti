@@ -803,6 +803,20 @@
             background: rgba(26, 47, 66, 0.95) !important;
         }
         
+        /* NOTE: The following media query was used to add extra top padding in PWA mode
+           to avoid rendering under the iPhone notch/status bar. It has been disabled because
+           it caused content to shift down by ~70px (the logo height) when running as a PWA
+           at mobile widths. Apple has made recent changes to PWA rendering that may be considered
+           a bug. If Apple fixes this and content starts rendering under the notch again in PWA mode,
+           you may need to re-enable this code. Test thoroughly on iPhone PWA in portrait mode. */
+        /*
+        @media (max-width: 500px) and (display-mode: standalone) {
+            #function-panel {
+                padding: 70px 20px 20px 20px !important;
+            }
+        }
+        */
+        
         #function-panel.mobile-open {
             left: 0 !important;
         }
