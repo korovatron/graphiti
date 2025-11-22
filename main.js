@@ -5015,6 +5015,10 @@ class Graphiti {
                 const targetFunction = this.findFunctionById(targetBadge.functionId);
                 if (targetFunction) {
                     this.startTracingAtWorldPosition(targetBadge.worldX, targetBadge.worldY, targetFunction);
+                    // Preserve theta for polar functions
+                    if (targetBadge.theta !== null && targetBadge.theta !== undefined) {
+                        this.input.tracing.theta = targetBadge.theta;
+                    }
                 }
                 return; // Exit early - don't process other input logic
             }
@@ -5071,6 +5075,7 @@ class Graphiti {
                 this.input.tracing.functionId = curvePoint.function.id;
                 this.input.tracing.worldX = curvePoint.worldX;
                 this.input.tracing.worldY = curvePoint.worldY;
+                this.input.tracing.theta = curvePoint.theta; // Store theta for polar parametric tracing
             } else {
                 // Normal panning mode
                 this.input.tracing.active = false;
@@ -5093,18 +5098,29 @@ class Graphiti {
                 
                 if (tracingFunction) {
                     // Trace the function at the new position
-                    // For implicit functions, pass both x and y; for explicit, y is ignored
-                    const tracePoint = this.traceFunction(tracingFunction, currentWorldPos.x, currentWorldPos.y);
+                    // Pass theta for polar functions, x/y for implicit, x for explicit
+                    const tracePoint = this.traceFunction(
+                        tracingFunction, 
+                        currentWorldPos.x, 
+                        currentWorldPos.y,
+                        this.input.tracing.theta, // Pass current theta for polar parametric tracing
+                        deltaX // Pass actual mouse movement for polar functions
+                    );
                     
                     if (tracePoint) {
                         this.input.tracing.worldX = tracePoint.x;
                         this.input.tracing.worldY = tracePoint.y;
                         
+                        // Update theta if returned (for polar functions)
+                        if (tracePoint.theta !== undefined) {
+                            this.input.tracing.theta = tracePoint.theta;
+                        }
+                        
                         // If original badge had a tangent, recalculate slope at new position
                         if (this.input.badgeInteraction.originalBadgeState && 
                             this.input.badgeInteraction.originalBadgeState.hasTangent) {
-                            // Pass both x and y for implicit functions
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x, tracePoint.y);
+                            // Pass both x and y for implicit functions, theta for polar functions
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x, tracePoint.y, this.input.tracing.theta);
                             if (slopeData) {
                                 this.input.tracing.currentSlope = slopeData.slope;
                                 this.input.tracing.currentSecondDerivative = slopeData.secondDerivative;
@@ -5225,6 +5241,14 @@ class Graphiti {
                 functionColor
             );
             
+            // Store theta for polar functions
+            if (this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                if (newBadge) {
+                    newBadge.theta = this.input.tracing.theta;
+                }
+            }
+            
             // Handle tangent based on original badge state
             const originalState = this.input.badgeInteraction.originalBadgeState;
             const wasTap = this.input.badgeInteraction.wasTap;
@@ -5238,7 +5262,7 @@ class Graphiti {
                         // TAP: Cycle to next state
                         if (!originalState.hasTangent) {
                             // Cycling from no tangent → add normal tangent
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData.slope;
@@ -5248,7 +5272,7 @@ class Graphiti {
                             }
                         } else if (originalState.hasTangent && !originalState.neonTangent) {
                             // Cycling from normal tangent → neon tangent
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData.slope;
@@ -5261,7 +5285,7 @@ class Graphiti {
                     } else {
                         // DRAG: Keep same state, just recalculate at new position
                         if (originalState.hasTangent) {
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData.slope;
@@ -7314,6 +7338,7 @@ class Graphiti {
         let closestDistance = Infinity;
         let closestWorldX = worldPos.x;
         let closestWorldY = worldPos.y;
+        let closestTheta = null; // For polar functions
         
         // Check each active function in current mode
         for (const func of this.getCurrentFunctions()) {
@@ -7342,6 +7367,7 @@ class Graphiti {
                         closestFunction = func;
                         closestWorldX = result.worldX;
                         closestWorldY = result.worldY;
+                        closestTheta = result.theta; // Store theta for parametric tracing
                     }
                 } else {
                     // Cartesian function detection (existing logic)
@@ -7391,7 +7417,8 @@ class Graphiti {
                 function: closestFunction,
                 worldX: closestWorldX,
                 worldY: closestWorldY,
-                distance: closestDistance
+                distance: closestDistance,
+                theta: closestTheta // Include theta for polar functions
             };
         }
         
@@ -7414,6 +7441,7 @@ class Graphiti {
             badgeType: badgeType, // For turning point badges (maximum, minimum, etc.)
             screenX: 0, // Will be updated during rendering
             screenY: 0, // Will be updated during rendering
+            theta: null, // For polar functions - parametric position on curve
             // Tangent line properties
             hasTangent: false, // Whether to show tangent line at this point
             tangentSlope: null, // Slope of tangent line (dy/dx)
@@ -8645,9 +8673,14 @@ class Graphiti {
     
     // Calculate the slope (derivative) at a specific point for a function
     // Uses both symbolic and numerical methods for robustness
-    calculateSlopeAtPoint(func, worldX, worldY = null) {
+    calculateSlopeAtPoint(func, worldX, worldY = null, theta = null) {
         if (!func || !func.expression) {
             return null;
+        }
+        
+        // Check if this is a polar function
+        if (this.plotMode === 'polar' && theta !== null && theta !== undefined) {
+            return this.calculatePolarSlope(func, theta, worldX, worldY);
         }
         
         // Check if this is an implicit function
@@ -8765,6 +8798,108 @@ class Graphiti {
             
         } catch (error) {
             console.warn('Could not calculate slope:', error);
+        }
+        
+        return null;
+    }
+    
+    calculatePolarSlope(func, theta, worldX, worldY) {
+        // Calculate slope for polar function r = f(θ)
+        // In Cartesian coordinates: dy/dx = [f'(θ)sin(θ) + f(θ)cos(θ)] / [f'(θ)cos(θ) - f(θ)sin(θ)]
+        if (!func || !func.expression || theta === null || theta === undefined) {
+            return null;
+        }
+        
+        try {
+            // Convert from LaTeX first
+            const convertedExpression = this.convertFromLatex(func.expression);
+            
+            // Clean the expression - remove "r=" prefix if present
+            let cleanExpression = convertedExpression.trim();
+            if (cleanExpression.toLowerCase().startsWith('r=')) {
+                cleanExpression = cleanExpression.substring(2).trim();
+            }
+            
+            // Add implicit multiplication
+            let processedExpression = cleanExpression.toLowerCase();
+            processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+            
+            // Use numerical derivative to avoid angle unit issues with symbolic differentiation
+            const h = 0.0001;
+            const compiledR = this.getCompiledExpression(processedExpression);
+            
+            // Convert theta to radians if in degree mode
+            const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+            const hForEval = this.angleMode === 'degrees' ? h * Math.PI / 180 : h;
+            
+            const scope0 = { 
+                theta: thetaForEval, 
+                t: thetaForEval,
+                pi: Math.PI,
+                e: Math.E
+            };
+            const scopePlus = { 
+                theta: thetaForEval + hForEval, 
+                t: thetaForEval + hForEval,
+                pi: Math.PI,
+                e: Math.E
+            };
+            const scopeMinus = { 
+                theta: thetaForEval - hForEval, 
+                t: thetaForEval - hForEval,
+                pi: Math.PI,
+                e: Math.E
+            };
+            
+            const r = compiledR.evaluate(scope0);
+            const rPlus = compiledR.evaluate(scopePlus);
+            const rMinus = compiledR.evaluate(scopeMinus);
+            
+            if (!isFinite(r) || !isFinite(rPlus) || !isFinite(rMinus)) {
+                return null;
+            }
+            
+            // Calculate dr/dθ using central difference
+            const drdt = (rPlus - rMinus) / (2 * h);
+            
+            if (!isFinite(drdt)) {
+                return null;
+            }
+            
+            // Convert theta to radians for trig functions
+            const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+            
+            const sinTheta = Math.sin(thetaRad);
+            const cosTheta = Math.cos(thetaRad);
+            
+            // dy/dx = [f'(θ)sin(θ) + f(θ)cos(θ)] / [f'(θ)cos(θ) - f(θ)sin(θ)]
+            const numerator = drdt * sinTheta + r * cosTheta;
+            const denominator = drdt * cosTheta - r * sinTheta;
+            
+            // Check for division by zero (vertical tangent)
+            if (Math.abs(denominator) < 1e-10) {
+                return {
+                    slope: denominator >= 0 ? 1e10 : -1e10,
+                    expression: "dy/dx",
+                    secondDerivative: 0,
+                    method: 'polar'
+                };
+            }
+            
+            const slope = numerator / denominator;
+            
+            if (isFinite(slope)) {
+                return {
+                    slope: slope,
+                    expression: "dy/dx",
+                    secondDerivative: 0, // Second derivative for polar is complex, skip for now
+                    method: 'polar'
+                };
+            }
+            
+        } catch (error) {
+            console.warn('Could not calculate polar slope:', error);
         }
         
         return null;
@@ -9313,6 +9448,7 @@ class Graphiti {
             let closestDistance = Infinity;
             let closestWorldX = 0;
             let closestWorldY = 0;
+            let closestTheta = 0;
             
             const processedExpression = this.convertFromLatex(func.expression);
             const compiled = math.compile(processedExpression);
@@ -9328,15 +9464,19 @@ class Graphiti {
                     const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
                     let r = compiled.evaluate(scope);
                     
+                    // Handle negative r values
+                    let adjustedR = r;
+                    let adjustedTheta = theta;
+                    
                     if (r < 0 && this.polarSettings.plotNegativeR) {
-                        r = Math.abs(r);
-                        theta += Math.PI;
+                        adjustedR = Math.abs(r);
+                        adjustedTheta = theta + Math.PI;
                     } else if (r < 0) {
                         continue;
                     }
                     
-                    const worldX = r * Math.cos(theta);
-                    const worldY = r * Math.sin(theta);
+                    const worldX = adjustedR * Math.cos(adjustedTheta);
+                    const worldY = adjustedR * Math.sin(adjustedTheta);
                     
                     if (!isFinite(worldX) || !isFinite(worldY)) continue;
                     
@@ -9347,10 +9487,17 @@ class Graphiti {
                         Math.pow(screenPos.y - screenY, 2)
                     );
                     
-                    if (distance < tolerance && distance < closestDistance) {
-                        closestDistance = distance;
-                        closestWorldX = worldX;
-                        closestWorldY = worldY;
+                    if (distance < tolerance) {
+                        // If this is a better match, or equal match but with smaller theta (prefer start of range)
+                        const isStrictlyBetter = distance < closestDistance;
+                        const isEqualButEarlier = Math.abs(distance - closestDistance) < 0.1 && theta < closestTheta;
+                        
+                        if (isStrictlyBetter || isEqualButEarlier) {
+                            closestDistance = distance;
+                            closestWorldX = worldX;
+                            closestWorldY = worldY;
+                            closestTheta = theta; // Store original theta, not adjusted
+                        }
                     }
                 } catch (e) {
                     // Skip invalid points
@@ -9361,7 +9508,8 @@ class Graphiti {
                 return {
                     distance: closestDistance,
                     worldX: closestWorldX,
-                    worldY: closestWorldY
+                    worldY: closestWorldY,
+                    theta: closestTheta
                 };
             }
             
@@ -9428,7 +9576,7 @@ class Graphiti {
         return closestPoint || { x: worldX, y: worldY };
     }
     
-    traceFunction(func, worldX, worldY = null) {
+    traceFunction(func, worldX, worldY = null, theta = null, screenDeltaX = 0) {
         try {
             // Check if this is an implicit function
             const functionType = this.detectFunctionType(func.expression);
@@ -9443,9 +9591,9 @@ class Graphiti {
                 return this.traceImplicitFunction(func, worldX, worldY);
             }
             
-            // Handle polar functions differently
+            // Handle polar functions with parametric tracing
             if (func.mode === 'polar') {
-                return this.tracePolarFunction(func, worldX);
+                return this.tracePolarFunction(func, worldX, worldY || 0, theta, screenDeltaX);
             }
             
             // Cartesian function tracing (existing logic)
@@ -9478,46 +9626,103 @@ class Graphiti {
         }
     }
     
-    tracePolarFunction(func, worldX) {
-        // For polar functions, find the closest point on the curve to the given x coordinate
+    tracePolarFunction(func, mouseWorldX, mouseWorldY, currentTheta = null, screenDeltaX = 0) {
+        // For polar functions, use parametric tracing along theta
+        // This prevents jumping between branches and provides smooth curve following
         try {
-            let closestPoint = null;
-            let closestDistance = Infinity;
+            const processedExpression = this.convertFromLatex(func.expression);
+            const compiled = math.compile(processedExpression);
             
-            const thetaStep = this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax);
             const thetaMin = this.polarSettings.thetaMin;
             const thetaMax = this.polarSettings.thetaMax;
             
-            // Sample the polar function and find closest point to worldX
+            // If we have a current theta (from ongoing drag), adjust it based on mouse movement
+            if (currentTheta !== null && currentTheta !== undefined) {
+                // Convert screen movement to theta change
+                // Horizontal movement adjusts theta - moving right increases theta
+                // Use the actual mouse screen delta passed from handlePointerMove
+                
+                // Scale factor: map screen pixels to theta change
+                // Use viewport width to make sensitivity zoom-independent
+                const thetaRange = thetaMax - thetaMin;
+                const deltaTheta = (screenDeltaX / this.viewport.width) * thetaRange * 0.5;
+                
+                let newTheta = currentTheta + deltaTheta;
+                
+                // Clamp theta to valid range
+                newTheta = Math.max(thetaMin, Math.min(thetaMax, newTheta));
+                
+                // Evaluate at new theta
+                const scope = { t: newTheta, theta: newTheta, pi: Math.PI, e: Math.E };
+                let r = compiled.evaluate(scope);
+                
+                // Handle negative r values
+                let adjustedR = r;
+                let adjustedTheta = newTheta;
+                
+                if (r < 0 && this.polarSettings.plotNegativeR) {
+                    adjustedR = Math.abs(r);
+                    adjustedTheta = newTheta + Math.PI;
+                } else if (r < 0) {
+                    // Invalid point, return current position
+                    return { x: mouseWorldX, y: mouseWorldY, theta: currentTheta };
+                }
+                
+                const x = adjustedR * Math.cos(adjustedTheta);
+                const y = adjustedR * Math.sin(adjustedTheta);
+                
+                if (isFinite(x) && isFinite(y)) {
+                    return { x, y, theta: newTheta };
+                }
+            }
+            
+            // Fallback: find closest point if no theta provided
+            let closestPoint = null;
+            let closestDistance = Infinity;
+            let closestTheta = 0;
+            
+            const thetaStep = this.calculateDynamicPolarStep(thetaMin, thetaMax);
+            
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
-                    let processedExpression = this.convertFromLatex(func.expression);
-                    const compiled = math.compile(processedExpression);
                     const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
-                    
                     let r = compiled.evaluate(scope);
                     
+                    // Handle negative r values
+                    let adjustedR = r;
+                    let adjustedTheta = theta;
+                    
                     if (r < 0 && this.polarSettings.plotNegativeR) {
-                        r = Math.abs(r);
-                        theta += Math.PI;
+                        adjustedR = Math.abs(r);
+                        adjustedTheta = theta + Math.PI;
                     } else if (r < 0) {
                         continue;
                     }
                     
-                    const x = r * Math.cos(theta);
-                    const y = r * Math.sin(theta);
+                    const x = adjustedR * Math.cos(adjustedTheta);
+                    const y = adjustedR * Math.sin(adjustedTheta);
                     
-                    const distance = Math.abs(x - worldX);
-                    if (distance < closestDistance) {
+                    const distance = Math.sqrt(Math.pow(x - mouseWorldX, 2) + Math.pow(y - mouseWorldY, 2));
+                    
+                    // Prefer earlier (smaller) theta values when distance is equal or better
+                    const isStrictlyBetter = distance < closestDistance;
+                    const isEqualButEarlier = Math.abs(distance - closestDistance) < 0.1 && theta < closestTheta;
+                    
+                    if (isStrictlyBetter || isEqualButEarlier) {
                         closestDistance = distance;
                         closestPoint = { x, y };
+                        closestTheta = theta;
                     }
                 } catch (e) {
                     // Skip invalid points
                 }
             }
             
-            return closestPoint;
+            if (closestPoint) {
+                return { ...closestPoint, theta: closestTheta };
+            }
+            
+            return null;
         } catch (error) {
             return null;
         }
