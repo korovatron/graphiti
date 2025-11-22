@@ -10669,52 +10669,38 @@ class Graphiti {
                 return rounded + 'π';
             }
             
-            // Check for common fractions - only multiples of π/24 for clean simplification
-            // This ensures grid labels always show as proper fractions
-            const commonFractions = [
-                { ratio: 1/24, label: 'π/24' },
-                { ratio: 1/12, label: 'π/12' },    // 2π/24
-                { ratio: 1/8, label: 'π/8' },      // 3π/24
-                { ratio: 1/6, label: 'π/6' },      // 4π/24
-                { ratio: 5/24, label: '5π/24' },
-                { ratio: 1/4, label: 'π/4' },      // 6π/24
-                { ratio: 7/24, label: '7π/24' },
-                { ratio: 1/3, label: 'π/3' },      // 8π/24
-                { ratio: 3/8, label: '3π/8' },     // 9π/24
-                { ratio: 5/12, label: '5π/12' },   // 10π/24
-                { ratio: 11/24, label: '11π/24' },
-                { ratio: 1/2, label: 'π/2' },      // 12π/24
-                { ratio: 13/24, label: '13π/24' },
-                { ratio: 7/12, label: '7π/12' },   // 14π/24
-                { ratio: 5/8, label: '5π/8' },     // 15π/24
-                { ratio: 2/3, label: '2π/3' },     // 16π/24
-                { ratio: 17/24, label: '17π/24' },
-                { ratio: 3/4, label: '3π/4' },     // 18π/24
-                { ratio: 19/24, label: '19π/24' },
-                { ratio: 5/6, label: '5π/6' },     // 20π/24
-                { ratio: 7/8, label: '7π/8' },     // 21π/24
-                { ratio: 11/12, label: '11π/12' }, // 22π/24
-                { ratio: 23/24, label: '23π/24' },
-                { ratio: 2, label: '2π' },         // 48π/24
-                { ratio: 3/2, label: '3π/2' },     // 36π/24
-                { ratio: 4/3, label: '4π/3' },     // 32π/24
-                { ratio: 5/4, label: '5π/4' },     // 30π/24
-                { ratio: 7/6, label: '7π/6' },     // 28π/24
-                { ratio: 5/3, label: '5π/3' },     // 40π/24
-                { ratio: 7/4, label: '7π/4' },     // 42π/24
-                { ratio: 11/6, label: '11π/6' }    // 44π/24
-            ];
-            
-            for (let frac of commonFractions) {
-                if (Math.abs(piRatio - frac.ratio) < 0.001) {
-                    return frac.label;
-                }
-                if (Math.abs(piRatio + frac.ratio) < 0.001) {
-                    return '-' + frac.label;
+            // Check if this is a multiple of π/24 (smallest grid unit in radian mode)
+            // This ensures all grid values can be expressed as proper fractions
+            const twentyFourthsRatio = piRatio * 24;
+            if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.01) {
+                const numerator = Math.round(twentyFourthsRatio);
+                const denominator = 24;
+                
+                // Simplify the fraction
+                const gcd = (a, b) => b === 0 ? Math.abs(a) : gcd(b, a % b);
+                const divisor = gcd(Math.abs(numerator), denominator);
+                const simplifiedNum = numerator / divisor;
+                const simplifiedDen = denominator / divisor;
+                
+                // Format the simplified fraction
+                const sign = simplifiedNum < 0 ? '-' : '';
+                const absNum = Math.abs(simplifiedNum);
+                
+                if (simplifiedDen === 1) {
+                    // Integer multiple of π
+                    if (absNum === 1) return sign + 'π';
+                    return sign + absNum + 'π';
+                } else {
+                    // Proper fraction
+                    if (absNum === 1) {
+                        return sign + 'π/' + simplifiedDen;
+                    } else {
+                        return sign + absNum + 'π/' + simplifiedDen;
+                    }
                 }
             }
             
-            // Fall back to decimal with π
+            // Fall back to decimal with π (should rarely happen now)
             if (Math.abs(piRatio) > 0.1) {
                 return piRatio.toFixed(1) + 'π';
             }
