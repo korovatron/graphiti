@@ -4925,9 +4925,11 @@ class Graphiti {
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x);
                             if (slopeData) {
                                 this.input.tracing.currentSlope = slopeData.slope;
+                                this.input.tracing.currentSecondDerivative = slopeData.secondDerivative;
                             }
                         } else {
                             this.input.tracing.currentSlope = null;
+                            this.input.tracing.currentSecondDerivative = null;
                         }
                     }
                 }
@@ -5048,6 +5050,7 @@ class Graphiti {
                             newBadge.hasTangent = true;
                             newBadge.tangentSlope = slopeData.slope;
                             newBadge.tangentExpression = slopeData.expression;
+                            newBadge.secondDerivative = slopeData.secondDerivative;
                             newBadge.neonTangent = false;
                         }
                     } else if (originalState.hasTangent && !originalState.neonTangent) {
@@ -5057,6 +5060,7 @@ class Graphiti {
                             newBadge.hasTangent = true;
                             newBadge.tangentSlope = slopeData.slope;
                             newBadge.tangentExpression = slopeData.expression;
+                            newBadge.secondDerivative = slopeData.secondDerivative;
                             newBadge.neonTangent = true;
                         }
                     } else if (originalState.hasTangent && originalState.neonTangent) {
@@ -5066,6 +5070,7 @@ class Graphiti {
                             newBadge.hasTangent = true;
                             newBadge.tangentSlope = slopeData.slope;
                             newBadge.tangentExpression = slopeData.expression;
+                            newBadge.secondDerivative = slopeData.secondDerivative;
                             newBadge.neonTangent = true;
                         }
                     }
@@ -7065,6 +7070,7 @@ class Graphiti {
             hasTangent: false, // Whether to show tangent line at this point
             tangentSlope: null, // Slope of tangent line (dy/dx)
             tangentExpression: null, // Derivative expression (for display)
+            secondDerivative: null, // Second derivative (d²y/dx²)
             neonTangent: false // Whether to use pulsating neon colors for tangent
         };
         
@@ -8190,8 +8196,13 @@ class Graphiti {
                 const derivative = math.derivative(processedExpression, 'x');
                 const derivativeStr = derivative.toString();
                 
+                // Also get second derivative
+                const secondDerivative = math.derivative(derivative, 'x');
+                const secondDerivativeStr = secondDerivative.toString();
+                
                 // Evaluate the derivative at the given x value
                 let evalExpr = derivativeStr.toLowerCase();
+                let evalSecondExpr = secondDerivativeStr.toLowerCase();
                 
                 // Handle degree mode for trig functions
                 if (this.angleMode === 'degrees') {
@@ -8199,15 +8210,23 @@ class Graphiti {
                     if (hasRegularTrigWithX) {
                         evalExpr = this.convertTrigToDegreeMode(evalExpr);
                     }
+                    const hasRegularTrigWithX2 = this.getCachedRegex('regularTrigWithX').test(evalSecondExpr);
+                    if (hasRegularTrigWithX2) {
+                        evalSecondExpr = this.convertTrigToDegreeMode(evalSecondExpr);
+                    }
                 }
                 
                 const compiledDeriv = this.getCompiledExpression(evalExpr);
                 const slope = compiledDeriv.evaluate({x: worldX});
                 
-                if (isFinite(slope)) {
+                const compiledSecondDeriv = this.getCompiledExpression(evalSecondExpr);
+                const secondDerivValue = compiledSecondDeriv.evaluate({x: worldX});
+                
+                if (isFinite(slope) && isFinite(secondDerivValue)) {
                     return {
                         slope: slope,
                         expression: derivativeStr,
+                        secondDerivative: secondDerivValue,
                         method: 'symbolic'
                     };
                 }
@@ -8221,7 +8240,7 @@ class Graphiti {
             const compiledExpr = this.getCompiledExpression(cleanExpression.toLowerCase());
             
             // Central difference: f'(x) ≈ (f(x+h) - f(x-h)) / (2h)
-            let yPlus, yMinus;
+            let yPlus, yMinus, yPlusPlus, yMinusMinus;
             
             try {
                 if (this.angleMode === 'degrees') {
@@ -8231,21 +8250,31 @@ class Graphiti {
                         const compiled = this.getCompiledExpression(processedExpr);
                         yPlus = compiled.evaluate({x: worldX + h});
                         yMinus = compiled.evaluate({x: worldX - h});
+                        yPlusPlus = compiled.evaluate({x: worldX + 2*h});
+                        yMinusMinus = compiled.evaluate({x: worldX - 2*h});
                     } else {
                         yPlus = compiledExpr.evaluate({x: worldX + h});
                         yMinus = compiledExpr.evaluate({x: worldX - h});
+                        yPlusPlus = compiledExpr.evaluate({x: worldX + 2*h});
+                        yMinusMinus = compiledExpr.evaluate({x: worldX - 2*h});
                     }
                 } else {
                     yPlus = compiledExpr.evaluate({x: worldX + h});
                     yMinus = compiledExpr.evaluate({x: worldX - h});
+                    yPlusPlus = compiledExpr.evaluate({x: worldX + 2*h});
+                    yMinusMinus = compiledExpr.evaluate({x: worldX - 2*h});
                 }
                 
                 const slope = (yPlus - yMinus) / (2 * h);
+                // Second derivative using five-point stencil: f''(x) ≈ (-f(x+2h) + 16f(x+h) - 30f(x) + 16f(x-h) - f(x-2h)) / (12h²)
+                const yCurrent = compiledExpr.evaluate({x: worldX});
+                const secondDeriv = (-yPlusPlus + 16*yPlus - 30*yCurrent + 16*yMinus - yMinusMinus) / (12 * h * h);
                 
-                if (isFinite(slope)) {
+                if (isFinite(slope) && isFinite(secondDeriv)) {
                     return {
                         slope: slope,
                         expression: "f'(x)", // Generic notation for numerical derivative
+                        secondDerivative: secondDeriv,
                         method: 'numerical'
                     };
                 }
@@ -10522,7 +10551,7 @@ class Graphiti {
         const hasTangent = this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined;
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
             this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
-            hasTangent, this.input.tracing.currentSlope);
+            hasTangent, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative);
     }
     
     drawPersistentBadges() {
@@ -10554,7 +10583,7 @@ class Graphiti {
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope, badge.secondDerivative);
         }
     }
     
@@ -10668,7 +10697,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, tangentSlope = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, tangentSlope = null, secondDerivative = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -10725,6 +10754,12 @@ class Graphiti {
         if (hasTangent && tangentSlope !== null) {
             const slopeStr = this.formatCoordinate(tangentSlope);
             labelText += ` | dy/dx=${slopeStr}`;
+            
+            // Add second derivative if available
+            if (secondDerivative !== null && isFinite(secondDerivative)) {
+                const secondDerivStr = this.formatCoordinate(secondDerivative);
+                labelText += ` | d²y/dx²=${secondDerivStr}`;
+            }
         }
         
         this.ctx.font = '16px Arial, sans-serif'; // Larger font for classroom visibility
