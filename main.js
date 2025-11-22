@@ -246,14 +246,25 @@ class Graphiti {
                         // Configure MathLive to recognize inverse trig functions as function names (not variables)
                         if (window.MathfieldElement) {
                             window.MathfieldElement.fontsDirectory = 'https://unpkg.com/mathlive/dist/fonts';
-                            // Add inverse trig and other functions to the dictionary so they render as functions
-                            const customFunctions = ['arcsin', 'arccos', 'arctan', 'arcsec', 'arccsc', 'arccot',
-                                                     'asinh', 'acosh', 'atanh', 'asech', 'acsch', 'acoth'];
-                            window.MathfieldElement.computeEngine = {
-                                ...window.MathfieldElement.computeEngine,
-                                dictionary: [
-                                    ...customFunctions.map(fn => ({ name: fn, domain: 'Functions' }))
-                                ]
+                            
+                            // Define inverse trig and hyperbolic functions as proper LaTeX macros
+                            // This prevents MathLive from mangling them
+                            const inverseTrigMacros = {
+                                '\\arcsin': '\\operatorname{arcsin}',
+                                '\\arccos': '\\operatorname{arccos}',
+                                '\\arctan': '\\operatorname{arctan}',
+                                '\\arcsec': '\\operatorname{arcsec}',
+                                '\\arccsc': '\\operatorname{arccsc}',
+                                '\\arccot': '\\operatorname{arccot}'
+                            };
+                            
+                            // Set default options for all mathfields
+                            window.MathfieldElement.options = {
+                                ...window.MathfieldElement.options,
+                                macros: {
+                                    ...window.MathfieldElement.options?.macros,
+                                    ...inverseTrigMacros
+                                }
                             };
                         }
                         
@@ -344,17 +355,17 @@ class Graphiti {
                                     { 
                                         latex: '\\sin(#?)', 
                                         label: 'sin', 
-                                        shift: { latex: '\\arcsin(#?)', label: 'sin⁻¹', class: 'small' }
+                                        shift: { insert: '\\arcsin(#?)', label: 'sin⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cos(#?)', 
                                         label: 'cos', 
-                                        shift: { latex: '\\arccos(#?)', label: 'cos⁻¹', class: 'small' }
+                                        shift: { insert: '\\arccos(#?)', label: 'cos⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\tan(#?)', 
                                         label: 'tan', 
-                                        shift: { latex: '\\arctan(#?)', label: 'tan⁻¹', class: 'small' }
+                                        shift: { insert: '\\arctan(#?)', label: 'tan⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\ln(#?)', 
@@ -372,22 +383,22 @@ class Graphiti {
                                     { 
                                         latex: '\\csc(#?)', 
                                         label: 'csc', 
-                                        shift: { latex: '\\operatorname{arccsc}(#?)', label: 'csc⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{arccsc}(#?)', label: 'csc⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\sec(#?)', 
                                         label: 'sec', 
-                                        shift: { latex: '\\operatorname{arcsec}(#?)', label: 'sec⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{arcsec}(#?)', label: 'sec⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cot(#?)', 
                                         label: 'cot', 
-                                        shift: { latex: '\\operatorname{arccot}(#?)', label: 'cot⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{arccot}(#?)', label: 'cot⁻¹', class: 'small' }
                                     },
                                     { 
-                                        latex: '\\log_{10}(#?)', 
+                                        insert: '\\log_{10}(#?)', 
                                         label: 'log', 
-                                        shift: { latex: '10^{#?}', label: '10ˣ' }
+                                        shift: { insert: '10^{#?}', label: '10ˣ' }
                                     },
                                     '[separator]',
                                     { latex: '1', label: '1' },
@@ -434,19 +445,19 @@ class Graphiti {
                                         latex: '\\sinh(#?)', 
                                         label: 'sinh',
                                         class: 'small',
-                                        shift: { latex: '\\operatorname{asinh}(#?)', label: 'sinh⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{asinh}(#?)', label: 'sinh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\cosh(#?)', 
                                         label: 'cosh',
                                         class: 'small',
-                                        shift: { latex: '\\operatorname{acosh}(#?)', label: 'cosh⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{acosh}(#?)', label: 'cosh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\tanh(#?)', 
                                         label: 'tanh',
                                         class: 'small',
-                                        shift: { latex: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{atanh}(#?)', label: 'tanh⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: 'e^{#?}', 
@@ -465,19 +476,19 @@ class Graphiti {
                                         latex: '\\operatorname{csch}(#?)', 
                                         label: 'csch',
                                         class: 'small',
-                                        shift: { latex: '\\operatorname{acsch}(#?)', label: 'csch⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{acsch}(#?)', label: 'csch⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\operatorname{sech}(#?)', 
                                         label: 'sech',
                                         class: 'small',
-                                        shift: { latex: '\\operatorname{asech}(#?)', label: 'sech⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{asech}(#?)', label: 'sech⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\operatorname{coth}(#?)', 
                                         label: 'coth',
                                         class: 'small',
-                                        shift: { latex: '\\operatorname{acoth}(#?)', label: 'coth⁻¹', class: 'small' }
+                                        shift: { insert: '\\operatorname{acoth}(#?)', label: 'coth⁻¹', class: 'small' }
                                     },
                                     { 
                                         latex: '\\sqrt{#?}', 
@@ -1454,13 +1465,14 @@ class Graphiti {
             }
             
             // Try a simple test evaluation to catch syntax errors early
+            let processedExpression = ''; // Declare outside try block for error logging
             try {
                 if (this.plotMode === 'polar') {
                     // Skip validation for theta-constant rays (they're assignments, not evaluable expressions)
                     const functionType = this.detectFunctionType(func.expression);
                     if (functionType !== 'theta-constant') {
                         // For polar mode, test with theta/t variable - remove "r=" prefix if present
-                        let processedExpression = this.convertFromLatex(func.expression);
+                        processedExpression = this.convertFromLatex(func.expression);
                         processedExpression = processedExpression.trim();
                         if (processedExpression.toLowerCase().startsWith('r=')) {
                             processedExpression = processedExpression.substring(2).trim();
@@ -1484,7 +1496,7 @@ class Graphiti {
                         }
                     } else {
                         // For explicit functions, test with x variable
-                        let processedExpression = this.convertFromLatex(func.expression);
+                        processedExpression = this.convertFromLatex(func.expression);
                         // Strip y= prefix if present (since we store full equations now)
                         if (processedExpression.toLowerCase().startsWith('y=')) {
                             processedExpression = processedExpression.substring(2).trim();
@@ -1496,11 +1508,6 @@ class Graphiti {
                     }
                 }
             } catch (evalError) {
-                console.error('Expression validation failed:', {
-                    original: func.expression,
-                    converted: processedExpression,
-                    error: evalError.message
-                });
                 throw new Error('Invalid mathematical expression: ' + evalError.message);
             }
             
@@ -13545,20 +13552,47 @@ class Graphiti {
         expression = expression.replace(/\\arccos/g, 'acos');
         expression = expression.replace(/\\arctan/g, 'atan');
         
-        // Inverse trigonometric functions using \operatorname
+        // Inverse trigonometric functions using \operatorname (MathLive fallback format)
+        // Handle both \operatorname{arcsin} and \operatorname{\mathrm{arcsin}} formats
+        expression = expression.replace(/\\operatorname\{\\mathrm\{arcsin\}\}/g, 'asin');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{arccos\}\}/g, 'acos');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{arctan\}\}/g, 'atan');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{arcsec\}\}/g, 'asec');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{arccsc\}\}/g, 'acsc');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{arccot\}\}/g, 'acot');
+        expression = expression.replace(/\\operatorname\{arcsin\}/g, 'asin');
+        expression = expression.replace(/\\operatorname\{arccos\}/g, 'acos');
+        expression = expression.replace(/\\operatorname\{arctan\}/g, 'atan');
         expression = expression.replace(/\\operatorname\{arcsec\}/g, 'asec');
         expression = expression.replace(/\\operatorname\{arccsc\}/g, 'acsc');
         expression = expression.replace(/\\operatorname\{arccot\}/g, 'acot');
         
         // Hyperbolic functions
+        // Handle both \operatorname{sinh} and \operatorname{\mathrm{sinh}} formats
         expression = expression.replace(/\\sinh/g, 'sinh');
         expression = expression.replace(/\\cosh/g, 'cosh');
         expression = expression.replace(/\\tanh/g, 'tanh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{sinh\}\}/g, 'sinh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{cosh\}\}/g, 'cosh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{tanh\}\}/g, 'tanh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{sech\}\}/g, 'sech');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{csch\}\}/g, 'csch');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{coth\}\}/g, 'coth');
+        expression = expression.replace(/\\operatorname\{sinh\}/g, 'sinh');
+        expression = expression.replace(/\\operatorname\{cosh\}/g, 'cosh');
+        expression = expression.replace(/\\operatorname\{tanh\}/g, 'tanh');
         expression = expression.replace(/\\operatorname\{sech\}/g, 'sech');
         expression = expression.replace(/\\operatorname\{csch\}/g, 'csch');
         expression = expression.replace(/\\operatorname\{coth\}/g, 'coth');
         
         // Inverse hyperbolic functions using \operatorname
+        // Handle both \operatorname{asinh} and \operatorname{\mathrm{asinh}} formats
+        expression = expression.replace(/\\operatorname\{\\mathrm\{asinh\}\}/g, 'asinh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{acosh\}\}/g, 'acosh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{atanh\}\}/g, 'atanh');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{asech\}\}/g, 'asech');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{acsch\}\}/g, 'acsch');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{acoth\}\}/g, 'acoth');
         expression = expression.replace(/\\operatorname\{asinh\}/g, 'asinh');
         expression = expression.replace(/\\operatorname\{acosh\}/g, 'acosh');
         expression = expression.replace(/\\operatorname\{atanh\}/g, 'atanh');
@@ -13570,25 +13604,27 @@ class Graphiti {
         expression = expression.replace(/\\ln/g, 'log');     // ln(x) -> log(x) (natural log in math.js)
         
         // Handle logarithms with arbitrary bases - MUST come before the fallback \\log replacement
-        // Pattern 1: log_{base}(arg) with braces
-        expression = expression.replace(/\\log_\{([^}]+)\}\(([^)]+)\)/g, function(match, base, arg) {
+        // Pattern 1: log_{base}(arg) with braces - handle various argument formats
+        expression = expression.replace(/\\log_\{([^}]+)\}/g, function(match, base) {
             if (base === '10') {
-                return `log10(${arg})`; // Use built-in log10 for base 10
+                return 'log10'; // Use built-in log10 for base 10
             } else if (base === 'e') {
-                return `log(${arg})`; // Use built-in log for base e (natural log)
+                return 'log'; // Use built-in log for base e (natural log)
             } else {
-                return `(log(${arg})/log(${base}))`; // Change of base formula
+                // For other bases, we'll need to wrap in change of base later
+                // For now just convert to log{base} marker that we can process
+                return `log_${base}_`;
             }
         });
         
-        // Pattern 2: log_base(arg) without braces around base
-        expression = expression.replace(/\\log_([0-9]+)\(([^)]+)\)/g, function(match, base, arg) {
+        // Pattern 2: log_base without braces around base
+        expression = expression.replace(/\\log_([0-9]+)/g, function(match, base) {
             if (base === '10') {
-                return `log10(${arg})`; // Use built-in log10 for base 10
+                return 'log10'; // Use built-in log10 for base 10
             } else if (base === 'e') {
-                return `log(${arg})`; // Use built-in log for base e (natural log)
+                return 'log'; // Use built-in log for base e (natural log)
             } else {
-                return `(log(${arg})/log(${base}))`; // Change of base formula
+                return `log_${base}_`;
             }
         });
         
@@ -13610,29 +13646,37 @@ class Graphiti {
         
         // Add implicit multiplication for common cases
         // 2x -> 2*x, 3sin(x) -> 3*sin(x)
-        expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+        // BUT avoid breaking log10, log2, etc. by using negative lookahead
+        expression = expression.replace(/(\d)(?!0\b)([a-zA-Z])/g, '$1*$2');
         expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
         
         // Handle implicit multiplication between variables and function names
         // ysin(x) -> y*sin(x), xcos(t) -> x*cos(t), etc.
-        const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 
-                              'sinh', 'cosh', 'tanh', 'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+        // Use word boundary to avoid matching 'sin' inside 'asin'
+        const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'asec', 'acsc', 'acot',
+                              'sinh', 'cosh', 'tanh', 'sech', 'csch', 'coth', 'asinh', 'acosh', 'atanh', 'asech', 'acsch', 'acoth',
+                              'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
         
         for (const func of functionNames) {
             // Match: single variable + functionname( -> variable*functionname(
-            // Check for the specific pattern: letter+functionname+openParen
-            const pattern = new RegExp(`([a-zA-Z])(${func})\\(`, 'g');
+            // Use word boundary \b to ensure we match complete function names only
+            const pattern = new RegExp(`([a-zA-Z])\\b(${func})\\(`, 'g');
             expression = expression.replace(pattern, '$1*$2(');
         }
         
         // Add implicit multiplication before opening parenthesis (after function handling)
         // x( -> x*(, 2( -> 2*(, )( -> )*(
-        // Use negative lookbehind to avoid matching function names
-        expression = expression.replace(/(?<![a-zA-Z]{2})([a-zA-Z0-9])(\()/g, '$1*$2');
+        // But NOT for patterns like log10(, log2(, etc where digit is part of function name
+        // Only add * if it's a standalone variable/number, not part of a function name
+        expression = expression.replace(/(?<![a-zA-Z])([a-zA-Z])(\()/g, '$1*$2'); // Single letter before ( (but not after another letter)
         expression = expression.replace(/(\))(\()/g, '$1*$2');
         
         // Remove spaces
         expression = expression.replace(/\s+/g, '');
+        
+        // Handle log with custom bases using change of base formula
+        // Pattern: log_base_(arg) -> (log(arg)/log(base))
+        expression = expression.replace(/log_([0-9]+)_\(([^)]+)\)/g, '(log($2)/log($1))');
         
         return expression;
     }
