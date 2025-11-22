@@ -10391,6 +10391,52 @@ class Graphiti {
         // Not a common fraction
         return null;
     }
+
+    // Format a coordinate value as a common radical/fraction if it matches a known trig value
+    // Used for y-coordinates in Cartesian mode and r-coordinates in polar mode
+    formatAsCommonValue(value) {
+        const tolerance = 0.001;
+        
+        // Check for zero and one first (most common)
+        if (Math.abs(value) < tolerance) return null; // Let formatCoordinate handle zero
+        if (Math.abs(value - 1) < tolerance) return null; // formatCoordinate handles 1 fine
+        if (Math.abs(value + 1) < tolerance) return null; // formatCoordinate handles -1 fine
+        
+        // Common trig values - most frequently encountered
+        const commonValues = [
+            // Positive values
+            { value: 1/2, label: '1/2' },
+            { value: Math.sqrt(2)/2, label: '√2/2' },
+            { value: Math.sqrt(3)/2, label: '√3/2' },
+            { value: Math.sqrt(3)/3, label: '√3/3' },
+            { value: Math.sqrt(2), label: '√2' },
+            { value: Math.sqrt(3), label: '√3' },
+            { value: Math.sqrt(5), label: '√5' },
+            { value: 2*Math.sqrt(3)/3, label: '2√3/3' },
+            // Negative values
+            { value: -1/2, label: '-1/2' },
+            { value: -Math.sqrt(2)/2, label: '-√2/2' },
+            { value: -Math.sqrt(3)/2, label: '-√3/2' },
+            { value: -Math.sqrt(3)/3, label: '-√3/3' },
+            { value: -Math.sqrt(2), label: '-√2' },
+            { value: -Math.sqrt(3), label: '-√3' },
+            { value: -Math.sqrt(5), label: '-√5' },
+            { value: -2*Math.sqrt(3)/3, label: '-2√3/3' },
+            // Special values
+            { value: Math.E, label: 'e' },
+            { value: -Math.E, label: '-e' },
+            { value: (1 + Math.sqrt(5))/2, label: 'φ' }, // Golden ratio
+            { value: -(1 + Math.sqrt(5))/2, label: '-φ' }
+        ];
+        
+        for (let item of commonValues) {
+            if (Math.abs(value - item.value) < tolerance) {
+                return item.label;
+            }
+        }
+        
+        return null;
+    }
     
     getPolarLabelOffset(theta) {
         // Adjust label position slightly based on angle to avoid overlapping with grid lines
@@ -12006,6 +12052,7 @@ class Graphiti {
     
     formatCoordinates(worldX, worldY) {
         const shouldUsePiFractions = this.angleMode === 'radians' && this.containsTrigFunctions();
+        const shouldUseCommonValues = this.containsTrigFunctions();
         
         if (this.plotMode === 'polar') {
             // Convert cartesian coordinates back to polar for display
@@ -12018,8 +12065,24 @@ class Graphiti {
             // Format based on angle mode
             if (this.angleMode === 'degrees') {
                 const thetaDegrees = theta * 180 / Math.PI;
-                return `(${this.formatCoordinate(r)}, ${this.formatCoordinate(thetaDegrees)}°)`;
+                // Try to format r as common value
+                let rStr;
+                if (shouldUseCommonValues) {
+                    const commonValue = this.formatAsCommonValue(r);
+                    rStr = commonValue || this.formatCoordinate(r);
+                } else {
+                    rStr = this.formatCoordinate(r);
+                }
+                return `(${rStr}, ${this.formatCoordinate(thetaDegrees)}°)`;
             } else {
+                // Try to format r as common value
+                let rStr;
+                if (shouldUseCommonValues) {
+                    const commonValue = this.formatAsCommonValue(r);
+                    rStr = commonValue || this.formatCoordinate(r);
+                } else {
+                    rStr = this.formatCoordinate(r);
+                }
                 // Try to format theta as pi fraction if appropriate
                 let thetaStr;
                 if (shouldUsePiFractions) {
@@ -12028,7 +12091,7 @@ class Graphiti {
                 } else {
                     thetaStr = this.formatCoordinate(theta);
                 }
-                return `(${this.formatCoordinate(r)}, ${thetaStr})`;
+                return `(${rStr}, ${thetaStr})`;
             }
         } else {
             // Cartesian mode - try to format x as pi fraction if appropriate
@@ -12039,7 +12102,15 @@ class Graphiti {
             } else {
                 xStr = this.formatCoordinate(worldX);
             }
-            return `(${xStr}, ${this.formatCoordinate(worldY)})`;
+            // Try to format y as common value
+            let yStr;
+            if (shouldUseCommonValues) {
+                const commonValue = this.formatAsCommonValue(worldY);
+                yStr = commonValue || this.formatCoordinate(worldY);
+            } else {
+                yStr = this.formatCoordinate(worldY);
+            }
+            return `(${xStr}, ${yStr})`;
         }
     }
 
