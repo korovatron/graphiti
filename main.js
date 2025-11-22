@@ -35,6 +35,7 @@ class Graphiti {
         
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
+        this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
         
         // Plotting mode
         this.plotMode = 'cartesian'; // 'cartesian' or 'polar'
@@ -6186,14 +6187,6 @@ class Graphiti {
             stepForwardBtn.style.background = '#1a2a3f';
         }
         
-        const angleModeToggle = document.getElementById('angle-mode-toggle');
-        if (angleModeToggle) {
-            angleModeToggle.disabled = false;
-            angleModeToggle.style.opacity = '1';
-            angleModeToggle.style.background = '#2A3F5A';
-            angleModeToggle.style.cursor = 'pointer';
-        }
-        
         // Reset animation position to start
         this.polarAnimation.currentTheta = 0;
         this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
@@ -6205,6 +6198,51 @@ class Graphiti {
         this.turningPoints = [];
         
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
+        
+        // Handle angle mode: polar always uses radians, cartesian restores user preference
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        const degreesIcon = document.getElementById('degrees-icon');
+        const radiansIcon = document.getElementById('radians-icon');
+        
+        if (this.plotMode === 'polar') {
+            // Save current angle mode for cartesian
+            this.cartesianAngleMode = this.angleMode;
+            
+            // Force radians in polar mode
+            this.angleMode = 'radians';
+            if (degreesIcon && radiansIcon) {
+                degreesIcon.style.opacity = '0.3';
+                radiansIcon.style.opacity = '1';
+            }
+            
+            // Disable angle toggle in polar mode
+            if (angleModeToggle) {
+                angleModeToggle.disabled = true;
+                angleModeToggle.style.opacity = '0.6';
+                angleModeToggle.style.background = '#1a2a3f';
+                angleModeToggle.style.cursor = 'not-allowed';
+            }
+        } else {
+            // Restore cartesian angle mode preference
+            this.angleMode = this.cartesianAngleMode;
+            if (degreesIcon && radiansIcon) {
+                if (this.angleMode === 'degrees') {
+                    degreesIcon.style.opacity = '1';
+                    radiansIcon.style.opacity = '0.3';
+                } else {
+                    degreesIcon.style.opacity = '0.3';
+                    radiansIcon.style.opacity = '1';
+                }
+            }
+            
+            // Enable angle toggle in cartesian mode
+            if (angleModeToggle) {
+                angleModeToggle.disabled = false;
+                angleModeToggle.style.opacity = '1';
+                angleModeToggle.style.background = '#2A3F5A';
+                angleModeToggle.style.cursor = 'pointer';
+            }
+        }
         
         // Update UI
         const modeToggle = document.getElementById('mode-toggle');
@@ -7037,6 +7075,11 @@ class Graphiti {
     }
     
     toggleAngleMode() {
+        // Don't allow toggling in polar mode (radians only)
+        if (this.plotMode === 'polar') {
+            return;
+        }
+        
         const degreesIcon = document.getElementById('degrees-icon');
         const radiansIcon = document.getElementById('radians-icon');
         
@@ -7051,12 +7094,14 @@ class Graphiti {
         
         if (this.angleMode === 'degrees') {
             this.angleMode = 'radians';
+            this.cartesianAngleMode = 'radians';
             if (degreesIcon && radiansIcon) {
                 degreesIcon.style.opacity = '0.3';  // Dim degrees icon
                 radiansIcon.style.opacity = '1';    // Bright radians icon
             }
         } else {
             this.angleMode = 'degrees';
+            this.cartesianAngleMode = 'degrees';
             if (degreesIcon && radiansIcon) {
                 degreesIcon.style.opacity = '1';    // Bright degrees icon
                 radiansIcon.style.opacity = '0.3';  // Dim radians icon
