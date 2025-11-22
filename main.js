@@ -127,7 +127,10 @@ class Graphiti {
                 startY: 0, // Starting Y position
                 holdThreshold: 250, // milliseconds - time to distinguish tap vs hold (shorter for better UX)
                 moveThreshold: 15, // pixels - movement that cancels badge interaction
-                isHolding: false // Whether we're in hold mode
+                isHolding: false, // Whether we're in hold mode
+                contextMenuBadge: null, // Badge that has context menu open
+                longPressTimer: null, // Timer for detecting long press
+                longPressThreshold: 500 // milliseconds for long press detection
             },
             // Pinch gesture tracking
             pinch: {
@@ -4655,6 +4658,9 @@ class Graphiti {
             this.handleTouchEnd(e);
         }, { passive: false });
         
+        // Context Menu for Badges
+        this.setupBadgeContextMenu();
+        
         // Keyboard Events
         document.addEventListener('keydown', (e) => {
             this.input.keys.add(e.key.toLowerCase());
@@ -4804,6 +4810,27 @@ class Graphiti {
             // First, check if user clicked on an existing badge (highest priority)
             const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
             if (targetBadge) {
+                // Store tangent properties if they exist (to restore after drag)
+                this.input.badgeInteraction.originalTangent = targetBadge.hasTangent ? {
+                    hasTangent: true,
+                    tangentSlope: targetBadge.tangentSlope,
+                    tangentExpression: targetBadge.tangentExpression
+                } : null;
+                
+                // Start long-press timer for mobile context menu
+                this.input.badgeInteraction.longPressTimer = setTimeout(() => {
+                    // Long press detected - show context menu
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.showBadgeContextMenu(targetBadge, rect.left + x, rect.top + y);
+                    
+                    // Cancel the badge interaction so it doesn't drag
+                    this.input.badgeInteraction.targetBadge = null;
+                    this.input.badgeInteraction.isHolding = false;
+                    this.input.badgeInteraction.originalTangent = null;
+                    this.input.tracing.active = false;
+                    this.input.mouse.down = false;
+                }, this.input.badgeInteraction.longPressThreshold);
+                
                 // Immediately enter badge interaction mode with visual feedback
                 this.input.badgeInteraction.targetBadge = targetBadge;
                 this.input.badgeInteraction.startTime = Date.now();
@@ -4885,6 +4912,12 @@ class Graphiti {
             const deltaX = x - this.input.lastX;
             const deltaY = y - this.input.lastY;
             
+            // Cancel long-press timer if user moves (they're dragging, not long-pressing)
+            if (this.input.badgeInteraction.longPressTimer && (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5)) {
+                clearTimeout(this.input.badgeInteraction.longPressTimer);
+                this.input.badgeInteraction.longPressTimer = null;
+            }
+            
             // Badge interaction is now handled immediately in handlePointerStart
             // All badge interactions start in tracing mode right away
             
@@ -4952,6 +4985,12 @@ class Graphiti {
             return;
         }
         
+        // Cancel long-press timer if still active
+        if (this.input.badgeInteraction.longPressTimer) {
+            clearTimeout(this.input.badgeInteraction.longPressTimer);
+            this.input.badgeInteraction.longPressTimer = null;
+        }
+        
         // Handle badge interaction (tap vs hold based on movement, not time)
         if (this.input.badgeInteraction.targetBadge) {
             const totalMovement = Math.sqrt(
@@ -4988,12 +5027,28 @@ class Graphiti {
             const functionColor = tracingFunction ? tracingFunction.color : '#4A90E2';
             
             // Add new badge to the collection
-            this.addTraceBadge(
+            const badgeId = this.addTraceBadge(
                 this.input.tracing.functionId,
                 this.input.tracing.worldX,
                 this.input.tracing.worldY,
                 functionColor
             );
+            
+            // If the original badge had a tangent, recalculate it at the new position
+            if (this.input.badgeInteraction.originalTangent && this.input.badgeInteraction.originalTangent.hasTangent) {
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                if (newBadge && tracingFunction) {
+                    const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                    if (slopeData) {
+                        newBadge.hasTangent = true;
+                        newBadge.tangentSlope = slopeData.slope;
+                        newBadge.tangentExpression = slopeData.expression;
+                    }
+                }
+            }
+            
+            // Clear tangent temp storage
+            this.input.badgeInteraction.originalTangent = null;
         }
         
         this.input.tracing.active = false;
@@ -6978,7 +7033,11 @@ class Graphiti {
             customText: customText, // For intersection badges
             badgeType: badgeType, // For turning point badges (maximum, minimum, etc.)
             screenX: 0, // Will be updated during rendering
-            screenY: 0  // Will be updated during rendering
+            screenY: 0, // Will be updated during rendering
+            // Tangent line properties
+            hasTangent: false, // Whether to show tangent line at this point
+            tangentSlope: null, // Slope of tangent line (dy/dx)
+            tangentExpression: null // Derivative expression (for display)
         };
         
         this.input.persistentBadges.push(badge);
@@ -7011,6 +7070,133 @@ class Graphiti {
         this.intersections = [];
         this.explicitIntersections = [];
         this.implicitIntersections = [];
+    }
+    
+    // ================================
+    // BADGE CONTEXT MENU METHODS
+    // ================================
+    
+    setupBadgeContextMenu() {
+        const contextMenu = document.getElementById('badge-context-menu');
+        const addTangentOption = document.getElementById('context-add-tangent');
+        const removeTangentOption = document.getElementById('context-remove-tangent');
+        
+        if (!contextMenu || !addTangentOption || !removeTangentOption) {
+            console.warn('Badge context menu elements not found');
+            return;
+        }
+        
+        // Right-click on canvas to show context menu if over a badge
+        this.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Update badge positions for accurate detection
+            this.updateBadgeScreenPositions();
+            
+            // Find badge at this position
+            const badge = this.findBadgeAtScreenPosition(x, y, 25);
+            
+            if (badge) {
+                this.showBadgeContextMenu(badge, e.clientX, e.clientY);
+            } else {
+                this.hideBadgeContextMenu();
+            }
+        });
+        
+        // Hide context menu when clicking elsewhere
+        document.addEventListener('click', () => {
+            this.hideBadgeContextMenu();
+        });
+        
+        // Add tangent line option
+        addTangentOption.addEventListener('click', () => {
+            if (this.input.badgeInteraction.contextMenuBadge) {
+                this.addTangentToBadge(this.input.badgeInteraction.contextMenuBadge);
+            }
+            this.hideBadgeContextMenu();
+        });
+        
+        // Remove tangent line option
+        removeTangentOption.addEventListener('click', () => {
+            if (this.input.badgeInteraction.contextMenuBadge) {
+                this.removeTangentFromBadge(this.input.badgeInteraction.contextMenuBadge);
+            }
+            this.hideBadgeContextMenu();
+        });
+    }
+    
+    showBadgeContextMenu(badge, clientX, clientY) {
+        const contextMenu = document.getElementById('badge-context-menu');
+        const addTangentOption = document.getElementById('context-add-tangent');
+        const removeTangentOption = document.getElementById('context-remove-tangent');
+        
+        if (!contextMenu) return;
+        
+        // Store which badge this menu is for
+        this.input.badgeInteraction.contextMenuBadge = badge;
+        
+        // Show/hide appropriate options based on badge state
+        if (badge.hasTangent) {
+            addTangentOption.style.display = 'none';
+            removeTangentOption.style.display = 'block';
+        } else {
+            addTangentOption.style.display = 'block';
+            removeTangentOption.style.display = 'none';
+        }
+        
+        // Position the menu near the cursor
+        contextMenu.style.left = `${clientX + 5}px`;
+        contextMenu.style.top = `${clientY + 5}px`;
+        contextMenu.style.display = 'block';
+        
+        // Ensure menu stays within viewport
+        setTimeout(() => {
+            const menuRect = contextMenu.getBoundingClientRect();
+            if (menuRect.right > window.innerWidth) {
+                contextMenu.style.left = `${clientX - menuRect.width - 5}px`;
+            }
+            if (menuRect.bottom > window.innerHeight) {
+                contextMenu.style.top = `${clientY - menuRect.height - 5}px`;
+            }
+        }, 0);
+    }
+    
+    hideBadgeContextMenu() {
+        const contextMenu = document.getElementById('badge-context-menu');
+        if (contextMenu) {
+            contextMenu.style.display = 'none';
+        }
+        this.input.badgeInteraction.contextMenuBadge = null;
+    }
+    
+    addTangentToBadge(badge) {
+        if (!badge || badge.hasTangent) return;
+        
+        // Find the function for this badge
+        const func = this.findFunctionById(badge.functionId);
+        if (!func) return;
+        
+        // Calculate the slope at this point
+        const slopeData = this.calculateSlopeAtPoint(func, badge.worldX);
+        if (slopeData) {
+            badge.hasTangent = true;
+            badge.tangentSlope = slopeData.slope;
+            badge.tangentExpression = slopeData.expression;
+            this.draw(); // Redraw to show tangent
+        }
+    }
+    
+    removeTangentFromBadge(badge) {
+        if (!badge || !badge.hasTangent) return;
+        
+        badge.hasTangent = false;
+        badge.tangentSlope = null;
+        badge.tangentExpression = null;
+        this.draw(); // Redraw to hide tangent
     }
 
     // ================================
@@ -8078,6 +8264,99 @@ class Graphiti {
         }
         
         return turningPoints;
+    }
+    
+    // Calculate the slope (derivative) at a specific point for a function
+    // Uses both symbolic and numerical methods for robustness
+    calculateSlopeAtPoint(func, worldX) {
+        if (!func || !func.expression) {
+            return null;
+        }
+        
+        try {
+            // Convert from LaTeX first
+            const convertedExpression = this.convertFromLatex(func.expression);
+            
+            // Clean the expression - remove "y=" prefix if present
+            let cleanExpression = convertedExpression.trim();
+            if (cleanExpression.toLowerCase().startsWith('y=')) {
+                cleanExpression = cleanExpression.substring(2).trim();
+            }
+            
+            // Try symbolic derivative first (more accurate)
+            try {
+                const processedExpression = cleanExpression.toLowerCase();
+                const derivative = math.derivative(processedExpression, 'x');
+                const derivativeStr = derivative.toString();
+                
+                // Evaluate the derivative at the given x value
+                let evalExpr = derivativeStr.toLowerCase();
+                
+                // Handle degree mode for trig functions
+                if (this.angleMode === 'degrees') {
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(evalExpr);
+                    if (hasRegularTrigWithX) {
+                        evalExpr = this.convertTrigToDegreeMode(evalExpr);
+                    }
+                }
+                
+                const compiledDeriv = this.getCompiledExpression(evalExpr);
+                const slope = compiledDeriv.evaluate({x: worldX});
+                
+                if (isFinite(slope)) {
+                    return {
+                        slope: slope,
+                        expression: derivativeStr,
+                        method: 'symbolic'
+                    };
+                }
+            } catch (symbolicError) {
+                // Fall through to numerical method
+                console.log('Symbolic derivative failed, using numerical method');
+            }
+            
+            // Fallback to numerical differentiation (central difference method)
+            const h = 0.0001; // Small step size
+            const compiledExpr = this.getCompiledExpression(cleanExpression.toLowerCase());
+            
+            // Central difference: f'(x) ≈ (f(x+h) - f(x-h)) / (2h)
+            let yPlus, yMinus;
+            
+            try {
+                if (this.angleMode === 'degrees') {
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(cleanExpression.toLowerCase());
+                    if (hasRegularTrigWithX) {
+                        const processedExpr = this.convertTrigToDegreeMode(cleanExpression.toLowerCase());
+                        const compiled = this.getCompiledExpression(processedExpr);
+                        yPlus = compiled.evaluate({x: worldX + h});
+                        yMinus = compiled.evaluate({x: worldX - h});
+                    } else {
+                        yPlus = compiledExpr.evaluate({x: worldX + h});
+                        yMinus = compiledExpr.evaluate({x: worldX - h});
+                    }
+                } else {
+                    yPlus = compiledExpr.evaluate({x: worldX + h});
+                    yMinus = compiledExpr.evaluate({x: worldX - h});
+                }
+                
+                const slope = (yPlus - yMinus) / (2 * h);
+                
+                if (isFinite(slope)) {
+                    return {
+                        slope: slope,
+                        expression: "f'(x)", // Generic notation for numerical derivative
+                        method: 'numerical'
+                    };
+                }
+            } catch (numericalError) {
+                console.warn('Numerical derivative failed:', numericalError);
+            }
+            
+        } catch (error) {
+            console.warn('Could not calculate slope:', error);
+        }
+        
+        return null;
     }
     
     findPolarTurningPointsForFunction(func, derivativeStr) {
@@ -10338,6 +10617,14 @@ class Graphiti {
         // Update badge screen positions before drawing
         this.updateBadgeScreenPositions();
         
+        // Draw tangent lines first (under badges)
+        for (const badge of this.input.persistentBadges) {
+            if (badge.hasTangent && badge.tangentSlope !== null) {
+                this.drawTangentLine(badge);
+            }
+        }
+        
+        // Draw badges on top of tangent lines
         for (const badge of this.input.persistentBadges) {
             // Skip drawing if badge is outside visible canvas
             if (badge.screenX < -20 || badge.screenX > this.viewport.width + 20 ||
@@ -10350,11 +10637,86 @@ class Graphiti {
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent);
         }
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null) {
+    drawTangentLine(badge) {
+        if (!badge.hasTangent || badge.tangentSlope === null) return;
+        
+        this.ctx.save();
+        
+        // Use function color with transparency
+        this.ctx.strokeStyle = badge.functionColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([10, 5]); // Dashed line pattern
+        this.ctx.globalAlpha = 0.8;
+        
+        // Calculate the line equation: y - y0 = m(x - x0)
+        // Rearranged: y = m*x + (y0 - m*x0)
+        const slope = badge.tangentSlope;
+        const x0 = badge.worldX;
+        const y0 = badge.worldY;
+        const intercept = y0 - slope * x0;
+        
+        // Find the points where the tangent line intersects the viewport edges
+        const minX = this.viewport.minX;
+        const maxX = this.viewport.maxX;
+        const minY = this.viewport.minY;
+        const maxY = this.viewport.maxY;
+        
+        // Calculate y values at viewport left and right edges
+        const y_at_minX = slope * minX + intercept;
+        const y_at_maxX = slope * maxX + intercept;
+        
+        // Determine which edges the line crosses
+        let startX, startY, endX, endY;
+        
+        // For nearly horizontal lines (small slope)
+        if (Math.abs(slope) < 1e10) {
+            startX = minX;
+            startY = y_at_minX;
+            endX = maxX;
+            endY = y_at_maxX;
+            
+            // Clip to viewport Y bounds
+            if (startY < minY) {
+                startX = (minY - intercept) / slope;
+                startY = minY;
+            } else if (startY > maxY) {
+                startX = (maxY - intercept) / slope;
+                startY = maxY;
+            }
+            
+            if (endY < minY) {
+                endX = (minY - intercept) / slope;
+                endY = minY;
+            } else if (endY > maxY) {
+                endX = (maxY - intercept) / slope;
+                endY = maxY;
+            }
+        } else {
+            // For nearly vertical lines (large slope)
+            startX = (minY - intercept) / slope;
+            startY = minY;
+            endX = (maxY - intercept) / slope;
+            endY = maxY;
+        }
+        
+        // Convert to screen coordinates
+        const startScreen = this.worldToScreen(startX, startY);
+        const endScreen = this.worldToScreen(endX, endY);
+        
+        // Draw the tangent line
+        this.ctx.beginPath();
+        this.ctx.moveTo(startScreen.x, startScreen.y);
+        this.ctx.lineTo(endScreen.x, endScreen.y);
+        this.ctx.stroke();
+        
+        this.ctx.restore();
+    }
+    
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -10376,6 +10738,28 @@ class Graphiti {
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, isBeingHeld ? 3 : 2, 0, 2 * Math.PI);
         this.ctx.fill();
+        
+        // Tangent indicator - small "T" badge on the trace point
+        if (hasTangent) {
+            this.ctx.fillStyle = color;
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 1;
+            this.ctx.font = 'bold 10px Arial, sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            // Draw small circle with "T"
+            const indicatorX = screenX + 12;
+            const indicatorY = screenY - 12;
+            
+            this.ctx.beginPath();
+            this.ctx.arc(indicatorX, indicatorY, 8, 0, 2 * Math.PI);
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fillText('T', indicatorX, indicatorY);
+        }
         
         // Coordinate label with background
         let labelText;
