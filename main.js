@@ -10327,6 +10327,70 @@ class Graphiti {
             return (piMultiple).toFixed(2) + 'π';
         }
     }
+
+    // Format a coordinate value as a pi fraction if it's close to a common multiple of π/12
+    // Used for badge coordinates in radian mode with trig functions
+    formatAsPiFraction(value) {
+        // Check if value is close to a multiple of π
+        const piMultiple = value / Math.PI;
+        
+        // Handle integer multiples of π
+        if (Math.abs(piMultiple - Math.round(piMultiple)) < 0.001) {
+            const rounded = Math.round(piMultiple);
+            if (rounded === 0) return null; // Let formatCoordinate handle zero
+            if (rounded === 1) return 'π';
+            if (rounded === -1) return '-π';
+            return rounded + 'π';
+        }
+        
+        // Handle common fractions - multiples of π/12 (15°)
+        const commonFractions = [
+            { value: 1/12, label: 'π/12' },
+            { value: 1/6, label: 'π/6' },
+            { value: 1/4, label: 'π/4' },
+            { value: 1/3, label: 'π/3' },
+            { value: 5/12, label: '5π/12' },
+            { value: 1/2, label: 'π/2' },
+            { value: 7/12, label: '7π/12' },
+            { value: 2/3, label: '2π/3' },
+            { value: 3/4, label: '3π/4' },
+            { value: 5/6, label: '5π/6' },
+            { value: 11/12, label: '11π/12' },
+            // Negative fractions
+            { value: -1/12, label: '-π/12' },
+            { value: -1/6, label: '-π/6' },
+            { value: -1/4, label: '-π/4' },
+            { value: -1/3, label: '-π/3' },
+            { value: -5/12, label: '-5π/12' },
+            { value: -1/2, label: '-π/2' },
+            { value: -7/12, label: '-7π/12' },
+            { value: -2/3, label: '-2π/3' },
+            { value: -3/4, label: '-3π/4' },
+            { value: -5/6, label: '-5π/6' },
+            { value: -11/12, label: '-11π/12' },
+            // Beyond 2π
+            { value: 13/12, label: '13π/12' },
+            { value: 7/6, label: '7π/6' },
+            { value: 5/4, label: '5π/4' },
+            { value: 4/3, label: '4π/3' },
+            { value: 17/12, label: '17π/12' },
+            { value: 3/2, label: '3π/2' },
+            { value: 19/12, label: '19π/12' },
+            { value: 5/3, label: '5π/3' },
+            { value: 7/4, label: '7π/4' },
+            { value: 11/6, label: '11π/6' },
+            { value: 23/12, label: '23π/12' }
+        ];
+        
+        for (let fraction of commonFractions) {
+            if (Math.abs(piMultiple - fraction.value) < 0.01) {
+                return fraction.label;
+            }
+        }
+        
+        // Not a common fraction
+        return null;
+    }
     
     getPolarLabelOffset(theta) {
         // Adjust label position slightly based on angle to avoid overlapping with grid lines
@@ -11941,6 +12005,8 @@ class Graphiti {
     
     
     formatCoordinates(worldX, worldY) {
+        const shouldUsePiFractions = this.angleMode === 'radians' && this.containsTrigFunctions();
+        
         if (this.plotMode === 'polar') {
             // Convert cartesian coordinates back to polar for display
             const r = Math.sqrt(worldX * worldX + worldY * worldY);
@@ -11954,11 +12020,26 @@ class Graphiti {
                 const thetaDegrees = theta * 180 / Math.PI;
                 return `(${this.formatCoordinate(r)}, ${this.formatCoordinate(thetaDegrees)}°)`;
             } else {
-                return `(${this.formatCoordinate(r)}, ${this.formatCoordinate(theta)})`;
+                // Try to format theta as pi fraction if appropriate
+                let thetaStr;
+                if (shouldUsePiFractions) {
+                    const piFraction = this.formatAsPiFraction(theta);
+                    thetaStr = piFraction || this.formatCoordinate(theta);
+                } else {
+                    thetaStr = this.formatCoordinate(theta);
+                }
+                return `(${this.formatCoordinate(r)}, ${thetaStr})`;
             }
         } else {
-            // Cartesian mode - show (x, y)
-            return `(${this.formatCoordinate(worldX)}, ${this.formatCoordinate(worldY)})`;
+            // Cartesian mode - try to format x as pi fraction if appropriate
+            let xStr;
+            if (shouldUsePiFractions) {
+                const piFraction = this.formatAsPiFraction(worldX);
+                xStr = piFraction || this.formatCoordinate(worldX);
+            } else {
+                xStr = this.formatCoordinate(worldX);
+            }
+            return `(${xStr}, ${this.formatCoordinate(worldY)})`;
         }
     }
 
