@@ -6348,7 +6348,8 @@ class Graphiti {
         // Process implicit functions asynchronously to prevent UI blocking
         const replotNextFunction = async (index) => {
             if (index >= implicitFunctions.length) {
-                // All functions processed, redraw
+                // All functions processed - snap badges back to curves before redrawing
+                this.snapBadgesToImplicitCurves();
                 this.draw();
                 return;
             }
@@ -6374,6 +6375,35 @@ class Graphiti {
         
         // Start processing the first function
         replotNextFunction(0);
+    }
+    
+    snapBadgesToImplicitCurves() {
+        // After implicit functions are replotted, snap badges back to the curve
+        // This prevents badges from disappearing when the marching squares generates slightly different points
+        this.input.persistentBadges.forEach(badge => {
+            const func = this.findFunctionById(badge.functionId);
+            if (!func) return;
+            
+            const functionType = this.detectFunctionType(func.expression);
+            if (functionType !== 'implicit') return;
+            
+            // Find the closest point on the newly calculated curve
+            const snapped = this.traceImplicitFunction(func, badge.worldX, badge.worldY);
+            if (snapped) {
+                badge.worldX = snapped.x;
+                badge.worldY = snapped.y;
+                
+                // Recalculate tangent slope if badge has a tangent
+                if (badge.hasTangent) {
+                    const slopeData = this.calculateSlopeAtPoint(func, snapped.x, snapped.y);
+                    if (slopeData) {
+                        badge.tangentSlope = slopeData.slope;
+                        badge.tangentExpression = slopeData.expression;
+                        badge.secondDerivative = slopeData.secondDerivative;
+                    }
+                }
+            }
+        });
     }
     
     // Cancel all ongoing implicit function calculations
