@@ -4870,6 +4870,7 @@ class Graphiti {
             this.input.badgeInteraction.startX = 0;
             this.input.badgeInteraction.startY = 0;
             this.input.badgeInteraction.isHolding = false;
+            this.input.badgeInteraction.originalBadgeState = null; // Clear badge state for new trace points
             
             // Determine tolerance based on input type (mouse vs touch)
             const tolerance = this.input.touch.active ? 
