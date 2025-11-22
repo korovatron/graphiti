@@ -5166,8 +5166,8 @@ class Graphiti {
                 this.input.badgeInteraction.startY = y;
                 this.input.badgeInteraction.isHolding = true; // Start in hold mode immediately
                 
-                // If badge has tangent, clear frozen intercepts
-                if (targetBadge.hasTangent && this.showIntercepts) {
+                // If badge has tangent or normal, clear frozen intercepts
+                if ((targetBadge.hasTangent || targetBadge.hasNormal) && this.showIntercepts) {
                     this.frozenInterceptBadges = [];
                 }
                 
@@ -5177,9 +5177,9 @@ class Graphiti {
                 // Remove the original badge right away
                 this.removeBadgeById(targetBadge.id);
                 
-                // Recalculate intercepts immediately if the badge had a tangent
+                // Recalculate intercepts immediately if the badge had a tangent or normal
                 // And set viewport changing to false AFTER recalculation
-                if (targetBadge.hasTangent && this.showIntercepts) {
+                if ((targetBadge.hasTangent || targetBadge.hasNormal) && this.showIntercepts) {
                     this.isViewportChanging = false;
                     this.intercepts = this.findAxisIntercepts();
                     this.cullInterceptMarkers(); // Update culled marker cache
@@ -5291,9 +5291,10 @@ class Graphiti {
                             this.input.tracing.theta = tracePoint.theta;
                         }
                         
-                        // If original badge had a tangent, recalculate slope at new position
+                        // If original badge had a tangent or normal, recalculate slope at new position
                         if (this.input.badgeInteraction.originalBadgeState && 
-                            this.input.badgeInteraction.originalBadgeState.hasTangent) {
+                            (this.input.badgeInteraction.originalBadgeState.hasTangent || 
+                             this.input.badgeInteraction.originalBadgeState.hasNormal)) {
                             // Pass both x and y for implicit functions, theta for polar functions
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x, tracePoint.y, this.input.tracing.theta);
                             if (slopeData) {
@@ -9061,10 +9062,12 @@ class Graphiti {
                 let processedExpression = cleanExpression.toLowerCase();
                 
                 // Handle degree mode for trig functions - convert BEFORE taking derivative
+                let degreeConversionApplied = false;
                 if (this.angleMode === 'degrees') {
                     const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
                     if (hasRegularTrigWithX) {
                         processedExpression = this.convertTrigToDegreeMode(processedExpression);
+                        degreeConversionApplied = true;
                     }
                 }
                 
@@ -9097,7 +9100,8 @@ class Graphiti {
                         slope: slope,
                         expression: derivativeStr,
                         secondDerivative: secondDerivValue,
-                        method: 'symbolic'
+                        method: 'symbolic',
+                        degreeConversionApplied: degreeConversionApplied
                     };
                 }
             } catch (symbolicError) {
@@ -12202,19 +12206,20 @@ class Graphiti {
         this.ctx.setLineDash([5, 5]); // Different dash pattern from tangent
         
         // Calculate the normal line (perpendicular to tangent)
-        // If tangent slope is m, normal slope is -1/m
-        const tangentSlope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+        // Use EXACTLY the same slope extraction as tangent line
+        const slope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+        
         let normalSlope;
         
-        if (Math.abs(tangentSlope) < 1e-10) {
+        if (Math.abs(slope) < 1e-10) {
             // Tangent is horizontal, normal is vertical
             normalSlope = Infinity;
-        } else if (Math.abs(tangentSlope) > 1e10) {
+        } else if (Math.abs(slope) > 1e10) {
             // Tangent is vertical, normal is horizontal
             normalSlope = 0;
         } else {
-            // Normal case: perpendicular slope
-            normalSlope = -1 / tangentSlope;
+            // Normal case: perpendicular slope is simply -1/slope
+            normalSlope = -1 / slope;
         }
         
         const x0 = badge.worldX;
