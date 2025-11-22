@@ -10669,36 +10669,40 @@ class Graphiti {
                 return rounded + 'π';
             }
             
-            // Check for common fractions
+            // Check for common fractions - only multiples of π/24 for clean simplification
+            // This ensures grid labels always show as proper fractions
             const commonFractions = [
-                { ratio: 1/48, label: 'π/48' },
                 { ratio: 1/24, label: 'π/24' },
-                { ratio: 1/16, label: 'π/16' },
-                { ratio: 1/12, label: 'π/12' },
-                { ratio: 1/8, label: 'π/8' },
-                { ratio: 1/6, label: 'π/6' },
-                { ratio: 1/5, label: 'π/5' },
-                { ratio: 1/4, label: 'π/4' },
-                { ratio: 1/3, label: 'π/3' },
-                { ratio: 5/12, label: '5π/12' },
-                { ratio: 1/2, label: 'π/2' },
-                { ratio: 7/12, label: '7π/12' },
-                { ratio: 2/3, label: '2π/3' },
-                { ratio: 3/4, label: '3π/4' },
-                { ratio: 4/5, label: '4π/5' },
-                { ratio: 5/6, label: '5π/6' },
-                { ratio: 7/8, label: '7π/8' },
-                { ratio: 11/12, label: '11π/12' },
-                { ratio: 15/16, label: '15π/16' },
+                { ratio: 1/12, label: 'π/12' },    // 2π/24
+                { ratio: 1/8, label: 'π/8' },      // 3π/24
+                { ratio: 1/6, label: 'π/6' },      // 4π/24
+                { ratio: 5/24, label: '5π/24' },
+                { ratio: 1/4, label: 'π/4' },      // 6π/24
+                { ratio: 7/24, label: '7π/24' },
+                { ratio: 1/3, label: 'π/3' },      // 8π/24
+                { ratio: 3/8, label: '3π/8' },     // 9π/24
+                { ratio: 5/12, label: '5π/12' },   // 10π/24
+                { ratio: 11/24, label: '11π/24' },
+                { ratio: 1/2, label: 'π/2' },      // 12π/24
+                { ratio: 13/24, label: '13π/24' },
+                { ratio: 7/12, label: '7π/12' },   // 14π/24
+                { ratio: 5/8, label: '5π/8' },     // 15π/24
+                { ratio: 2/3, label: '2π/3' },     // 16π/24
+                { ratio: 17/24, label: '17π/24' },
+                { ratio: 3/4, label: '3π/4' },     // 18π/24
+                { ratio: 19/24, label: '19π/24' },
+                { ratio: 5/6, label: '5π/6' },     // 20π/24
+                { ratio: 7/8, label: '7π/8' },     // 21π/24
+                { ratio: 11/12, label: '11π/12' }, // 22π/24
                 { ratio: 23/24, label: '23π/24' },
-                { ratio: 47/48, label: '47π/48' },
-                { ratio: 2, label: '2π' },
-                { ratio: 3/2, label: '3π/2' },
-                { ratio: 4/3, label: '4π/3' },
-                { ratio: 5/4, label: '5π/4' },
-                { ratio: 5/3, label: '5π/3' },
-                { ratio: 7/4, label: '7π/4' },
-                { ratio: 11/6, label: '11π/6' }
+                { ratio: 2, label: '2π' },         // 48π/24
+                { ratio: 3/2, label: '3π/2' },     // 36π/24
+                { ratio: 4/3, label: '4π/3' },     // 32π/24
+                { ratio: 5/4, label: '5π/4' },     // 30π/24
+                { ratio: 7/6, label: '7π/6' },     // 28π/24
+                { ratio: 5/3, label: '5π/3' },     // 40π/24
+                { ratio: 7/4, label: '7π/4' },     // 42π/24
+                { ratio: 11/6, label: '11π/6' }    // 44π/24
             ];
             
             for (let frac of commonFractions) {
@@ -12892,19 +12896,18 @@ class Graphiti {
             const degreeIntervals = [3.75, 7.5, 11.25, 15, 22.5, 30, 45, 60, 90, 180, 360];
             return this.chooseBestTrigSpacing(degreeIntervals);
         } else {
-            // Use radian-based spacing: π/6, π/4, π/3, π/2, π, etc.
+            // Use radian-based spacing: only multiples of π/24 for clean fractions
+            // π/24 = 7.5° - all multiples simplify to nice fractions
             const radianIntervals = [
-                Math.PI / 48,  // π/48 ≈ 0.065 (3.75°)
-                Math.PI / 24,  // π/24 ≈ 0.13 (7.5°)
-                Math.PI / 16,  // π/16 ≈ 0.20 (11.25°)
-                Math.PI / 12,  // π/12 ≈ 0.26 (15°)
-                Math.PI / 8,   // π/8 ≈ 0.39 (22.5°)
-                Math.PI / 6,   // π/6 ≈ 0.52 (30°)
-                Math.PI / 4,   // π/4 ≈ 0.79 (45°)
-                Math.PI / 3,   // π/3 ≈ 1.05 (60°)
-                Math.PI / 2,   // π/2 ≈ 1.57 (90°)
-                Math.PI,       // π ≈ 3.14 (180°)
-                2 * Math.PI    // 2π ≈ 6.28 (360°)
+                Math.PI / 24,  // π/24 (7.5°)
+                Math.PI / 12,  // π/12 = 2π/24 (15°)
+                Math.PI / 8,   // π/8 = 3π/24 (22.5°)
+                Math.PI / 6,   // π/6 = 4π/24 (30°)
+                Math.PI / 4,   // π/4 = 6π/24 (45°)
+                Math.PI / 3,   // π/3 = 8π/24 (60°)
+                Math.PI / 2,   // π/2 = 12π/24 (90°)
+                Math.PI,       // π = 24π/24 (180°)
+                2 * Math.PI    // 2π = 48π/24 (360°)
             ];
             return this.chooseBestTrigSpacing(radianIntervals);
         }
@@ -12970,19 +12973,18 @@ class Graphiti {
             const degreeIntervals = [3.75, 7.5, 11.25, 15, 22.5, 30, 45, 60, 90, 180, 360];
             return this.chooseBestTrigSpacingY(degreeIntervals);
         } else {
-            // Use radian-based spacing for Y-axis: π/6, π/4, π/3, π/2, π, etc.
+            // Use radian-based spacing for Y-axis: only multiples of π/24 for clean fractions
+            // π/24 = 7.5° - all multiples simplify to nice fractions
             const radianIntervals = [
-                Math.PI / 48,  // π/48 ≈ 0.065 (3.75°)
-                Math.PI / 24,  // π/24 ≈ 0.13 (7.5°)
-                Math.PI / 16,  // π/16 ≈ 0.20 (11.25°)
-                Math.PI / 12,  // π/12 ≈ 0.26 (15°)
-                Math.PI / 8,   // π/8 ≈ 0.39 (22.5°)
-                Math.PI / 6,   // π/6 ≈ 0.52 (30°)
-                Math.PI / 4,   // π/4 ≈ 0.79 (45°)
-                Math.PI / 3,   // π/3 ≈ 1.05 (60°)
-                Math.PI / 2,   // π/2 ≈ 1.57 (90°)
-                Math.PI,       // π ≈ 3.14 (180°)
-                2 * Math.PI    // 2π ≈ 6.28 (360°)
+                Math.PI / 24,  // π/24 (7.5°)
+                Math.PI / 12,  // π/12 = 2π/24 (15°)
+                Math.PI / 8,   // π/8 = 3π/24 (22.5°)
+                Math.PI / 6,   // π/6 = 4π/24 (30°)
+                Math.PI / 4,   // π/4 = 6π/24 (45°)
+                Math.PI / 3,   // π/3 = 8π/24 (60°)
+                Math.PI / 2,   // π/2 = 12π/24 (90°)
+                Math.PI,       // π = 24π/24 (180°)
+                2 * Math.PI    // 2π = 48π/24 (360°)
             ];
             return this.chooseBestTrigSpacingY(radianIntervals);
         }
