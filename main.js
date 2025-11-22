@@ -2348,6 +2348,27 @@ class Graphiti {
         // Restore original thetaMax
         this.polarSettings.thetaMax = this.polarAnimation.storedThetaMax;
         
+        // Update UI inputs to show the restored original value (prevents accumulated error display)
+        const thetaMaxInput = document.getElementById('theta-max');
+        if (thetaMaxInput && this.polarAnimation.storedThetaMax !== 0) {
+            // Use the stored LaTeX value if available, otherwise format the numeric value
+            if (this.polarSettings.thetaMaxLatex) {
+                this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMaxLatex);
+            } else {
+                // Format based on angle mode
+                if (this.angleMode === 'degrees') {
+                    this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(2));
+                } else {
+                    // Check for common pi multiples
+                    if (Math.abs(this.polarSettings.thetaMax - 2 * Math.PI) < 0.0001) {
+                        this.setRangeValue(thetaMaxInput, '2\\pi');
+                    } else {
+                        this.setRangeValue(thetaMaxInput, this.polarSettings.thetaMax.toFixed(6));
+                    }
+                }
+            }
+        }
+        
         // Reset animation state so next play starts fresh
         this.polarAnimation.currentTheta = 0;
         this.polarAnimation.storedThetaMax = 0;
@@ -2449,15 +2470,21 @@ class Graphiti {
         // Update current theta
         this.polarAnimation.currentTheta += increment;
         
+        // Clamp to prevent overshoot beyond storedThetaMax (prevents floating-point accumulation)
+        if (this.polarAnimation.currentTheta > this.polarAnimation.storedThetaMax) {
+            this.polarAnimation.currentTheta = this.polarAnimation.storedThetaMax;
+        }
+        
         // Check if animation is complete
         if (this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax) {
             if (this.polarAnimation.shouldLoop) {
-                // Loop: reset to start and update storedThetaMax in case range changed
+                // Loop: reset to start - use EXACT thetaMin value to prevent drift
                 this.polarAnimation.currentTheta = this.polarSettings.thetaMin;
-                this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
+                // Don't update storedThetaMax - keep it at the original value
             } else {
-                // Stop at end
+                // Stop at end - ensure we're at exact storedThetaMax
                 this.polarAnimation.currentTheta = this.polarAnimation.storedThetaMax;
+                this.polarSettings.thetaMax = this.polarAnimation.storedThetaMax; // Restore original value
                 this.stopPolarAnimation();
                 
                 // Update UI to show play state
@@ -6524,23 +6551,134 @@ class Graphiti {
                 this.polarSettings.thetaMax = oldMax * Math.PI / 180;
                 
                 if (thetaMinInput) {
-                    // Use symbolic form for common values
+                    // Use symbolic form for common values (multiples of 15 degrees = π/12)
                     let minValue;
                     if (oldMin === 0) minValue = '0';
+                    else if (oldMin === 15) minValue = '\\frac{\\pi}{12}';
+                    else if (oldMin === 30) minValue = '\\frac{\\pi}{6}';
+                    else if (oldMin === 45) minValue = '\\frac{\\pi}{4}';
+                    else if (oldMin === 60) minValue = '\\frac{\\pi}{3}';
+                    else if (oldMin === 75) minValue = '\\frac{5\\pi}{12}';
                     else if (oldMin === 90) minValue = '\\frac{\\pi}{2}';
+                    else if (oldMin === 105) minValue = '\\frac{7\\pi}{12}';
+                    else if (oldMin === 120) minValue = '\\frac{2\\pi}{3}';
+                    else if (oldMin === 135) minValue = '\\frac{3\\pi}{4}';
+                    else if (oldMin === 150) minValue = '\\frac{5\\pi}{6}';
+                    else if (oldMin === 165) minValue = '\\frac{11\\pi}{12}';
                     else if (oldMin === 180) minValue = '\\pi';
+                    else if (oldMin === 195) minValue = '\\frac{13\\pi}{12}';
+                    else if (oldMin === 210) minValue = '\\frac{7\\pi}{6}';
+                    else if (oldMin === 225) minValue = '\\frac{5\\pi}{4}';
+                    else if (oldMin === 240) minValue = '\\frac{4\\pi}{3}';
+                    else if (oldMin === 255) minValue = '\\frac{17\\pi}{12}';
                     else if (oldMin === 270) minValue = '\\frac{3\\pi}{2}';
+                    else if (oldMin === 285) minValue = '\\frac{19\\pi}{12}';
+                    else if (oldMin === 300) minValue = '\\frac{5\\pi}{3}';
+                    else if (oldMin === 315) minValue = '\\frac{7\\pi}{4}';
+                    else if (oldMin === 330) minValue = '\\frac{11\\pi}{6}';
+                    else if (oldMin === 345) minValue = '\\frac{23\\pi}{12}';
+                    // Negative values
+                    else if (oldMin === -15) minValue = '-\\frac{\\pi}{12}';
+                    else if (oldMin === -30) minValue = '-\\frac{\\pi}{6}';
+                    else if (oldMin === -45) minValue = '-\\frac{\\pi}{4}';
+                    else if (oldMin === -60) minValue = '-\\frac{\\pi}{3}';
+                    else if (oldMin === -75) minValue = '-\\frac{5\\pi}{12}';
+                    else if (oldMin === -90) minValue = '-\\frac{\\pi}{2}';
+                    else if (oldMin === -105) minValue = '-\\frac{7\\pi}{12}';
+                    else if (oldMin === -120) minValue = '-\\frac{2\\pi}{3}';
+                    else if (oldMin === -135) minValue = '-\\frac{3\\pi}{4}';
+                    else if (oldMin === -150) minValue = '-\\frac{5\\pi}{6}';
+                    else if (oldMin === -165) minValue = '-\\frac{11\\pi}{12}';
+                    else if (oldMin === -180) minValue = '-\\pi';
+                    else if (oldMin === -195) minValue = '-\\frac{13\\pi}{12}';
+                    else if (oldMin === -210) minValue = '-\\frac{7\\pi}{6}';
+                    else if (oldMin === -225) minValue = '-\\frac{5\\pi}{4}';
+                    else if (oldMin === -240) minValue = '-\\frac{4\\pi}{3}';
+                    else if (oldMin === -255) minValue = '-\\frac{17\\pi}{12}';
+                    else if (oldMin === -270) minValue = '-\\frac{3\\pi}{2}';
+                    else if (oldMin === -285) minValue = '-\\frac{19\\pi}{12}';
+                    else if (oldMin === -300) minValue = '-\\frac{5\\pi}{3}';
+                    else if (oldMin === -315) minValue = '-\\frac{7\\pi}{4}';
+                    else if (oldMin === -330) minValue = '-\\frac{11\\pi}{6}';
+                    else if (oldMin === -345) minValue = '-\\frac{23\\pi}{12}';
+                    else if (oldMin === -360) minValue = '-2\\pi';
+                    else if (oldMin === -540) minValue = '-3\\pi';
+                    else if (oldMin === -720) minValue = '-4\\pi';
+                    else if (oldMin === 375) minValue = '\\frac{25\\pi}{12}';
+                    else if (oldMin === 390) minValue = '\\frac{13\\pi}{6}';
+                    else if (oldMin === 405) minValue = '\\frac{9\\pi}{4}';
+                    else if (oldMin === 420) minValue = '\\frac{7\\pi}{3}';
+                    else if (oldMin === 435) minValue = '\\frac{29\\pi}{12}';
+                    else if (oldMin === 450) minValue = '\\frac{5\\pi}{2}';
+                    else if (oldMin === 540) minValue = '3\\pi';
+                    else if (oldMin === 720) minValue = '4\\pi';
                     else minValue = this.polarSettings.thetaMin.toFixed(6);
                     this.setRangeValue(thetaMinInput, minValue);
                     this.polarSettings.thetaMinLatex = minValue;
                 }
                 if (thetaMaxInput) {
-                    // Use symbolic form for common values
+                    // Use symbolic form for common values (multiples of 15 degrees = π/12)
                     let maxValue;
-                    if (oldMax === 90) maxValue = '\\frac{\\pi}{2}';
+                    if (oldMax === 0) maxValue = '0';
+                    else if (oldMax === 15) maxValue = '\\frac{\\pi}{12}';
+                    else if (oldMax === 30) maxValue = '\\frac{\\pi}{6}';
+                    else if (oldMax === 45) maxValue = '\\frac{\\pi}{4}';
+                    else if (oldMax === 60) maxValue = '\\frac{\\pi}{3}';
+                    else if (oldMax === 75) maxValue = '\\frac{5\\pi}{12}';
+                    else if (oldMax === 90) maxValue = '\\frac{\\pi}{2}';
+                    else if (oldMax === 105) maxValue = '\\frac{7\\pi}{12}';
+                    else if (oldMax === 120) maxValue = '\\frac{2\\pi}{3}';
+                    else if (oldMax === 135) maxValue = '\\frac{3\\pi}{4}';
+                    else if (oldMax === 150) maxValue = '\\frac{5\\pi}{6}';
+                    else if (oldMax === 165) maxValue = '\\frac{11\\pi}{12}';
                     else if (oldMax === 180) maxValue = '\\pi';
+                    else if (oldMax === 195) maxValue = '\\frac{13\\pi}{12}';
+                    else if (oldMax === 210) maxValue = '\\frac{7\\pi}{6}';
+                    else if (oldMax === 225) maxValue = '\\frac{5\\pi}{4}';
+                    else if (oldMax === 240) maxValue = '\\frac{4\\pi}{3}';
+                    else if (oldMax === 255) maxValue = '\\frac{17\\pi}{12}';
                     else if (oldMax === 270) maxValue = '\\frac{3\\pi}{2}';
+                    else if (oldMax === 285) maxValue = '\\frac{19\\pi}{12}';
+                    else if (oldMax === 300) maxValue = '\\frac{5\\pi}{3}';
+                    else if (oldMax === 315) maxValue = '\\frac{7\\pi}{4}';
+                    else if (oldMax === 330) maxValue = '\\frac{11\\pi}{6}';
+                    else if (oldMax === 345) maxValue = '\\frac{23\\pi}{12}';
                     else if (oldMax === 360) maxValue = '2\\pi';
+                    // Negative values
+                    else if (oldMax === -15) maxValue = '-\\frac{\\pi}{12}';
+                    else if (oldMax === -30) maxValue = '-\\frac{\\pi}{6}';
+                    else if (oldMax === -45) maxValue = '-\\frac{\\pi}{4}';
+                    else if (oldMax === -60) maxValue = '-\\frac{\\pi}{3}';
+                    else if (oldMax === -75) maxValue = '-\\frac{5\\pi}{12}';
+                    else if (oldMax === -90) maxValue = '-\\frac{\\pi}{2}';
+                    else if (oldMax === -105) maxValue = '-\\frac{7\\pi}{12}';
+                    else if (oldMax === -120) maxValue = '-\\frac{2\\pi}{3}';
+                    else if (oldMax === -135) maxValue = '-\\frac{3\\pi}{4}';
+                    else if (oldMax === -150) maxValue = '-\\frac{5\\pi}{6}';
+                    else if (oldMax === -165) maxValue = '-\\frac{11\\pi}{12}';
+                    else if (oldMax === -180) maxValue = '-\\pi';
+                    else if (oldMax === -195) maxValue = '-\\frac{13\\pi}{12}';
+                    else if (oldMax === -210) maxValue = '-\\frac{7\\pi}{6}';
+                    else if (oldMax === -225) maxValue = '-\\frac{5\\pi}{4}';
+                    else if (oldMax === -240) maxValue = '-\\frac{4\\pi}{3}';
+                    else if (oldMax === -255) maxValue = '-\\frac{17\\pi}{12}';
+                    else if (oldMax === -270) maxValue = '-\\frac{3\\pi}{2}';
+                    else if (oldMax === -285) maxValue = '-\\frac{19\\pi}{12}';
+                    else if (oldMax === -300) maxValue = '-\\frac{5\\pi}{3}';
+                    else if (oldMax === -315) maxValue = '-\\frac{7\\pi}{4}';
+                    else if (oldMax === -330) maxValue = '-\\frac{11\\pi}{6}';
+                    else if (oldMax === -345) maxValue = '-\\frac{23\\pi}{12}';
+                    else if (oldMax === -360) maxValue = '-2\\pi';
+                    else if (oldMax === -540) maxValue = '-3\\pi';
+                    else if (oldMax === -720) maxValue = '-4\\pi';
+                    else if (oldMax === 375) maxValue = '\\frac{25\\pi}{12}';
+                    else if (oldMax === 390) maxValue = '\\frac{13\\pi}{6}';
+                    else if (oldMax === 405) maxValue = '\\frac{9\\pi}{4}';
+                    else if (oldMax === 420) maxValue = '\\frac{7\\pi}{3}';
+                    else if (oldMax === 435) maxValue = '\\frac{29\\pi}{12}';
+                    else if (oldMax === 450) maxValue = '\\frac{5\\pi}{2}';
+                    else if (oldMax === 540) maxValue = '3\\pi';
+                    else if (oldMax === 720) maxValue = '4\\pi';
                     else maxValue = this.polarSettings.thetaMax.toFixed(6);
                     this.setRangeValue(thetaMaxInput, maxValue);
                     this.polarSettings.thetaMaxLatex = maxValue;
@@ -6559,19 +6697,25 @@ class Graphiti {
                 this.polarSettings.thetaMax = this.polarSettings.thetaMax * 180 / Math.PI;
                 
                 if (thetaMinInput) {
-                    const minValue = this.polarSettings.thetaMin.toFixed(2);
+                    // Round to nearest degree for cleaner display and to handle floating-point errors
+                    const minDegrees = Math.round(this.polarSettings.thetaMin);
+                    this.polarSettings.thetaMin = minDegrees; // Use rounded value
+                    const minValue = minDegrees.toFixed(0);
                     this.setRangeValue(thetaMinInput, minValue);
                     this.polarSettings.thetaMinLatex = minValue;
                 }
                 if (thetaMaxInput) {
-                    const maxValue = this.polarSettings.thetaMax.toFixed(2);
+                    // Round to nearest degree for cleaner display and to handle floating-point errors
+                    const maxDegrees = Math.round(this.polarSettings.thetaMax);
+                    this.polarSettings.thetaMax = maxDegrees; // Use rounded value
+                    const maxValue = maxDegrees.toFixed(0);
                     this.setRangeValue(thetaMaxInput, maxValue);
                     this.polarSettings.thetaMaxLatex = maxValue;
                 }
                 
                 // Also convert animation state if it was initialized
                 if (this.polarAnimation.storedThetaMax !== undefined && this.polarAnimation.storedThetaMax !== 0) {
-                    this.polarAnimation.storedThetaMax = this.polarAnimation.storedThetaMax * 180 / Math.PI;
+                    this.polarAnimation.storedThetaMax = Math.round(this.polarAnimation.storedThetaMax * 180 / Math.PI);
                 }
                 if (this.polarAnimation.currentTheta !== undefined && this.polarAnimation.currentTheta !== 0) {
                     this.polarAnimation.currentTheta = this.polarAnimation.currentTheta * 180 / Math.PI;
