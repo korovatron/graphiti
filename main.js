@@ -4990,24 +4990,29 @@ class Graphiti {
                 Math.pow(this.input.mouse.y - this.input.badgeInteraction.startY, 2)
             );
             
+            // Determine if this was a tap (for cycling) or a drag (for repositioning)
+            const wasTap = totalMovement < this.input.badgeInteraction.moveThreshold;
+            const holdDuration = Date.now() - this.input.badgeInteraction.startTime;
+            const wasQuickTap = wasTap && holdDuration < this.input.badgeInteraction.holdThreshold;
+            
+            // Store whether this was a tap for later use
+            this.input.badgeInteraction.wasTap = wasQuickTap;
+            
             // If user didn't move much and released quickly, it was a tap - cycle badge state
-            if (totalMovement < this.input.badgeInteraction.moveThreshold) {
-                const holdDuration = Date.now() - this.input.badgeInteraction.startTime;
-                if (holdDuration < this.input.badgeInteraction.holdThreshold) {
-                    // Quick tap with minimal movement - cycle through states
-                    // State cycle: no badge → trace point → trace + tangent → trace + neon tangent → removed
-                    const originalState = this.input.badgeInteraction.originalBadgeState;
-                    
-                    if (!originalState.hasTangent) {
-                        // Badge had no tangent → add normal tangent, keep badge
-                        // Don't cancel tracing, let it add the badge with tangent below
-                    } else if (originalState.hasTangent && !originalState.neonTangent) {
-                        // Badge had normal tangent → switch to neon tangent, keep badge
-                        // Don't cancel tracing, let it add the badge with neon tangent below
-                    } else {
-                        // Badge already had neon tangent → remove completely
-                        this.input.tracing.active = false; // Cancel tracing so no new badge is added
-                    }
+            if (wasQuickTap) {
+                // Quick tap with minimal movement - cycle through states
+                // State cycle: no badge → trace point → trace + tangent → trace + neon tangent → removed
+                const originalState = this.input.badgeInteraction.originalBadgeState;
+                
+                if (!originalState.hasTangent) {
+                    // Badge had no tangent → add normal tangent, keep badge
+                    // Don't cancel tracing, let it add the badge with tangent below
+                } else if (originalState.hasTangent && !originalState.neonTangent) {
+                    // Badge had normal tangent → switch to neon tangent, keep badge
+                    // Don't cancel tracing, let it add the badge with neon tangent below
+                } else {
+                    // Badge already had neon tangent → remove completely
+                    this.input.tracing.active = false; // Cancel tracing so no new badge is added
                 }
             }
             // If significant movement occurred, treat as hold/drag and add new badge at final position
@@ -5040,44 +5045,56 @@ class Graphiti {
             
             // Handle tangent based on original badge state
             const originalState = this.input.badgeInteraction.originalBadgeState;
+            const wasTap = this.input.badgeInteraction.wasTap;
+            
             if (originalState) {
                 const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
                 if (newBadge && tracingFunction) {
-                    if (!originalState.hasTangent) {
-                        // Cycling from no tangent → add normal tangent
-                        const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
-                        if (slopeData) {
-                            newBadge.hasTangent = true;
-                            newBadge.tangentSlope = slopeData.slope;
-                            newBadge.tangentExpression = slopeData.expression;
-                            newBadge.secondDerivative = slopeData.secondDerivative;
-                            newBadge.neonTangent = false;
+                    // If it was a tap, cycle to the next state
+                    // If it was a drag, keep the same state as original
+                    if (wasTap) {
+                        // TAP: Cycle to next state
+                        if (!originalState.hasTangent) {
+                            // Cycling from no tangent → add normal tangent
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                            if (slopeData) {
+                                newBadge.hasTangent = true;
+                                newBadge.tangentSlope = slopeData.slope;
+                                newBadge.tangentExpression = slopeData.expression;
+                                newBadge.secondDerivative = slopeData.secondDerivative;
+                                newBadge.neonTangent = false;
+                            }
+                        } else if (originalState.hasTangent && !originalState.neonTangent) {
+                            // Cycling from normal tangent → neon tangent
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                            if (slopeData) {
+                                newBadge.hasTangent = true;
+                                newBadge.tangentSlope = slopeData.slope;
+                                newBadge.tangentExpression = slopeData.expression;
+                                newBadge.secondDerivative = slopeData.secondDerivative;
+                                newBadge.neonTangent = true;
+                            }
                         }
-                    } else if (originalState.hasTangent && !originalState.neonTangent) {
-                        // Cycling from normal tangent → neon tangent
-                        const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
-                        if (slopeData) {
-                            newBadge.hasTangent = true;
-                            newBadge.tangentSlope = slopeData.slope;
-                            newBadge.tangentExpression = slopeData.expression;
-                            newBadge.secondDerivative = slopeData.secondDerivative;
-                            newBadge.neonTangent = true;
+                        // Note: neon tangent tap → removed is handled above by canceling tracing
+                    } else {
+                        // DRAG: Keep same state, just recalculate at new position
+                        if (originalState.hasTangent) {
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                            if (slopeData) {
+                                newBadge.hasTangent = true;
+                                newBadge.tangentSlope = slopeData.slope;
+                                newBadge.tangentExpression = slopeData.expression;
+                                newBadge.secondDerivative = slopeData.secondDerivative;
+                                newBadge.neonTangent = originalState.neonTangent; // Keep same neon state
+                            }
                         }
-                    } else if (originalState.hasTangent && originalState.neonTangent) {
-                        // Was being dragged with neon tangent - keep neon tangent at new position
-                        const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
-                        if (slopeData) {
-                            newBadge.hasTangent = true;
-                            newBadge.tangentSlope = slopeData.slope;
-                            newBadge.tangentExpression = slopeData.expression;
-                            newBadge.secondDerivative = slopeData.secondDerivative;
-                            newBadge.neonTangent = true;
-                        }
+                        // If original had no tangent, new badge also has no tangent (default)
                     }
                 }
             }
             
             // Clear badge state temp storage
+            this.input.badgeInteraction.wasTap = false;
             this.input.badgeInteraction.originalBadgeState = null;
         }
         
