@@ -12213,26 +12213,33 @@ class Graphiti {
     formatCoordinates(worldX, worldY, func = null, func2 = null) {
         // If specific function(s) are provided, check if THEY contain trig functions
         // For intersections, check if EITHER function has trig
+        // In polar mode, always use pi fractions for theta (angles are inherently related to pi)
         // Otherwise fall back to global check (for grid labels, etc.)
         let shouldUsePiFractions, shouldUseCommonValues;
         
-        const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
-        
-        if (func && func.expression) {
-            // Check if the primary function contains trig
-            let funcHasTrig = trigRegex.test(func.expression);
-            
-            // For intersections, also check second function
-            if (func2 && func2.expression && !funcHasTrig) {
-                funcHasTrig = trigRegex.test(func2.expression);
-            }
-            
-            shouldUsePiFractions = this.angleMode === 'radians' && funcHasTrig;
-            shouldUseCommonValues = funcHasTrig;
+        if (this.plotMode === 'polar') {
+            // In polar mode, always show pi fractions for theta (if in radians)
+            shouldUsePiFractions = this.angleMode === 'radians';
+            shouldUseCommonValues = true; // Also check common values for r
         } else {
-            // Fall back to global check (for when func is not provided)
-            shouldUsePiFractions = this.angleMode === 'radians' && this.containsTrigFunctions();
-            shouldUseCommonValues = this.containsTrigFunctions();
+            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+            
+            if (func && func.expression) {
+                // Check if the primary function contains trig
+                let funcHasTrig = trigRegex.test(func.expression);
+                
+                // For intersections, also check second function
+                if (func2 && func2.expression && !funcHasTrig) {
+                    funcHasTrig = trigRegex.test(func2.expression);
+                }
+                
+                shouldUsePiFractions = this.angleMode === 'radians' && funcHasTrig;
+                shouldUseCommonValues = funcHasTrig;
+            } else {
+                // Fall back to global check (for when func is not provided)
+                shouldUsePiFractions = this.angleMode === 'radians' && this.containsTrigFunctions();
+                shouldUseCommonValues = this.containsTrigFunctions();
+            }
         }
         
         if (this.plotMode === 'polar') {
