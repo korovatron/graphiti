@@ -10499,7 +10499,7 @@ class Graphiti {
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope);
         }
     }
     
@@ -10578,7 +10578,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, tangentSlope = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -10600,28 +10600,6 @@ class Graphiti {
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, isBeingHeld ? 3 : 2, 0, 2 * Math.PI);
         this.ctx.fill();
-        
-        // Tangent indicator - small "T" badge on the trace point
-        if (hasTangent) {
-            this.ctx.fillStyle = color;
-            this.ctx.strokeStyle = '#FFFFFF';
-            this.ctx.lineWidth = 1;
-            this.ctx.font = 'bold 10px Arial, sans-serif';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            
-            // Draw small circle with "T"
-            const indicatorX = screenX + 12;
-            const indicatorY = screenY - 12;
-            
-            this.ctx.beginPath();
-            this.ctx.arc(indicatorX, indicatorY, 8, 0, 2 * Math.PI);
-            this.ctx.fill();
-            this.ctx.stroke();
-            
-            this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText('T', indicatorX, indicatorY);
-        }
         
         // Coordinate label with background
         let labelText;
@@ -10651,6 +10629,12 @@ class Graphiti {
         } else {
             // Regular badge (intersections, etc.)
             labelText = this.formatCoordinates(worldX, worldY);
+        }
+        
+        // Add dy/dx information if tangent is present
+        if (hasTangent && tangentSlope !== null) {
+            const slopeStr = this.formatCoordinate(tangentSlope);
+            labelText += ` | dy/dx=${slopeStr}`;
         }
         
         this.ctx.font = '16px Arial, sans-serif'; // Larger font for classroom visibility
