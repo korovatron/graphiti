@@ -1,16 +1,16 @@
-const CACHE_NAME = 'graphiti-v1.149';
+const CACHE_NAME = 'graphiti-v1.206';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './main.js',
+    './lib/mathlive.min.mjs',
+    './lib/math.min.js',
     './intersection-worker.js',
     './manifest.json',
     './sw.js',
     './logo.png',
     './logoTrans.png',
-    './images/graphitiTitle.png',
-    'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
-    'https://unpkg.com/mathlive'
+    './images/graphitiTitle.png'
 ];
 
 // Install event - cache assets

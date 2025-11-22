@@ -23,9 +23,17 @@ An advanced Progressive Web App (PWA) for plotting and exploring mathematical fu
 - Virtual mathematical keyboard with common functions and symbols
 - Automatic conversion of plain text to LaTeX
 - Support for implicit multiplication: `2x`, `x(x+1)`
-- Quick symbol insertion: type `pi` for π, `t` for θ
+- Quick symbol insertion: type `pi` for π, `theta` for θ in polar mode
+- Inline shortcuts for function names (see Function Reference below)
 
 ### Mathematical Analysis
+
+**Tangent Line Tracing**
+- Click any function curve to trace the tangent line at that point
+- Shows slope/gradient value in a badge
+- Multiple tangent traces per function
+- Works in both Cartesian and polar modes
+- Visual tangent line extension across viewport
 
 **Intersection Detection**
 - Automatic detection of function intersections using Web Worker (non-blocking)
@@ -46,10 +54,11 @@ An advanced Progressive Web App (PWA) for plotting and exploring mathematical fu
 - Visual distinction between different types
 
 **Interactive Tracing**
-- Click any function to create a trace badge
-- Shows exact coordinates at the clicked point
+- Click any function to create a trace badge showing exact coordinates
+- Click while holding Shift to trace tangent line with slope/gradient
 - Multiple trace points per function
 - Snap to nearest point on curve
+- Tangent line extends across the entire viewport
 
 ### Visualization & Interaction
 
@@ -67,12 +76,15 @@ An advanced Progressive Web App (PWA) for plotting and exploring mathematical fu
 - Reset view button to return to default axes
 
 **Visual Features**
-- Adaptive grid with intelligent spacing
+- Adaptive grid with intelligent spacing (powers of 10, halves, quarters, π-based, fractions)
+- Smart axis labels with π fractions and rational number formatting
 - Color-coded functions with customizable colors
 - Asymptote detection and proper discontinuity handling
 - Coordinate display snapping for clean values near axes
 - Frozen badges during interaction for visual continuity
 - Smooth animations and transitions
+- Radical notation for square roots (√2, √3, etc.)
+- Mathematical formatting for special values
 
 ### Display Options
 
@@ -90,6 +102,7 @@ An advanced Progressive Web App (PWA) for plotting and exploring mathematical fu
 - Show/hide intersections
 - Show/hide intercepts
 - Show/hide turning points
+- Show/hide tangent traces
 - Individual function enable/disable
 
 ### User Interface
@@ -175,7 +188,74 @@ An advanced Progressive Web App (PWA) for plotting and exploring mathematical fu
 4. **Performance**: Keep function count ≤8 for optimal performance with all analysis features enabled
 5. **Themes**: Toggle light/dark mode based on your environment
 6. **Analysis**: Enable intersections/intercepts/turning points as needed - they update automatically
-7. **Tracing**: Click any function curve to place a trace marker with exact coordinates
+7. **Tracing**: Click any function curve to place a coordinate trace marker
+8. **Tangent Lines**: Hold Shift while clicking to trace the tangent line and see the slope
+9. **Typing Functions**: See Function Reference below for supported syntax when typing on keyboard
+
+## Function Reference
+
+When typing functions on a physical keyboard, use these formats. MathLive will automatically recognize and format them correctly.
+
+### Basic Functions
+
+**Trigonometric**
+- `sin(x)`, `cos(x)`, `tan(x)`
+- `sec(x)`, `csc(x)`, `cot(x)`
+
+**Inverse Trigonometric** (use arc-prefix consistently)
+- `arcsin(x)`, `arccos(x)`, `arctan(x)`
+- `arcsec(x)`, `arccsc(x)`, `arccot(x)`
+- Alternative: `asin(x)`, `acos(x)`, `atan(x)`, etc.
+
+**Hyperbolic**
+- `sinh(x)`, `cosh(x)`, `tanh(x)`
+- `sech(x)`, `csch(x)`, `coth(x)`
+
+**Inverse Hyperbolic** (use arc-prefix consistently)
+- `arcsinh(x)`, `arccosh(x)`, `arctanh(x)`
+- `arcsech(x)`, `arccsch(x)`, `arccoth(x)`
+- Alternative: `asinh(x)`, `acosh(x)`, `atanh(x)`, etc.
+
+**Exponential & Logarithmic**
+- `exp(x)` - exponential (e^x)
+- `ln(x)` - natural logarithm (base e)
+- `log(x)` - base-10 logarithm
+- For other bases, use the change of base formula: log_b(x) = ln(x)/ln(b)
+
+**Roots & Powers**
+- `sqrt(x)` - square root
+- `cbrt(x)` - cube root
+- `x^2` - powers (use ^ key)
+- `x^(1/3)` - fractional powers
+
+**Other Functions**
+- `abs(x)` - absolute value
+- `pi` - π constant
+- `e` - Euler's number
+
+### Typing Tips
+
+1. **Inline Shortcuts**: When you type function names like `arcsin` or `asinh` followed by `(`, MathLive automatically formats them correctly
+2. **Implicit Multiplication**: `2sin(x)` works as `2*sin(x)`, `xcos(x)` works as `x*cos(x)`
+3. **Constants**: Type `pi` for π
+4. **Polar Mode**: Type `theta` for θ, or just `t` (automatically converts to θ)
+5. **Fractions**: Use `/` or the fraction button from virtual keyboard
+6. **Parentheses**: Required for function arguments: `sin(x)`, not `sinx`
+
+### Examples
+
+**Cartesian Mode**
+- `y = 2arcsin(x/3)` - inverse trig with scaling
+- `y = exp(-x^2)` - Gaussian curve
+- `y = ln(abs(x))` - logarithm with absolute value
+- `y = arcsinh(x)` - inverse hyperbolic
+- `x^2 + y^2 = 25` - implicit circle
+
+**Polar Mode**
+- `r = sin(3theta)` - rose curve
+- `r = 1 + cos(theta)` - cardioid
+- `r = exp(theta/10)` - spiral
+- `theta = pi/4` - ray at 45°
 
 ## License
 
