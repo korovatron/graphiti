@@ -243,6 +243,19 @@ class Graphiti {
             setTimeout(() => {
                 if (window.mathVirtualKeyboard) {
                     try {
+                        // Configure MathLive to recognize inverse trig functions as function names (not variables)
+                        if (window.MathfieldElement) {
+                            window.MathfieldElement.fontsDirectory = 'https://unpkg.com/mathlive/dist/fonts';
+                            // Add inverse trig and other functions to the dictionary so they render as functions
+                            const customFunctions = ['arcsin', 'arccos', 'arctan', 'arcsec', 'arccsc', 'arccot',
+                                                     'asinh', 'acosh', 'atanh', 'asech', 'acsch', 'acoth'];
+                            window.MathfieldElement.computeEngine = {
+                                ...window.MathfieldElement.computeEngine,
+                                dictionary: [
+                                    ...customFunctions.map(fn => ({ name: fn, domain: 'Functions' }))
+                                ]
+                            };
+                        }
                         
                         // Create a custom numeric layout (replacing the default)
                         const customNumericLayout = {
@@ -1483,6 +1496,11 @@ class Graphiti {
                     }
                 }
             } catch (evalError) {
+                console.error('Expression validation failed:', {
+                    original: func.expression,
+                    converted: processedExpression,
+                    error: evalError.message
+                });
                 throw new Error('Invalid mathematical expression: ' + evalError.message);
             }
             
