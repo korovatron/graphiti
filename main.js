@@ -5092,8 +5092,9 @@ class Graphiti {
                 const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
                 
                 if (tracingFunction) {
-                    // Trace the function at the new X position
-                    const tracePoint = this.traceFunction(tracingFunction, currentWorldPos.x);
+                    // Trace the function at the new position
+                    // For implicit functions, pass both x and y; for explicit, y is ignored
+                    const tracePoint = this.traceFunction(tracingFunction, currentWorldPos.x, currentWorldPos.y);
                     
                     if (tracePoint) {
                         this.input.tracing.worldX = tracePoint.x;
@@ -5102,7 +5103,8 @@ class Graphiti {
                         // If original badge had a tangent, recalculate slope at new position
                         if (this.input.badgeInteraction.originalBadgeState && 
                             this.input.badgeInteraction.originalBadgeState.hasTangent) {
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x);
+                            // Pass both x and y for implicit functions
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x, tracePoint.y);
                             if (slopeData) {
                                 this.input.tracing.currentSlope = slopeData.slope;
                                 this.input.tracing.currentSecondDerivative = slopeData.secondDerivative;
@@ -5236,7 +5238,7 @@ class Graphiti {
                         // TAP: Cycle to next state
                         if (!originalState.hasTangent) {
                             // Cycling from no tangent → add normal tangent
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData.slope;
@@ -5246,7 +5248,7 @@ class Graphiti {
                             }
                         } else if (originalState.hasTangent && !originalState.neonTangent) {
                             // Cycling from normal tangent → neon tangent
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData.slope;
@@ -5259,7 +5261,7 @@ class Graphiti {
                     } else {
                         // DRAG: Keep same state, just recalculate at new position
                         if (originalState.hasTangent) {
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData.slope;
@@ -7185,6 +7187,97 @@ class Graphiti {
     // CURVE TRACING UTILITIES
     // ================================
     
+    findClosestImplicitPoint(func, screenX, screenY, tolerance) {
+        // Find the closest point on an implicit function's curve (line segments)
+        // Uses the points from marching squares output
+        const pointsToUse = func.displayPoints || func.points;
+        if (!pointsToUse || pointsToUse.length < 2) {
+            return null;
+        }
+        
+        let closestDistance = Infinity;
+        let closestWorldX = null;
+        let closestWorldY = null;
+        
+        // Check all line segments (stored as start, end, NaN triplets)
+        for (let i = 0; i < pointsToUse.length - 1; i += 3) {
+            const startPoint = pointsToUse[i];
+            const endPoint = pointsToUse[i + 1];
+            
+            if (!startPoint || !endPoint || 
+                !isFinite(startPoint.x) || !isFinite(startPoint.y) ||
+                !isFinite(endPoint.x) || !isFinite(endPoint.y)) {
+                continue;
+            }
+            
+            // Find closest point on this line segment
+            const result = this.closestPointOnSegment(
+                startPoint.x, startPoint.y,
+                endPoint.x, endPoint.y,
+                screenX, screenY
+            );
+            
+            if (result.distance < closestDistance) {
+                closestDistance = result.distance;
+                closestWorldX = result.worldX;
+                closestWorldY = result.worldY;
+            }
+        }
+        
+        if (closestDistance < tolerance) {
+            return {
+                worldX: closestWorldX,
+                worldY: closestWorldY,
+                distance: closestDistance
+            };
+        }
+        
+        return null;
+    }
+    
+    closestPointOnSegment(x1, y1, x2, y2, screenX, screenY) {
+        // Find closest point on line segment (x1,y1)-(x2,y2) to screen point (screenX, screenY)
+        // Convert segment endpoints to screen coordinates
+        const screen1 = this.worldToScreen(x1, y1);
+        const screen2 = this.worldToScreen(x2, y2);
+        
+        // Vector from point 1 to point 2
+        const dx = screen2.x - screen1.x;
+        const dy = screen2.y - screen1.y;
+        
+        // Vector from point 1 to click point
+        const px = screenX - screen1.x;
+        const py = screenY - screen1.y;
+        
+        // Project click point onto line segment
+        const segmentLengthSquared = dx * dx + dy * dy;
+        
+        if (segmentLengthSquared === 0) {
+            // Degenerate segment (point)
+            const distance = Math.sqrt(px * px + py * py);
+            return { worldX: x1, worldY: y1, distance };
+        }
+        
+        // Parameter t represents position along segment (0 = start, 1 = end)
+        let t = (px * dx + py * dy) / segmentLengthSquared;
+        
+        // Clamp t to [0, 1] to stay on segment
+        t = Math.max(0, Math.min(1, t));
+        
+        // Interpolate world coordinates
+        const worldX = x1 + t * (x2 - x1);
+        const worldY = y1 + t * (y2 - y1);
+        
+        // Calculate distance in screen space
+        const closestScreen = this.worldToScreen(worldX, worldY);
+        const distance = Math.sqrt(
+            Math.pow(closestScreen.x - screenX, 2) + 
+            Math.pow(closestScreen.y - screenY, 2)
+        );
+        
+        return { worldX, worldY, distance };
+    }
+    
     findClosestCurvePoint(screenX, screenY, tolerance) {
         const worldPos = this.screenToWorld(screenX, screenY);
         let closestFunction = null;
@@ -7196,10 +7289,18 @@ class Graphiti {
         for (const func of this.getCurrentFunctions()) {
             if (!func.enabled || !func.expression.trim()) continue;
             
-            // Only allow tracing on explicit functions (cartesian and polar)
             const functionType = this.detectFunctionType(func.expression);
+            
+            // Handle implicit functions separately with segment-based detection
             if (functionType === 'implicit') {
-                continue; // Skip implicit functions - they can't be traced with y=f(x) approach
+                const result = this.findClosestImplicitPoint(func, screenX, screenY, tolerance);
+                if (result && result.distance < closestDistance) {
+                    closestDistance = result.distance;
+                    closestFunction = func;
+                    closestWorldX = result.worldX;
+                    closestWorldY = result.worldY;
+                }
+                continue;
             }
             
             try {
@@ -8514,9 +8615,20 @@ class Graphiti {
     
     // Calculate the slope (derivative) at a specific point for a function
     // Uses both symbolic and numerical methods for robustness
-    calculateSlopeAtPoint(func, worldX) {
+    calculateSlopeAtPoint(func, worldX, worldY = null) {
         if (!func || !func.expression) {
             return null;
+        }
+        
+        // Check if this is an implicit function
+        const functionType = this.detectFunctionType(func.expression);
+        if (functionType === 'implicit') {
+            // For implicit functions, we need both x and y coordinates
+            if (worldY === null) {
+                console.warn('Implicit function requires both x and y coordinates');
+                return null;
+            }
+            return this.calculateImplicitTangent(func, worldX, worldY);
         }
         
         try {
@@ -8623,6 +8735,111 @@ class Graphiti {
             
         } catch (error) {
             console.warn('Could not calculate slope:', error);
+        }
+        
+        return null;
+    }
+    
+    calculateImplicitTangent(func, worldX, worldY) {
+        // Calculate tangent for implicit function F(x,y) = 0
+        // Using implicit differentiation: dy/dx = -∂F/∂x / ∂F/∂y
+        if (!func || !func.expression) {
+            return null;
+        }
+        
+        try {
+            // Parse the implicit equation to get F(x,y)
+            const equation = this.parseImplicitEquation(func.expression);
+            if (!equation) {
+                return null;
+            }
+            
+            // Numerical partial derivatives using central difference
+            const h = 0.0001;
+            
+            // ∂F/∂x ≈ (F(x+h, y) - F(x-h, y)) / (2h)
+            const fxPlus = this.evaluateImplicitEquation(equation, worldX + h, worldY);
+            const fxMinus = this.evaluateImplicitEquation(equation, worldX - h, worldY);
+            
+            // ∂F/∂y ≈ (F(x, y+h) - F(x, y-h)) / (2h)
+            const fyPlus = this.evaluateImplicitEquation(equation, worldX, worldY + h);
+            const fyMinus = this.evaluateImplicitEquation(equation, worldX, worldY - h);
+            
+            if (fxPlus === null || fxMinus === null || fyPlus === null || fyMinus === null) {
+                return null;
+            }
+            
+            const dFdx = (fxPlus - fxMinus) / (2 * h);
+            const dFdy = (fyPlus - fyMinus) / (2 * h);
+            
+            // Avoid division by zero
+            if (Math.abs(dFdy) < 1e-10) {
+                // Vertical tangent - return very large slope
+                return {
+                    slope: dFdy >= 0 ? 1e10 : -1e10,
+                    expression: "dy/dx",
+                    secondDerivative: 0, // Second derivative calculation would be complex
+                    method: 'implicit-numerical'
+                };
+            }
+            
+            const slope = -dFdx / dFdy;
+            
+            // For second derivative of implicit functions:
+            // d²y/dx² = -(∂²F/∂x² + 2(dy/dx)∂²F/∂x∂y + (dy/dx)²∂²F/∂y²) / ∂F/∂y
+            // This is expensive to calculate, so we'll compute a simplified numerical estimate
+            
+            // Calculate second derivative numerically using the slope function
+            const h2 = 0.001;
+            
+            // Get slope at nearby points
+            const equation2 = this.parseImplicitEquation(func.expression);
+            
+            // Move slightly in x direction and calculate new point on curve
+            // For implicit curve, we need to find y such that F(x+h2, y') = 0
+            // We'll approximate by moving along the tangent and then projecting back
+            const dx = h2;
+            const dy = slope * dx;
+            const x1 = worldX + dx;
+            const y1 = worldY + dy;
+            
+            // Recalculate slope at new position
+            const fx1Plus = this.evaluateImplicitEquation(equation2, x1 + h, y1);
+            const fx1Minus = this.evaluateImplicitEquation(equation2, x1 - h, y1);
+            const fy1Plus = this.evaluateImplicitEquation(equation2, x1, y1 + h);
+            const fy1Minus = this.evaluateImplicitEquation(equation2, x1, y1 - h);
+            
+            if (fx1Plus !== null && fx1Minus !== null && fy1Plus !== null && fy1Minus !== null) {
+                const dFdx1 = (fx1Plus - fx1Minus) / (2 * h);
+                const dFdy1 = (fy1Plus - fy1Minus) / (2 * h);
+                
+                if (Math.abs(dFdy1) > 1e-10) {
+                    const slope1 = -dFdx1 / dFdy1;
+                    const secondDeriv = (slope1 - slope) / dx;
+                    
+                    if (isFinite(slope) && isFinite(secondDeriv)) {
+                        return {
+                            slope: slope,
+                            expression: "dy/dx",
+                            secondDerivative: secondDeriv,
+                            method: 'implicit-numerical'
+                        };
+                    }
+                }
+            }
+            
+            // Fallback: return slope without second derivative
+            if (isFinite(slope)) {
+                return {
+                    slope: slope,
+                    expression: "dy/dx",
+                    secondDerivative: 0,
+                    method: 'implicit-numerical'
+                };
+            }
+            
+        } catch (error) {
+            console.warn('Could not calculate implicit tangent:', error);
         }
         
         return null;
@@ -9124,8 +9341,78 @@ class Graphiti {
         }
     }
     
-    traceFunction(func, worldX) {
+    traceImplicitFunction(func, worldX, worldY) {
+        // For implicit functions, find the closest point on the curve to the mouse position
+        // This provides smooth following behavior similar to explicit functions
+        const pointsToUse = func.displayPoints || func.points;
+        
+        if (!pointsToUse || pointsToUse.length < 2) {
+            // Fallback: return the input position if no points available
+            return { x: worldX, y: worldY };
+        }
+        
+        let closestDistance = Infinity;
+        let closestPoint = null;
+        
+        // Check all line segments and find the closest point
+        for (let i = 0; i < pointsToUse.length - 1; i += 3) {
+            const startPoint = pointsToUse[i];
+            const endPoint = pointsToUse[i + 1];
+            
+            if (!startPoint || !endPoint || 
+                !isFinite(startPoint.x) || !isFinite(startPoint.y) ||
+                !isFinite(endPoint.x) || !isFinite(endPoint.y)) {
+                continue;
+            }
+            
+            // Find closest point on this segment to (worldX, worldY)
+            const dx = endPoint.x - startPoint.x;
+            const dy = endPoint.y - startPoint.y;
+            const px = worldX - startPoint.x;
+            const py = worldY - startPoint.y;
+            
+            const segmentLengthSquared = dx * dx + dy * dy;
+            if (segmentLengthSquared === 0) continue;
+            
+            // Project point onto segment
+            let t = (px * dx + py * dy) / segmentLengthSquared;
+            t = Math.max(0, Math.min(1, t));
+            
+            // Interpolated point on segment
+            const pointX = startPoint.x + t * dx;
+            const pointY = startPoint.y + t * dy;
+            
+            // Distance from (worldX, worldY) to point on segment
+            const distance = Math.sqrt(
+                Math.pow(pointX - worldX, 2) + 
+                Math.pow(pointY - worldY, 2)
+            );
+            
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestPoint = { x: pointX, y: pointY };
+            }
+        }
+        
+        // Return closest point found, or input position if none found
+        return closestPoint || { x: worldX, y: worldY };
+    }
+    
+    traceFunction(func, worldX, worldY = null) {
         try {
+            // Check if this is an implicit function
+            const functionType = this.detectFunctionType(func.expression);
+            
+            if (functionType === 'implicit') {
+                // For implicit functions, find closest point on curve to (worldX, worldY)
+                // We need a y coordinate hint for implicit functions
+                if (worldY === null) {
+                    console.warn('Implicit function tracing requires both x and y coordinates');
+                    return null;
+                }
+                return this.traceImplicitFunction(func, worldX, worldY);
+            }
+            
             // Handle polar functions differently
             if (func.mode === 'polar') {
                 return this.tracePolarFunction(func, worldX);
@@ -9149,13 +9436,13 @@ class Graphiti {
                 clampedX = Math.max(this.viewport.minX, Math.min(this.viewport.maxX, worldX));
             }
             
-            const worldY = this.evaluateFunction(func.expression, clampedX);
+            const evaluatedY = this.evaluateFunction(func.expression, clampedX);
             
-            if (isNaN(worldY) || !isFinite(worldY)) {
+            if (isNaN(evaluatedY) || !isFinite(evaluatedY)) {
                 return null;
             }
             
-            return { x: clampedX, y: worldY };
+            return { x: clampedX, y: evaluatedY };
         } catch (error) {
             return null;
         }
