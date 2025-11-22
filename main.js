@@ -4811,6 +4811,13 @@ class Graphiti {
                     tangentExpression: targetBadge.tangentExpression
                 };
                 
+                // If badge has tangent, initialize currentSlope for live updates during drag
+                if (targetBadge.hasTangent && targetBadge.tangentSlope !== null) {
+                    this.input.tracing.currentSlope = targetBadge.tangentSlope;
+                } else {
+                    this.input.tracing.currentSlope = null;
+                }
+                
                 // Immediately enter badge interaction mode with visual feedback
                 this.input.badgeInteraction.targetBadge = targetBadge;
                 this.input.badgeInteraction.startTime = Date.now();
@@ -4907,6 +4914,17 @@ class Graphiti {
                     if (tracePoint) {
                         this.input.tracing.worldX = tracePoint.x;
                         this.input.tracing.worldY = tracePoint.y;
+                        
+                        // If original badge had a tangent, recalculate slope at new position
+                        if (this.input.badgeInteraction.originalBadgeState && 
+                            this.input.badgeInteraction.originalBadgeState.hasTangent) {
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x);
+                            if (slopeData) {
+                                this.input.tracing.currentSlope = slopeData.slope;
+                            }
+                        } else {
+                            this.input.tracing.currentSlope = null;
+                        }
                     }
                 }
                 
@@ -5042,6 +5060,7 @@ class Graphiti {
         
         this.input.tracing.active = false;
         this.input.tracing.functionId = null;
+        this.input.tracing.currentSlope = null;
         
         // Don't trigger viewport change on pointer end - it's already handled by debounced timer
         // The timer in handleViewportChange triggers when movement stops (even before pointer release)
@@ -10466,8 +10485,23 @@ class Graphiti {
             return;
         }
         
-        // Draw the active tracing indicator
-        this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, this.input.tracing.worldX, this.input.tracing.worldY, true);
+        // Draw tangent line if the dragged badge has one
+        if (this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined) {
+            const tempBadge = {
+                worldX: this.input.tracing.worldX,
+                worldY: this.input.tracing.worldY,
+                tangentSlope: this.input.tracing.currentSlope,
+                functionColor: tracingFunction.color,
+                hasTangent: true
+            };
+            this.drawTangentLine(tempBadge);
+        }
+        
+        // Draw the active tracing indicator with tangent info if present
+        const hasTangent = this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined;
+        this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
+            this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
+            hasTangent, this.input.tracing.currentSlope);
     }
     
     drawPersistentBadges() {
