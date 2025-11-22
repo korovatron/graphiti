@@ -5134,6 +5134,8 @@ class Graphiti {
                 // Store badge state for cycling behavior: no tangent → tangent → neon tangent → remove
                 this.input.badgeInteraction.originalBadgeState = {
                     hasTangent: targetBadge.hasTangent,
+                    hasNormal: targetBadge.hasNormal,
+                    neonNormal: targetBadge.neonNormal,
                     tangentSlope: targetBadge.tangentSlope,
                     tangentExpression: targetBadge.tangentExpression,
                     neonTangent: targetBadge.neonTangent || false
@@ -5143,9 +5145,18 @@ class Graphiti {
                 if (targetBadge.hasTangent && targetBadge.tangentSlope !== null) {
                     this.input.tracing.currentSlope = targetBadge.tangentSlope;
                     this.input.tracing.neonTangent = targetBadge.neonTangent || false;
+                    this.input.tracing.hasNormal = false;
+                    this.input.tracing.neonNormal = false;
+                } else if (targetBadge.hasNormal && targetBadge.tangentSlope !== null) {
+                    this.input.tracing.currentSlope = targetBadge.tangentSlope;
+                    this.input.tracing.neonTangent = false;
+                    this.input.tracing.hasNormal = true;
+                    this.input.tracing.neonNormal = targetBadge.neonNormal || false;
                 } else {
                     this.input.tracing.currentSlope = null;
                     this.input.tracing.neonTangent = false;
+                    this.input.tracing.hasNormal = false;
+                    this.input.tracing.neonNormal = false;
                 }
                 
                 // Immediately enter badge interaction mode with visual feedback
@@ -5363,17 +5374,23 @@ class Graphiti {
             // If user didn't move much and released quickly, it was a tap - cycle badge state
             if (wasQuickTap) {
                 // Quick tap with minimal movement - cycle through states
-                // State cycle: no badge → trace point → trace + tangent → trace + neon tangent → removed
+                // State cycle: no line → tangent → neon tangent → normal → neon normal → removed
                 const originalState = this.input.badgeInteraction.originalBadgeState;
                 
-                if (!originalState.hasTangent) {
-                    // Badge had no tangent → add normal tangent, keep badge
+                if (!originalState.hasTangent && !originalState.hasNormal) {
+                    // Badge had no line → add tangent, keep badge
                     // Don't cancel tracing, let it add the badge with tangent below
                 } else if (originalState.hasTangent && !originalState.neonTangent) {
-                    // Badge had normal tangent → switch to neon tangent, keep badge
+                    // Badge had tangent → switch to neon tangent, keep badge
                     // Don't cancel tracing, let it add the badge with neon tangent below
+                } else if (originalState.hasTangent && originalState.neonTangent) {
+                    // Badge had neon tangent → switch to normal, keep badge
+                    // Don't cancel tracing, let it add the badge with normal below
+                } else if (originalState.hasNormal && !originalState.neonNormal) {
+                    // Badge had normal → switch to neon normal, keep badge
+                    // Don't cancel tracing, let it add the badge with neon normal below
                 } else {
-                    // Badge already had neon tangent → remove completely
+                    // Badge already had neon normal → remove completely
                     this.input.tracing.active = false; // Cancel tracing so no new badge is added
                 }
             }
@@ -5424,8 +5441,8 @@ class Graphiti {
                     // If it was a drag, keep the same state as original
                     if (wasTap) {
                         // TAP: Cycle to next state
-                        if (!originalState.hasTangent) {
-                            // Cycling from no tangent → add normal tangent
+                        if (!originalState.hasTangent && !originalState.hasNormal) {
+                            // State 1: No line → tangent
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
@@ -5433,9 +5450,11 @@ class Graphiti {
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonTangent = false;
+                                newBadge.hasNormal = false;
+                                newBadge.neonNormal = false;
                             }
-                        } else if (originalState.hasTangent && !originalState.neonTangent) {
-                            // Cycling from normal tangent → neon tangent
+                        } else if (originalState.hasTangent && !originalState.neonTangent && !originalState.hasNormal) {
+                            // State 2: Tangent → neon tangent
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
@@ -5443,22 +5462,50 @@ class Graphiti {
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonTangent = true;
+                                newBadge.hasNormal = false;
+                                newBadge.neonNormal = false;
                             }
-                        }
-                        // Note: neon tangent tap → removed is handled above by canceling tracing
-                    } else {
-                        // DRAG: Keep same state, just recalculate at new position
-                        if (originalState.hasTangent) {
+                        } else if (originalState.hasTangent && originalState.neonTangent && !originalState.hasNormal) {
+                            // State 3: Neon tangent → normal
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
-                                newBadge.hasTangent = true;
+                                newBadge.hasTangent = false;
+                                newBadge.neonTangent = false;
+                                newBadge.hasNormal = true;
+                                newBadge.tangentSlope = slopeData; // Still needed for calculating perpendicular
+                                newBadge.tangentExpression = slopeData.expression;
+                                newBadge.secondDerivative = slopeData.secondDerivative;
+                                newBadge.neonNormal = false;
+                            }
+                        } else if (originalState.hasNormal && !originalState.neonNormal) {
+                            // State 4: Normal → neon normal
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            if (slopeData) {
+                                newBadge.hasTangent = false;
+                                newBadge.neonTangent = false;
+                                newBadge.hasNormal = true;
                                 newBadge.tangentSlope = slopeData;
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
-                                newBadge.neonTangent = originalState.neonTangent; // Keep same neon state
+                                newBadge.neonNormal = true;
                             }
                         }
-                        // If original had no tangent, new badge also has no tangent (default)
+                        // State 5: Neon normal → delete (handled above by canceling tracing)
+                    } else {
+                        // DRAG: Keep same state, just recalculate at new position
+                        if (originalState.hasTangent || originalState.hasNormal) {
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            if (slopeData) {
+                                newBadge.hasTangent = originalState.hasTangent;
+                                newBadge.hasNormal = originalState.hasNormal;
+                                newBadge.tangentSlope = slopeData;
+                                newBadge.tangentExpression = slopeData.expression;
+                                newBadge.secondDerivative = slopeData.secondDerivative;
+                                newBadge.neonTangent = originalState.neonTangent;
+                                newBadge.neonNormal = originalState.neonNormal;
+                            }
+                        }
+                        // If original had no tangent/normal, new badge also has none (default)
                     }
                 }
             }
@@ -5492,6 +5539,8 @@ class Graphiti {
         this.input.tracing.functionId = null;
         this.input.tracing.currentSlope = null;
         this.input.tracing.neonTangent = false;
+        this.input.tracing.hasNormal = false;
+        this.input.tracing.neonNormal = false;
         
         // Don't trigger viewport change on pointer end - it's already handled by debounced timer
         // The timer in handleViewportChange triggers when movement stops (even before pointer release)
@@ -7655,7 +7704,10 @@ class Graphiti {
             tangentSlope: null, // Slope of tangent line (dy/dx)
             tangentExpression: null, // Derivative expression (for display)
             secondDerivative: null, // Second derivative (d²y/dx²)
-            neonTangent: false // Whether to use pulsating neon colors for tangent
+            neonTangent: false, // Whether to use pulsating neon colors for tangent
+            // Normal line properties
+            hasNormal: false, // Whether to show normal line at this point
+            neonNormal: false // Whether to use pulsating neon colors for normal
         };
         
         this.input.persistentBadges.push(badge);
@@ -11876,17 +11928,23 @@ class Graphiti {
             return;
         }
         
-        // Draw tangent line if the dragged badge has one
+        // Draw tangent or normal line if the dragged badge has one
         if (this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined) {
             const tempBadge = {
                 worldX: this.input.tracing.worldX,
                 worldY: this.input.tracing.worldY,
                 tangentSlope: this.input.tracing.currentSlope,
                 functionColor: tracingFunction.color,
-                hasTangent: true,
-                neonTangent: this.input.tracing.neonTangent || false
+                hasTangent: !this.input.tracing.hasNormal,
+                neonTangent: this.input.tracing.neonTangent || false,
+                hasNormal: this.input.tracing.hasNormal || false,
+                neonNormal: this.input.tracing.neonNormal || false
             };
-            this.drawTangentLine(tempBadge);
+            if (tempBadge.hasTangent) {
+                this.drawTangentLine(tempBadge);
+            } else if (tempBadge.hasNormal) {
+                this.drawNormalLine(tempBadge);
+            }
         }
         
         // Draw the active tracing indicator with tangent info if present
@@ -11914,6 +11972,11 @@ class Graphiti {
         for (const badge of this.input.persistentBadges) {
             if (badge.hasTangent && badge.tangentSlope !== null) {
                 this.drawTangentLine(badge);
+            }
+            
+            // Draw normal line if badge has one
+            if (badge.hasNormal) {
+                this.drawNormalLine(badge);
             }
         }
         
@@ -12089,6 +12152,127 @@ class Graphiti {
         const endScreen = this.worldToScreen(endX, endY);
         
         // Draw the tangent line
+        this.ctx.beginPath();
+        this.ctx.moveTo(startScreen.x, startScreen.y);
+        this.ctx.lineTo(endScreen.x, endScreen.y);
+        this.ctx.stroke();
+        
+        this.ctx.restore();
+    }
+    
+    drawNormalLine(badge) {
+        if (!badge.hasNormal || badge.tangentSlope === null) return;
+        
+        this.ctx.save();
+        
+        // Use neon pulsating colors if neonNormal is true, otherwise use function color
+        if (badge.neonNormal) {
+            // Pulsating neon effect - same as tangent
+            const time = Date.now() / 1000;
+            const pulseSpeed = 2;
+            
+            const colorPhase = (Math.sin(time * pulseSpeed) + 1) / 2;
+            let neonColor;
+            
+            if (colorPhase < 0.25) {
+                const t = colorPhase / 0.25;
+                neonColor = `rgba(${Math.floor(255 * (1 - t) + 0 * t)}, ${Math.floor(20 * (1 - t) + 255 * t)}, ${Math.floor(147 * (1 - t) + 255 * t)}, 0.8)`;
+            } else if (colorPhase < 0.5) {
+                const t = (colorPhase - 0.25) / 0.25;
+                neonColor = `rgba(${Math.floor(0 * (1 - t) + 57 * t)}, ${255}, ${Math.floor(255 * (1 - t) + 255 * t)}, 0.8)`;
+            } else if (colorPhase < 0.75) {
+                const t = (colorPhase - 0.5) / 0.25;
+                neonColor = `rgba(${Math.floor(57 * (1 - t) + 255 * t)}, ${Math.floor(255 * (1 - t) + 165 * t)}, ${Math.floor(255 * (1 - t) + 0 * t)}, 0.8)`;
+            } else {
+                const t = (colorPhase - 0.75) / 0.25;
+                neonColor = `rgba(${255}, ${Math.floor(165 * (1 - t) + 20 * t)}, ${Math.floor(0 * (1 - t) + 147 * t)}, 0.8)`;
+            }
+            
+            this.ctx.strokeStyle = neonColor;
+            this.ctx.lineWidth = 3;
+            this.ctx.shadowBlur = 15;
+            this.ctx.shadowColor = neonColor;
+        } else {
+            // Use function color with transparency
+            this.ctx.strokeStyle = badge.functionColor;
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 0.8;
+        }
+        
+        this.ctx.setLineDash([5, 5]); // Different dash pattern from tangent
+        
+        // Calculate the normal line (perpendicular to tangent)
+        // If tangent slope is m, normal slope is -1/m
+        const tangentSlope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+        let normalSlope;
+        
+        if (Math.abs(tangentSlope) < 1e-10) {
+            // Tangent is horizontal, normal is vertical
+            normalSlope = Infinity;
+        } else if (Math.abs(tangentSlope) > 1e10) {
+            // Tangent is vertical, normal is horizontal
+            normalSlope = 0;
+        } else {
+            // Normal case: perpendicular slope
+            normalSlope = -1 / tangentSlope;
+        }
+        
+        const x0 = badge.worldX;
+        const y0 = badge.worldY;
+        const intercept = y0 - normalSlope * x0;
+        
+        const minX = this.viewport.minX;
+        const maxX = this.viewport.maxX;
+        const minY = this.viewport.minY;
+        const maxY = this.viewport.maxY;
+        
+        let startX, startY, endX, endY;
+        
+        if (normalSlope === Infinity || normalSlope === -Infinity) {
+            // Vertical normal line
+            startX = x0;
+            startY = minY;
+            endX = x0;
+            endY = maxY;
+        } else if (Math.abs(normalSlope) < 1e10) {
+            // Non-vertical normal line
+            const y_at_minX = normalSlope * minX + intercept;
+            const y_at_maxX = normalSlope * maxX + intercept;
+            
+            startX = minX;
+            startY = y_at_minX;
+            endX = maxX;
+            endY = y_at_maxX;
+            
+            // Clip to viewport Y bounds
+            if (startY < minY) {
+                startX = (minY - intercept) / normalSlope;
+                startY = minY;
+            } else if (startY > maxY) {
+                startX = (maxY - intercept) / normalSlope;
+                startY = maxY;
+            }
+            
+            if (endY < minY) {
+                endX = (minY - intercept) / normalSlope;
+                endY = minY;
+            } else if (endY > maxY) {
+                endX = (maxY - intercept) / normalSlope;
+                endY = maxY;
+            }
+        } else {
+            // Nearly vertical normal line
+            startX = (minY - intercept) / normalSlope;
+            startY = minY;
+            endX = (maxY - intercept) / normalSlope;
+            endY = maxY;
+        }
+        
+        // Convert to screen coordinates
+        const startScreen = this.worldToScreen(startX, startY);
+        const endScreen = this.worldToScreen(endX, endY);
+        
+        // Draw the normal line
         this.ctx.beginPath();
         this.ctx.moveTo(startScreen.x, startScreen.y);
         this.ctx.lineTo(endScreen.x, endScreen.y);
