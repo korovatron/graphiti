@@ -11461,7 +11461,13 @@ class Graphiti {
         
         // Add dy/dx information if tangent is present
         if (hasTangent && tangentSlope !== null) {
-            const slopeStr = this.formatCoordinate(tangentSlope);
+            // Display infinity symbol for very steep slopes (near vertical tangents)
+            let slopeStr;
+            if (Math.abs(tangentSlope) > 100) {
+                slopeStr = tangentSlope > 0 ? '∞' : '-∞';
+            } else {
+                slopeStr = this.formatCoordinate(tangentSlope);
+            }
             labelText += ` | dy/dx=${slopeStr}`;
             
             // Add second derivative if available
