@@ -191,6 +191,7 @@ class Graphiti {
         // Legacy manual intersection storage (keeping for compatibility)
         this.manualImplicitIntersections = []; // Store manually calculated implicit intersections
         this.showIntersections = true; // Toggle for intersection display
+        this.tangentIntersections = []; // Store intersections between tangent lines and functions
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
         
@@ -3714,6 +3715,97 @@ class Graphiti {
         return intersections;
     }
     
+    findTangentIntersections() {
+        // Early exit if intersection detection is disabled
+        if (!this.showIntersections) {
+            return [];
+        }
+        
+        const tangentIntersections = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        
+        // Check each badge with a tangent line
+        for (const badge of this.input.persistentBadges) {
+            if (!badge.hasTangent || badge.tangentSlope === null) continue;
+            
+            // Tangent line equation: y = m*x + b
+            const m = badge.tangentSlope;
+            const b = badge.worldY - m * badge.worldX;
+            
+            // Find intersections with each function
+            for (const func of enabledFunctions) {
+                if (func.points.length === 0) continue;
+                
+                // Find intersections between tangent line and function
+                const intersections = this.findTangentFunctionIntersections(badge, func, m, b);
+                tangentIntersections.push(...intersections);
+            }
+        }
+        
+        return tangentIntersections;
+    }
+    
+    findTangentFunctionIntersections(badge, func, slope, intercept) {
+        const intersections = [];
+        const points = func.points;
+        const tolerance = 0.01; // Screen pixel tolerance for intersection detection
+        
+        // Sample function points and check for intersections with tangent line
+        for (let i = 0; i < points.length - 1; i++) {
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            
+            if (!isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) continue;
+            
+            // Calculate tangent line y-values at these x positions
+            const tangentY1 = slope * p1.x + intercept;
+            const tangentY2 = slope * p2.x + intercept;
+            
+            // Check if function segment crosses tangent line
+            const func1Above = p1.y > tangentY1;
+            const func2Above = p2.y > tangentY2;
+            
+            if (func1Above !== func2Above) {
+                // Crossing detected - interpolate to find exact intersection point
+                const t = Math.abs(p1.y - tangentY1) / (Math.abs(p1.y - tangentY1) + Math.abs(p2.y - tangentY2));
+                const intersectionX = p1.x + t * (p2.x - p1.x);
+                const intersectionY = slope * intersectionX + intercept;
+                
+                // Skip if intersection is at the tangent point itself (within tolerance)
+                const distToBadge = Math.sqrt(
+                    Math.pow(intersectionX - badge.worldX, 2) + 
+                    Math.pow(intersectionY - badge.worldY, 2)
+                );
+                
+                if (distToBadge > 0.05) { // Only show intersections away from tangent point
+                    intersections.push({
+                        x: intersectionX,
+                        y: intersectionY,
+                        func1Id: `tangent_${badge.id}`,
+                        func2Id: func.id,
+                        color1: badge.functionColor,
+                        color2: func.color,
+                        isTangentIntersection: true
+                    });
+                }
+            }
+        }
+        
+        // Remove duplicate intersections (within small tolerance)
+        const uniqueIntersections = [];
+        for (const intersection of intersections) {
+            const isDuplicate = uniqueIntersections.some(existing => 
+                Math.abs(existing.x - intersection.x) < 0.01 && 
+                Math.abs(existing.y - intersection.y) < 0.01
+            );
+            if (!isDuplicate) {
+                uniqueIntersections.push(intersection);
+            }
+        }
+        
+        return uniqueIntersections;
+    }
+    
     findIntersectionsBetweenFunctions(func1, func2) {
         const intersections = [];
         const points1 = func1.points;
@@ -5096,6 +5188,11 @@ class Graphiti {
             // Clear badge state temp storage
             this.input.badgeInteraction.wasTap = false;
             this.input.badgeInteraction.originalBadgeState = null;
+            
+            // Recalculate tangent intersections since badge state changed
+            if (this.showIntersections) {
+                this.updateCombinedIntersections();
+            }
         }
         
         this.input.tracing.active = false;
@@ -7097,11 +7194,21 @@ class Graphiti {
     
     removeBadgeById(badgeId) {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
+        
+        // Recalculate tangent intersections since badges changed
+        if (this.showIntersections) {
+            this.updateCombinedIntersections();
+        }
     }
     
     removeBadgesForFunction(functionId) {
         const beforeCount = this.input.persistentBadges.length;
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
+        
+        // Recalculate tangent intersections if any badges were removed
+        if (beforeCount !== this.input.persistentBadges.length && this.showIntersections) {
+            this.updateCombinedIntersections();
+        }
     }
 
     removeIntersectionBadgesForFunction(functionId) {
@@ -7393,8 +7500,11 @@ class Graphiti {
     }
 
     updateCombinedIntersections() {
-        // Combine explicit and implicit intersections for display
-        this.intersections = [...this.explicitIntersections, ...this.implicitIntersections];
+        // Calculate tangent intersections
+        this.tangentIntersections = this.findTangentIntersections();
+        
+        // Combine explicit, implicit, and tangent intersections for display
+        this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections];
         
         // Only trigger redraw if viewport is not changing AND no implicit intersections are pending
         // During viewport changes, we use frozen cache for visual continuity
