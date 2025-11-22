@@ -1,10 +1,10 @@
-const CACHE_NAME = 'graphiti-v1.208';
+const CACHE_NAME = 'graphiti-v1.209';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './main.js',
-    './lib/mathlive.min.mjs',
-    './lib/math.min.js',
+    'https://unpkg.com/mathlive',
+    'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
     './intersection-worker.js',
     './manifest.json',
     './sw.js',
@@ -51,7 +51,7 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch event - serve from cache with network fallback
+// Fetch event - cache first with network fallback
 self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request)
@@ -62,22 +62,18 @@ self.addEventListener('fetch', (event) => {
                 
                 return fetch(event.request)
                     .then((response) => {
-                        // Clone the response before caching
                         const responseClone = response.clone();
                         
-                        // Only cache successful GET requests (Cache API doesn't support HEAD, POST, etc.)
                         if (response.status === 200 && event.request.method === 'GET') {
-                            caches.open(CACHE_NAME)
-                                .then((cache) => {
-                                    cache.put(event.request, responseClone);
-                                });
+                            caches.open(CACHE_NAME).then((cache) => {
+                                cache.put(event.request, responseClone);
+                            });
                         }
                         
                         return response;
                     });
             })
             .catch((error) => {
-                // If both cache and network fail, return fallback for documents
                 if (event.request.destination === 'document') {
                     return caches.match('./index.html');
                 }

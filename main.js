@@ -246,8 +246,6 @@ class Graphiti {
                     try {
                         // Configure MathLive to recognize inverse trig functions as function names (not variables)
                         if (window.MathfieldElement) {
-                            window.MathfieldElement.fontsDirectory = 'https://unpkg.com/mathlive/dist/fonts';
-                            
                             // Define inverse trig and hyperbolic functions as proper LaTeX macros
                             // This prevents MathLive from mangling them
                             const inverseTrigMacros = {
