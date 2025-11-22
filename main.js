@@ -7212,16 +7212,19 @@ class Graphiti {
     }
 
     removeIntersectionBadgesForFunction(functionId) {
-        // Remove intersection badges that involve the specified function
+        // Remove intersection badges (including tangent intersections) that involve the specified function
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
-            !(badge.badgeType === 'intersection' && (badge.func1Id === functionId || badge.func2Id === functionId))
+            !((badge.badgeType === 'intersection' || badge.badgeType === 'tangent-intersection') && 
+              (badge.func1Id === functionId || badge.func2Id === functionId))
         );
     }
 
     clearIntersections() {
-        // Remove all intersection badges (those with functionId === null or badgeType === 'intersection')
+        // Remove all intersection badges (including tangent intersections)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
-            badge.functionId !== null && badge.badgeType !== 'intersection'
+            badge.functionId !== null && 
+            badge.badgeType !== 'intersection' && 
+            badge.badgeType !== 'tangent-intersection'
         );
         
         // Clear the intersection arrays
@@ -10511,7 +10514,19 @@ class Graphiti {
             return;
         }
         
-        // Refine intersection using numerical method for precision
+        // Handle tangent intersections differently (no refinement needed)
+        if (intersection.isTangentIntersection) {
+            // For tangent intersections, coordinates are already accurate from line segment intersection
+            this.addTangentIntersectionBadge(
+                intersection.x,
+                intersection.y,
+                intersection.func1Id, // tangent badge ID
+                intersection.func2Id  // function ID
+            );
+            return;
+        }
+        
+        // Refine intersection using numerical method for precision (regular function-function intersections)
         const refinedIntersection = this.refineIntersection(intersection);
         
         // Validate refined coordinates
@@ -10599,6 +10614,33 @@ class Graphiti {
             functionColor: intersectionColor,
             customText: null,
             badgeType: 'intersection',
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
+    }
+    
+    addTangentIntersectionBadge(worldX, worldY, tangentBadgeId, functionId) {
+        // Use a different color for tangent intersections
+        const tangentIntersectionColor = '#FF1493'; // Deep pink for tangent intersections
+        
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Create tangent intersection badge
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: null, // Keep null for compatibility
+            func1Id: tangentBadgeId, // Tangent badge ID (string starting with "tangent_")
+            func2Id: functionId, // Function ID
+            worldX: snappedX,
+            worldY: snappedY,
+            functionColor: tangentIntersectionColor,
+            customText: null,
+            badgeType: 'tangent-intersection',
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
