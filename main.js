@@ -11864,7 +11864,7 @@ class Graphiti {
         const hasTangent = this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined;
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
             this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
-            hasTangent, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative);
+            hasTangent, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction);
         
         // Draw theta hint for polar functions
         if (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
@@ -11896,12 +11896,25 @@ class Graphiti {
                 continue;
             }
             
+            // Get the function(s) for this badge (for proper pi fraction formatting)
+            let func = null;
+            let func2 = null;
+            
+            if (badge.functionId) {
+                // Regular badge (trace, turning point, intercept)
+                func = this.findFunctionById(badge.functionId);
+            } else if (badge.func1Id && badge.func2Id) {
+                // Intersection badge - get both functions
+                func = this.findFunctionById(badge.func1Id);
+                func2 = this.findFunctionById(badge.func2Id);
+            }
+            
             // Check if this badge is being held (for visual feedback)
             const isBeingHeld = this.input.badgeInteraction.targetBadge && 
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope, badge.secondDerivative);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope, badge.secondDerivative, func, func2);
         }
     }
     
@@ -12055,7 +12068,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, tangentSlope = null, secondDerivative = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -12084,7 +12097,7 @@ class Graphiti {
             labelText = customText;
         } else if (badgeType) {
             // Badge with type-specific label
-            const coords = this.formatCoordinates(worldX, worldY);
+            const coords = this.formatCoordinates(worldX, worldY, func, func2);
             switch (badgeType) {
                 case 'maximum':
                     labelText = `Local Maximum: ${coords}`;
@@ -12102,10 +12115,10 @@ class Graphiti {
             }
         } else if (isActive) {
             // Active tracing badge
-            labelText = this.formatCoordinates(worldX, worldY);
+            labelText = this.formatCoordinates(worldX, worldY, func);
         } else {
             // Regular badge (intersections, etc.)
-            labelText = this.formatCoordinates(worldX, worldY);
+            labelText = this.formatCoordinates(worldX, worldY, func);
         }
         
         // Add derivative information if tangent is present
@@ -12197,9 +12210,30 @@ class Graphiti {
     }
     
     
-    formatCoordinates(worldX, worldY) {
-        const shouldUsePiFractions = this.angleMode === 'radians' && this.containsTrigFunctions();
-        const shouldUseCommonValues = this.containsTrigFunctions();
+    formatCoordinates(worldX, worldY, func = null, func2 = null) {
+        // If specific function(s) are provided, check if THEY contain trig functions
+        // For intersections, check if EITHER function has trig
+        // Otherwise fall back to global check (for grid labels, etc.)
+        let shouldUsePiFractions, shouldUseCommonValues;
+        
+        const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+        
+        if (func && func.expression) {
+            // Check if the primary function contains trig
+            let funcHasTrig = trigRegex.test(func.expression);
+            
+            // For intersections, also check second function
+            if (func2 && func2.expression && !funcHasTrig) {
+                funcHasTrig = trigRegex.test(func2.expression);
+            }
+            
+            shouldUsePiFractions = this.angleMode === 'radians' && funcHasTrig;
+            shouldUseCommonValues = funcHasTrig;
+        } else {
+            // Fall back to global check (for when func is not provided)
+            shouldUsePiFractions = this.angleMode === 'radians' && this.containsTrigFunctions();
+            shouldUseCommonValues = this.containsTrigFunctions();
+        }
         
         if (this.plotMode === 'polar') {
             // Convert cartesian coordinates back to polar for display
