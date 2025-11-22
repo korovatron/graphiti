@@ -181,36 +181,6 @@
             padding: 0;
         }
         
-        /* Badge Context Menu */
-        .badge-context-menu {
-            position: absolute;
-            background: var(--panel-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-            z-index: 1000;
-            min-width: 180px;
-            backdrop-filter: blur(10px);
-            padding: 4px 0;
-        }
-        
-        .context-menu-item {
-            padding: 10px 16px;
-            cursor: pointer;
-            color: var(--text-primary);
-            font-size: 14px;
-            transition: background-color 0.15s;
-            user-select: none;
-        }
-        
-        .context-menu-item:hover {
-            background: var(--accent-hover);
-        }
-        
-        .context-menu-item:active {
-            background: var(--accent-color);
-        }
-        
         #ui-overlay {
             position: absolute;
             top: 0;
@@ -1380,12 +1350,6 @@
 <body theme="dark">
     <div id="app-container">
         <canvas id="canvas"></canvas>
-        
-        <!-- Badge Context Menu -->
-        <div id="badge-context-menu" class="badge-context-menu" style="display: none;">
-            <div class="context-menu-item" id="context-add-tangent">Add Tangent Line</div>
-            <div class="context-menu-item" id="context-remove-tangent">Remove Tangent Line</div>
-        </div>
         
         <div id="ui-overlay">
             <!-- Hamburger Menu Button (Mobile) -->

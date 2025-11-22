@@ -127,10 +127,7 @@ class Graphiti {
                 startY: 0, // Starting Y position
                 holdThreshold: 250, // milliseconds - time to distinguish tap vs hold (shorter for better UX)
                 moveThreshold: 15, // pixels - movement that cancels badge interaction
-                isHolding: false, // Whether we're in hold mode
-                contextMenuBadge: null, // Badge that has context menu open
-                longPressTimer: null, // Timer for detecting long press
-                longPressThreshold: 500 // milliseconds for long press detection
+                isHolding: false // Whether we're in hold mode
             },
             // Pinch gesture tracking
             pinch: {
@@ -4658,9 +4655,6 @@ class Graphiti {
             this.handleTouchEnd(e);
         }, { passive: false });
         
-        // Context Menu for Badges
-        this.setupBadgeContextMenu();
-        
         // Keyboard Events
         document.addEventListener('keydown', (e) => {
             this.input.keys.add(e.key.toLowerCase());
@@ -4810,26 +4804,12 @@ class Graphiti {
             // First, check if user clicked on an existing badge (highest priority)
             const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
             if (targetBadge) {
-                // Store tangent properties if they exist (to restore after drag)
-                this.input.badgeInteraction.originalTangent = targetBadge.hasTangent ? {
-                    hasTangent: true,
+                // Store badge state for cycling behavior: no tangent → tangent → remove
+                this.input.badgeInteraction.originalBadgeState = {
+                    hasTangent: targetBadge.hasTangent,
                     tangentSlope: targetBadge.tangentSlope,
                     tangentExpression: targetBadge.tangentExpression
-                } : null;
-                
-                // Start long-press timer for mobile context menu
-                this.input.badgeInteraction.longPressTimer = setTimeout(() => {
-                    // Long press detected - show context menu
-                    const rect = this.canvas.getBoundingClientRect();
-                    this.showBadgeContextMenu(targetBadge, rect.left + x, rect.top + y);
-                    
-                    // Cancel the badge interaction so it doesn't drag
-                    this.input.badgeInteraction.targetBadge = null;
-                    this.input.badgeInteraction.isHolding = false;
-                    this.input.badgeInteraction.originalTangent = null;
-                    this.input.tracing.active = false;
-                    this.input.mouse.down = false;
-                }, this.input.badgeInteraction.longPressThreshold);
+                };
                 
                 // Immediately enter badge interaction mode with visual feedback
                 this.input.badgeInteraction.targetBadge = targetBadge;
@@ -4912,12 +4892,6 @@ class Graphiti {
             const deltaX = x - this.input.lastX;
             const deltaY = y - this.input.lastY;
             
-            // Cancel long-press timer if user moves (they're dragging, not long-pressing)
-            if (this.input.badgeInteraction.longPressTimer && (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5)) {
-                clearTimeout(this.input.badgeInteraction.longPressTimer);
-                this.input.badgeInteraction.longPressTimer = null;
-            }
-            
             // Badge interaction is now handled immediately in handlePointerStart
             // All badge interactions start in tracing mode right away
             
@@ -4985,12 +4959,6 @@ class Graphiti {
             return;
         }
         
-        // Cancel long-press timer if still active
-        if (this.input.badgeInteraction.longPressTimer) {
-            clearTimeout(this.input.badgeInteraction.longPressTimer);
-            this.input.badgeInteraction.longPressTimer = null;
-        }
-        
         // Handle badge interaction (tap vs hold based on movement, not time)
         if (this.input.badgeInteraction.targetBadge) {
             const totalMovement = Math.sqrt(
@@ -4998,12 +4966,21 @@ class Graphiti {
                 Math.pow(this.input.mouse.y - this.input.badgeInteraction.startY, 2)
             );
             
-            // If user didn't move much and released quickly, it was a tap - don't add new badge
+            // If user didn't move much and released quickly, it was a tap - cycle badge state
             if (totalMovement < this.input.badgeInteraction.moveThreshold) {
                 const holdDuration = Date.now() - this.input.badgeInteraction.startTime;
                 if (holdDuration < this.input.badgeInteraction.holdThreshold) {
-                    // Quick tap with minimal movement - just remove the badge (already removed in handlePointerStart)
-                    this.input.tracing.active = false; // Cancel tracing so no new badge is added
+                    // Quick tap with minimal movement - cycle through states
+                    // State cycle: no badge → trace point → trace point + tangent → removed
+                    const originalState = this.input.badgeInteraction.originalBadgeState;
+                    
+                    if (!originalState.hasTangent) {
+                        // Badge had no tangent → add tangent, keep badge
+                        // Don't cancel tracing, let it add the badge with tangent below
+                    } else {
+                        // Badge already had tangent → remove completely
+                        this.input.tracing.active = false; // Cancel tracing so no new badge is added
+                    }
                 }
             }
             // If significant movement occurred, treat as hold/drag and add new badge at final position
@@ -5034,21 +5011,33 @@ class Graphiti {
                 functionColor
             );
             
-            // If the original badge had a tangent, recalculate it at the new position
-            if (this.input.badgeInteraction.originalTangent && this.input.badgeInteraction.originalTangent.hasTangent) {
+            // Handle tangent based on original badge state
+            const originalState = this.input.badgeInteraction.originalBadgeState;
+            if (originalState) {
                 const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
                 if (newBadge && tracingFunction) {
-                    const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
-                    if (slopeData) {
-                        newBadge.hasTangent = true;
-                        newBadge.tangentSlope = slopeData.slope;
-                        newBadge.tangentExpression = slopeData.expression;
+                    if (!originalState.hasTangent) {
+                        // Cycling from no tangent → add tangent
+                        const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                        if (slopeData) {
+                            newBadge.hasTangent = true;
+                            newBadge.tangentSlope = slopeData.slope;
+                            newBadge.tangentExpression = slopeData.expression;
+                        }
+                    } else if (originalState.hasTangent) {
+                        // Was being dragged - recalculate tangent at new position
+                        const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                        if (slopeData) {
+                            newBadge.hasTangent = true;
+                            newBadge.tangentSlope = slopeData.slope;
+                            newBadge.tangentExpression = slopeData.expression;
+                        }
                     }
                 }
             }
             
-            // Clear tangent temp storage
-            this.input.badgeInteraction.originalTangent = null;
+            // Clear badge state temp storage
+            this.input.badgeInteraction.originalBadgeState = null;
         }
         
         this.input.tracing.active = false;
@@ -7070,133 +7059,6 @@ class Graphiti {
         this.intersections = [];
         this.explicitIntersections = [];
         this.implicitIntersections = [];
-    }
-    
-    // ================================
-    // BADGE CONTEXT MENU METHODS
-    // ================================
-    
-    setupBadgeContextMenu() {
-        const contextMenu = document.getElementById('badge-context-menu');
-        const addTangentOption = document.getElementById('context-add-tangent');
-        const removeTangentOption = document.getElementById('context-remove-tangent');
-        
-        if (!contextMenu || !addTangentOption || !removeTangentOption) {
-            console.warn('Badge context menu elements not found');
-            return;
-        }
-        
-        // Right-click on canvas to show context menu if over a badge
-        this.canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
-            // Update badge positions for accurate detection
-            this.updateBadgeScreenPositions();
-            
-            // Find badge at this position
-            const badge = this.findBadgeAtScreenPosition(x, y, 25);
-            
-            if (badge) {
-                this.showBadgeContextMenu(badge, e.clientX, e.clientY);
-            } else {
-                this.hideBadgeContextMenu();
-            }
-        });
-        
-        // Hide context menu when clicking elsewhere
-        document.addEventListener('click', () => {
-            this.hideBadgeContextMenu();
-        });
-        
-        // Add tangent line option
-        addTangentOption.addEventListener('click', () => {
-            if (this.input.badgeInteraction.contextMenuBadge) {
-                this.addTangentToBadge(this.input.badgeInteraction.contextMenuBadge);
-            }
-            this.hideBadgeContextMenu();
-        });
-        
-        // Remove tangent line option
-        removeTangentOption.addEventListener('click', () => {
-            if (this.input.badgeInteraction.contextMenuBadge) {
-                this.removeTangentFromBadge(this.input.badgeInteraction.contextMenuBadge);
-            }
-            this.hideBadgeContextMenu();
-        });
-    }
-    
-    showBadgeContextMenu(badge, clientX, clientY) {
-        const contextMenu = document.getElementById('badge-context-menu');
-        const addTangentOption = document.getElementById('context-add-tangent');
-        const removeTangentOption = document.getElementById('context-remove-tangent');
-        
-        if (!contextMenu) return;
-        
-        // Store which badge this menu is for
-        this.input.badgeInteraction.contextMenuBadge = badge;
-        
-        // Show/hide appropriate options based on badge state
-        if (badge.hasTangent) {
-            addTangentOption.style.display = 'none';
-            removeTangentOption.style.display = 'block';
-        } else {
-            addTangentOption.style.display = 'block';
-            removeTangentOption.style.display = 'none';
-        }
-        
-        // Position the menu near the cursor
-        contextMenu.style.left = `${clientX + 5}px`;
-        contextMenu.style.top = `${clientY + 5}px`;
-        contextMenu.style.display = 'block';
-        
-        // Ensure menu stays within viewport
-        setTimeout(() => {
-            const menuRect = contextMenu.getBoundingClientRect();
-            if (menuRect.right > window.innerWidth) {
-                contextMenu.style.left = `${clientX - menuRect.width - 5}px`;
-            }
-            if (menuRect.bottom > window.innerHeight) {
-                contextMenu.style.top = `${clientY - menuRect.height - 5}px`;
-            }
-        }, 0);
-    }
-    
-    hideBadgeContextMenu() {
-        const contextMenu = document.getElementById('badge-context-menu');
-        if (contextMenu) {
-            contextMenu.style.display = 'none';
-        }
-        this.input.badgeInteraction.contextMenuBadge = null;
-    }
-    
-    addTangentToBadge(badge) {
-        if (!badge || badge.hasTangent) return;
-        
-        // Find the function for this badge
-        const func = this.findFunctionById(badge.functionId);
-        if (!func) return;
-        
-        // Calculate the slope at this point
-        const slopeData = this.calculateSlopeAtPoint(func, badge.worldX);
-        if (slopeData) {
-            badge.hasTangent = true;
-            badge.tangentSlope = slopeData.slope;
-            badge.tangentExpression = slopeData.expression;
-            this.draw(); // Redraw to show tangent
-        }
-    }
-    
-    removeTangentFromBadge(badge) {
-        if (!badge || !badge.hasTangent) return;
-        
-        badge.hasTangent = false;
-        badge.tangentSlope = null;
-        badge.tangentExpression = null;
-        this.draw(); // Redraw to hide tangent
     }
 
     // ================================
