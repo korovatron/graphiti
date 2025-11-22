@@ -10543,52 +10543,38 @@ class Graphiti {
             return rounded + 'π';
         }
         
-        // Handle common fractions - multiples of π/12 (15°)
-        const commonFractions = [
-            { value: 1/12, label: 'π/12' },
-            { value: 1/6, label: 'π/6' },
-            { value: 1/4, label: 'π/4' },
-            { value: 1/3, label: 'π/3' },
-            { value: 5/12, label: '5π/12' },
-            { value: 1/2, label: 'π/2' },
-            { value: 7/12, label: '7π/12' },
-            { value: 2/3, label: '2π/3' },
-            { value: 3/4, label: '3π/4' },
-            { value: 5/6, label: '5π/6' },
-            { value: 11/12, label: '11π/12' },
-            // Negative fractions
-            { value: -1/12, label: '-π/12' },
-            { value: -1/6, label: '-π/6' },
-            { value: -1/4, label: '-π/4' },
-            { value: -1/3, label: '-π/3' },
-            { value: -5/12, label: '-5π/12' },
-            { value: -1/2, label: '-π/2' },
-            { value: -7/12, label: '-7π/12' },
-            { value: -2/3, label: '-2π/3' },
-            { value: -3/4, label: '-3π/4' },
-            { value: -5/6, label: '-5π/6' },
-            { value: -11/12, label: '-11π/12' },
-            // Beyond 2π
-            { value: 13/12, label: '13π/12' },
-            { value: 7/6, label: '7π/6' },
-            { value: 5/4, label: '5π/4' },
-            { value: 4/3, label: '4π/3' },
-            { value: 17/12, label: '17π/12' },
-            { value: 3/2, label: '3π/2' },
-            { value: 19/12, label: '19π/12' },
-            { value: 5/3, label: '5π/3' },
-            { value: 7/4, label: '7π/4' },
-            { value: 11/6, label: '11π/6' },
-            { value: 23/12, label: '23π/12' }
-        ];
-        
-        for (let fraction of commonFractions) {
-            if (Math.abs(piMultiple - fraction.value) < 0.01) {
-                return fraction.label;
+        // Check if this is a multiple of π/24 (smallest grid unit)
+        // This dynamically handles ANY fraction of π, not just a hardcoded list
+        const twentyFourthsRatio = piMultiple * 24;
+        if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.01) {
+            const numerator = Math.round(twentyFourthsRatio);
+            const denominator = 24;
+            
+            // Simplify the fraction
+            const gcd = (a, b) => b === 0 ? Math.abs(a) : gcd(b, a % b);
+            const divisor = gcd(Math.abs(numerator), denominator);
+            const simplifiedNum = numerator / divisor;
+            const simplifiedDen = denominator / divisor;
+            
+            // Format the simplified fraction
+            const sign = simplifiedNum < 0 ? '-' : '';
+            const absNum = Math.abs(simplifiedNum);
+            
+            if (simplifiedDen === 1) {
+                // Integer multiple of π (already handled above, but just in case)
+                if (absNum === 1) return sign + 'π';
+                return sign + absNum + 'π';
+            } else {
+                // Proper fraction
+                if (absNum === 1) {
+                    return sign + 'π/' + simplifiedDen;
+                } else {
+                    return sign + absNum + 'π/' + simplifiedDen;
+                }
             }
         }
         
-        // Not a common fraction
+        // Not a recognizable fraction of π
         return null;
     }
 
