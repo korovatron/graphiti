@@ -1201,6 +1201,10 @@ class Graphiti {
                 // Clear expression cache when function expression changes
                 this.clearExpressionCache();
                 
+                // Remove badges for this function since expression changed
+                this.removeBadgesForFunction(func.id);
+                this.removeIntersectionBadgesForFunction(func.id);
+                
                 // Stop animation when editing a function in polar mode
                 if (this.plotMode === 'polar' && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused)) {
                     this.stopPolarAnimation();
@@ -1239,6 +1243,10 @@ class Graphiti {
                     
                     // Clear expression cache when function expression changes
                     this.clearExpressionCache();
+                    
+                    // Remove badges for this function since expression changed
+                    this.removeBadgesForFunction(func.id);
+                    this.removeIntersectionBadgesForFunction(func.id);
                     
                     this.replotAllFunctions(); // Replot all functions for consistent badge behavior
                 } catch (error) {
@@ -7474,6 +7482,16 @@ class Graphiti {
     
     removeBadgesForFunction(functionId) {
         const beforeCount = this.input.persistentBadges.length;
+        
+        // First, remove tangent intersection badges for badges that belong to this function
+        const badgesToRemove = this.input.persistentBadges.filter(badge => badge.functionId === functionId);
+        badgesToRemove.forEach(badge => {
+            if (badge.hasTangent) {
+                this.removeTangentIntersectionBadgesForBadge(badge.id);
+            }
+        });
+        
+        // Then remove the badges themselves
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
         
         // Recalculate tangent intersections if any badges were removed
@@ -8036,7 +8054,7 @@ class Graphiti {
         
         for (const badge of tangentBadges) {
             // Tangent line equation: y = m*x + b
-            const m = badge.tangentSlope;
+            const m = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
             const b = badge.worldY - m * badge.worldX;
             
             // X-intercept: where y = 0
@@ -8788,37 +8806,41 @@ class Graphiti {
             
             // Try symbolic derivative first (more accurate)
             try {
-                const processedExpression = cleanExpression.toLowerCase();
-                const derivative = math.derivative(processedExpression, 'x');
-                const derivativeStr = derivative.toString();
+                let processedExpression = cleanExpression.toLowerCase();
                 
-                // Also get second derivative
-                const secondDerivative = math.derivative(derivative, 'x');
-                const secondDerivativeStr = secondDerivative.toString();
-                
-                // Evaluate the derivative at the given x value
-                let evalExpr = derivativeStr.toLowerCase();
-                let evalSecondExpr = secondDerivativeStr.toLowerCase();
-                
-                // Handle degree mode for trig functions
+                // Handle degree mode for trig functions - convert BEFORE taking derivative
                 if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(evalExpr);
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
                     if (hasRegularTrigWithX) {
-                        evalExpr = this.convertTrigToDegreeMode(evalExpr);
-                    }
-                    const hasRegularTrigWithX2 = this.getCachedRegex('regularTrigWithX').test(evalSecondExpr);
-                    if (hasRegularTrigWithX2) {
-                        evalSecondExpr = this.convertTrigToDegreeMode(evalSecondExpr);
+                        processedExpression = this.convertTrigToDegreeMode(processedExpression);
                     }
                 }
                 
-                const compiledDeriv = this.getCompiledExpression(evalExpr);
-                const slope = compiledDeriv.evaluate({x: worldX});
+                const derivative = math.derivative(processedExpression, 'x');
+                const derivativeStr = derivative.toString();
                 
-                const compiledSecondDeriv = this.getCompiledExpression(evalSecondExpr);
-                const secondDerivValue = compiledSecondDeriv.evaluate({x: worldX});
+                // Evaluate the first derivative at the given x value
+                const compiledDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
+                const slope = compiledDeriv.evaluate({x: worldX, pi: Math.PI, e: Math.E});
                 
-                if (isFinite(slope) && isFinite(secondDerivValue)) {
+                // Try to get second derivative, but don't fail if it's too complex
+                let secondDerivValue = null;
+                try {
+                    const secondDerivative = math.derivative(derivative, 'x');
+                    const secondDerivativeStr = secondDerivative.toString();
+                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr.toLowerCase());
+                    secondDerivValue = compiledSecondDeriv.evaluate({x: worldX, pi: Math.PI, e: Math.E});
+                    
+                    // Validate second derivative
+                    if (!isFinite(secondDerivValue)) {
+                        secondDerivValue = null;
+                    }
+                } catch (secondDerivError) {
+                    // Second derivative too complex or failed - that's okay
+                    secondDerivValue = null;
+                }
+                
+                if (isFinite(slope)) {
                     return {
                         slope: slope,
                         expression: derivativeStr,
@@ -11834,24 +11856,37 @@ class Graphiti {
             // For polar mode, display dr/dθ; for Cartesian mode, display dy/dx
             if (this.plotMode === 'polar' && tangentSlope.polarDerivative !== undefined) {
                 // Display polar derivative dr/dθ
-                const polarDerivStr = this.formatCoordinate(tangentSlope.polarDerivative);
+                const polarDerivStr = this.formatDerivative(tangentSlope.polarDerivative);
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
                 labelText += ` | dr/d${thetaSymbol}=${polarDerivStr}`;
             } else {
                 // Display Cartesian slope dy/dx
                 const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
+                
+                // If in degree mode with trig functions, convert derivative back to standard mathematical form
+                let displaySlope = slopeValue;
+                if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                    // Multiply by 180/π to convert from per-degree to per-radian derivative
+                    displaySlope = slopeValue * 180 / Math.PI;
+                }
+                
                 let slopeStr;
-                if (Math.abs(slopeValue) > 100) {
-                    slopeStr = slopeValue > 0 ? '∞' : '-∞';
+                if (Math.abs(displaySlope) > 100) {
+                    slopeStr = displaySlope > 0 ? '∞' : '-∞';
                 } else {
-                    slopeStr = this.formatCoordinate(slopeValue);
+                    slopeStr = this.formatDerivative(displaySlope);
                 }
                 labelText += ` | dy/dx=${slopeStr}`;
                 
                 // Add second derivative if available
                 const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
                 if (secondDeriv !== null && isFinite(secondDeriv)) {
-                    const secondDerivStr = this.formatCoordinate(secondDeriv);
+                    // Second derivative needs (180/π)² conversion
+                    let displaySecondDeriv = secondDeriv;
+                    if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                        displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
+                    }
+                    const secondDerivStr = this.formatDerivative(displaySecondDeriv);
                     labelText += ` | d²y/dx²=${secondDerivStr}`;
                 }
             }
@@ -12022,6 +12057,46 @@ class Graphiti {
             if (decimalPart.match(/^0+$/)) {
                 return integerPart;
             }
+        }
+        
+        return formatted;
+    }
+    
+    formatDerivative(value) {
+        // Format derivative values for display - independent of viewport scale
+        // Derivatives can be very small, so use fixed precision based on magnitude
+        
+        if (!isFinite(value)) return '0';
+        
+        const absValue = Math.abs(value);
+        
+        // Zero threshold - truly tiny values
+        if (absValue < 1e-10) return '0';
+        
+        // Determine precision based on the magnitude of the derivative itself
+        let precision;
+        if (absValue >= 100) {
+            precision = 1; // Large derivatives
+        } else if (absValue >= 10) {
+            precision = 2;
+        } else if (absValue >= 1) {
+            precision = 3;
+        } else if (absValue >= 0.1) {
+            precision = 4;
+        } else if (absValue >= 0.01) {
+            precision = 5;
+        } else if (absValue >= 0.001) {
+            precision = 6;
+        } else {
+            // For very small derivatives, use scientific notation
+            return value.toExponential(2);
+        }
+        
+        const formatted = value.toFixed(precision);
+        
+        // Remove trailing zeros after decimal point
+        if (formatted.includes('.')) {
+            return formatted.replace(/\.?0+$/, '');
         }
         
         return formatted;
