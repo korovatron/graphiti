@@ -10565,25 +10565,36 @@ class Graphiti {
         
         // Use neon pulsating colors if neonTangent is true, otherwise use function color
         if (badge.neonTangent) {
-            // Pulsating neon effect (same as polar radar sweep)
-            const time = Date.now() / 1000;
-            const phase = (time * 2) % 4; // 4-color cycle
+            // Pulsating neon effect - smooth color cycling like polar radar sweep
+            const time = Date.now() / 1000; // Convert to seconds
+            const pulseSpeed = 2; // Slower pulse for smoother color transition
             
-            let color;
-            if (phase < 1) {
-                color = `rgba(255, 20, 147, ${0.7 + Math.sin(time * 3) * 0.3})`; // Hot pink
-            } else if (phase < 2) {
-                color = `rgba(0, 255, 255, ${0.7 + Math.sin(time * 3) * 0.3})`; // Cyan
-            } else if (phase < 3) {
-                color = `rgba(50, 255, 50, ${0.7 + Math.sin(time * 3) * 0.3})`; // Lime
+            // Create color cycling effect through neon colors (hot pink, cyan, lime, orange)
+            const colorPhase = (Math.sin(time * pulseSpeed) + 1) / 2; // 0 to 1
+            let neonColor;
+            
+            if (colorPhase < 0.25) {
+                // Hot pink to cyan
+                const t = colorPhase / 0.25;
+                neonColor = `rgba(${Math.floor(255 * (1 - t) + 0 * t)}, ${Math.floor(20 * (1 - t) + 255 * t)}, ${Math.floor(147 * (1 - t) + 255 * t)}, 0.8)`;
+            } else if (colorPhase < 0.5) {
+                // Cyan to lime
+                const t = (colorPhase - 0.25) / 0.25;
+                neonColor = `rgba(${Math.floor(0 * (1 - t) + 57 * t)}, ${255}, ${Math.floor(255 * (1 - t) + 255 * t)}, 0.8)`;
+            } else if (colorPhase < 0.75) {
+                // Lime to orange
+                const t = (colorPhase - 0.5) / 0.25;
+                neonColor = `rgba(${Math.floor(57 * (1 - t) + 255 * t)}, ${Math.floor(255 * (1 - t) + 165 * t)}, ${Math.floor(255 * (1 - t) + 0 * t)}, 0.8)`;
             } else {
-                color = `rgba(255, 165, 0, ${0.7 + Math.sin(time * 3) * 0.3})`; // Orange
+                // Orange to hot pink
+                const t = (colorPhase - 0.75) / 0.25;
+                neonColor = `rgba(${255}, ${Math.floor(165 * (1 - t) + 20 * t)}, ${Math.floor(0 * (1 - t) + 147 * t)}, 0.8)`;
             }
             
-            this.ctx.strokeStyle = color;
+            this.ctx.strokeStyle = neonColor;
             this.ctx.lineWidth = 3; // Thicker for neon effect
             this.ctx.shadowBlur = 15;
-            this.ctx.shadowColor = color;
+            this.ctx.shadowColor = neonColor;
         } else {
             // Use function color with transparency
             this.ctx.strokeStyle = badge.functionColor;
