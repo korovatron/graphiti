@@ -9649,8 +9649,13 @@ class Graphiti {
                 
                 let newTheta = currentTheta + deltaTheta;
                 
-                // Clamp theta to valid range
-                newTheta = Math.max(thetaMin, Math.min(thetaMax, newTheta));
+                // Allow continuous wrapping at boundaries for smooth motion
+                // When reaching thetaMax, continue by wrapping to thetaMin (and vice versa)
+                if (newTheta > thetaMax) {
+                    newTheta = thetaMin + (newTheta - thetaMax);
+                } else if (newTheta < thetaMin) {
+                    newTheta = thetaMax - (thetaMin - newTheta);
+                }
                 
                 // Evaluate at new theta
                 const scope = { t: newTheta, theta: newTheta, pi: Math.PI, e: Math.E };
@@ -11496,6 +11501,11 @@ class Graphiti {
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
             this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
             hasTangent, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative);
+        
+        // Draw theta hint for polar functions
+        if (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
+            this.drawPolarThetaHint(this.input.tracing.theta);
+        }
     }
     
     drawPersistentBadges() {
@@ -11529,6 +11539,46 @@ class Graphiti {
             // Draw the persistent badge with hold indication
             this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope, badge.secondDerivative);
         }
+    }
+    
+    drawPolarThetaHint(theta) {
+        // Draw a subtle hint at the bottom of the screen showing how to adjust theta
+        this.ctx.save();
+        
+        // Format theta value based on angle mode
+        let thetaDisplay;
+        if (this.angleMode === 'degrees') {
+            const degrees = theta * 180 / Math.PI;
+            thetaDisplay = `θ = ${degrees.toFixed(1)}°`;
+        } else {
+            thetaDisplay = `θ = ${theta.toFixed(3)}`;
+        }
+        
+        // Position at bottom center
+        const x = this.viewport.width / 2;
+        const y = this.viewport.height - 30;
+        
+        // Semi-transparent background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.font = '14px Inter, system-ui, sans-serif';
+        const text = `← Drag horizontally to adjust ${thetaDisplay} →`;
+        const metrics = this.ctx.measureText(text);
+        const padding = 12;
+        
+        this.ctx.fillRect(
+            x - metrics.width / 2 - padding,
+            y - 10 - padding,
+            metrics.width + padding * 2,
+            20 + padding * 2
+        );
+        
+        // Draw text
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x, y);
+        
+        this.ctx.restore();
     }
     
     drawTangentLine(badge) {
