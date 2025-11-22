@@ -4920,6 +4920,9 @@ class Graphiti {
                 this.input.badgeInteraction.startY = y;
                 this.input.badgeInteraction.isHolding = true; // Start in hold mode immediately
                 
+                // Remove tangent intersection badges that reference this badge
+                this.removeTangentIntersectionBadgesForBadge(targetBadge.id);
+                
                 // Remove the original badge right away
                 this.removeBadgeById(targetBadge.id);
                 
@@ -7193,6 +7196,9 @@ class Graphiti {
     }
     
     removeBadgeById(badgeId) {
+        // Remove tangent intersection badges that reference this badge
+        this.removeTangentIntersectionBadgesForBadge(badgeId);
+        
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
         
         // Recalculate tangent intersections since badges changed
@@ -7216,6 +7222,14 @@ class Graphiti {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             !((badge.badgeType === 'intersection' || badge.badgeType === 'tangent-intersection') && 
               (badge.func1Id === functionId || badge.func2Id === functionId))
+        );
+    }
+    
+    removeTangentIntersectionBadgesForBadge(badgeId) {
+        // Remove tangent intersection badges that reference the specified badge
+        const tangentBadgeIdString = `tangent_${badgeId}`;
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+            !(badge.badgeType === 'tangent-intersection' && badge.func1Id === tangentBadgeIdString)
         );
     }
 
