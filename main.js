@@ -4991,11 +4991,25 @@ class Graphiti {
                 this.input.badgeInteraction.startY = y;
                 this.input.badgeInteraction.isHolding = true; // Start in hold mode immediately
                 
+                // If badge has tangent, clear frozen intercepts
+                if (targetBadge.hasTangent && this.showIntercepts) {
+                    this.frozenInterceptBadges = [];
+                }
+                
                 // Remove tangent intersection badges that reference this badge
                 this.removeTangentIntersectionBadgesForBadge(targetBadge.id);
                 
                 // Remove the original badge right away
                 this.removeBadgeById(targetBadge.id);
+                
+                // Recalculate intercepts immediately if the badge had a tangent
+                // And set viewport changing to false AFTER recalculation
+                if (targetBadge.hasTangent && this.showIntercepts) {
+                    this.isViewportChanging = false;
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Update culled marker cache
+                    this.draw(); // Force redraw to clear old intercept markers
+                }
                 
                 // Start tracing mode for immediate responsiveness
                 const targetFunction = this.findFunctionById(targetBadge.functionId);
@@ -5263,15 +5277,25 @@ class Graphiti {
             this.input.badgeInteraction.wasTap = false;
             this.input.badgeInteraction.originalBadgeState = null;
             
+            // Clear frozen intercept badges and set viewport stable BEFORE any calculations
+            // This ensures that updateCombinedIntersections will call draw()
+            this.frozenInterceptBadges = [];
+            this.isViewportChanging = false;
+            
+            // Recalculate tangent intercepts
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers(); // Update culled marker cache
+            }
+            
             // Recalculate tangent intersections since badge state changed
+            // This will call draw() since isViewportChanging is now false
             if (this.showIntersections) {
                 this.updateCombinedIntersections();
             }
             
-            // Recalculate tangent intercepts since badge state changed
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-            }
+            // Always draw to ensure intercepts are displayed
+            this.draw();
         }
         
         this.input.tracing.active = false;
@@ -7283,6 +7307,7 @@ class Graphiti {
         }
         
         // Recalculate tangent intercepts since badges changed
+        // Note: Don't call draw() here - let the caller handle it
         if (this.showIntercepts) {
             this.intercepts = this.findAxisIntercepts();
         }
