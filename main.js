@@ -4804,18 +4804,21 @@ class Graphiti {
             // First, check if user clicked on an existing badge (highest priority)
             const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
             if (targetBadge) {
-                // Store badge state for cycling behavior: no tangent → tangent → remove
+                // Store badge state for cycling behavior: no tangent → tangent → neon tangent → remove
                 this.input.badgeInteraction.originalBadgeState = {
                     hasTangent: targetBadge.hasTangent,
                     tangentSlope: targetBadge.tangentSlope,
-                    tangentExpression: targetBadge.tangentExpression
+                    tangentExpression: targetBadge.tangentExpression,
+                    neonTangent: targetBadge.neonTangent || false
                 };
                 
                 // If badge has tangent, initialize currentSlope for live updates during drag
                 if (targetBadge.hasTangent && targetBadge.tangentSlope !== null) {
                     this.input.tracing.currentSlope = targetBadge.tangentSlope;
+                    this.input.tracing.neonTangent = targetBadge.neonTangent || false;
                 } else {
                     this.input.tracing.currentSlope = null;
+                    this.input.tracing.neonTangent = false;
                 }
                 
                 // Immediately enter badge interaction mode with visual feedback
@@ -4989,14 +4992,17 @@ class Graphiti {
                 const holdDuration = Date.now() - this.input.badgeInteraction.startTime;
                 if (holdDuration < this.input.badgeInteraction.holdThreshold) {
                     // Quick tap with minimal movement - cycle through states
-                    // State cycle: no badge → trace point → trace point + tangent → removed
+                    // State cycle: no badge → trace point → trace + tangent → trace + neon tangent → removed
                     const originalState = this.input.badgeInteraction.originalBadgeState;
                     
                     if (!originalState.hasTangent) {
-                        // Badge had no tangent → add tangent, keep badge
+                        // Badge had no tangent → add normal tangent, keep badge
                         // Don't cancel tracing, let it add the badge with tangent below
+                    } else if (originalState.hasTangent && !originalState.neonTangent) {
+                        // Badge had normal tangent → switch to neon tangent, keep badge
+                        // Don't cancel tracing, let it add the badge with neon tangent below
                     } else {
-                        // Badge already had tangent → remove completely
+                        // Badge already had neon tangent → remove completely
                         this.input.tracing.active = false; // Cancel tracing so no new badge is added
                     }
                 }
@@ -5035,20 +5041,31 @@ class Graphiti {
                 const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
                 if (newBadge && tracingFunction) {
                     if (!originalState.hasTangent) {
-                        // Cycling from no tangent → add tangent
+                        // Cycling from no tangent → add normal tangent
                         const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
                         if (slopeData) {
                             newBadge.hasTangent = true;
                             newBadge.tangentSlope = slopeData.slope;
                             newBadge.tangentExpression = slopeData.expression;
+                            newBadge.neonTangent = false;
                         }
-                    } else if (originalState.hasTangent) {
-                        // Was being dragged - recalculate tangent at new position
+                    } else if (originalState.hasTangent && !originalState.neonTangent) {
+                        // Cycling from normal tangent → neon tangent
                         const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
                         if (slopeData) {
                             newBadge.hasTangent = true;
                             newBadge.tangentSlope = slopeData.slope;
                             newBadge.tangentExpression = slopeData.expression;
+                            newBadge.neonTangent = true;
+                        }
+                    } else if (originalState.hasTangent && originalState.neonTangent) {
+                        // Was being dragged with neon tangent - keep neon tangent at new position
+                        const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX);
+                        if (slopeData) {
+                            newBadge.hasTangent = true;
+                            newBadge.tangentSlope = slopeData.slope;
+                            newBadge.tangentExpression = slopeData.expression;
+                            newBadge.neonTangent = true;
                         }
                     }
                 }
@@ -5061,6 +5078,7 @@ class Graphiti {
         this.input.tracing.active = false;
         this.input.tracing.functionId = null;
         this.input.tracing.currentSlope = null;
+        this.input.tracing.neonTangent = false;
         
         // Don't trigger viewport change on pointer end - it's already handled by debounced timer
         // The timer in handleViewportChange triggers when movement stops (even before pointer release)
@@ -7045,7 +7063,8 @@ class Graphiti {
             // Tangent line properties
             hasTangent: false, // Whether to show tangent line at this point
             tangentSlope: null, // Slope of tangent line (dy/dx)
-            tangentExpression: null // Derivative expression (for display)
+            tangentExpression: null, // Derivative expression (for display)
+            neonTangent: false // Whether to use pulsating neon colors for tangent
         };
         
         this.input.persistentBadges.push(badge);
@@ -10492,7 +10511,8 @@ class Graphiti {
                 worldY: this.input.tracing.worldY,
                 tangentSlope: this.input.tracing.currentSlope,
                 functionColor: tracingFunction.color,
-                hasTangent: true
+                hasTangent: true,
+                neonTangent: this.input.tracing.neonTangent || false
             };
             this.drawTangentLine(tempBadge);
         }
@@ -10542,11 +10562,35 @@ class Graphiti {
         
         this.ctx.save();
         
-        // Use function color with transparency
-        this.ctx.strokeStyle = badge.functionColor;
-        this.ctx.lineWidth = 2;
+        // Use neon pulsating colors if neonTangent is true, otherwise use function color
+        if (badge.neonTangent) {
+            // Pulsating neon effect (same as polar radar sweep)
+            const time = Date.now() / 1000;
+            const phase = (time * 2) % 4; // 4-color cycle
+            
+            let color;
+            if (phase < 1) {
+                color = `rgba(255, 20, 147, ${0.7 + Math.sin(time * 3) * 0.3})`; // Hot pink
+            } else if (phase < 2) {
+                color = `rgba(0, 255, 255, ${0.7 + Math.sin(time * 3) * 0.3})`; // Cyan
+            } else if (phase < 3) {
+                color = `rgba(50, 255, 50, ${0.7 + Math.sin(time * 3) * 0.3})`; // Lime
+            } else {
+                color = `rgba(255, 165, 0, ${0.7 + Math.sin(time * 3) * 0.3})`; // Orange
+            }
+            
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 3; // Thicker for neon effect
+            this.ctx.shadowBlur = 15;
+            this.ctx.shadowColor = color;
+        } else {
+            // Use function color with transparency
+            this.ctx.strokeStyle = badge.functionColor;
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 0.8;
+        }
+        
         this.ctx.setLineDash([10, 5]); // Dashed line pattern
-        this.ctx.globalAlpha = 0.8;
         
         // Calculate the line equation: y - y0 = m(x - x0)
         // Rearranged: y = m*x + (y0 - m*x0)
