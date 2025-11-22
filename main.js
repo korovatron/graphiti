@@ -3730,7 +3730,7 @@ class Graphiti {
         // Check tangent-function intersections
         for (const badge of tangentBadges) {
             // Tangent line equation: y = m*x + b
-            const m = badge.tangentSlope;
+            const m = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
             const b = badge.worldY - m * badge.worldX;
             
             // Find intersections with each function
@@ -3762,10 +3762,10 @@ class Graphiti {
     
     findTangentTangentIntersection(badge1, badge2) {
         // Tangent line equations: y = m1*x + b1 and y = m2*x + b2
-        const m1 = badge1.tangentSlope;
+        const m1 = badge1.tangentSlope.slope !== undefined ? badge1.tangentSlope.slope : badge1.tangentSlope;
         const b1 = badge1.worldY - m1 * badge1.worldX;
         
-        const m2 = badge2.tangentSlope;
+        const m2 = badge2.tangentSlope.slope !== undefined ? badge2.tangentSlope.slope : badge2.tangentSlope;
         const b2 = badge2.worldY - m2 * badge2.worldX;
         
         // Check if lines are parallel (or nearly parallel)
@@ -5122,7 +5122,7 @@ class Graphiti {
                             // Pass both x and y for implicit functions, theta for polar functions
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x, tracePoint.y, this.input.tracing.theta);
                             if (slopeData) {
-                                this.input.tracing.currentSlope = slopeData.slope;
+                                this.input.tracing.currentSlope = slopeData;
                                 this.input.tracing.currentSecondDerivative = slopeData.secondDerivative;
                             }
                         } else {
@@ -5265,7 +5265,7 @@ class Graphiti {
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
-                                newBadge.tangentSlope = slopeData.slope;
+                                newBadge.tangentSlope = slopeData;
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonTangent = false;
@@ -5275,7 +5275,7 @@ class Graphiti {
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
-                                newBadge.tangentSlope = slopeData.slope;
+                                newBadge.tangentSlope = slopeData;
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonTangent = true;
@@ -5288,7 +5288,7 @@ class Graphiti {
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
-                                newBadge.tangentSlope = slopeData.slope;
+                                newBadge.tangentSlope = slopeData;
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonTangent = originalState.neonTangent; // Keep same neon state
@@ -6421,7 +6421,7 @@ class Graphiti {
                 if (badge.hasTangent) {
                     const slopeData = this.calculateSlopeAtPoint(func, snapped.x, snapped.y);
                     if (slopeData) {
-                        badge.tangentSlope = slopeData.slope;
+                        badge.tangentSlope = slopeData;
                         badge.tangentExpression = slopeData.expression;
                         badge.secondDerivative = slopeData.secondDerivative;
                     }
@@ -8439,6 +8439,88 @@ class Graphiti {
             }
         }
         
+        // Find intercepts for tangent lines in polar mode
+        const tangentIntercepts = this.findPolarTangentAxisIntercepts();
+        intercepts.push(...tangentIntercepts);
+        
+        return intercepts;
+    }
+    
+    findPolarTangentAxisIntercepts() {
+        const intercepts = [];
+        const minDistance = 0.5; // Minimum distance between distinct intercepts
+        
+        // Get all badges with tangent lines
+        const tangentBadges = this.input.persistentBadges.filter(b => b.hasTangent && b.tangentSlope !== null);
+        
+        for (const badge of tangentBadges) {
+            // Tangent line equation: y = m*x + b
+            const m = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+            const b = badge.worldY - m * badge.worldX;
+            
+            // X-axis crossings (where y = 0)
+            // 0 = m*x + b  →  x = -b/m
+            if (Math.abs(m) > 1e-10) { // Avoid division by near-zero (horizontal lines)
+                const xIntercept = -b / m;
+                
+                // Check if within reasonable viewport bounds
+                const viewportMargin = 10;
+                if (xIntercept >= this.viewport.minX - viewportMargin && 
+                    xIntercept <= this.viewport.maxX + viewportMargin) {
+                    
+                    // Check if far enough from origin and other intercepts
+                    const tooCloseToOrigin = Math.abs(xIntercept) < 0.15;
+                    const isDuplicate = intercepts.some(existing => 
+                        (existing.type === 'x-axis-positive' || existing.type === 'x-axis-negative') && 
+                        Math.abs(existing.x - xIntercept) < minDistance
+                    );
+                    
+                    if (!tooCloseToOrigin && !isDuplicate) {
+                        const type = xIntercept > 0 ? 'x-axis-positive' : 'x-axis-negative';
+                        intercepts.push({
+                            x: xIntercept,
+                            y: 0,
+                            type: type,
+                            functionId: null,
+                            tangentBadgeId: badge.id,
+                            color: badge.functionColor,
+                            isTangentIntercept: true
+                        });
+                    }
+                }
+            }
+            
+            // Y-axis crossings (where x = 0)
+            // y = m*0 + b  →  y = b
+            const yIntercept = b;
+            
+            // Check if within reasonable viewport bounds
+            const viewportMargin = 10;
+            if (yIntercept >= this.viewport.minY - viewportMargin && 
+                yIntercept <= this.viewport.maxY + viewportMargin) {
+                
+                // Check if far enough from origin and other intercepts
+                const tooCloseToOrigin = Math.abs(yIntercept) < 0.15;
+                const isDuplicate = intercepts.some(existing => 
+                    (existing.type === 'y-axis-positive' || existing.type === 'y-axis-negative') && 
+                    Math.abs(existing.y - yIntercept) < minDistance
+                );
+                
+                if (!tooCloseToOrigin && !isDuplicate) {
+                    const type = yIntercept > 0 ? 'y-axis-positive' : 'y-axis-negative';
+                    intercepts.push({
+                        x: 0,
+                        y: yIntercept,
+                        type: type,
+                        functionId: null,
+                        tangentBadgeId: badge.id,
+                        color: badge.functionColor,
+                        isTangentIntercept: true
+                    });
+                }
+            }
+        }
+        
         return intercepts;
     }
     
@@ -8867,13 +8949,14 @@ class Graphiti {
                 return null;
             }
             
-            // Convert theta to radians for trig functions
+            // For polar functions, return dr/dθ directly (more intuitive than Cartesian dy/dx)
+            // Note: We still need to calculate the Cartesian slope for drawing the tangent line
             const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
             
             const sinTheta = Math.sin(thetaRad);
             const cosTheta = Math.cos(thetaRad);
             
-            // dy/dx = [f'(θ)sin(θ) + f(θ)cos(θ)] / [f'(θ)cos(θ) - f(θ)sin(θ)]
+            // Calculate dy/dx for tangent line drawing: [f'(θ)sin(θ) + f(θ)cos(θ)] / [f'(θ)cos(θ) - f(θ)sin(θ)]
             const numerator = drdt * sinTheta + r * cosTheta;
             const denominator = drdt * cosTheta - r * sinTheta;
             
@@ -8881,7 +8964,8 @@ class Graphiti {
             if (Math.abs(denominator) < 1e-10) {
                 return {
                     slope: denominator >= 0 ? 1e10 : -1e10,
-                    expression: "dy/dx",
+                    polarDerivative: drdt,
+                    expression: this.angleMode === 'degrees' ? "dr/dθ" : "dr/dθ",
                     secondDerivative: 0,
                     method: 'polar'
                 };
@@ -8892,7 +8976,8 @@ class Graphiti {
             if (isFinite(slope)) {
                 return {
                     slope: slope,
-                    expression: "dy/dx",
+                    polarDerivative: drdt,
+                    expression: this.angleMode === 'degrees' ? "dr/dθ" : "dr/dθ",
                     secondDerivative: 0, // Second derivative for polar is complex, skip for now
                     method: 'polar'
                 };
@@ -11629,7 +11714,7 @@ class Graphiti {
         
         // Calculate the line equation: y - y0 = m(x - x0)
         // Rearranged: y = m*x + (y0 - m*x0)
-        const slope = badge.tangentSlope;
+        const slope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
         const x0 = badge.worldX;
         const y0 = badge.worldY;
         const intercept = y0 - slope * x0;
@@ -11744,21 +11829,31 @@ class Graphiti {
             labelText = this.formatCoordinates(worldX, worldY);
         }
         
-        // Add dy/dx information if tangent is present
+        // Add derivative information if tangent is present
         if (hasTangent && tangentSlope !== null) {
-            // Display infinity symbol for very steep slopes (near vertical tangents)
-            let slopeStr;
-            if (Math.abs(tangentSlope) > 100) {
-                slopeStr = tangentSlope > 0 ? '∞' : '-∞';
+            // For polar mode, display dr/dθ; for Cartesian mode, display dy/dx
+            if (this.plotMode === 'polar' && tangentSlope.polarDerivative !== undefined) {
+                // Display polar derivative dr/dθ
+                const polarDerivStr = this.formatCoordinate(tangentSlope.polarDerivative);
+                const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
+                labelText += ` | dr/d${thetaSymbol}=${polarDerivStr}`;
             } else {
-                slopeStr = this.formatCoordinate(tangentSlope);
-            }
-            labelText += ` | dy/dx=${slopeStr}`;
-            
-            // Add second derivative if available
-            if (secondDerivative !== null && isFinite(secondDerivative)) {
-                const secondDerivStr = this.formatCoordinate(secondDerivative);
-                labelText += ` | d²y/dx²=${secondDerivStr}`;
+                // Display Cartesian slope dy/dx
+                const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
+                let slopeStr;
+                if (Math.abs(slopeValue) > 100) {
+                    slopeStr = slopeValue > 0 ? '∞' : '-∞';
+                } else {
+                    slopeStr = this.formatCoordinate(slopeValue);
+                }
+                labelText += ` | dy/dx=${slopeStr}`;
+                
+                // Add second derivative if available
+                const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
+                if (secondDeriv !== null && isFinite(secondDeriv)) {
+                    const secondDerivStr = this.formatCoordinate(secondDeriv);
+                    labelText += ` | d²y/dx²=${secondDerivStr}`;
+                }
             }
         }
         
