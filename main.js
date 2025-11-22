@@ -5267,6 +5267,11 @@ class Graphiti {
             if (this.showIntersections) {
                 this.updateCombinedIntersections();
             }
+            
+            // Recalculate tangent intercepts since badge state changed
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+            }
         }
         
         this.input.tracing.active = false;
@@ -7276,6 +7281,11 @@ class Graphiti {
         if (this.showIntersections) {
             this.updateCombinedIntersections();
         }
+        
+        // Recalculate tangent intercepts since badges changed
+        if (this.showIntercepts) {
+            this.intercepts = this.findAxisIntercepts();
+        }
     }
     
     removeBadgesForFunction(functionId) {
@@ -7304,6 +7314,11 @@ class Graphiti {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             !((badge.badgeType === 'tangent-intersection' || badge.badgeType === 'tangent-tangent-intersection') && 
               (badge.func1Id === tangentBadgeIdString || badge.func2Id === tangentBadgeIdString))
+        );
+        
+        // Also remove tangent intercept badges (x-intercept and y-intercept badges for tangent lines)
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge =>
+            !(badge.badgeType === 'tangent-intercept' && badge.tangentBadgeId === badgeId)
         );
     }
 
@@ -7819,6 +7834,86 @@ class Graphiti {
             // Find y-intercepts (where x = 0)
             const yIntercepts = this.findYInterceptsForFunction(func);
             intercepts.push(...yIntercepts);
+        }
+        
+        // Find intercepts for tangent lines
+        const tangentIntercepts = this.findTangentAxisIntercepts();
+        intercepts.push(...tangentIntercepts);
+        
+        return intercepts;
+    }
+    
+    findTangentAxisIntercepts() {
+        const intercepts = [];
+        const minDistance = 0.5; // Minimum distance between distinct intercepts
+        
+        // Get all badges with tangent lines
+        const tangentBadges = this.input.persistentBadges.filter(b => b.hasTangent && b.tangentSlope !== null);
+        
+        for (const badge of tangentBadges) {
+            // Tangent line equation: y = m*x + b
+            const m = badge.tangentSlope;
+            const b = badge.worldY - m * badge.worldX;
+            
+            // X-intercept: where y = 0
+            // 0 = m*x + b  →  x = -b/m
+            if (Math.abs(m) > 1e-10) { // Avoid division by near-zero (horizontal lines)
+                const xIntercept = -b / m;
+                
+                // Check if within reasonable viewport bounds
+                const viewportMargin = 10;
+                if (xIntercept >= this.viewport.minX - viewportMargin && 
+                    xIntercept <= this.viewport.maxX + viewportMargin) {
+                    
+                    // Check if far enough from origin and other intercepts
+                    const tooCloseToOrigin = Math.abs(xIntercept) < 0.15;
+                    const isDuplicate = intercepts.some(existing => 
+                        existing.type === 'x-intercept' && 
+                        Math.abs(existing.x - xIntercept) < minDistance
+                    );
+                    
+                    if (!tooCloseToOrigin && !isDuplicate) {
+                        intercepts.push({
+                            x: xIntercept,
+                            y: 0,
+                            type: 'x-intercept',
+                            functionId: null,
+                            tangentBadgeId: badge.id,
+                            color: badge.functionColor,
+                            isTangentIntercept: true
+                        });
+                    }
+                }
+            }
+            
+            // Y-intercept: where x = 0
+            // y = m*0 + b  →  y = b
+            const yIntercept = b;
+            
+            // Check if within reasonable viewport bounds
+            const viewportMargin = 10;
+            if (yIntercept >= this.viewport.minY - viewportMargin && 
+                yIntercept <= this.viewport.maxY + viewportMargin) {
+                
+                // Check if far enough from origin and other intercepts
+                const tooCloseToOrigin = Math.abs(yIntercept) < 0.15;
+                const isDuplicate = intercepts.some(existing => 
+                    existing.type === 'y-intercept' && 
+                    Math.abs(existing.y - yIntercept) < minDistance
+                );
+                
+                if (!tooCloseToOrigin && !isDuplicate) {
+                    intercepts.push({
+                        x: 0,
+                        y: yIntercept,
+                        type: 'y-intercept',
+                        functionId: null,
+                        tangentBadgeId: badge.id,
+                        color: badge.functionColor,
+                        isTangentIntercept: true
+                    });
+                }
+            }
         }
         
         return intercepts;
@@ -10538,11 +10633,15 @@ class Graphiti {
             return;
         }
         
-        // Create a badge at the intercept point, passing the functionId
-        this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId);
+        // Create a badge at the intercept point, passing the functionId or tangentBadgeId
+        if (intercept.isTangentIntercept) {
+            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, intercept.tangentBadgeId);
+        } else {
+            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, null);
+        }
     }
     
-    addInterceptBadge(x, y, interceptType, functionId) {
+    addInterceptBadge(x, y, interceptType, functionId, tangentBadgeId = null) {
         // Snap coordinates to zero if they're very close (matches display formatting)
         const snappedX = this.snapCoordinateForDisplay(x);
         const snappedY = this.snapCoordinateForDisplay(y);
@@ -10588,8 +10687,9 @@ class Graphiti {
             screenY: screenPos.y,
             label: label,
             functionId: functionId, // Link badge to the function for proper cleanup
+            tangentBadgeId: tangentBadgeId, // Link badge to tangent for proper cleanup
             functionColor: '#808080', // Neutral gray color for intercepts
-            badgeType: interceptType // 'x-intercept', 'y-intercept', or polar axis types
+            badgeType: tangentBadgeId ? 'tangent-intercept' : interceptType // 'tangent-intercept' or 'x-intercept', 'y-intercept', or polar axis types
         };
         
         this.input.persistentBadges.push(badge);
