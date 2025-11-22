@@ -193,6 +193,7 @@ class Graphiti {
         this.manualImplicitIntersections = []; // Store manually calculated implicit intersections
         this.showIntersections = true; // Toggle for intersection display
         this.tangentIntersections = []; // Store intersections between tangent lines and functions
+        this.normalIntersections = []; // Store intersections between normal lines and functions
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
         
@@ -4041,6 +4042,287 @@ class Graphiti {
         return uniqueIntersections;
     }
     
+    findNormalIntersections() {
+        // Early exit if intersection detection is disabled
+        if (!this.showIntersections) {
+            return [];
+        }
+        
+        const normalIntersections = [];
+        const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        
+        // Get all badges with normal lines
+        const normalBadges = this.input.persistentBadges.filter(b => b.hasNormal && b.tangentSlope !== null);
+        
+        // Check normal-function intersections
+        for (const badge of normalBadges) {
+            // Calculate normal line slope (perpendicular to tangent)
+            const tangentSlope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+            let normalSlope;
+            
+            if (Math.abs(tangentSlope) < 1e-10) {
+                normalSlope = Infinity; // Vertical normal
+            } else if (Math.abs(tangentSlope) > 1e10) {
+                normalSlope = 0; // Horizontal normal
+            } else {
+                normalSlope = -1 / tangentSlope;
+            }
+            
+            // Normal line equation: y = m*x + b
+            const m = normalSlope;
+            const b = badge.worldY - m * badge.worldX;
+            
+            // Find intersections with each function
+            for (const func of enabledFunctions) {
+                if (func.points.length === 0) continue;
+                
+                // Find intersections between normal line and function
+                const intersections = this.findNormalFunctionIntersections(badge, func, m, b);
+                normalIntersections.push(...intersections);
+            }
+        }
+        
+        // Check normal-normal intersections
+        for (let i = 0; i < normalBadges.length; i++) {
+            for (let j = i + 1; j < normalBadges.length; j++) {
+                const badge1 = normalBadges[i];
+                const badge2 = normalBadges[j];
+                
+                // Find intersection between two normal lines
+                const intersection = this.findNormalNormalIntersection(badge1, badge2);
+                if (intersection) {
+                    normalIntersections.push(intersection);
+                }
+            }
+        }
+        
+        // Check normal-tangent intersections
+        const tangentBadges = this.input.persistentBadges.filter(b => b.hasTangent && b.tangentSlope !== null);
+        for (const normalBadge of normalBadges) {
+            for (const tangentBadge of tangentBadges) {
+                const intersection = this.findNormalTangentIntersection(normalBadge, tangentBadge);
+                if (intersection) {
+                    normalIntersections.push(intersection);
+                }
+            }
+        }
+        
+        return normalIntersections;
+    }
+    
+    findNormalNormalIntersection(badge1, badge2) {
+        // Calculate normal slopes
+        const tangentSlope1 = badge1.tangentSlope.slope !== undefined ? badge1.tangentSlope.slope : badge1.tangentSlope;
+        const tangentSlope2 = badge2.tangentSlope.slope !== undefined ? badge2.tangentSlope.slope : badge2.tangentSlope;
+        
+        const m1 = Math.abs(tangentSlope1) < 1e-10 ? Infinity : (Math.abs(tangentSlope1) > 1e10 ? 0 : -1 / tangentSlope1);
+        const m2 = Math.abs(tangentSlope2) < 1e-10 ? Infinity : (Math.abs(tangentSlope2) > 1e10 ? 0 : -1 / tangentSlope2);
+        
+        // Handle vertical lines
+        if (m1 === Infinity && m2 === Infinity) return null; // Both vertical
+        if (m1 === Infinity) {
+            const intersectionX = badge1.worldX;
+            const b2 = badge2.worldY - m2 * badge2.worldX;
+            const intersectionY = m2 * intersectionX + b2;
+            return this.createNormalIntersection(intersectionX, intersectionY, badge1, badge2);
+        }
+        if (m2 === Infinity) {
+            const intersectionX = badge2.worldX;
+            const b1 = badge1.worldY - m1 * badge1.worldX;
+            const intersectionY = m1 * intersectionX + b1;
+            return this.createNormalIntersection(intersectionX, intersectionY, badge1, badge2);
+        }
+        
+        const b1 = badge1.worldY - m1 * badge1.worldX;
+        const b2 = badge2.worldY - m2 * badge2.worldX;
+        
+        // Check if lines are parallel
+        if (Math.abs(m1 - m2) < 1e-10) {
+            return null;
+        }
+        
+        const intersectionX = (b2 - b1) / (m1 - m2);
+        const intersectionY = m1 * intersectionX + b1;
+        
+        return this.createNormalIntersection(intersectionX, intersectionY, badge1, badge2);
+    }
+    
+    findNormalTangentIntersection(normalBadge, tangentBadge) {
+        // Calculate normal slope
+        const tangentSlopeVal = normalBadge.tangentSlope.slope !== undefined ? normalBadge.tangentSlope.slope : normalBadge.tangentSlope;
+        const normalSlope = Math.abs(tangentSlopeVal) < 1e-10 ? Infinity : (Math.abs(tangentSlopeVal) > 1e10 ? 0 : -1 / tangentSlopeVal);
+        
+        // Calculate tangent slope
+        const tangentSlope = tangentBadge.tangentSlope.slope !== undefined ? tangentBadge.tangentSlope.slope : tangentBadge.tangentSlope;
+        
+        // Handle vertical normal
+        if (normalSlope === Infinity) {
+            const intersectionX = normalBadge.worldX;
+            const b2 = tangentBadge.worldY - tangentSlope * tangentBadge.worldX;
+            const intersectionY = tangentSlope * intersectionX + b2;
+            return this.createMixedIntersection(intersectionX, intersectionY, normalBadge, tangentBadge);
+        }
+        
+        // Handle vertical tangent
+        if (Math.abs(tangentSlope) > 1e10) {
+            const intersectionX = tangentBadge.worldX;
+            const b1 = normalBadge.worldY - normalSlope * normalBadge.worldX;
+            const intersectionY = normalSlope * intersectionX + b1;
+            return this.createMixedIntersection(intersectionX, intersectionY, normalBadge, tangentBadge);
+        }
+        
+        const b1 = normalBadge.worldY - normalSlope * normalBadge.worldX;
+        const b2 = tangentBadge.worldY - tangentSlope * tangentBadge.worldX;
+        
+        // Check if lines are parallel
+        if (Math.abs(normalSlope - tangentSlope) < 1e-10) {
+            return null;
+        }
+        
+        const intersectionX = (b2 - b1) / (normalSlope - tangentSlope);
+        const intersectionY = normalSlope * intersectionX + b1;
+        
+        return this.createMixedIntersection(intersectionX, intersectionY, normalBadge, tangentBadge);
+    }
+    
+    createNormalIntersection(intersectionX, intersectionY, badge1, badge2) {
+        // Skip if intersection is at either normal point itself
+        const distToBadge1 = Math.sqrt(
+            Math.pow(intersectionX - badge1.worldX, 2) + 
+            Math.pow(intersectionY - badge1.worldY, 2)
+        );
+        const distToBadge2 = Math.sqrt(
+            Math.pow(intersectionX - badge2.worldX, 2) + 
+            Math.pow(intersectionY - badge2.worldY, 2)
+        );
+        
+        if (distToBadge1 < 0.05 || distToBadge2 < 0.05) {
+            return null;
+        }
+        
+        // Check viewport bounds
+        const viewportMargin = 10;
+        const minX = this.viewport.minX - viewportMargin;
+        const maxX = this.viewport.maxX + viewportMargin;
+        const minY = this.viewport.minY - viewportMargin;
+        const maxY = this.viewport.maxY + viewportMargin;
+        
+        if (intersectionX < minX || intersectionX > maxX || 
+            intersectionY < minY || intersectionY > maxY) {
+            return null;
+        }
+        
+        return {
+            x: intersectionX,
+            y: intersectionY,
+            func1Id: `normal_${badge1.id}`,
+            func2Id: `normal_${badge2.id}`,
+            color1: badge1.functionColor,
+            color2: badge2.functionColor,
+            isNormalNormalIntersection: true
+        };
+    }
+    
+    createMixedIntersection(intersectionX, intersectionY, normalBadge, tangentBadge) {
+        // Skip if intersection is at either point itself
+        const distToNormal = Math.sqrt(
+            Math.pow(intersectionX - normalBadge.worldX, 2) + 
+            Math.pow(intersectionY - normalBadge.worldY, 2)
+        );
+        const distToTangent = Math.sqrt(
+            Math.pow(intersectionX - tangentBadge.worldX, 2) + 
+            Math.pow(intersectionY - tangentBadge.worldY, 2)
+        );
+        
+        if (distToNormal < 0.05 || distToTangent < 0.05) {
+            return null;
+        }
+        
+        // Check viewport bounds
+        const viewportMargin = 10;
+        const minX = this.viewport.minX - viewportMargin;
+        const maxX = this.viewport.maxX + viewportMargin;
+        const minY = this.viewport.minY - viewportMargin;
+        const maxY = this.viewport.maxY + viewportMargin;
+        
+        if (intersectionX < minX || intersectionX > maxX || 
+            intersectionY < minY || intersectionY > maxY) {
+            return null;
+        }
+        
+        return {
+            x: intersectionX,
+            y: intersectionY,
+            func1Id: `normal_${normalBadge.id}`,
+            func2Id: `tangent_${tangentBadge.id}`,
+            color1: normalBadge.functionColor,
+            color2: tangentBadge.functionColor,
+            isNormalTangentIntersection: true
+        };
+    }
+    
+    findNormalFunctionIntersections(badge, func, slope, intercept) {
+        const intersections = [];
+        const points = func.points;
+        
+        // Sample function points and check for intersections with normal line
+        for (let i = 0; i < points.length - 1; i++) {
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            
+            if (!p1.connected) continue; // Skip disconnected segments
+            
+            // Normal line value at these x coordinates
+            const normalY1 = slope === Infinity ? (p1.x === badge.worldX ? p1.y : null) : slope * p1.x + intercept;
+            const normalY2 = slope === Infinity ? (p2.x === badge.worldX ? p2.y : null) : slope * p2.x + intercept;
+            
+            if (normalY1 === null || normalY2 === null) continue;
+            
+            // Check if normal line crosses the function segment
+            const diff1 = p1.y - normalY1;
+            const diff2 = p2.y - normalY2;
+            
+            if (diff1 * diff2 <= 0) { // Sign change indicates crossing
+                // Linear interpolation to find intersection point
+                const t = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
+                const intersectionX = p1.x + t * (p2.x - p1.x);
+                const intersectionY = p1.y + t * (p2.y - p1.y);
+                
+                // Skip if intersection is at the normal point itself (within tolerance)
+                const distToBadge = Math.sqrt(
+                    Math.pow(intersectionX - badge.worldX, 2) + 
+                    Math.pow(intersectionY - badge.worldY, 2)
+                );
+                
+                if (distToBadge > 0.05) { // Only show intersections away from normal point
+                    intersections.push({
+                        x: intersectionX,
+                        y: intersectionY,
+                        func1Id: `normal_${badge.id}`,
+                        func2Id: func.id,
+                        color1: badge.functionColor,
+                        color2: func.color,
+                        isNormalIntersection: true
+                    });
+                }
+            }
+        }
+        
+        // Remove duplicate intersections (within small tolerance)
+        const uniqueIntersections = [];
+        for (const intersection of intersections) {
+            const isDuplicate = uniqueIntersections.some(existing => 
+                Math.abs(existing.x - intersection.x) < 0.01 && 
+                Math.abs(existing.y - intersection.y) < 0.01
+            );
+            if (!isDuplicate) {
+                uniqueIntersections.push(intersection);
+            }
+        }
+        
+        return uniqueIntersections;
+    }
+    
     findIntersectionsBetweenFunctions(func1, func2) {
         const intersections = [];
         const points1 = func1.points;
@@ -5171,8 +5453,9 @@ class Graphiti {
                     this.frozenInterceptBadges = [];
                 }
                 
-                // Remove tangent intersection badges that reference this badge
+                // Remove tangent and normal intersection badges that reference this badge
                 this.removeTangentIntersectionBadgesForBadge(targetBadge.id);
+                this.removeNormalIntersectionBadgesForBadge(targetBadge.id);
                 
                 // Remove the original badge right away
                 this.removeBadgeById(targetBadge.id);
@@ -7716,8 +7999,9 @@ class Graphiti {
     }
     
     removeBadgeById(badgeId) {
-        // Remove tangent intersection badges that reference this badge
+        // Remove tangent and normal intersection badges that reference this badge
         this.removeTangentIntersectionBadgesForBadge(badgeId);
+        this.removeNormalIntersectionBadgesForBadge(badgeId);
         
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
         
@@ -7736,11 +8020,14 @@ class Graphiti {
     removeBadgesForFunction(functionId) {
         const beforeCount = this.input.persistentBadges.length;
         
-        // First, remove tangent intersection badges for badges that belong to this function
+        // First, remove tangent and normal intersection badges for badges that belong to this function
         const badgesToRemove = this.input.persistentBadges.filter(badge => badge.functionId === functionId);
         badgesToRemove.forEach(badge => {
             if (badge.hasTangent) {
                 this.removeTangentIntersectionBadgesForBadge(badge.id);
+            }
+            if (badge.hasNormal) {
+                this.removeNormalIntersectionBadgesForBadge(badge.id);
             }
         });
         
@@ -7776,20 +8063,39 @@ class Graphiti {
             !(badge.badgeType === 'tangent-intercept' && badge.tangentBadgeId === badgeId)
         );
     }
+    
+    removeNormalIntersectionBadgesForBadge(badgeId) {
+        // Remove normal intersection badges that reference the specified badge
+        const normalBadgeIdString = `normal_${badgeId}`;
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+            !((badge.badgeType === 'normal-intersection' || badge.badgeType === 'normal-normal-intersection' || badge.badgeType === 'normal-tangent-intersection') && 
+              (badge.func1Id === normalBadgeIdString || badge.func2Id === normalBadgeIdString))
+        );
+        
+        // Also remove normal intercept badges (x-intercept and y-intercept badges for normal lines)
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge =>
+            !(badge.badgeType === 'normal-intercept' && badge.normalBadgeId === badgeId)
+        );
+    }
 
     clearIntersections() {
-        // Remove all intersection badges (including tangent intersections)
+        // Remove all intersection badges (including tangent and normal intersections)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             badge.functionId !== null && 
             badge.badgeType !== 'intersection' && 
             badge.badgeType !== 'tangent-intersection' && 
-            badge.badgeType !== 'tangent-tangent-intersection'
+            badge.badgeType !== 'tangent-tangent-intersection' &&
+            badge.badgeType !== 'normal-intersection' &&
+            badge.badgeType !== 'normal-normal-intersection' &&
+            badge.badgeType !== 'normal-tangent-intersection'
         );
         
         // Clear the intersection arrays
         this.intersections = [];
         this.explicitIntersections = [];
         this.implicitIntersections = [];
+        this.tangentIntersections = [];
+        this.normalIntersections = [];
     }
 
     // ================================
@@ -8062,11 +8368,12 @@ class Graphiti {
     }
 
     updateCombinedIntersections() {
-        // Calculate tangent intersections
+        // Calculate tangent and normal intersections
         this.tangentIntersections = this.findTangentIntersections();
+        this.normalIntersections = this.findNormalIntersections();
         
-        // Combine explicit, implicit, and tangent intersections for display
-        this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections];
+        // Combine explicit, implicit, tangent, and normal intersections for display
+        this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections, ...this.normalIntersections];
         
         // Only trigger redraw if viewport is not changing AND no implicit intersections are pending
         // During viewport changes, we use frozen cache for visual continuity
@@ -8295,6 +8602,10 @@ class Graphiti {
         const tangentIntercepts = this.findTangentAxisIntercepts();
         intercepts.push(...tangentIntercepts);
         
+        // Find intercepts for normal lines
+        const normalIntercepts = this.findNormalAxisIntercepts();
+        intercepts.push(...normalIntercepts);
+        
         return intercepts;
     }
     
@@ -8366,6 +8677,97 @@ class Graphiti {
                         tangentBadgeId: badge.id,
                         color: badge.functionColor,
                         isTangentIntercept: true
+                    });
+                }
+            }
+        }
+        
+        return intercepts;
+    }
+    
+    findNormalAxisIntercepts() {
+        const intercepts = [];
+        const minDistance = 0.5; // Minimum distance between distinct intercepts
+        
+        // Get all badges with normal lines
+        const normalBadges = this.input.persistentBadges.filter(b => b.hasNormal && b.tangentSlope !== null);
+        
+        for (const badge of normalBadges) {
+            // Calculate normal slope from tangent slope
+            const tangentSlope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+            let m;
+            if (Math.abs(tangentSlope) < 1e-10) {
+                m = Infinity; // Vertical normal
+            } else if (Math.abs(tangentSlope) > 1e10) {
+                m = 0; // Horizontal normal
+            } else {
+                m = -1 / tangentSlope;
+            }
+            
+            // Skip vertical normals for intercept calculation (they don't have y-intercepts in the traditional sense)
+            if (m === Infinity || m === -Infinity) {
+                continue;
+            }
+            
+            // Normal line equation: y = m*x + b
+            const b = badge.worldY - m * badge.worldX;
+            
+            // X-intercept: where y = 0
+            // 0 = m*x + b  →  x = -b/m
+            if (Math.abs(m) > 1e-10) { // Avoid division by near-zero (horizontal lines)
+                const xIntercept = -b / m;
+                
+                // Check if within reasonable viewport bounds
+                const viewportMargin = 10;
+                if (xIntercept >= this.viewport.minX - viewportMargin && 
+                    xIntercept <= this.viewport.maxX + viewportMargin) {
+                    
+                    // Check if far enough from origin and other intercepts
+                    const tooCloseToOrigin = Math.abs(xIntercept) < 0.15;
+                    const isDuplicate = intercepts.some(existing => 
+                        existing.type === 'x-intercept' && 
+                        Math.abs(existing.x - xIntercept) < minDistance
+                    );
+                    
+                    if (!tooCloseToOrigin && !isDuplicate) {
+                        intercepts.push({
+                            x: xIntercept,
+                            y: 0,
+                            type: 'x-intercept',
+                            functionId: null,
+                            normalBadgeId: badge.id,
+                            color: badge.functionColor,
+                            isNormalIntercept: true
+                        });
+                    }
+                }
+            }
+            
+            // Y-intercept: where x = 0
+            // y = m*0 + b  →  y = b
+            const yIntercept = b;
+            
+            // Check if within reasonable viewport bounds
+            const viewportMargin = 10;
+            if (yIntercept >= this.viewport.minY - viewportMargin && 
+                yIntercept <= this.viewport.maxY + viewportMargin) {
+                
+                // Check if far enough from origin and other intercepts
+                const tooCloseToOrigin = Math.abs(yIntercept) < 0.15;
+                const isDuplicate = intercepts.some(existing => 
+                    existing.type === 'y-intercept' && 
+                    Math.abs(existing.y - yIntercept) < minDistance
+                );
+                
+                if (!tooCloseToOrigin && !isDuplicate) {
+                    intercepts.push({
+                        x: 0,
+                        y: yIntercept,
+                        type: 'y-intercept',
+                        functionId: null,
+                        normalBadgeId: badge.id,
+                        color: badge.functionColor,
+                        isNormalIntercept: true
                     });
                 }
             }
@@ -8714,6 +9116,10 @@ class Graphiti {
         const tangentIntercepts = this.findPolarTangentAxisIntercepts();
         intercepts.push(...tangentIntercepts);
         
+        // Find intercepts for normal lines in polar mode
+        const normalIntercepts = this.findPolarNormalAxisIntercepts();
+        intercepts.push(...normalIntercepts);
+        
         return intercepts;
     }
     
@@ -8787,6 +9193,99 @@ class Graphiti {
                         tangentBadgeId: badge.id,
                         color: badge.functionColor,
                         isTangentIntercept: true
+                    });
+                }
+            }
+        }
+        
+        return intercepts;
+    }
+    
+    findPolarNormalAxisIntercepts() {
+        const intercepts = [];
+        const minDistance = 0.5; // Minimum distance between distinct intercepts
+        
+        // Get all badges with normal lines
+        const normalBadges = this.input.persistentBadges.filter(b => b.hasNormal && b.tangentSlope !== null);
+        
+        for (const badge of normalBadges) {
+            // Calculate normal slope from tangent slope
+            const tangentSlope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+            let m;
+            if (Math.abs(tangentSlope) < 1e-10) {
+                m = Infinity; // Vertical normal
+            } else if (Math.abs(tangentSlope) > 1e10) {
+                m = 0; // Horizontal normal
+            } else {
+                m = -1 / tangentSlope;
+            }
+            
+            // Skip vertical normals for intercept calculation
+            if (m === Infinity || m === -Infinity) {
+                continue;
+            }
+            
+            // Normal line equation: y = m*x + b
+            const b = badge.worldY - m * badge.worldX;
+            
+            // X-axis crossings (where y = 0)
+            // 0 = m*x + b  →  x = -b/m
+            if (Math.abs(m) > 1e-10) { // Avoid division by near-zero (horizontal lines)
+                const xIntercept = -b / m;
+                
+                // Check if within reasonable viewport bounds
+                const viewportMargin = 10;
+                if (xIntercept >= this.viewport.minX - viewportMargin && 
+                    xIntercept <= this.viewport.maxX + viewportMargin) {
+                    
+                    // Check if far enough from origin and other intercepts
+                    const tooCloseToOrigin = Math.abs(xIntercept) < 0.15;
+                    const isDuplicate = intercepts.some(existing => 
+                        (existing.type === 'x-axis-positive' || existing.type === 'x-axis-negative') && 
+                        Math.abs(existing.x - xIntercept) < minDistance
+                    );
+                    
+                    if (!tooCloseToOrigin && !isDuplicate) {
+                        const type = xIntercept > 0 ? 'x-axis-positive' : 'x-axis-negative';
+                        intercepts.push({
+                            x: xIntercept,
+                            y: 0,
+                            type: type,
+                            functionId: null,
+                            normalBadgeId: badge.id,
+                            color: badge.functionColor,
+                            isNormalIntercept: true
+                        });
+                    }
+                }
+            }
+            
+            // Y-axis crossings (where x = 0)
+            // y = m*0 + b  →  y = b
+            const yIntercept = b;
+            
+            // Check if within reasonable viewport bounds
+            const viewportMargin = 10;
+            if (yIntercept >= this.viewport.minY - viewportMargin && 
+                yIntercept <= this.viewport.maxY + viewportMargin) {
+                
+                // Check if far enough from origin and other intercepts
+                const tooCloseToOrigin = Math.abs(yIntercept) < 0.15;
+                const isDuplicate = intercepts.some(existing => 
+                    (existing.type === 'y-axis-positive' || existing.type === 'y-axis-negative') && 
+                    Math.abs(existing.y - yIntercept) < minDistance
+                );
+                
+                if (!tooCloseToOrigin && !isDuplicate) {
+                    const type = yIntercept > 0 ? 'y-axis-positive' : 'y-axis-negative';
+                    intercepts.push({
+                        x: 0,
+                        y: yIntercept,
+                        type: type,
+                        functionId: null,
+                        normalBadgeId: badge.id,
+                        color: badge.functionColor,
+                        isNormalIntercept: true
                     });
                 }
             }
@@ -11728,6 +12227,42 @@ class Graphiti {
             return;
         }
         
+        // Handle normal-normal intersections
+        if (intersection.isNormalNormalIntersection) {
+            // For normal-normal intersections, coordinates are already accurate from line-line intersection
+            this.addNormalNormalIntersectionBadge(
+                intersection.x,
+                intersection.y,
+                intersection.func1Id, // first normal badge ID
+                intersection.func2Id  // second normal badge ID
+            );
+            return;
+        }
+        
+        // Handle normal-tangent intersections
+        if (intersection.isNormalTangentIntersection) {
+            // For normal-tangent intersections, coordinates are already accurate from line-line intersection
+            this.addNormalTangentIntersectionBadge(
+                intersection.x,
+                intersection.y,
+                intersection.func1Id, // normal badge ID
+                intersection.func2Id  // tangent badge ID
+            );
+            return;
+        }
+        
+        // Handle normal intersections (normal line with function curve)
+        if (intersection.isNormalIntersection) {
+            // For normal intersections, coordinates are already accurate from line segment intersection
+            this.addNormalIntersectionBadge(
+                intersection.x,
+                intersection.y,
+                intersection.func1Id, // normal badge ID
+                intersection.func2Id  // function ID
+            );
+            return;
+        }
+        
         // Refine intersection using numerical method for precision (regular function-function intersections)
         const refinedIntersection = this.refineIntersection(intersection);
         
@@ -11870,6 +12405,87 @@ class Graphiti {
             functionColor: tangentTangentIntersectionColor,
             customText: null,
             badgeType: 'tangent-tangent-intersection',
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
+    }
+    
+    addNormalIntersectionBadge(worldX, worldY, normalBadgeId, functionId) {
+        // Use a different color for normal intersections
+        const normalIntersectionColor = '#00CED1'; // Dark turquoise for normal intersections
+        
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Create normal intersection badge
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: null, // Keep null for compatibility
+            func1Id: normalBadgeId, // Normal badge ID (string starting with "normal_")
+            func2Id: functionId, // Function ID
+            worldX: snappedX,
+            worldY: snappedY,
+            functionColor: normalIntersectionColor,
+            customText: null,
+            badgeType: 'normal-intersection',
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
+    }
+    
+    addNormalNormalIntersectionBadge(worldX, worldY, normalBadgeId1, normalBadgeId2) {
+        // Use a distinct color for normal-normal intersections
+        const normalNormalIntersectionColor = '#20B2AA'; // Light sea green for normal-normal intersections
+        
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Create normal-normal intersection badge
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: null, // Keep null for compatibility
+            func1Id: normalBadgeId1, // First normal badge ID (string starting with "normal_")
+            func2Id: normalBadgeId2, // Second normal badge ID (string starting with "normal_")
+            worldX: snappedX,
+            worldY: snappedY,
+            functionColor: normalNormalIntersectionColor,
+            customText: null,
+            badgeType: 'normal-normal-intersection',
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
+    }
+    
+    addNormalTangentIntersectionBadge(worldX, worldY, normalBadgeId, tangentBadgeId) {
+        // Use a distinct color for normal-tangent intersections
+        const normalTangentIntersectionColor = '#9370DB'; // Medium purple for normal-tangent intersections
+        
+        // Snap coordinates to zero if they're very close (matches display formatting)
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Create normal-tangent intersection badge
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: null, // Keep null for compatibility
+            func1Id: normalBadgeId, // Normal badge ID (string starting with "normal_")
+            func2Id: tangentBadgeId, // Tangent badge ID (string starting with "tangent_")
+            worldX: snappedX,
+            worldY: snappedY,
+            functionColor: normalTangentIntersectionColor,
+            customText: null,
+            badgeType: 'normal-tangent-intersection',
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
