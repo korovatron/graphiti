@@ -7046,6 +7046,9 @@ class Graphiti {
                     addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">θ</span>)';
                 }
             }
+            
+            // Update virtual keyboards to match the loaded mode
+            this.updateVirtualKeyboardsForMode();
         }
         
         // Try to load saved functions from localStorage
