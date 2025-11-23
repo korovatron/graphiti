@@ -5888,8 +5888,11 @@ class Graphiti {
                         this.input.persistentBadges = this.input.persistentBadges.filter(
                             badge => badge.id !== this.input.badgeInteraction.integralPairBadgeId
                         );
-                        // Clear the integral pairs array since both badges are now removed
-                        this.integralPairs = [];
+                        // Remove only the specific integral pair, not all pairs
+                        const originalBadgeId = this.input.badgeInteraction.originalBadgeId;
+                        this.integralPairs = this.integralPairs.filter(pair => 
+                            pair.badge1Id !== originalBadgeId && pair.badge2Id !== originalBadgeId
+                        );
                     }
                     this.input.tracing.active = false; // Cancel tracing so no new badge is added
                 }
