@@ -6930,6 +6930,9 @@ class Graphiti {
         // Clear all badges when switching modes since coordinate systems are different
         this.clearAllBadges();
         
+        // Clear integral pairs when switching modes
+        this.integralPairs = [];
+        
         // Clear turning points when switching modes (will be recalculated in new mode)
         this.turningPoints = [];
         
