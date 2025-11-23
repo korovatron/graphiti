@@ -11386,6 +11386,11 @@ class Graphiti {
             this.drawPersistentBadges();
         }
         
+        // Draw integral panel at bottom-right for ALL pairs (after badges so it's on top)
+        if (this.integralPairs.length > 0) {
+            this.drawIntegralPanel();
+        }
+        
         // Draw calculation indicator during viewport changes and calculations
         // Only shown when implicit functions are present
         if (this.shouldShowCalculationIndicator()) {
@@ -13281,9 +13286,6 @@ class Graphiti {
             
             // Don't draw label here - will be drawn in panel at bottom
         }
-        
-        // Draw integral panel at bottom-right for ALL pairs
-        this.drawIntegralPanel();
         
         // Draw linked badge pairs (area between curves)
         this.drawLinkedIntegrationRegions();
