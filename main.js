@@ -13343,89 +13343,195 @@ class Graphiti {
     }
     
     drawLinkedIntegrationRegions() {
-        if (this.plotMode !== 'cartesian') return; // Only support cartesian mode for now
-        
         for (const linkedPair of this.linkedBadgePairs) {
             const pair1 = linkedPair.pair1;
             const pair2 = linkedPair.pair2;
             
             if (!pair1 || !pair2 || !pair1.func || !pair2.func) continue;
             
-            // Find the overlapping x range
-            const xStart = Math.max(pair1.start, pair2.start);
-            const xEnd = Math.min(pair1.end, pair2.end);
-            
-            if (xStart >= xEnd) continue; // No overlap
-            
-            // Get points from both functions in the overlap range
-            const points1 = pair1.func.points.filter(p => 
-                !isNaN(p.x) && !isNaN(p.y) && p.x >= xStart && p.x <= xEnd
-            ).sort((a, b) => a.x - b.x);
-            
-            const points2 = pair2.func.points.filter(p => 
-                !isNaN(p.x) && !isNaN(p.y) && p.x >= xStart && p.x <= xEnd
-            ).sort((a, b) => a.x - b.x);
-            
-            if (points1.length < 2 || points2.length < 2) continue;
-            
-            // Calculate area between curves
-            const areaBetween = this.calculateAreaBetweenCurves(points1, points2, xStart, xEnd);
-            
-            // Store the result in the linked pair for panel display
-            linkedPair.areaBetween = areaBetween;
-            
-            this.ctx.save();
-            
-            // Use a blend of both colors with gold tint to indicate linking
-            this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)'; // Gold with transparency
-            this.ctx.strokeStyle = '#FFD700'; // Gold
-            this.ctx.lineWidth = 2;
-            
-            // Draw the region between curves
-            this.ctx.beginPath();
-            
-            // Trace along first function
-            for (let i = 0; i < points1.length; i++) {
-                const screen = this.worldToScreen(points1[i].x, points1[i].y);
-                if (i === 0) {
-                    this.ctx.moveTo(screen.x, screen.y);
-                } else {
-                    this.ctx.lineTo(screen.x, screen.y);
-                }
+            if (this.plotMode === 'polar') {
+                this.drawLinkedPolarIntegrationRegion(linkedPair, pair1, pair2);
+            } else {
+                this.drawLinkedCartesianIntegrationRegion(linkedPair, pair1, pair2);
             }
-            
-            // Trace back along second function (in reverse)
-            for (let i = points2.length - 1; i >= 0; i--) {
-                const screen = this.worldToScreen(points2[i].x, points2[i].y);
+        }
+    }
+    
+    drawLinkedCartesianIntegrationRegion(linkedPair, pair1, pair2) {
+        // Find the overlapping x range
+        const xStart = Math.max(pair1.start, pair2.start);
+        const xEnd = Math.min(pair1.end, pair2.end);
+        
+        if (xStart >= xEnd) return; // No overlap
+        
+        // Get points from both functions in the overlap range
+        const points1 = pair1.func.points.filter(p => 
+            !isNaN(p.x) && !isNaN(p.y) && p.x >= xStart && p.x <= xEnd
+        ).sort((a, b) => a.x - b.x);
+        
+        const points2 = pair2.func.points.filter(p => 
+            !isNaN(p.x) && !isNaN(p.y) && p.x >= xStart && p.x <= xEnd
+        ).sort((a, b) => a.x - b.x);
+        
+        if (points1.length < 2 || points2.length < 2) return;
+        
+        // Calculate area between curves
+        const areaBetween = this.calculateAreaBetweenCurves(points1, points2, xStart, xEnd);
+        
+        // Store the result in the linked pair for panel display
+        linkedPair.areaBetween = areaBetween;
+        
+        this.ctx.save();
+        
+        // Use a blend of both colors with gold tint to indicate linking
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)'; // Gold with transparency
+        this.ctx.strokeStyle = '#FFD700'; // Gold
+        this.ctx.lineWidth = 2;
+        
+        // Draw the region between curves
+        this.ctx.beginPath();
+        
+        // Trace along first function
+        for (let i = 0; i < points1.length; i++) {
+            const screen = this.worldToScreen(points1[i].x, points1[i].y);
+            if (i === 0) {
+                this.ctx.moveTo(screen.x, screen.y);
+            } else {
                 this.ctx.lineTo(screen.x, screen.y);
             }
-            
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            // Draw boundary lines at limits
-            const startScreen1 = this.worldToScreen(xStart, points1[0].y);
-            const startScreen2 = this.worldToScreen(xStart, points2[0].y);
-            const endScreen1 = this.worldToScreen(xEnd, points1[points1.length - 1].y);
-            const endScreen2 = this.worldToScreen(xEnd, points2[points2.length - 1].y);
+        }
+        
+        // Trace back along second function (in reverse)
+        for (let i = points2.length - 1; i >= 0; i--) {
+            const screen = this.worldToScreen(points2[i].x, points2[i].y);
+            this.ctx.lineTo(screen.x, screen.y);
+        }
+        
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Draw boundary lines at limits
+        const startScreen1 = this.worldToScreen(xStart, points1[0].y);
+        const startScreen2 = this.worldToScreen(xStart, points2[0].y);
+        const endScreen1 = this.worldToScreen(xEnd, points1[points1.length - 1].y);
+        const endScreen2 = this.worldToScreen(xEnd, points2[points2.length - 1].y);
+        
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.strokeStyle = '#FFD700';
+        this.ctx.beginPath();
+        this.ctx.moveTo(startScreen1.x, startScreen1.y);
+        this.ctx.lineTo(startScreen2.x, startScreen2.y);
+        this.ctx.stroke();
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(endScreen1.x, endScreen1.y);
+        this.ctx.lineTo(endScreen2.x, endScreen2.y);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+        
+        this.ctx.restore();
+    }
+    
+    drawLinkedPolarIntegrationRegion(linkedPair, pair1, pair2) {
+        // Find the overlapping theta range
+        const thetaStart = Math.max(pair1.start, pair2.start);
+        const thetaEnd = Math.min(pair1.end, pair2.end);
+        
+        if (thetaStart >= thetaEnd) return; // No overlap
+        
+        // Get points from both functions in the overlap range, sorted by theta
+        const getPointsWithTheta = (func, start, end) => {
+            return func.points.filter(p => {
+                if (isNaN(p.x) || isNaN(p.y)) return false;
+                let theta = Math.atan2(p.y, p.x);
+                while (theta < 0) theta += 2 * Math.PI;
+                while (theta > 2 * Math.PI) theta -= 2 * Math.PI;
+                return theta >= start && theta <= end;
+            }).map(p => {
+                let theta = Math.atan2(p.y, p.x);
+                while (theta < 0) theta += 2 * Math.PI;
+                while (theta > 2 * Math.PI) theta -= 2 * Math.PI;
+                return { x: p.x, y: p.y, theta };
+            }).sort((a, b) => a.theta - b.theta);
+        };
+        
+        const points1 = getPointsWithTheta(pair1.func, thetaStart, thetaEnd);
+        const points2 = getPointsWithTheta(pair2.func, thetaStart, thetaEnd);
+        
+        if (points1.length < 2 || points2.length < 2) return;
+        
+        // Calculate area between curves (difference of polar integrals)
+        const areaBetween = Math.abs(pair1.area - pair2.area);
+        linkedPair.areaBetween = areaBetween;
+        
+        this.ctx.save();
+        
+        // Gold color for linked region
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+        this.ctx.strokeStyle = '#FFD700';
+        this.ctx.lineWidth = 2;
+        
+        // Draw the region between the two curves (not from center)
+        this.ctx.beginPath();
+        
+        // Start at first point of first curve
+        const firstScreen = this.worldToScreen(points1[0].x, points1[0].y);
+        this.ctx.moveTo(firstScreen.x, firstScreen.y);
+        
+        // Trace along first function
+        for (let i = 1; i < points1.length; i++) {
+            const screen = this.worldToScreen(points1[i].x, points1[i].y);
+            this.ctx.lineTo(screen.x, screen.y);
+        }
+        
+        // Connect to second curve at the end angle
+        if (points2.length > 0) {
+            const lastPoint2 = points2[points2.length - 1];
+            const screen = this.worldToScreen(lastPoint2.x, lastPoint2.y);
+            this.ctx.lineTo(screen.x, screen.y);
+        }
+        
+        // Trace back along second function in reverse
+        for (let i = points2.length - 2; i >= 0; i--) {
+            const screen = this.worldToScreen(points2[i].x, points2[i].y);
+            this.ctx.lineTo(screen.x, screen.y);
+        }
+        
+        // Close the path
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Draw boundary rays at the start and end angles
+        const centerScreen = this.worldToScreen(0, 0);
+        
+        if (points1.length > 0 && points2.length > 0) {
+            // Start ray
+            const start1 = this.worldToScreen(points1[0].x, points1[0].y);
+            const start2 = this.worldToScreen(points2[0].x, points2[0].y);
             
             this.ctx.setLineDash([5, 5]);
             this.ctx.strokeStyle = '#FFD700';
             this.ctx.beginPath();
-            this.ctx.moveTo(startScreen1.x, startScreen1.y);
-            this.ctx.lineTo(startScreen2.x, startScreen2.y);
+            this.ctx.moveTo(centerScreen.x, centerScreen.y);
+            this.ctx.lineTo(start1.x, start1.y);
+            this.ctx.moveTo(centerScreen.x, centerScreen.y);
+            this.ctx.lineTo(start2.x, start2.y);
             this.ctx.stroke();
+            
+            // End ray
+            const end1 = this.worldToScreen(points1[points1.length - 1].x, points1[points1.length - 1].y);
+            const end2 = this.worldToScreen(points2[points2.length - 1].x, points2[points2.length - 1].y);
             
             this.ctx.beginPath();
-            this.ctx.moveTo(endScreen1.x, endScreen1.y);
-            this.ctx.lineTo(endScreen2.x, endScreen2.y);
+            this.ctx.moveTo(centerScreen.x, centerScreen.y);
+            this.ctx.lineTo(end1.x, end1.y);
+            this.ctx.moveTo(centerScreen.x, centerScreen.y);
+            this.ctx.lineTo(end2.x, end2.y);
             this.ctx.stroke();
             this.ctx.setLineDash([]);
-            
-            this.ctx.restore();
-            
-            // Don't draw floating label - it's in the panel now
         }
+        
+        this.ctx.restore();
     }
     
     calculateAreaBetweenCurves(points1, points2, xStart, xEnd) {
