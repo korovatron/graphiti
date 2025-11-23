@@ -199,6 +199,8 @@ class Graphiti {
         
         // Integration system
         this.integralPairs = []; // Store pairs of integral badges for area calculation
+        this.selectedBadgeForLinking = null; // Badge selected for linking to another integral badge
+        this.linkedBadgePairs = []; // Store linked badge pairs for area-between-curves calculation
         
         // Implicit function calculation cancellation system
         this.implicitCalculationId = 0; // Counter for tracking calculation sessions
@@ -5663,7 +5665,14 @@ class Graphiti {
             // Update badge positions for accurate click detection
             this.updateBadgeScreenPositions();
             
-            // First, check if user clicked on an existing badge (highest priority)
+            // First, check if user clicked on an integral label (highest priority for linking)
+            const clickedLabel = this.findIntegralLabelAtPoint(x, y);
+            if (clickedLabel) {
+                this.handleIntegralLabelClick(clickedLabel);
+                return; // Exit early - don't process other input logic
+            }
+            
+            // Second, check if user clicked on an existing badge marker
             const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
             if (targetBadge) {
                 // Store badge state for cycling behavior: no tangent → tangent → neon tangent → normal → neon normal → integral → neon integral → remove
@@ -5755,7 +5764,7 @@ class Graphiti {
                 return; // Exit early - don't process other input logic
             }
             
-            // Second, check for intersection marker tap (only if no badge was clicked)
+            // Third, check for intersection marker tap (only if no badge/label was clicked)
             const tappedIntersection = this.findIntersectionAtScreenPoint(x, y);
             if (tappedIntersection) {
                 // Handle intersection tap and exit early
@@ -5763,7 +5772,7 @@ class Graphiti {
                 return; // Don't process any other input logic
             }
             
-            // Third, check for intercept marker tap (only if no intersection was clicked)
+            // Fourth, check for intercept marker tap (only if no intersection was clicked)
             const tappedIntercept = this.findInterceptAtScreenPoint(x, y);
             if (tappedIntercept) {
                 // Handle intercept tap and exit early
@@ -5771,7 +5780,7 @@ class Graphiti {
                 return; // Don't process any other input logic
             }
             
-            // Fourth, check for turning point marker tap (only if no intersection/intercept was clicked)
+            // Fifth, check for turning point marker tap (only if no intersection/intercept was clicked)
             const tappedTurningPoint = this.findTurningPointAtScreenPoint(x, y);
             if (tappedTurningPoint) {
                 // Handle turning point tap and exit early
@@ -5779,7 +5788,7 @@ class Graphiti {
                 return; // Don't process any other input logic
             }
             
-            // If no badge or intersection was clicked, check for function curve tracing
+            // If no badge, label, intersection, intercept, or turning point was clicked, check for function curve tracing
             // Clear any previous badge interaction state
             this.input.badgeInteraction.targetBadge = null;
             this.input.badgeInteraction.startTime = 0;
@@ -6930,8 +6939,10 @@ class Graphiti {
         // Clear all badges when switching modes since coordinate systems are different
         this.clearAllBadges();
         
-        // Clear integral pairs when switching modes
+        // Clear integral pairs and linked pairs when switching modes
         this.integralPairs = [];
+        this.linkedBadgePairs = [];
+        this.selectedBadgeForLinking = null;
         
         // Clear turning points when switching modes (will be recalculated in new mode)
         this.turningPoints = [];
@@ -13096,7 +13107,14 @@ class Graphiti {
     }
     
     drawIntegrationRegions() {
+        // Draw regular integral pairs (not linked)
         for (const pair of this.integralPairs) {
+            // Skip if this pair is part of a linked set
+            const isLinked = this.linkedBadgePairs.some(lp => 
+                lp.pair1 === pair || lp.pair2 === pair
+            );
+            if (isLinked) continue;
+            
             const func = pair.func;
             if (!func || !func.points || func.points.length === 0) continue;
             
@@ -13180,6 +13198,198 @@ class Graphiti {
             // Draw area label at midpoint
             this.drawIntegrationLabel(pair);
         }
+        
+        // Draw linked badge pairs (area between curves)
+        this.drawLinkedIntegrationRegions();
+    }
+    
+    drawLinkedIntegrationRegions() {
+        if (this.plotMode !== 'cartesian') return; // Only support cartesian mode for now
+        
+        for (const linkedPair of this.linkedBadgePairs) {
+            const pair1 = linkedPair.pair1;
+            const pair2 = linkedPair.pair2;
+            
+            if (!pair1 || !pair2 || !pair1.func || !pair2.func) continue;
+            
+            // Find the overlapping x range
+            const xStart = Math.max(pair1.start, pair2.start);
+            const xEnd = Math.min(pair1.end, pair2.end);
+            
+            if (xStart >= xEnd) continue; // No overlap
+            
+            // Get points from both functions in the overlap range
+            const points1 = pair1.func.points.filter(p => 
+                !isNaN(p.x) && !isNaN(p.y) && p.x >= xStart && p.x <= xEnd
+            ).sort((a, b) => a.x - b.x);
+            
+            const points2 = pair2.func.points.filter(p => 
+                !isNaN(p.x) && !isNaN(p.y) && p.x >= xStart && p.x <= xEnd
+            ).sort((a, b) => a.x - b.x);
+            
+            if (points1.length < 2 || points2.length < 2) continue;
+            
+            // Calculate area between curves
+            const areaBetween = this.calculateAreaBetweenCurves(points1, points2, xStart, xEnd);
+            
+            this.ctx.save();
+            
+            // Use a blend of both colors with gold tint to indicate linking
+            this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)'; // Gold with transparency
+            this.ctx.strokeStyle = '#FFD700'; // Gold
+            this.ctx.lineWidth = 2;
+            
+            // Draw the region between curves
+            this.ctx.beginPath();
+            
+            // Trace along first function
+            for (let i = 0; i < points1.length; i++) {
+                const screen = this.worldToScreen(points1[i].x, points1[i].y);
+                if (i === 0) {
+                    this.ctx.moveTo(screen.x, screen.y);
+                } else {
+                    this.ctx.lineTo(screen.x, screen.y);
+                }
+            }
+            
+            // Trace back along second function (in reverse)
+            for (let i = points2.length - 1; i >= 0; i--) {
+                const screen = this.worldToScreen(points2[i].x, points2[i].y);
+                this.ctx.lineTo(screen.x, screen.y);
+            }
+            
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Draw boundary lines at limits
+            const startScreen1 = this.worldToScreen(xStart, points1[0].y);
+            const startScreen2 = this.worldToScreen(xStart, points2[0].y);
+            const endScreen1 = this.worldToScreen(xEnd, points1[points1.length - 1].y);
+            const endScreen2 = this.worldToScreen(xEnd, points2[points2.length - 1].y);
+            
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.strokeStyle = '#FFD700';
+            this.ctx.beginPath();
+            this.ctx.moveTo(startScreen1.x, startScreen1.y);
+            this.ctx.lineTo(startScreen2.x, startScreen2.y);
+            this.ctx.stroke();
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(endScreen1.x, endScreen1.y);
+            this.ctx.lineTo(endScreen2.x, endScreen2.y);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            
+            this.ctx.restore();
+            
+            // Draw "Area between" label
+            this.drawAreaBetweenLabel(linkedPair, areaBetween, xStart, xEnd, points1, points2);
+        }
+    }
+    
+    calculateAreaBetweenCurves(points1, points2, xStart, xEnd) {
+        // Use trapezoidal rule to calculate area between curves
+        // Sample both functions at regular intervals
+        const numSamples = 100;
+        const dx = (xEnd - xStart) / numSamples;
+        let area = 0;
+        
+        for (let i = 0; i < numSamples; i++) {
+            const x1 = xStart + i * dx;
+            const x2 = xStart + (i + 1) * dx;
+            
+            // Interpolate y values from points
+            const y1_1 = this.interpolateY(points1, x1);
+            const y1_2 = this.interpolateY(points1, x2);
+            const y2_1 = this.interpolateY(points2, x1);
+            const y2_2 = this.interpolateY(points2, x2);
+            
+            if (y1_1 !== null && y1_2 !== null && y2_1 !== null && y2_2 !== null) {
+                // Trapezoidal rule for the difference
+                const diff1 = Math.abs(y1_1 - y2_1);
+                const diff2 = Math.abs(y1_2 - y2_2);
+                area += (diff1 + diff2) * dx / 2;
+            }
+        }
+        
+        return area;
+    }
+    
+    interpolateY(points, x) {
+        // Find the two closest points and interpolate
+        if (points.length === 0) return null;
+        
+        // Find points before and after x
+        let before = null;
+        let after = null;
+        
+        for (let i = 0; i < points.length; i++) {
+            if (points[i].x <= x) {
+                before = points[i];
+            }
+            if (points[i].x >= x && after === null) {
+                after = points[i];
+                break;
+            }
+        }
+        
+        if (before === null) return points[0].y;
+        if (after === null) return points[points.length - 1].y;
+        if (before === after) return before.y;
+        
+        // Linear interpolation
+        const t = (x - before.x) / (after.x - before.x);
+        return before.y + t * (after.y - before.y);
+    }
+    
+    drawAreaBetweenLabel(linkedPair, area, xStart, xEnd, points1, points2) {
+        // Calculate midpoint between curves
+        const midX = (xStart + xEnd) / 2;
+        const midY1 = this.interpolateY(points1, midX);
+        const midY2 = this.interpolateY(points2, midX);
+        
+        if (midY1 === null || midY2 === null) return;
+        
+        const midY = (midY1 + midY2) / 2;
+        const labelScreen = this.worldToScreen(midX, midY);
+        
+        this.ctx.save();
+        this.ctx.font = 'bold 24px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // Format area value
+        const areaText = Math.abs(area) < 0.01 ? 
+            area.toExponential(2) : 
+            area.toFixed(3);
+        
+        const text = `Area between = ${areaText}`;
+        
+        // Background
+        const metrics = this.ctx.measureText(text);
+        const padding = 10;
+        const labelWidth = metrics.width + padding * 2;
+        const labelHeight = 32;
+        const labelX = labelScreen.x - metrics.width / 2 - padding;
+        const labelY = labelScreen.y - 16;
+        
+        // Gold background for linked pairs
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
+        this.ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+        
+        // Black text for contrast on gold
+        this.ctx.fillStyle = '#000000';
+        this.ctx.fillText(text, labelScreen.x, labelScreen.y);
+        
+        // Store bounds for potential future interaction
+        linkedPair.labelBounds = {
+            x: labelX,
+            y: labelY,
+            width: labelWidth,
+            height: labelHeight
+        };
+        
+        this.ctx.restore();
     }
     
     drawCartesianIntegrationRegion(pair) {
@@ -13396,13 +13606,36 @@ class Graphiti {
         // Background
         const metrics = this.ctx.measureText(text);
         const padding = 10; // Increased from 6 to 10 for larger text
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Slightly more opaque for better contrast
-        this.ctx.fillRect(
-            labelScreen.x - metrics.width / 2 - padding,
-            labelScreen.y - 16, // Adjusted for larger text height
-            metrics.width + padding * 2,
-            32 // Increased from 20 to 32 for larger text
+        const labelWidth = metrics.width + padding * 2;
+        const labelHeight = 32; // Increased from 20 to 32 for larger text
+        const labelX = labelScreen.x - metrics.width / 2 - padding;
+        const labelY = labelScreen.y - 16; // Adjusted for larger text height
+        
+        // Store label bounds for click detection
+        pair.labelBounds = {
+            x: labelX,
+            y: labelY,
+            width: labelWidth,
+            height: labelHeight,
+            centerX: labelScreen.x,
+            centerY: labelScreen.y
+        };
+        
+        // Check if this pair is linked or selected for linking
+        const isLinked = this.linkedBadgePairs.some(lp => 
+            (lp.pair1 === pair || lp.pair2 === pair)
         );
+        const isSelected = this.selectedBadgeForLinking === pair;
+        
+        // Draw selection/link indicator if needed
+        if (isLinked || isSelected) {
+            this.ctx.strokeStyle = isLinked ? '#FFD700' : '#00FF00'; // Gold for linked, green for selected
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeRect(labelX - 2, labelY - 2, labelWidth + 4, labelHeight + 4);
+        }
+        
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Slightly more opaque for better contrast
+        this.ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
         
         // Text
         this.ctx.fillStyle = pair.color;
@@ -13420,6 +13653,60 @@ class Graphiti {
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    
+    findIntegralLabelAtPoint(x, y) {
+        // Check all integral pairs for label hit
+        for (const pair of this.integralPairs) {
+            if (pair.labelBounds) {
+                const bounds = pair.labelBounds;
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    return pair;
+                }
+            }
+        }
+        return null;
+    }
+    
+    handleIntegralLabelClick(pair) {
+        // Check if this pair is already linked
+        const linkedPairIndex = this.linkedBadgePairs.findIndex(lp => 
+            lp.pair1 === pair || lp.pair2 === pair
+        );
+        
+        if (linkedPairIndex !== -1) {
+            // Unlink the pair
+            this.linkedBadgePairs.splice(linkedPairIndex, 1);
+            this.selectedBadgeForLinking = null;
+            this.draw();
+            return;
+        }
+        
+        // Check if we're selecting for linking
+        if (this.selectedBadgeForLinking === null) {
+            // Select this pair for linking
+            this.selectedBadgeForLinking = pair;
+            this.draw();
+        } else if (this.selectedBadgeForLinking === pair) {
+            // Deselect if clicking the same pair again
+            this.selectedBadgeForLinking = null;
+            this.draw();
+        } else {
+            // Link the two pairs if they're on different functions
+            if (this.selectedBadgeForLinking.func.id !== pair.func.id) {
+                this.linkedBadgePairs.push({
+                    pair1: this.selectedBadgeForLinking,
+                    pair2: pair
+                });
+                this.selectedBadgeForLinking = null;
+                this.draw();
+            } else {
+                // Can't link pairs on the same function - show feedback
+                this.selectedBadgeForLinking = pair; // Switch selection instead
+                this.draw();
+            }
+        }
     }
     
     drawPersistentBadges() {
