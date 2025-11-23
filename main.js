@@ -201,6 +201,8 @@ class Graphiti {
         this.integralPairs = []; // Store pairs of integral badges for area calculation
         this.selectedBadgeForLinking = null; // Badge selected for linking to another integral badge
         this.linkedBadgePairs = []; // Store linked badge pairs for area-between-curves calculation
+        this.pendingLabelClick = null; // Store pending click to check after next draw
+        this.integralPanelCheckboxes = []; // Track which integral pairs have checkboxes checked
         
         // Implicit function calculation cancellation system
         this.implicitCalculationId = 0; // Counter for tracking calculation sessions
@@ -4387,7 +4389,7 @@ class Graphiti {
             this.input.badgeInteraction.originalBadgeState.hasIntegral) {
             
             const virtualBadge = {
-                id: 'dragging',
+                id: this.input.badgeInteraction.originalBadgeId, // Use original badge ID, not 'dragging'
                 functionId: this.input.tracing.functionId,
                 worldX: this.input.tracing.worldX,
                 worldY: this.input.tracing.worldY,
@@ -4402,7 +4404,8 @@ class Graphiti {
             integralBadgesByFunction.get(virtualBadge.functionId).push(virtualBadge);
         }
         
-        // Clear existing pairs
+        // Clear existing pairs but preserve labelBounds for existing pairs
+        const oldPairs = this.integralPairs;
         this.integralPairs = [];
         
         // Create pairs for each function (max 2 badges per function)
@@ -4438,8 +4441,13 @@ class Graphiti {
                     area = this.calculateCartesianIntegral(func, start, end);
                 }
                 
+                // Find if this pair existed before to preserve labelBounds
+                const oldPair = oldPairs.find(p => 
+                    p.badge1Id === badge1.id && p.badge2Id === badge2.id
+                );
+                
                 // Create pair object
-                this.integralPairs.push({
+                const newPair = {
                     badge1Id: badge1.id,
                     badge2Id: badge2.id,
                     functionId: functionId,
@@ -4449,9 +4457,61 @@ class Graphiti {
                     area: area,
                     color: func.color,
                     neon: badge1.neonIntegral || badge2.neonIntegral
-                });
+                };
+                
+                // Preserve labelBounds if it existed
+                if (oldPair && oldPair.labelBounds) {
+                    newPair.labelBounds = oldPair.labelBounds;
+                }
+                
+                this.integralPairs.push(newPair);
             }
         }
+        
+        // Update linked pairs to reference new pair objects
+        for (const linkedPair of this.linkedBadgePairs) {
+            // Find the new pairs that correspond to the old ones
+            const oldPair1 = linkedPair.pair1;
+            const oldPair2 = linkedPair.pair2;
+            
+            // Match by badge IDs since those don't change
+            const newPair1 = this.integralPairs.find(p => 
+                p.badge1Id === oldPair1.badge1Id && p.badge2Id === oldPair1.badge2Id
+            );
+            const newPair2 = this.integralPairs.find(p => 
+                p.badge1Id === oldPair2.badge1Id && p.badge2Id === oldPair2.badge2Id
+            );
+            
+            // Update references if both pairs still exist
+            if (newPair1 && newPair2) {
+                linkedPair.pair1 = newPair1;
+                linkedPair.pair2 = newPair2;
+            } else {
+                // One of the pairs no longer exists - mark for removal
+                linkedPair._remove = true;
+            }
+        }
+        
+        // Remove any linked pairs that are no longer valid
+        this.linkedBadgePairs = this.linkedBadgePairs.filter(lp => !lp._remove);
+        
+        // Update checkbox references to point to new pair objects
+        for (let i = 0; i < this.integralPanelCheckboxes.length; i++) {
+            const oldCheckedPair = this.integralPanelCheckboxes[i];
+            const newCheckedPair = this.integralPairs.find(p =>
+                p.badge1Id === oldCheckedPair.badge1Id && p.badge2Id === oldCheckedPair.badge2Id
+            );
+            
+            if (newCheckedPair) {
+                this.integralPanelCheckboxes[i] = newCheckedPair;
+            } else {
+                // Pair no longer exists - mark for removal
+                this.integralPanelCheckboxes[i] = null;
+            }
+        }
+        
+        // Remove any null checkboxes
+        this.integralPanelCheckboxes = this.integralPanelCheckboxes.filter(p => p !== null);
     }
     
     calculateCartesianIntegral(func, x1, x2) {
@@ -5653,11 +5713,16 @@ class Graphiti {
     }
     
     handlePointerStart(x, y) {
-        this.input.mouse.x = x;
-        this.input.mouse.y = y;
+        // Convert client coordinates to canvas coordinates
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasX = x - rect.left;
+        const canvasY = y - rect.top;
+        
+        this.input.mouse.x = canvasX;
+        this.input.mouse.y = canvasY;
         this.input.mouse.down = true;
-        this.input.lastX = x;
-        this.input.lastY = y;
+        this.input.lastX = canvasX;
+        this.input.lastY = canvasY;
         this.input.dragging = false;
         
         // Check if we should enter tracing mode
@@ -5665,15 +5730,17 @@ class Graphiti {
             // Update badge positions for accurate click detection
             this.updateBadgeScreenPositions();
             
-            // First, check if user clicked on an integral label (highest priority for linking)
-            const clickedLabel = this.findIntegralLabelAtPoint(x, y);
-            if (clickedLabel) {
-                this.handleIntegralLabelClick(clickedLabel);
-                return; // Exit early - don't process other input logic
+            // Force a draw to update panel bounds, then check for checkbox click
+            this.draw();
+            
+            const clickedCheckbox = this.findIntegralLabelAtPoint(canvasX, canvasY);
+            if (clickedCheckbox) {
+                this.handleIntegralLabelClick(clickedCheckbox);
+                return; // Exit early
             }
             
-            // Second, check if user clicked on an existing badge marker
-            const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
+            // Check if user clicked on an existing badge marker
+            const targetBadge = this.findBadgeAtScreenPosition(canvasX, canvasY, 25);
             if (targetBadge) {
                 // Store badge state for cycling behavior: no tangent → tangent → neon tangent → normal → neon normal → integral → neon integral → remove
                 this.input.badgeInteraction.originalBadgeState = {
@@ -5825,16 +5892,21 @@ class Graphiti {
     }
     
     handlePointerMove(x, y) {
+        // Convert client coordinates to canvas coordinates
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasX = x - rect.left;
+        const canvasY = y - rect.top;
+        
         if (this.input.mouse.down && this.currentState === this.states.GRAPHING) {
-            const deltaX = x - this.input.lastX;
-            const deltaY = y - this.input.lastY;
+            const deltaX = canvasX - this.input.lastX;
+            const deltaY = canvasY - this.input.lastY;
             
             // Badge interaction is now handled immediately in handlePointerStart
             // All badge interactions start in tracing mode right away
             
             if (this.input.tracing.active) {
                 // Tracing mode - update on every movement for smooth tracing
-                const currentWorldPos = this.screenToWorld(x, y);
+                const currentWorldPos = this.screenToWorld(canvasX, canvasY);
                 const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
                 
                 if (tracingFunction) {
@@ -5915,12 +5987,12 @@ class Graphiti {
                 }
             }
             
-            this.input.lastX = x;
-            this.input.lastY = y;
+            this.input.lastX = canvasX;
+            this.input.lastY = canvasY;
         }
         
-        this.input.mouse.x = x;
-        this.input.mouse.y = y;
+        this.input.mouse.x = canvasX;
+        this.input.mouse.y = canvasY;
     }
     
     handlePointerEnd() {
@@ -6016,12 +6088,17 @@ class Graphiti {
             const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
             const functionColor = tracingFunction ? tracingFunction.color : '#4A90E2';
             
-            // Add new badge to the collection
+            // Add new badge to the collection (reuse original ID only if dragging existing badge)
+            const reuseId = (this.input.badgeInteraction.originalBadgeState && this.input.badgeInteraction.originalBadgeId) ? 
+                this.input.badgeInteraction.originalBadgeId : null;
             const badgeId = this.addTraceBadge(
                 this.input.tracing.functionId,
                 this.input.tracing.worldX,
                 this.input.tracing.worldY,
-                functionColor
+                functionColor,
+                null,
+                null,
+                reuseId
             );
             
             // Store theta for polar functions
@@ -8432,13 +8509,19 @@ class Graphiti {
     }
     
     // Badge management methods for multi-badge tracing system
-    addTraceBadge(functionId, worldX, worldY, functionColor, customText = null, badgeType = null) {
+    addTraceBadge(functionId, worldX, worldY, functionColor, customText = null, badgeType = null, reuseId = null) {
         // Snap coordinates to zero if they're very close (matches display formatting)
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
         
+        // If reusing an ID, ensure counter stays ahead
+        const badgeId = reuseId !== null ? reuseId : this.input.badgeIdCounter++;
+        if (reuseId !== null && reuseId >= this.input.badgeIdCounter) {
+            this.input.badgeIdCounter = reuseId + 1;
+        }
+        
         const badge = {
-            id: this.input.badgeIdCounter++,
+            id: badgeId,
             functionId: functionId,
             worldX: snappedX,
             worldY: snappedY,
@@ -13084,10 +13167,11 @@ class Graphiti {
         
         // Determine integral limit type if dragging an integral badge
         let integralLimitType = null;
-        if (hasIntegral) {
-            const pair = this.integralPairs.find(p => p.badge1Id === 'dragging' || p.badge2Id === 'dragging');
+        if (hasIntegral && this.input.badgeInteraction.originalBadgeId) {
+            const draggedBadgeId = this.input.badgeInteraction.originalBadgeId;
+            const pair = this.integralPairs.find(p => p.badge1Id === draggedBadgeId || p.badge2Id === draggedBadgeId);
             if (pair) {
-                integralLimitType = pair.badge1Id === 'dragging' ? 'lower' : 'upper';
+                integralLimitType = pair.badge1Id === draggedBadgeId ? 'lower' : 'upper';
             }
         }
         
@@ -13195,12 +13279,67 @@ class Graphiti {
             
             this.ctx.restore();
             
-            // Draw area label at midpoint
-            this.drawIntegrationLabel(pair);
+            // Don't draw label here - will be drawn in panel at bottom
         }
+        
+        // Draw integral panel at bottom-right for ALL pairs
+        this.drawIntegralPanel();
         
         // Draw linked badge pairs (area between curves)
         this.drawLinkedIntegrationRegions();
+    }
+    
+    drawIntegralPanel() {
+        // Draw all integral pairs in bottom-right panel
+        for (let i = 0; i < this.integralPairs.length; i++) {
+            this.drawIntegrationLabel(this.integralPairs[i], i);
+        }
+        
+        // Draw "Area between" result if two are checked
+        if (this.integralPanelCheckboxes.length === 2) {
+            const linkedPair = this.linkedBadgePairs.find(lp =>
+                this.integralPanelCheckboxes.includes(lp.pair1) &&
+                this.integralPanelCheckboxes.includes(lp.pair2)
+            );
+            
+            if (linkedPair && linkedPair.areaBetween !== undefined) {
+                this.drawAreaBetweenPanelLabel(linkedPair, this.integralPairs.length);
+            }
+        }
+    }
+    
+    drawAreaBetweenPanelLabel(linkedPair, index) {
+        const panelX = this.viewport.width - 250;
+        const panelY = this.viewport.height - 60 - (index * 50);
+        const panelWidth = 240;
+        const panelHeight = 45;
+        
+        this.ctx.save();
+        
+        // Gold background for area between
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
+        this.ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        
+        // Border
+        this.ctx.strokeStyle = '#FFD700';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+        
+        // Format area value
+        const areaText = Math.abs(linkedPair.areaBetween) < 0.01 ?
+            linkedPair.areaBetween.toExponential(2) :
+            linkedPair.areaBetween.toFixed(3);
+        
+        const text = `Area between = ${areaText}`;
+        
+        // Text
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#000000';
+        this.ctx.fillText(text, panelX + panelWidth / 2, panelY + panelHeight / 2);
+        
+        this.ctx.restore();
     }
     
     drawLinkedIntegrationRegions() {
@@ -13231,6 +13370,9 @@ class Graphiti {
             
             // Calculate area between curves
             const areaBetween = this.calculateAreaBetweenCurves(points1, points2, xStart, xEnd);
+            
+            // Store the result in the linked pair for panel display
+            linkedPair.areaBetween = areaBetween;
             
             this.ctx.save();
             
@@ -13282,8 +13424,7 @@ class Graphiti {
             
             this.ctx.restore();
             
-            // Draw "Area between" label
-            this.drawAreaBetweenLabel(linkedPair, areaBetween, xStart, xEnd, points1, points2);
+            // Don't draw floating label - it's in the panel now
         }
     }
     
@@ -13340,56 +13481,6 @@ class Graphiti {
         // Linear interpolation
         const t = (x - before.x) / (after.x - before.x);
         return before.y + t * (after.y - before.y);
-    }
-    
-    drawAreaBetweenLabel(linkedPair, area, xStart, xEnd, points1, points2) {
-        // Calculate midpoint between curves
-        const midX = (xStart + xEnd) / 2;
-        const midY1 = this.interpolateY(points1, midX);
-        const midY2 = this.interpolateY(points2, midX);
-        
-        if (midY1 === null || midY2 === null) return;
-        
-        const midY = (midY1 + midY2) / 2;
-        const labelScreen = this.worldToScreen(midX, midY);
-        
-        this.ctx.save();
-        this.ctx.font = 'bold 24px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        
-        // Format area value
-        const areaText = Math.abs(area) < 0.01 ? 
-            area.toExponential(2) : 
-            area.toFixed(3);
-        
-        const text = `Area between = ${areaText}`;
-        
-        // Background
-        const metrics = this.ctx.measureText(text);
-        const padding = 10;
-        const labelWidth = metrics.width + padding * 2;
-        const labelHeight = 32;
-        const labelX = labelScreen.x - metrics.width / 2 - padding;
-        const labelY = labelScreen.y - 16;
-        
-        // Gold background for linked pairs
-        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
-        this.ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
-        
-        // Black text for contrast on gold
-        this.ctx.fillStyle = '#000000';
-        this.ctx.fillText(text, labelScreen.x, labelScreen.y);
-        
-        // Store bounds for potential future interaction
-        linkedPair.labelBounds = {
-            x: labelX,
-            y: labelY,
-            width: labelWidth,
-            height: labelHeight
-        };
-        
-        this.ctx.restore();
     }
     
     drawCartesianIntegrationRegion(pair) {
@@ -13559,40 +13650,23 @@ class Graphiti {
         this.ctx.lineTo(centerScreen.x, centerScreen.y);
     }
     
-    drawIntegrationLabel(pair) {
-        // Calculate midpoint for label placement
-        let midX, midY;
-        
-        if (this.plotMode === 'polar') {
-            const midTheta = (pair.start + pair.end) / 2;
-            // Find point on curve at mid theta
-            const relevantPoints = pair.func.points.filter(p => {
-                const theta = Math.atan2(p.y, p.x);
-                return Math.abs(theta - midTheta) < 0.1;
-            });
-            
-            if (relevantPoints.length > 0) {
-                midX = relevantPoints[0].x;
-                midY = relevantPoints[0].y;
-            } else {
-                midX = 0;
-                midY = 0;
-            }
-        } else {
-            midX = (pair.start + pair.end) / 2;
-            // Find y value at midX
-            const nearbyPoints = pair.func.points.filter(p => 
-                Math.abs(p.x - midX) < 0.5
-            );
-            midY = nearbyPoints.length > 0 ? nearbyPoints[0].y / 2 : 0;
-        }
-        
-        const labelScreen = this.worldToScreen(midX, midY);
+    drawIntegrationLabel(pair, index) {
+        // Draw in bottom-right panel instead of on graph
+        const panelX = this.viewport.width - 250;
+        const panelY = this.viewport.height - 60 - (index * 50);
+        const panelWidth = 240;
+        const panelHeight = 45;
         
         this.ctx.save();
-        this.ctx.font = 'bold 24px Arial'; // Increased from 14px to 24px for classroom visibility
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
+        
+        // Background with function color
+        this.ctx.fillStyle = this.hexToRGBA(pair.color, 0.9);
+        this.ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        
+        // Border
+        this.ctx.strokeStyle = pair.color;
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
         
         // Format area value
         const areaText = Math.abs(pair.area) < 0.01 ? 
@@ -13603,47 +13677,55 @@ class Graphiti {
             `Area = ${areaText}` : 
             `∫ = ${areaText}`;
         
-        // Background
-        const metrics = this.ctx.measureText(text);
-        const padding = 10; // Increased from 6 to 10 for larger text
-        const labelWidth = metrics.width + padding * 2;
-        const labelHeight = 32; // Increased from 20 to 32 for larger text
-        const labelX = labelScreen.x - metrics.width / 2 - padding;
-        const labelY = labelScreen.y - 16; // Adjusted for larger text height
+        // Text
+        this.ctx.font = 'bold 18px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillText(text, panelX + 40, panelY + panelHeight / 2);
         
-        // Store label bounds for click detection
-        pair.labelBounds = {
-            x: labelX,
-            y: labelY,
-            width: labelWidth,
-            height: labelHeight,
-            centerX: labelScreen.x,
-            centerY: labelScreen.y
+        // Draw checkbox
+        const checkboxX = panelX + 10;
+        const checkboxY = panelY + 12;
+        const checkboxSize = 20;
+        
+        // Checkbox background
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillRect(checkboxX, checkboxY, checkboxSize, checkboxSize);
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(checkboxX, checkboxY, checkboxSize, checkboxSize);
+        
+        // Check if this pair is checked (by badge IDs, not object reference)
+        const isChecked = this.integralPanelCheckboxes.some(p => 
+            p.badge1Id === pair.badge1Id && p.badge2Id === pair.badge2Id
+        );
+        if (isChecked) {
+            // Draw checkmark
+            this.ctx.strokeStyle = '#00AA00';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.moveTo(checkboxX + 4, checkboxY + 10);
+            this.ctx.lineTo(checkboxX + 8, checkboxY + 15);
+            this.ctx.lineTo(checkboxX + 16, checkboxY + 5);
+            this.ctx.stroke();
+        }
+        
+        // Store clickable bounds for checkbox
+        pair.checkboxBounds = {
+            x: checkboxX,
+            y: checkboxY,
+            width: checkboxSize,
+            height: checkboxSize
         };
         
-        // Check if this pair is linked or selected for linking
-        const isLinked = this.linkedBadgePairs.some(lp => 
-            (lp.pair1 === pair || lp.pair2 === pair)
-        );
-        const isSelected = this.selectedBadgeForLinking === pair;
-        
-        // Draw selection/link indicator if needed
-        if (isLinked || isSelected) {
-            this.ctx.strokeStyle = isLinked ? '#FFD700' : '#00FF00'; // Gold for linked, green for selected
-            this.ctx.lineWidth = 3;
-            this.ctx.strokeRect(labelX - 2, labelY - 2, labelWidth + 4, labelHeight + 4);
-        }
-        
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Slightly more opaque for better contrast
-        this.ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
-        
-        // Text
-        this.ctx.fillStyle = pair.color;
-        if (pair.neon) {
-            this.ctx.shadowBlur = 10;
-            this.ctx.shadowColor = pair.color;
-        }
-        this.ctx.fillText(text, labelScreen.x, labelScreen.y);
+        // Store panel bounds for potential click detection
+        pair.panelBounds = {
+            x: panelX,
+            y: panelY,
+            width: panelWidth,
+            height: panelHeight
+        };
         
         this.ctx.restore();
     }
@@ -13656,10 +13738,10 @@ class Graphiti {
     }
     
     findIntegralLabelAtPoint(x, y) {
-        // Check all integral pairs for label hit
+        // Check all integral pairs for checkbox hit
         for (const pair of this.integralPairs) {
-            if (pair.labelBounds) {
-                const bounds = pair.labelBounds;
+            if (pair.checkboxBounds) {
+                const bounds = pair.checkboxBounds;
                 if (x >= bounds.x && x <= bounds.x + bounds.width &&
                     y >= bounds.y && y <= bounds.y + bounds.height) {
                     return pair;
@@ -13670,43 +13752,47 @@ class Graphiti {
     }
     
     handleIntegralLabelClick(pair) {
-        // Check if this pair is already linked
-        const linkedPairIndex = this.linkedBadgePairs.findIndex(lp => 
-            lp.pair1 === pair || lp.pair2 === pair
+        // Toggle checkbox state (find by badge IDs, not object reference)
+        const index = this.integralPanelCheckboxes.findIndex(p => 
+            p.badge1Id === pair.badge1Id && p.badge2Id === pair.badge2Id
         );
         
-        if (linkedPairIndex !== -1) {
-            // Unlink the pair
-            this.linkedBadgePairs.splice(linkedPairIndex, 1);
-            this.selectedBadgeForLinking = null;
-            this.draw();
-            return;
-        }
-        
-        // Check if we're selecting for linking
-        if (this.selectedBadgeForLinking === null) {
-            // Select this pair for linking
-            this.selectedBadgeForLinking = pair;
-            this.draw();
-        } else if (this.selectedBadgeForLinking === pair) {
-            // Deselect if clicking the same pair again
-            this.selectedBadgeForLinking = null;
-            this.draw();
+        if (index !== -1) {
+            // Uncheck - remove from array
+            this.integralPanelCheckboxes.splice(index, 1);
         } else {
-            // Link the two pairs if they're on different functions
-            if (this.selectedBadgeForLinking.func.id !== pair.func.id) {
-                this.linkedBadgePairs.push({
-                    pair1: this.selectedBadgeForLinking,
-                    pair2: pair
-                });
-                this.selectedBadgeForLinking = null;
-                this.draw();
+            // Check - add to array (max 2)
+            if (this.integralPanelCheckboxes.length < 2) {
+                this.integralPanelCheckboxes.push(pair);
             } else {
-                // Can't link pairs on the same function - show feedback
-                this.selectedBadgeForLinking = pair; // Switch selection instead
-                this.draw();
+                // Already have 2 checked - replace the first one
+                this.integralPanelCheckboxes.shift();
+                this.integralPanelCheckboxes.push(pair);
             }
         }
+        
+        // Update linked pairs based on checked boxes
+        if (this.integralPanelCheckboxes.length === 2) {
+            const pair1 = this.integralPanelCheckboxes[0];
+            const pair2 = this.integralPanelCheckboxes[1];
+            
+            // Only link if they're on different functions
+            if (pair1.func.id !== pair2.func.id) {
+                // Clear existing links and create new one
+                this.linkedBadgePairs = [{
+                    pair1: pair1,
+                    pair2: pair2
+                }];
+            } else {
+                // Same function - can't link, uncheck the second one
+                this.integralPanelCheckboxes.pop();
+            }
+        } else {
+            // Less than 2 checked - clear links
+            this.linkedBadgePairs = [];
+        }
+        
+        this.draw();
     }
     
     drawPersistentBadges() {
