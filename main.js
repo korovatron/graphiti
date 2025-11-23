@@ -169,7 +169,7 @@ class Graphiti {
         
         // Axis intercepts detection
         this.intercepts = []; // Store detected axis intercept points
-        this.showIntercepts = true; // Toggle for intercept display (on by default)
+        this.showIntercepts = false; // Toggle for intercept display (off by default)
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
@@ -191,7 +191,7 @@ class Graphiti {
         
         // Legacy manual intersection storage (keeping for compatibility)
         this.manualImplicitIntersections = []; // Store manually calculated implicit intersections
-        this.showIntersections = true; // Toggle for intersection display
+        this.showIntersections = false; // Toggle for intersection display (off by default)
         this.tangentIntersections = []; // Store intersections between tangent lines and functions
         this.normalIntersections = []; // Store intersections between normal lines and functions
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
@@ -4449,8 +4449,9 @@ class Graphiti {
         
         if (relevantPoints.length < 2) return 0;
         
-        // Check if function is implicit (has disconnected segments)
-        const isImplicit = func.points.some(p => p.connected === false || isNaN(p.y));
+        // Check if function is implicit using expression type
+        const functionType = this.detectFunctionType(func.expression);
+        const isImplicit = (functionType === 'implicit');
         
         if (isImplicit) {
             // For implicit functions, use the connected property to separate segments
@@ -6098,7 +6099,8 @@ class Graphiti {
                         } else if (originalState.hasNormal && originalState.neonNormal && !originalState.hasIntegral) {
                             // State 5: Neon normal → integral (only if less than 2 integral badges exist on this function)
                             // Skip integral for implicit functions (not well-defined)
-                            const isImplicit = tracingFunction.points.some(p => p.connected === false || isNaN(p.y));
+                            const functionType = this.detectFunctionType(tracingFunction.expression);
+                            const isImplicit = (functionType === 'implicit');
                             
                             if (isImplicit) {
                                 // For implicit functions, go directly to delete (cancel tracing)
@@ -13159,8 +13161,9 @@ class Graphiti {
         
         if (points.length < 2) return;
         
-        // Check if function is implicit (has disconnected segments)
-        const isImplicit = func.points.some(p => p.connected === false || isNaN(p.y));
+        // Check if function is implicit using expression type
+        const functionType = this.detectFunctionType(func.expression);
+        const isImplicit = (functionType === 'implicit');
         
         if (isImplicit) {
             // For implicit functions, use the connected property to separate segments
