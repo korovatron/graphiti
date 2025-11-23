@@ -4444,23 +4444,81 @@ class Graphiti {
         // Ensure x1 < x2
         if (x1 > x2) [x1, x2] = [x2, x1];
         
-        // Filter points within integration range
-        const relevantPoints = points.filter(p => p.x >= x1 && p.x <= x2);
+        // Filter points within integration range (exclude NaN)
+        const relevantPoints = points.filter(p => !isNaN(p.x) && !isNaN(p.y) && p.x >= x1 && p.x <= x2);
         
         if (relevantPoints.length < 2) return 0;
         
-        // Sort by x coordinate
-        relevantPoints.sort((a, b) => a.x - b.x);
+        // Check if function is implicit (has disconnected segments)
+        const isImplicit = func.points.some(p => p.connected === false || isNaN(p.y));
         
-        // Trapezoidal integration
-        let area = 0;
-        for (let i = 0; i < relevantPoints.length - 1; i++) {
-            const dx = relevantPoints[i + 1].x - relevantPoints[i].x;
-            const avgHeight = (relevantPoints[i].y + relevantPoints[i + 1].y) / 2;
-            area += dx * avgHeight;
+        if (isImplicit) {
+            // For implicit functions, use the connected property to separate segments
+            const segments = [];
+            let currentSegment = [];
+            
+            // Process points in order from the original array
+            for (let i = 0; i < relevantPoints.length; i++) {
+                const point = relevantPoints[i];
+                
+                // Check if previous point in original array exists and is connected
+                const prevIndex = func.points.indexOf(point) - 1;
+                const prevPoint = prevIndex >= 0 ? func.points[prevIndex] : null;
+                const isConnectedToPrev = prevPoint && !isNaN(prevPoint.y);
+                
+                if (currentSegment.length === 0 || !isConnectedToPrev) {
+                    // Start new segment
+                    if (currentSegment.length > 1) {
+                        segments.push(currentSegment);
+                    }
+                    currentSegment = [point];
+                } else {
+                    // Continue current segment
+                    currentSegment.push(point);
+                }
+            }
+            
+            if (currentSegment.length > 1) {
+                segments.push(currentSegment);
+            }
+            
+            // Find which segments contain the badge positions
+            const badge1 = this.input.persistentBadges.find(b => b.id === func.id); // This won't work, need different approach
+            
+            // For now, integrate all segments (this will give combined area of all branches)
+            // TODO: Could filter segments based on badge positions in the future
+            
+            // Integrate each segment separately
+            let totalArea = 0;
+            for (const segment of segments) {
+                if (segment.length < 2) continue;
+                
+                // Sort segment by x for proper integration
+                const sortedSegment = [...segment].sort((a, b) => a.x - b.x);
+                
+                for (let i = 0; i < sortedSegment.length - 1; i++) {
+                    const dx = sortedSegment[i + 1].x - sortedSegment[i].x;
+                    const avgHeight = (sortedSegment[i].y + sortedSegment[i + 1].y) / 2;
+                    totalArea += dx * avgHeight;
+                }
+            }
+            
+            return totalArea;
+        } else {
+            // Simple explicit function - original behavior
+            // Sort by x coordinate
+            relevantPoints.sort((a, b) => a.x - b.x);
+            
+            // Trapezoidal integration
+            let area = 0;
+            for (let i = 0; i < relevantPoints.length - 1; i++) {
+                const dx = relevantPoints[i + 1].x - relevantPoints[i].x;
+                const avgHeight = (relevantPoints[i].y + relevantPoints[i + 1].y) / 2;
+                area += dx * avgHeight;
+            }
+            
+            return area;
         }
-        
-        return area;
     }
     
     calculatePolarIntegral(func, theta1, theta2) {
@@ -6039,22 +6097,39 @@ class Graphiti {
                             }
                         } else if (originalState.hasNormal && originalState.neonNormal && !originalState.hasIntegral) {
                             // State 5: Neon normal → integral (only if less than 2 integral badges exist on this function)
-                            const existingIntegralCount = this.input.persistentBadges.filter(b => 
-                                b.hasIntegral && b.functionId === newBadge.functionId
-                            ).length;
+                            // Skip integral for implicit functions (not well-defined)
+                            const isImplicit = tracingFunction.points.some(p => p.connected === false || isNaN(p.y));
                             
-                            if (existingIntegralCount < 2) {
-                                // Allow transition to integral
-                                newBadge.hasTangent = false;
-                                newBadge.neonTangent = false;
-                                newBadge.hasNormal = false;
-                                newBadge.neonNormal = false;
-                                newBadge.hasIntegral = true;
-                                newBadge.neonIntegral = false;
+                            if (isImplicit) {
+                                // For implicit functions, go directly to delete (cancel tracing)
+                                this.input.tracing.active = false;
+                                this.input.tracing.functionId = null;
                                 
-                                // Show tooltip
+                                // Remove the badge we just created
+                                this.input.persistentBadges = this.input.persistentBadges.filter(b => b.id !== badgeId);
+                                
+                                // Show tooltip explaining why
                                 const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
-                                this.showBadgeTooltip('Integral - add second to calculate', screenPos.x, screenPos.y);
+                                this.showBadgeTooltip('Integration not supported for implicit functions', screenPos.x, screenPos.y);
+                            } else {
+                                // Explicit function - allow integral
+                                const existingIntegralCount = this.input.persistentBadges.filter(b => 
+                                    b.hasIntegral && b.functionId === newBadge.functionId
+                                ).length;
+                                
+                                if (existingIntegralCount < 2) {
+                                    // Allow transition to integral
+                                    newBadge.hasTangent = false;
+                                    newBadge.neonTangent = false;
+                                    newBadge.hasNormal = false;
+                                    newBadge.neonNormal = false;
+                                    newBadge.hasIntegral = true;
+                                    newBadge.neonIntegral = false;
+                                    
+                                    // Show tooltip
+                                    const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                    this.showBadgeTooltip('Integral - add second to calculate', screenPos.x, screenPos.y);
+                                }
                             }
                             // Note: If existingIntegralCount >= 2, the badge was already deleted by canceling tracing above
                         } else if (originalState.hasIntegral && !originalState.neonIntegral) {
@@ -13080,33 +13155,124 @@ class Graphiti {
     
     drawCartesianIntegrationRegion(pair) {
         const func = pair.func;
-        const points = func.points.filter(p => p.x >= pair.start && p.x <= pair.end);
+        const points = func.points.filter(p => !isNaN(p.x) && !isNaN(p.y) && p.x >= pair.start && p.x <= pair.end);
         
         if (points.length < 2) return;
         
-        // Sort by x
-        points.sort((a, b) => a.x - b.x);
+        // Check if function is implicit (has disconnected segments)
+        const isImplicit = func.points.some(p => p.connected === false || isNaN(p.y));
         
-        // Start at bottom left
-        const startScreen = this.worldToScreen(pair.start, 0);
-        this.ctx.moveTo(startScreen.x, startScreen.y);
-        
-        // Draw up to first point
-        const firstPoint = this.worldToScreen(points[0].x, points[0].y);
-        this.ctx.lineTo(firstPoint.x, firstPoint.y);
-        
-        // Draw along curve
-        for (let i = 1; i < points.length; i++) {
-            const screen = this.worldToScreen(points[i].x, points[i].y);
-            this.ctx.lineTo(screen.x, screen.y);
+        if (isImplicit) {
+            // For implicit functions, use the connected property to separate segments
+            const segments = [];
+            let currentSegment = [];
+            
+            // Process points in order from the original array (preserves segment grouping)
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                
+                // Check if previous point in original array exists and is connected
+                const prevIndex = func.points.indexOf(point) - 1;
+                const prevPoint = prevIndex >= 0 ? func.points[prevIndex] : null;
+                const isConnectedToPrev = prevPoint && !isNaN(prevPoint.y);
+                
+                if (currentSegment.length === 0 || !isConnectedToPrev) {
+                    // Start new segment
+                    if (currentSegment.length > 1) {
+                        segments.push(currentSegment);
+                    }
+                    currentSegment = [point];
+                } else {
+                    // Continue current segment
+                    currentSegment.push(point);
+                }
+            }
+            
+            if (currentSegment.length > 1) {
+                segments.push(currentSegment);
+            }
+            
+            // Find which segments contain the badge positions
+            // This ensures we only shade the branches where the user placed badges
+            const badge1 = this.input.persistentBadges.find(b => b.id === pair.badge1Id);
+            const badge2 = this.input.persistentBadges.find(b => b.id === pair.badge2Id);
+            
+            const relevantSegments = segments.filter(segment => {
+                // Check if either badge is on or near this segment
+                for (const badge of [badge1, badge2]) {
+                    if (!badge) continue;
+                    
+                    // Check if any point in segment is close to the badge
+                    for (const point of segment) {
+                        const distX = Math.abs(point.x - badge.worldX);
+                        const distY = Math.abs(point.y - badge.worldY);
+                        
+                        // If badge is very close to this segment, include it
+                        if (distX < 0.1 && distY < 0.1) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            });
+            
+            // Draw each relevant segment separately as area under curve
+            for (const segment of relevantSegments) {
+                if (segment.length < 2) continue;
+                
+                // Sort segment by x to ensure proper drawing
+                const sortedSegment = [...segment].sort((a, b) => a.x - b.x);
+                
+                this.ctx.beginPath();
+                
+                // Start at x-axis below first point
+                const firstScreen = this.worldToScreen(sortedSegment[0].x, 0);
+                this.ctx.moveTo(firstScreen.x, firstScreen.y);
+                
+                // Go up to first point
+                const firstPoint = this.worldToScreen(sortedSegment[0].x, sortedSegment[0].y);
+                this.ctx.lineTo(firstPoint.x, firstPoint.y);
+                
+                // Draw along segment
+                for (let i = 1; i < sortedSegment.length; i++) {
+                    const screen = this.worldToScreen(sortedSegment[i].x, sortedSegment[i].y);
+                    this.ctx.lineTo(screen.x, screen.y);
+                }
+                
+                // Draw down to x-axis at last point
+                const lastScreen = this.worldToScreen(sortedSegment[sortedSegment.length - 1].x, 0);
+                this.ctx.lineTo(lastScreen.x, lastScreen.y);
+                
+                // Close along x-axis
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+        } else {
+            // Simple explicit function - original behavior
+            // Sort by x
+            points.sort((a, b) => a.x - b.x);
+            
+            // Start at bottom left
+            const startScreen = this.worldToScreen(pair.start, 0);
+            this.ctx.moveTo(startScreen.x, startScreen.y);
+            
+            // Draw up to first point
+            const firstPoint = this.worldToScreen(points[0].x, points[0].y);
+            this.ctx.lineTo(firstPoint.x, firstPoint.y);
+            
+            // Draw along curve
+            for (let i = 1; i < points.length; i++) {
+                const screen = this.worldToScreen(points[i].x, points[i].y);
+                this.ctx.lineTo(screen.x, screen.y);
+            }
+            
+            // Draw down to bottom right
+            const endScreen = this.worldToScreen(pair.end, 0);
+            this.ctx.lineTo(endScreen.x, endScreen.y);
+            
+            // Close path along x-axis
+            this.ctx.lineTo(startScreen.x, startScreen.y);
         }
-        
-        // Draw down to bottom right
-        const endScreen = this.worldToScreen(pair.end, 0);
-        this.ctx.lineTo(endScreen.x, endScreen.y);
-        
-        // Close path along x-axis
-        this.ctx.lineTo(startScreen.x, startScreen.y);
     }
     
     drawPolarIntegrationRegion(pair) {
@@ -13776,7 +13942,7 @@ class Graphiti {
         this.badgeTooltip.active = true;
         this.badgeTooltip.text = text;
         this.badgeTooltip.x = screenX;
-        this.badgeTooltip.y = screenY + 40; // Position below the badge
+        this.badgeTooltip.y = screenY - 50; // Position above the badge (moved from +40 to -50)
         this.badgeTooltip.opacity = 1.0;
         this.badgeTooltip.startTime = Date.now();
     }
