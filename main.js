@@ -238,6 +238,18 @@ class Graphiti {
         this.deltaTime = 0;
         this.animationId = null;
         
+        // Badge tooltip system for user guidance
+        this.badgeTooltip = {
+            active: false,
+            text: '',
+            x: 0,
+            y: 0,
+            opacity: 1.0,
+            startTime: 0,
+            fadeDuration: 2000, // 2 seconds to fade out
+            displayDuration: 3000 // Total display time (including fade)
+        };
+        
         this.init();
     }
     
@@ -5937,6 +5949,15 @@ class Graphiti {
             const originalState = this.input.badgeInteraction.originalBadgeState;
             const wasTap = this.input.badgeInteraction.wasTap;
             
+            // Show initial tooltip if this is a brand new badge (no original state)
+            if (!originalState) {
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                if (newBadge) {
+                    const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                    this.showBadgeTooltip('Coordinates - drag to change - tap for more tools', screenPos.x, screenPos.y);
+                }
+            }
+            
             if (originalState) {
                 const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
                 if (newBadge && tracingFunction) {
@@ -5957,6 +5978,10 @@ class Graphiti {
                                 newBadge.neonNormal = false;
                                 newBadge.hasIntegral = false;
                                 newBadge.neonIntegral = false;
+                                
+                                // Show tooltip
+                                const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                this.showBadgeTooltip('Tangent line', screenPos.x, screenPos.y);
                             }
                         } else if (originalState.hasTangent && !originalState.neonTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 2: Tangent → neon tangent
@@ -5971,6 +5996,10 @@ class Graphiti {
                                 newBadge.neonNormal = false;
                                 newBadge.hasIntegral = false;
                                 newBadge.neonIntegral = false;
+                                
+                                // Show tooltip
+                                const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                this.showBadgeTooltip('Neon tangent', screenPos.x, screenPos.y);
                             }
                         } else if (originalState.hasTangent && originalState.neonTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 3: Neon tangent → normal
@@ -5985,6 +6014,10 @@ class Graphiti {
                                 newBadge.neonNormal = false;
                                 newBadge.hasIntegral = false;
                                 newBadge.neonIntegral = false;
+                                
+                                // Show tooltip
+                                const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                this.showBadgeTooltip('Normal line', screenPos.x, screenPos.y);
                             }
                         } else if (originalState.hasNormal && !originalState.neonNormal && !originalState.hasIntegral) {
                             // State 4: Normal → neon normal
@@ -5999,6 +6032,10 @@ class Graphiti {
                                 newBadge.neonNormal = true;
                                 newBadge.hasIntegral = false;
                                 newBadge.neonIntegral = false;
+                                
+                                // Show tooltip
+                                const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                this.showBadgeTooltip('Neon normal', screenPos.x, screenPos.y);
                             }
                         } else if (originalState.hasNormal && originalState.neonNormal && !originalState.hasIntegral) {
                             // State 5: Neon normal → integral (only if less than 2 integral badges exist on this function)
@@ -6014,6 +6051,10 @@ class Graphiti {
                                 newBadge.neonNormal = false;
                                 newBadge.hasIntegral = true;
                                 newBadge.neonIntegral = false;
+                                
+                                // Show tooltip
+                                const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                this.showBadgeTooltip('Integral - add second to calculate', screenPos.x, screenPos.y);
                             }
                             // Note: If existingIntegralCount >= 2, the badge was already deleted by canceling tracing above
                         } else if (originalState.hasIntegral && !originalState.neonIntegral) {
@@ -6024,6 +6065,10 @@ class Graphiti {
                             newBadge.neonNormal = false;
                             newBadge.hasIntegral = true;
                             newBadge.neonIntegral = true;
+                            
+                            // Show tooltip
+                            const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                            this.showBadgeTooltip('Neon integral', screenPos.x, screenPos.y);
                         }
                         // State 7: Neon integral → delete (handled above by canceling tracing)
                     } else {
@@ -10993,6 +11038,9 @@ class Graphiti {
     updateGraphingScreen(deltaTime) {
         // Update function graphs if needed
         // Handle real-time function updates, animations, etc.
+        
+        // Update badge tooltip fade animation
+        this.updateBadgeTooltip();
     }
     
     handleContinuousInput(deltaTime) {
@@ -13236,6 +13284,9 @@ class Graphiti {
             // Draw the persistent badge with hold indication
             this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType);
         }
+        
+        // Draw badge tooltip (after all badges so it appears on top)
+        this.drawBadgeTooltip();
     }
     
     drawPolarThetaHint(theta) {
@@ -13708,6 +13759,74 @@ class Graphiti {
         this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
         this.ctx.textBaseline = 'top'; // Set baseline to top for consistent positioning
         this.ctx.fillText(labelText, labelX, labelY - textHeight);
+        
+        this.ctx.restore();
+    }
+    
+    
+    // ================================
+    // BADGE TOOLTIP SYSTEM
+    // ================================
+    
+    showBadgeTooltip(text, screenX, screenY) {
+        // Dismiss any existing tooltip
+        this.badgeTooltip.active = false;
+        
+        // Show new tooltip
+        this.badgeTooltip.active = true;
+        this.badgeTooltip.text = text;
+        this.badgeTooltip.x = screenX;
+        this.badgeTooltip.y = screenY + 40; // Position below the badge
+        this.badgeTooltip.opacity = 1.0;
+        this.badgeTooltip.startTime = Date.now();
+    }
+    
+    updateBadgeTooltip() {
+        if (!this.badgeTooltip.active) return;
+        
+        const elapsed = Date.now() - this.badgeTooltip.startTime;
+        
+        if (elapsed >= this.badgeTooltip.displayDuration) {
+            // Tooltip has fully faded out
+            this.badgeTooltip.active = false;
+        } else if (elapsed >= (this.badgeTooltip.displayDuration - this.badgeTooltip.fadeDuration)) {
+            // Start fading
+            const fadeProgress = (elapsed - (this.badgeTooltip.displayDuration - this.badgeTooltip.fadeDuration)) / this.badgeTooltip.fadeDuration;
+            this.badgeTooltip.opacity = 1.0 - fadeProgress;
+        }
+    }
+    
+    drawBadgeTooltip() {
+        if (!this.badgeTooltip.active || this.badgeTooltip.opacity <= 0) return;
+        
+        this.ctx.save();
+        this.ctx.globalAlpha = this.badgeTooltip.opacity;
+        
+        // Measure text
+        this.ctx.font = '13px Inter, system-ui, sans-serif';
+        const metrics = this.ctx.measureText(this.badgeTooltip.text);
+        const padding = 8;
+        const height = 24;
+        const width = metrics.width + padding * 2;
+        
+        // Draw background
+        this.ctx.fillStyle = 'rgba(42, 63, 90, 0.95)';
+        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.5)';
+        this.ctx.lineWidth = 1;
+        
+        const x = this.badgeTooltip.x - width / 2;
+        const y = this.badgeTooltip.y;
+        
+        this.ctx.beginPath();
+        this.ctx.roundRect(x, y, width, height, 4);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        // Draw text
+        this.ctx.fillStyle = '#E8F4FD';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(this.badgeTooltip.text, this.badgeTooltip.x, y + height / 2);
         
         this.ctx.restore();
     }
