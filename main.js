@@ -12568,10 +12568,11 @@ class Graphiti {
         }
         
         // Draw the active tracing indicator with tangent info if present
-        const hasTangent = this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined;
+        const hasTangent = this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined && !this.input.tracing.hasNormal;
+        const hasNormal = this.input.tracing.hasNormal || false;
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
             this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
-            hasTangent, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction);
+            hasTangent, hasNormal, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction);
         
         // Draw theta hint for polar functions
         if (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
@@ -12626,7 +12627,7 @@ class Graphiti {
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.tangentSlope, badge.secondDerivative, func, func2);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.tangentSlope, badge.secondDerivative, func, func2);
         }
     }
     
@@ -12902,7 +12903,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -12957,6 +12958,47 @@ class Graphiti {
         
         // Add derivative information if tangent is present
         if (hasTangent && tangentSlope !== null) {
+            // For polar mode, display dr/dθ; for Cartesian mode, display dy/dx
+            if (this.plotMode === 'polar' && tangentSlope.polarDerivative !== undefined) {
+                // Display polar derivative dr/dθ
+                const polarDerivStr = this.formatDerivative(tangentSlope.polarDerivative);
+                const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
+                labelText += ` | dr/d${thetaSymbol}=${polarDerivStr}`;
+            } else {
+                // Display Cartesian slope dy/dx
+                const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
+                
+                // If in degree mode with trig functions, convert derivative back to standard mathematical form
+                let displaySlope = slopeValue;
+                if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                    // Multiply by 180/π to convert from per-degree to per-radian derivative
+                    displaySlope = slopeValue * 180 / Math.PI;
+                }
+                
+                let slopeStr;
+                if (Math.abs(displaySlope) > 100) {
+                    slopeStr = displaySlope > 0 ? '∞' : '-∞';
+                } else {
+                    slopeStr = this.formatDerivative(displaySlope);
+                }
+                labelText += ` | dy/dx=${slopeStr}`;
+                
+                // Add second derivative if available
+                const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
+                if (secondDeriv !== null && isFinite(secondDeriv)) {
+                    // Second derivative needs (180/π)² conversion
+                    let displaySecondDeriv = secondDeriv;
+                    if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                        displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
+                    }
+                    const secondDerivStr = this.formatDerivative(displaySecondDeriv);
+                    labelText += ` | d²y/dx²=${secondDerivStr}`;
+                }
+            }
+        }
+        
+        // Add derivative information if normal is present (same as tangent)
+        if (hasNormal && tangentSlope !== null) {
             // For polar mode, display dr/dθ; for Cartesian mode, display dy/dx
             if (this.plotMode === 'polar' && tangentSlope.polarDerivative !== undefined) {
                 // Display polar derivative dr/dθ
