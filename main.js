@@ -13305,6 +13305,9 @@ class Graphiti {
             if (linkedPair && linkedPair.areaBetween !== undefined) {
                 this.drawAreaBetweenPanelLabel(linkedPair, this.integralPairs.length);
             }
+        } else if (this.integralPairs.length >= 2) {
+            // Show hint when there are 2+ integrals but less than 2 checked
+            this.drawAreaBetweenHintLabel(this.integralPairs.length);
         }
     }
     
@@ -13338,6 +13341,34 @@ class Graphiti {
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#000000';
         this.ctx.fillText(text, panelX + panelWidth / 2, panelY + panelHeight / 2);
+        
+        this.ctx.restore();
+    }
+    
+    drawAreaBetweenHintLabel(index) {
+        const panelX = this.viewport.width - 250;
+        const panelY = this.viewport.height - 60 - (index * 50);
+        const panelWidth = 240;
+        const panelHeight = 45;
+        
+        this.ctx.save();
+        
+        // Gold background with slight transparency to indicate it's a hint
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.7)';
+        this.ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        
+        // Border
+        this.ctx.strokeStyle = '#FFD700';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+        
+        // Hint text on two lines
+        this.ctx.font = 'bold 13px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#000000';
+        this.ctx.fillText('Select two functions', panelX + panelWidth / 2, panelY + panelHeight / 2 - 8);
+        this.ctx.fillText('for area between', panelX + panelWidth / 2, panelY + panelHeight / 2 + 8);
         
         this.ctx.restore();
     }
