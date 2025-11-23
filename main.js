@@ -197,6 +197,9 @@ class Graphiti {
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
         
+        // Integration system
+        this.integralPairs = []; // Store pairs of integral badges for area calculation
+        
         // Implicit function calculation cancellation system
         this.implicitCalculationId = 0; // Counter for tracking calculation sessions
         this.currentImplicitCalculations = new Map(); // Track active calculations per function
@@ -4331,6 +4334,158 @@ class Graphiti {
         return uniqueIntersections;
     }
     
+    // ================================
+    // INTEGRATION DETECTION AND CALCULATION
+    // ================================
+    
+    updateIntegralPairs() {
+        // Find all integral badges grouped by function
+        const integralBadgesByFunction = new Map();
+        
+        for (const badge of this.input.persistentBadges) {
+            if (badge.hasIntegral && badge.functionId) {
+                if (!integralBadgesByFunction.has(badge.functionId)) {
+                    integralBadgesByFunction.set(badge.functionId, []);
+                }
+                integralBadgesByFunction.get(badge.functionId).push(badge);
+            }
+        }
+        
+        // If actively dragging an integral badge, include it as a virtual badge
+        if (this.input.tracing.active && 
+            this.input.badgeInteraction.originalBadgeState && 
+            this.input.badgeInteraction.originalBadgeState.hasIntegral) {
+            
+            const virtualBadge = {
+                id: 'dragging',
+                functionId: this.input.tracing.functionId,
+                worldX: this.input.tracing.worldX,
+                worldY: this.input.tracing.worldY,
+                theta: this.input.tracing.theta,
+                hasIntegral: true,
+                neonIntegral: this.input.badgeInteraction.originalBadgeState.neonIntegral
+            };
+            
+            if (!integralBadgesByFunction.has(virtualBadge.functionId)) {
+                integralBadgesByFunction.set(virtualBadge.functionId, []);
+            }
+            integralBadgesByFunction.get(virtualBadge.functionId).push(virtualBadge);
+        }
+        
+        // Clear existing pairs
+        this.integralPairs = [];
+        
+        // Create pairs for each function (max 2 badges per function)
+        for (const [functionId, badges] of integralBadgesByFunction) {
+            if (badges.length >= 2) {
+                // Sort badges by x-coordinate (or theta for polar)
+                badges.sort((a, b) => {
+                    if (this.plotMode === 'polar' && a.theta !== null && b.theta !== null) {
+                        return a.theta - b.theta;
+                    }
+                    return a.worldX - b.worldX;
+                });
+                
+                // Only take first 2 badges (enforce max 2 per function)
+                const badge1 = badges[0];
+                const badge2 = badges[1];
+                
+                // Get the function
+                const func = this.findFunctionById(functionId);
+                if (!func || !func.points || func.points.length === 0) {
+                    continue;
+                }
+                
+                // Calculate the integral
+                let area, start, end;
+                if (this.plotMode === 'polar') {
+                    start = badge1.theta;
+                    end = badge2.theta;
+                    area = this.calculatePolarIntegral(func, start, end);
+                } else {
+                    start = badge1.worldX;
+                    end = badge2.worldX;
+                    area = this.calculateCartesianIntegral(func, start, end);
+                }
+                
+                // Create pair object
+                this.integralPairs.push({
+                    badge1Id: badge1.id,
+                    badge2Id: badge2.id,
+                    functionId: functionId,
+                    func: func,
+                    start: start,
+                    end: end,
+                    area: area,
+                    color: func.color,
+                    neon: badge1.neonIntegral || badge2.neonIntegral
+                });
+            }
+        }
+    }
+    
+    calculateCartesianIntegral(func, x1, x2) {
+        // Use trapezoidal rule on function points
+        const points = func.points;
+        if (points.length === 0) return 0;
+        
+        // Ensure x1 < x2
+        if (x1 > x2) [x1, x2] = [x2, x1];
+        
+        // Filter points within integration range
+        const relevantPoints = points.filter(p => p.x >= x1 && p.x <= x2);
+        
+        if (relevantPoints.length < 2) return 0;
+        
+        // Sort by x coordinate
+        relevantPoints.sort((a, b) => a.x - b.x);
+        
+        // Trapezoidal integration
+        let area = 0;
+        for (let i = 0; i < relevantPoints.length - 1; i++) {
+            const dx = relevantPoints[i + 1].x - relevantPoints[i].x;
+            const avgHeight = (relevantPoints[i].y + relevantPoints[i + 1].y) / 2;
+            area += dx * avgHeight;
+        }
+        
+        return area;
+    }
+    
+    calculatePolarIntegral(func, theta1, theta2) {
+        // Area in polar: (1/2) ∫ r² dθ from theta1 to theta2
+        const points = func.points;
+        if (points.length === 0) return 0;
+        
+        // Ensure theta1 < theta2
+        if (theta1 > theta2) [theta1, theta2] = [theta2, theta1];
+        
+        // Filter points within integration range
+        // In polar, points have worldX and worldY (cartesian), need to find corresponding theta
+        const relevantPoints = [];
+        for (const p of points) {
+            const theta = Math.atan2(p.y, p.x);
+            if (theta >= theta1 && theta <= theta2) {
+                const r = Math.sqrt(p.x * p.x + p.y * p.y);
+                relevantPoints.push({ theta, r });
+            }
+        }
+        
+        if (relevantPoints.length < 2) return 0;
+        
+        // Sort by theta
+        relevantPoints.sort((a, b) => a.theta - b.theta);
+        
+        // Trapezoidal integration of (1/2) r²
+        let area = 0;
+        for (let i = 0; i < relevantPoints.length - 1; i++) {
+            const dtheta = relevantPoints[i + 1].theta - relevantPoints[i].theta;
+            const avgRSquared = (relevantPoints[i].r * relevantPoints[i].r + relevantPoints[i + 1].r * relevantPoints[i + 1].r) / 2;
+            area += 0.5 * avgRSquared * dtheta;
+        }
+        
+        return area;
+    }
+    
     findIntersectionsBetweenFunctions(func1, func2) {
         const intersections = [];
         const points1 = func1.points;
@@ -5421,15 +5576,31 @@ class Graphiti {
             // First, check if user clicked on an existing badge (highest priority)
             const targetBadge = this.findBadgeAtScreenPosition(x, y, 25);
             if (targetBadge) {
-                // Store badge state for cycling behavior: no tangent → tangent → neon tangent → remove
+                // Store badge state for cycling behavior: no tangent → tangent → neon tangent → normal → neon normal → integral → neon integral → remove
                 this.input.badgeInteraction.originalBadgeState = {
                     hasTangent: targetBadge.hasTangent,
                     hasNormal: targetBadge.hasNormal,
+                    hasIntegral: targetBadge.hasIntegral,
                     neonNormal: targetBadge.neonNormal,
+                    neonIntegral: targetBadge.neonIntegral,
                     tangentSlope: targetBadge.tangentSlope,
                     tangentExpression: targetBadge.tangentExpression,
                     neonTangent: targetBadge.neonTangent || false
                 };
+                
+                // Store badge ID for integral pair removal if needed
+                this.input.badgeInteraction.originalBadgeId = targetBadge.id;
+                
+                // If this is an integral badge, find and store its pair badge ID
+                if (targetBadge.hasIntegral) {
+                    const pair = this.integralPairs.find(p => 
+                        p.badge1Id === targetBadge.id || p.badge2Id === targetBadge.id
+                    );
+                    if (pair) {
+                        this.input.badgeInteraction.integralPairBadgeId = 
+                            pair.badge1Id === targetBadge.id ? pair.badge2Id : pair.badge1Id;
+                    }
+                }
                 
                 // If badge has tangent, initialize currentSlope for live updates during drag
                 if (targetBadge.hasTangent && targetBadge.tangentSlope !== null) {
@@ -5465,8 +5636,13 @@ class Graphiti {
                 this.removeTangentIntersectionBadgesForBadge(targetBadge.id);
                 this.removeNormalIntersectionBadgesForBadge(targetBadge.id);
                 
-                // Remove the original badge right away
-                this.removeBadgeById(targetBadge.id);
+                // Note: Don't remove the integral pair here during drag - just remove the single badge
+                // The pair will be automatically re-established by updateIntegralPairs() after the new badge is created
+                // We pass 'true' to indicate this is a reposition, not a deletion
+                
+                // Remove the original badge right away (but not its integral pair if repositioning)
+                const badge = this.input.persistentBadges.find(b => b.id === targetBadge.id);
+                this.input.persistentBadges = this.input.persistentBadges.filter(b => b.id !== targetBadge.id);
                 
                 // Recalculate intercepts immediately if the badge had a tangent or normal
                 // And set viewport changing to false AFTER recalculation
@@ -5596,6 +5772,12 @@ class Graphiti {
                             this.input.tracing.currentSlope = null;
                             this.input.tracing.currentSecondDerivative = null;
                         }
+                        
+                        // If original badge was an integral badge, update integral pairs in real-time
+                        if (this.input.badgeInteraction.originalBadgeState && 
+                            this.input.badgeInteraction.originalBadgeState.hasIntegral) {
+                            this.updateIntegralPairs();
+                        }
                     }
                 }
                 
@@ -5666,10 +5848,10 @@ class Graphiti {
             // If user didn't move much and released quickly, it was a tap - cycle badge state
             if (wasQuickTap) {
                 // Quick tap with minimal movement - cycle through states
-                // State cycle: no line → tangent → neon tangent → normal → neon normal → removed
+                // State cycle: no line → tangent → neon tangent → normal → neon normal → integral → neon integral → removed
                 const originalState = this.input.badgeInteraction.originalBadgeState;
                 
-                if (!originalState.hasTangent && !originalState.hasNormal) {
+                if (!originalState.hasTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                     // Badge had no line → add tangent, keep badge
                     // Don't cancel tracing, let it add the badge with tangent below
                 } else if (originalState.hasTangent && !originalState.neonTangent) {
@@ -5681,8 +5863,34 @@ class Graphiti {
                 } else if (originalState.hasNormal && !originalState.neonNormal) {
                     // Badge had normal → switch to neon normal, keep badge
                     // Don't cancel tracing, let it add the badge with neon normal below
+                } else if (originalState.hasNormal && originalState.neonNormal) {
+                    // Badge had neon normal → check if we can add integral
+                    // Count existing integral badges on this function
+                    const targetBadge = this.input.badgeInteraction.targetBadge;
+                    const existingIntegralCount = this.input.persistentBadges.filter(b => 
+                        b.hasIntegral && b.functionId === targetBadge.functionId
+                    ).length;
+                    
+                    if (existingIntegralCount >= 2) {
+                        // Already have 2 integral badges, skip to delete
+                        this.input.tracing.active = false; // Cancel tracing so no new badge is added
+                    } else {
+                        // Can add integral, keep badge
+                        // Don't cancel tracing, let it add the badge with integral below
+                    }
+                } else if (originalState.hasIntegral && !originalState.neonIntegral) {
+                    // Badge had integral → switch to neon integral, keep badge
+                    // Don't cancel tracing, let it add the badge with neon integral below
                 } else {
-                    // Badge already had neon normal → remove completely
+                    // Badge already had neon integral → remove completely (and its pair)
+                    // Remove the other badge in the integral pair if it exists
+                    if (this.input.badgeInteraction.integralPairBadgeId) {
+                        this.input.persistentBadges = this.input.persistentBadges.filter(
+                            badge => badge.id !== this.input.badgeInteraction.integralPairBadgeId
+                        );
+                        // Clear the integral pairs array since both badges are now removed
+                        this.integralPairs = [];
+                    }
                     this.input.tracing.active = false; // Cancel tracing so no new badge is added
                 }
             }
@@ -5733,7 +5941,7 @@ class Graphiti {
                     // If it was a drag, keep the same state as original
                     if (wasTap) {
                         // TAP: Cycle to next state
-                        if (!originalState.hasTangent && !originalState.hasNormal) {
+                        if (!originalState.hasTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 1: No line → tangent
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
@@ -5744,8 +5952,10 @@ class Graphiti {
                                 newBadge.neonTangent = false;
                                 newBadge.hasNormal = false;
                                 newBadge.neonNormal = false;
+                                newBadge.hasIntegral = false;
+                                newBadge.neonIntegral = false;
                             }
-                        } else if (originalState.hasTangent && !originalState.neonTangent && !originalState.hasNormal) {
+                        } else if (originalState.hasTangent && !originalState.neonTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 2: Tangent → neon tangent
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
@@ -5756,8 +5966,10 @@ class Graphiti {
                                 newBadge.neonTangent = true;
                                 newBadge.hasNormal = false;
                                 newBadge.neonNormal = false;
+                                newBadge.hasIntegral = false;
+                                newBadge.neonIntegral = false;
                             }
-                        } else if (originalState.hasTangent && originalState.neonTangent && !originalState.hasNormal) {
+                        } else if (originalState.hasTangent && originalState.neonTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 3: Neon tangent → normal
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
@@ -5768,8 +5980,10 @@ class Graphiti {
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonNormal = false;
+                                newBadge.hasIntegral = false;
+                                newBadge.neonIntegral = false;
                             }
-                        } else if (originalState.hasNormal && !originalState.neonNormal) {
+                        } else if (originalState.hasNormal && !originalState.neonNormal && !originalState.hasIntegral) {
                             // State 4: Normal → neon normal
                             const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
                             if (slopeData) {
@@ -5780,9 +5994,35 @@ class Graphiti {
                                 newBadge.tangentExpression = slopeData.expression;
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonNormal = true;
+                                newBadge.hasIntegral = false;
+                                newBadge.neonIntegral = false;
                             }
+                        } else if (originalState.hasNormal && originalState.neonNormal && !originalState.hasIntegral) {
+                            // State 5: Neon normal → integral (only if less than 2 integral badges exist on this function)
+                            const existingIntegralCount = this.input.persistentBadges.filter(b => 
+                                b.hasIntegral && b.functionId === newBadge.functionId
+                            ).length;
+                            
+                            if (existingIntegralCount < 2) {
+                                // Allow transition to integral
+                                newBadge.hasTangent = false;
+                                newBadge.neonTangent = false;
+                                newBadge.hasNormal = false;
+                                newBadge.neonNormal = false;
+                                newBadge.hasIntegral = true;
+                                newBadge.neonIntegral = false;
+                            }
+                            // Note: If existingIntegralCount >= 2, the badge was already deleted by canceling tracing above
+                        } else if (originalState.hasIntegral && !originalState.neonIntegral) {
+                            // State 6: Integral → neon integral
+                            newBadge.hasTangent = false;
+                            newBadge.neonTangent = false;
+                            newBadge.hasNormal = false;
+                            newBadge.neonNormal = false;
+                            newBadge.hasIntegral = true;
+                            newBadge.neonIntegral = true;
                         }
-                        // State 5: Neon normal → delete (handled above by canceling tracing)
+                        // State 7: Neon integral → delete (handled above by canceling tracing)
                     } else {
                         // DRAG: Keep same state, just recalculate at new position
                         if (originalState.hasTangent || originalState.hasNormal) {
@@ -5795,9 +6035,19 @@ class Graphiti {
                                 newBadge.secondDerivative = slopeData.secondDerivative;
                                 newBadge.neonTangent = originalState.neonTangent;
                                 newBadge.neonNormal = originalState.neonNormal;
+                                newBadge.hasIntegral = false;
+                                newBadge.neonIntegral = false;
                             }
+                        } else if (originalState.hasIntegral) {
+                            // Keep integral state
+                            newBadge.hasTangent = false;
+                            newBadge.hasNormal = false;
+                            newBadge.neonTangent = false;
+                            newBadge.neonNormal = false;
+                            newBadge.hasIntegral = true;
+                            newBadge.neonIntegral = originalState.neonIntegral;
                         }
-                        // If original had no tangent/normal, new badge also has none (default)
+                        // If original had no tangent/normal/integral, new badge also has none (default)
                     }
                 }
             }
@@ -5822,6 +6072,9 @@ class Graphiti {
             if (this.showIntersections) {
                 this.updateCombinedIntersections();
             }
+            
+            // Detect and calculate integral pairs
+            this.updateIntegralPairs();
             
             // Always draw to ensure intercepts are displayed
             this.draw();
@@ -8053,11 +8306,22 @@ class Graphiti {
     }
     
     removeBadgeById(badgeId) {
+        // Check if this badge is part of an integral pair before removing
+        const badge = this.input.persistentBadges.find(b => b.id === badgeId);
+        const isIntegralBadge = badge && badge.hasIntegral;
+        
         // Remove tangent and normal intersection badges that reference this badge
         this.removeTangentIntersectionBadgesForBadge(badgeId);
         this.removeNormalIntersectionBadgesForBadge(badgeId);
         
-        this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
+        // Remove integral pair if this badge is part of one
+        if (isIntegralBadge) {
+            this.removeIntegralPairForBadge(badgeId);
+        } else {
+            // Only remove this specific badge if it's not an integral badge
+            // (integral badges are removed by removeIntegralPairForBadge which removes both)
+            this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
+        }
         
         // Recalculate tangent intersections since badges changed
         if (this.showIntersections) {
@@ -8084,6 +8348,9 @@ class Graphiti {
                 this.removeNormalIntersectionBadgesForBadge(badge.id);
             }
         });
+        
+        // Remove integral pairs for this function
+        this.integralPairs = this.integralPairs.filter(pair => pair.functionId !== functionId);
         
         // Then remove the badges themselves
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
@@ -8130,6 +8397,25 @@ class Graphiti {
         this.input.persistentBadges = this.input.persistentBadges.filter(badge =>
             !(badge.badgeType === 'normal-intercept' && badge.normalBadgeId === badgeId)
         );
+    }
+    
+    removeIntegralPairForBadge(badgeId) {
+        // Find if this badge is part of an integral pair
+        const pairIndex = this.integralPairs.findIndex(pair => 
+            pair.badge1Id === badgeId || pair.badge2Id === badgeId
+        );
+        
+        if (pairIndex !== -1) {
+            const pair = this.integralPairs[pairIndex];
+            
+            // Remove both badges in the pair
+            this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
+                badge.id !== pair.badge1Id && badge.id !== pair.badge2Id
+            );
+            
+            // Remove the pair
+            this.integralPairs.splice(pairIndex, 1);
+        }
     }
 
     clearIntersections() {
@@ -10840,6 +11126,11 @@ class Graphiti {
             }
         }
         
+        // Draw integration shaded regions (before badges)
+        if (this.integralPairs.length > 0) {
+            this.drawIntegrationRegions();
+        }
+        
         // Draw tracing indicator if active, and all persistent badges
         if (this.input.tracing.active) {
             this.drawActiveTracingIndicator();
@@ -12627,14 +12918,261 @@ class Graphiti {
         // Draw the active tracing indicator with tangent info if present
         const hasTangent = this.input.tracing.currentSlope !== null && this.input.tracing.currentSlope !== undefined && !this.input.tracing.hasNormal;
         const hasNormal = this.input.tracing.hasNormal || false;
+        const hasIntegral = this.input.badgeInteraction.originalBadgeState && this.input.badgeInteraction.originalBadgeState.hasIntegral;
+        const neonIntegral = hasIntegral && this.input.badgeInteraction.originalBadgeState.neonIntegral;
+        
+        // Determine integral limit type if dragging an integral badge
+        let integralLimitType = null;
+        if (hasIntegral) {
+            const pair = this.integralPairs.find(p => p.badge1Id === 'dragging' || p.badge2Id === 'dragging');
+            if (pair) {
+                integralLimitType = pair.badge1Id === 'dragging' ? 'lower' : 'upper';
+            }
+        }
+        
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
             this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
-            hasTangent, hasNormal, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction);
+            hasTangent, hasNormal, hasIntegral, neonIntegral, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction, null, integralLimitType);
         
         // Draw theta hint for polar functions
         if (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
             this.drawPolarThetaHint(this.input.tracing.theta);
         }
+    }
+    
+    drawIntegrationRegions() {
+        for (const pair of this.integralPairs) {
+            const func = pair.func;
+            if (!func || !func.points || func.points.length === 0) continue;
+            
+            this.ctx.save();
+            
+            // Set up styling
+            if (pair.neon) {
+                // Pulsating neon effect - smooth color cycling
+                const time = Date.now() / 1000; // Convert to seconds
+                const pulseSpeed = 2; // Slower pulse for smoother color transition
+                
+                // Create color cycling effect through neon colors (hot pink, cyan, lime, orange)
+                const colorPhase = (Math.sin(time * pulseSpeed) + 1) / 2; // 0 to 1
+                let neonColor;
+                
+                if (colorPhase < 0.25) {
+                    // Hot pink to cyan
+                    const t = colorPhase / 0.25;
+                    neonColor = `rgba(${Math.floor(255 * (1 - t) + 0 * t)}, ${Math.floor(20 * (1 - t) + 255 * t)}, ${Math.floor(147 * (1 - t) + 255 * t)}, 0.4)`;
+                } else if (colorPhase < 0.5) {
+                    // Cyan to lime
+                    const t = (colorPhase - 0.25) / 0.25;
+                    neonColor = `rgba(${Math.floor(0 * (1 - t) + 57 * t)}, ${255}, ${Math.floor(255 * (1 - t) + 255 * t)}, 0.4)`;
+                } else if (colorPhase < 0.75) {
+                    // Lime to orange
+                    const t = (colorPhase - 0.5) / 0.25;
+                    neonColor = `rgba(${Math.floor(57 * (1 - t) + 255 * t)}, ${Math.floor(255 * (1 - t) + 165 * t)}, ${Math.floor(255 * (1 - t) + 0 * t)}, 0.4)`;
+                } else {
+                    // Orange to hot pink
+                    const t = (colorPhase - 0.75) / 0.25;
+                    neonColor = `rgba(${255}, ${Math.floor(165 * (1 - t) + 20 * t)}, ${Math.floor(0 * (1 - t) + 147 * t)}, 0.4)`;
+                }
+                
+                this.ctx.fillStyle = neonColor;
+                this.ctx.strokeStyle = neonColor;
+                this.ctx.lineWidth = 2;
+                this.ctx.shadowBlur = 15;
+                this.ctx.shadowColor = neonColor;
+            } else {
+                // Use function color with transparency
+                const alpha = 0.25;
+                this.ctx.fillStyle = this.hexToRGBA(pair.color, alpha);
+                this.ctx.strokeStyle = pair.color;
+                this.ctx.lineWidth = 1;
+            }
+            
+            // Draw shaded region
+            this.ctx.beginPath();
+            
+            if (this.plotMode === 'polar') {
+                // Polar mode: draw sector
+                this.drawPolarIntegrationRegion(pair);
+            } else {
+                // Cartesian mode: draw area under curve
+                this.drawCartesianIntegrationRegion(pair);
+            }
+            
+            this.ctx.fill();
+            
+            // Draw boundary lines
+            if (this.plotMode === 'cartesian') {
+                // Vertical lines at integration limits
+                const start = this.worldToScreen(pair.start, 0);
+                const end = this.worldToScreen(pair.end, 0);
+                
+                this.ctx.setLineDash([5, 5]);
+                this.ctx.beginPath();
+                this.ctx.moveTo(start.x, 0);
+                this.ctx.lineTo(start.x, this.viewport.height);
+                this.ctx.stroke();
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(end.x, 0);
+                this.ctx.lineTo(end.x, this.viewport.height);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+            }
+            
+            this.ctx.restore();
+            
+            // Draw area label at midpoint
+            this.drawIntegrationLabel(pair);
+        }
+    }
+    
+    drawCartesianIntegrationRegion(pair) {
+        const func = pair.func;
+        const points = func.points.filter(p => p.x >= pair.start && p.x <= pair.end);
+        
+        if (points.length < 2) return;
+        
+        // Sort by x
+        points.sort((a, b) => a.x - b.x);
+        
+        // Start at bottom left
+        const startScreen = this.worldToScreen(pair.start, 0);
+        this.ctx.moveTo(startScreen.x, startScreen.y);
+        
+        // Draw up to first point
+        const firstPoint = this.worldToScreen(points[0].x, points[0].y);
+        this.ctx.lineTo(firstPoint.x, firstPoint.y);
+        
+        // Draw along curve
+        for (let i = 1; i < points.length; i++) {
+            const screen = this.worldToScreen(points[i].x, points[i].y);
+            this.ctx.lineTo(screen.x, screen.y);
+        }
+        
+        // Draw down to bottom right
+        const endScreen = this.worldToScreen(pair.end, 0);
+        this.ctx.lineTo(endScreen.x, endScreen.y);
+        
+        // Close path along x-axis
+        this.ctx.lineTo(startScreen.x, startScreen.y);
+    }
+    
+    drawPolarIntegrationRegion(pair) {
+        const func = pair.func;
+        
+        // Draw sector from origin
+        const centerScreen = this.worldToScreen(0, 0);
+        this.ctx.moveTo(centerScreen.x, centerScreen.y);
+        
+        // Get points within theta range
+        const relevantPoints = [];
+        for (const p of func.points) {
+            let theta = Math.atan2(p.y, p.x);
+            // Normalize theta to [0, 2π]
+            while (theta < 0) theta += 2 * Math.PI;
+            while (theta > 2 * Math.PI) theta -= 2 * Math.PI;
+            
+            let start = pair.start;
+            let end = pair.end;
+            while (start < 0) start += 2 * Math.PI;
+            while (end < 0) end += 2 * Math.PI;
+            
+            if (theta >= start && theta <= end) {
+                relevantPoints.push({ x: p.x, y: p.y, theta });
+            }
+        }
+        
+        if (relevantPoints.length < 2) return;
+        
+        // Sort by theta
+        relevantPoints.sort((a, b) => a.theta - b.theta);
+        
+        // Draw from center to first point
+        const firstScreen = this.worldToScreen(relevantPoints[0].x, relevantPoints[0].y);
+        this.ctx.lineTo(firstScreen.x, firstScreen.y);
+        
+        // Draw along curve
+        for (let i = 1; i < relevantPoints.length; i++) {
+            const screen = this.worldToScreen(relevantPoints[i].x, relevantPoints[i].y);
+            this.ctx.lineTo(screen.x, screen.y);
+        }
+        
+        // Return to center
+        this.ctx.lineTo(centerScreen.x, centerScreen.y);
+    }
+    
+    drawIntegrationLabel(pair) {
+        // Calculate midpoint for label placement
+        let midX, midY;
+        
+        if (this.plotMode === 'polar') {
+            const midTheta = (pair.start + pair.end) / 2;
+            // Find point on curve at mid theta
+            const relevantPoints = pair.func.points.filter(p => {
+                const theta = Math.atan2(p.y, p.x);
+                return Math.abs(theta - midTheta) < 0.1;
+            });
+            
+            if (relevantPoints.length > 0) {
+                midX = relevantPoints[0].x;
+                midY = relevantPoints[0].y;
+            } else {
+                midX = 0;
+                midY = 0;
+            }
+        } else {
+            midX = (pair.start + pair.end) / 2;
+            // Find y value at midX
+            const nearbyPoints = pair.func.points.filter(p => 
+                Math.abs(p.x - midX) < 0.5
+            );
+            midY = nearbyPoints.length > 0 ? nearbyPoints[0].y / 2 : 0;
+        }
+        
+        const labelScreen = this.worldToScreen(midX, midY);
+        
+        this.ctx.save();
+        this.ctx.font = 'bold 14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // Format area value
+        const areaText = Math.abs(pair.area) < 0.01 ? 
+            pair.area.toExponential(2) : 
+            pair.area.toFixed(3);
+        
+        const text = this.plotMode === 'polar' ? 
+            `Area = ${areaText}` : 
+            `∫ = ${areaText}`;
+        
+        // Background
+        const metrics = this.ctx.measureText(text);
+        const padding = 6;
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(
+            labelScreen.x - metrics.width / 2 - padding,
+            labelScreen.y - 10,
+            metrics.width + padding * 2,
+            20
+        );
+        
+        // Text
+        this.ctx.fillStyle = pair.color;
+        if (pair.neon) {
+            this.ctx.shadowBlur = 10;
+            this.ctx.shadowColor = pair.color;
+        }
+        this.ctx.fillText(text, labelScreen.x, labelScreen.y);
+        
+        this.ctx.restore();
+    }
+    
+    hexToRGBA(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
     
     drawPersistentBadges() {
@@ -12683,8 +13221,17 @@ class Graphiti {
             const isBeingHeld = this.input.badgeInteraction.targetBadge && 
                                this.input.badgeInteraction.targetBadge.id === badge.id;
             
+            // Determine integral limit type if this is an integral badge
+            let integralLimitType = null;
+            if (badge.hasIntegral) {
+                const pair = this.integralPairs.find(p => p.badge1Id === badge.id || p.badge2Id === badge.id);
+                if (pair) {
+                    integralLimitType = pair.badge1Id === badge.id ? 'lower' : 'upper';
+                }
+            }
+            
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.tangentSlope, badge.secondDerivative, func, func2);
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType);
         }
     }
     
@@ -12960,7 +13507,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -12983,10 +13530,44 @@ class Graphiti {
         this.ctx.arc(screenX, screenY, isBeingHeld ? 3 : 2, 0, 2 * Math.PI);
         this.ctx.fill();
         
+        // Draw integral symbol if badge has integral
+        if (hasIntegral) {
+            this.ctx.font = 'bold 20px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillStyle = '#FFFFFF';
+            
+            if (neonIntegral) {
+                // Add glow effect for neon mode
+                this.ctx.shadowBlur = 10;
+                this.ctx.shadowColor = color;
+            }
+            
+            this.ctx.fillText('∫', screenX, screenY);
+            this.ctx.shadowBlur = 0; // Reset shadow
+        }
+        
         // Coordinate label with background
         let labelText;
         if (customText) {
             labelText = customText;
+        } else if (hasIntegral && integralLimitType) {
+            // Integral badge with a pair - show integral symbol, coordinate, and limit type
+            if (this.plotMode === 'polar') {
+                // For polar mode, show theta value
+                const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
+                const thetaValue = func ? this.formatCoordinate(worldX, func, true, true) : worldX.toFixed(3);
+                const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
+                labelText = `∫ | ${thetaSymbol}=${thetaValue} | ${limitLabel}`;
+            } else {
+                // For cartesian mode, show x value
+                const xValue = func ? this.formatCoordinate(worldX, func, true, false) : worldX.toFixed(3);
+                const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
+                labelText = `∫ | x=${xValue} | ${limitLabel}`;
+            }
+        } else if (hasIntegral && !integralLimitType) {
+            // Integral badge without a pair - show message to add second badge
+            labelText = `∫ | Add 2nd marker`;
         } else if (badgeType) {
             // Badge with type-specific label
             const coords = this.formatCoordinates(worldX, worldY, func, func2);
