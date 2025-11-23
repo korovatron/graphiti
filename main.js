@@ -2496,13 +2496,21 @@ class Graphiti {
             stepForwardBtn.style.background = '#1a2a3f';
         }
         
-        // Re-enable angle mode toggle (no longer animating)
+        // Re-enable angle mode toggle only if in cartesian mode (polar mode always keeps it disabled)
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
-            angleModeToggle.disabled = false;
-            angleModeToggle.style.opacity = '1';
-            angleModeToggle.style.background = '#2A3F5A';
-            angleModeToggle.style.cursor = 'pointer';
+            if (this.plotMode === 'cartesian') {
+                angleModeToggle.disabled = false;
+                angleModeToggle.style.opacity = '1';
+                angleModeToggle.style.background = '#2A3F5A';
+                angleModeToggle.style.cursor = 'pointer';
+            } else {
+                // Keep disabled in polar mode
+                angleModeToggle.disabled = true;
+                angleModeToggle.style.opacity = '0.6';
+                angleModeToggle.style.background = '#1a2a3f';
+                angleModeToggle.style.cursor = 'not-allowed';
+            }
         }
         
         // Cancel animation frame if active
@@ -7044,6 +7052,24 @@ class Graphiti {
                     addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">x</span>)';
                 } else {
                     addFunctionBtn.innerHTML = '+&nbsp;<span class="math-italic">f</span>&nbsp;(<span class="math-italic">θ</span>)';
+                }
+            }
+            
+            // Update angle mode toggle button based on loaded mode
+            const angleModeToggle = document.getElementById('angle-mode-toggle');
+            if (angleModeToggle) {
+                if (this.plotMode === 'polar') {
+                    // Disable and darken in polar mode
+                    angleModeToggle.disabled = true;
+                    angleModeToggle.style.opacity = '0.6';
+                    angleModeToggle.style.background = '#1a2a3f';
+                    angleModeToggle.style.cursor = 'not-allowed';
+                } else {
+                    // Enable in cartesian mode
+                    angleModeToggle.disabled = false;
+                    angleModeToggle.style.opacity = '1';
+                    angleModeToggle.style.background = '#2A3F5A';
+                    angleModeToggle.style.cursor = 'pointer';
                 }
             }
             
