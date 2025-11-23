@@ -1201,6 +1201,22 @@ class Graphiti {
             setTimeout(() => {
                 try {
                     mathField.inlineShortcuts = {
+                        ...window.MathfieldElement.options?.inlineShortcuts, // Preserve defaults
+                        // Common Greek letters
+                        'pi': '\\pi',
+                        'alpha': '\\alpha',
+                        'beta': '\\beta',
+                        'gamma': '\\gamma',
+                        'delta': '\\delta',
+                        'epsilon': '\\epsilon',
+                        'theta': '\\theta',
+                        'lambda': '\\lambda',
+                        'mu': '\\mu',
+                        'sigma': '\\sigma',
+                        'omega': '\\omega',
+                        // Square root
+                        'sqrt': '\\sqrt{#0}',
+                        'sqrt(': '\\sqrt{#0}',
                         // Inverse trig (both arc and a notation)
                         'arcsin': '\\operatorname{arcsin}',
                         'arccos': '\\operatorname{arccos}',
@@ -4534,7 +4550,10 @@ class Graphiti {
         // In polar, points have worldX and worldY (cartesian), need to find corresponding theta
         const relevantPoints = [];
         for (const p of points) {
-            const theta = Math.atan2(p.y, p.x);
+            let theta = Math.atan2(p.y, p.x);
+            // Normalize theta to [0, 2π] range to match user's input
+            if (theta < 0) theta += 2 * Math.PI;
+            
             if (theta >= theta1 && theta <= theta2) {
                 const r = Math.sqrt(p.x * p.x + p.y * p.y);
                 relevantPoints.push({ theta, r });
@@ -13058,8 +13077,13 @@ class Graphiti {
             }
         }
         
+        // For polar functions, use theta instead of worldX for proper display
+        const displayX = (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) 
+            ? this.input.tracing.theta 
+            : this.input.tracing.worldX;
+        
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
-            this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
+            displayX, this.input.tracing.worldY, true, false, null, null, 
             hasTangent, hasNormal, hasIntegral, neonIntegral, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction, null, integralLimitType);
         
         // Draw theta hint for polar functions
@@ -13353,7 +13377,7 @@ class Graphiti {
         const labelScreen = this.worldToScreen(midX, midY);
         
         this.ctx.save();
-        this.ctx.font = 'bold 14px Arial';
+        this.ctx.font = 'bold 24px Arial'; // Increased from 14px to 24px for classroom visibility
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
@@ -13368,13 +13392,13 @@ class Graphiti {
         
         // Background
         const metrics = this.ctx.measureText(text);
-        const padding = 6;
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const padding = 10; // Increased from 6 to 10 for larger text
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Slightly more opaque for better contrast
         this.ctx.fillRect(
             labelScreen.x - metrics.width / 2 - padding,
-            labelScreen.y - 10,
+            labelScreen.y - 16, // Adjusted for larger text height
             metrics.width + padding * 2,
-            20
+            32 // Increased from 20 to 32 for larger text
         );
         
         // Text
@@ -13451,7 +13475,12 @@ class Graphiti {
             }
             
             // Draw the persistent badge with hold indication
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, badge.worldX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType);
+            // For polar functions, pass theta instead of worldX for proper display
+            const displayX = (func && this.plotMode === 'polar' && badge.theta !== null && badge.theta !== undefined) 
+                ? badge.theta 
+                : badge.worldX;
+            
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType);
         }
         
         // Draw badge tooltip (after all badges so it appears on top)
@@ -13779,7 +13808,17 @@ class Graphiti {
             if (this.plotMode === 'polar') {
                 // For polar mode, show theta value
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
-                const thetaValue = func ? this.formatCoordinate(worldX, func, true, true) : worldX.toFixed(3);
+                let thetaValue;
+                
+                if (this.angleMode === 'degrees') {
+                    const thetaDegrees = worldX * 180 / Math.PI;
+                    thetaValue = this.formatCoordinate(thetaDegrees) + '°';
+                } else {
+                    // Try to format as pi fraction
+                    const piFraction = this.formatAsPiFraction(worldX);
+                    thetaValue = piFraction || this.formatCoordinate(worldX);
+                }
+                
                 const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
                 labelText = `∫ | ${thetaSymbol}=${thetaValue} | ${limitLabel}`;
             } else {
