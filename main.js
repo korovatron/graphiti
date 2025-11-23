@@ -169,7 +169,7 @@ class Graphiti {
         
         // Axis intercepts detection
         this.intercepts = []; // Store detected axis intercept points
-        this.showIntercepts = false; // Toggle for intercept display (off by default to reduce clutter)
+        this.showIntercepts = true; // Toggle for intercept display (on by default)
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
@@ -7141,6 +7141,31 @@ class Graphiti {
             explicitFunctions.forEach(func => {
                 this.plotFunctionWithValidation(func).then(() => this.draw());
             });
+            
+            // If there are no implicit functions, we need to calculate intercepts/intersections/turning points here
+            if (implicitFunctions.length === 0) {
+                // All functions done (only explicit ones)
+                this.isStartup = false;
+                
+                // Calculate initial intersections after all functions are plotted
+                if (this.showIntersections) {
+                    this.intersections = this.calculateIntersectionsWithWorker();
+                }
+                
+                // Calculate initial turning points
+                if (this.showTurningPoints) {
+                    this.turningPoints = this.findTurningPoints();
+                }
+                
+                // Calculate initial intercepts
+                if (this.showIntercepts) {
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                }
+                
+                // Final draw to show everything
+                this.draw();
+            }
         }, 0);
         
         // Plot implicit functions sequentially with progressive appearance
