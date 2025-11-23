@@ -12161,15 +12161,17 @@ class Graphiti {
             return;
         }
         
-        // Create a badge at the intercept point, passing the functionId or tangentBadgeId
+        // Create a badge at the intercept point, passing the functionId, tangentBadgeId, or normalBadgeId
         if (intercept.isTangentIntercept) {
-            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, intercept.tangentBadgeId);
+            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, intercept.tangentBadgeId, null);
+        } else if (intercept.isNormalIntercept) {
+            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, null, intercept.normalBadgeId);
         } else {
-            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, null);
+            this.addInterceptBadge(intercept.x, intercept.y, intercept.type, intercept.functionId, null, null);
         }
     }
     
-    addInterceptBadge(x, y, interceptType, functionId, tangentBadgeId = null) {
+    addInterceptBadge(x, y, interceptType, functionId, tangentBadgeId = null, normalBadgeId = null) {
         // Snap coordinates to zero if they're very close (matches display formatting)
         const snappedX = this.snapCoordinateForDisplay(x);
         const snappedY = this.snapCoordinateForDisplay(y);
@@ -12216,8 +12218,9 @@ class Graphiti {
             label: label,
             functionId: functionId, // Link badge to the function for proper cleanup
             tangentBadgeId: tangentBadgeId, // Link badge to tangent for proper cleanup
+            normalBadgeId: normalBadgeId, // Link badge to normal for proper cleanup
             functionColor: '#808080', // Neutral gray color for intercepts
-            badgeType: tangentBadgeId ? 'tangent-intercept' : interceptType // 'tangent-intercept' or 'x-intercept', 'y-intercept', or polar axis types
+            badgeType: tangentBadgeId ? 'tangent-intercept' : (normalBadgeId ? 'normal-intercept' : interceptType) // 'tangent-intercept', 'normal-intercept', or 'x-intercept', 'y-intercept', or polar axis types
         };
         
         this.input.persistentBadges.push(badge);
