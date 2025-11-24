@@ -1345,15 +1345,8 @@ class Graphiti {
             }
         }, 100);
         
-        // Add keyboard event listener for polar mode theta conversion and smart power key
+        // Add keyboard event listener for smart power key
         mathField.addEventListener('keydown', (event) => {
-            // In polar mode, convert 't' key to theta symbol
-            if (this.plotMode === 'polar' && event.key === 't' && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                event.preventDefault(); // Prevent default 't' insertion
-                mathField.executeCommand(['insert', '\\theta']); // Insert theta instead
-                return;
-            }
-            
             // Smart power key: ^ behaves like the power buttons
             if (event.key === '^' && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 event.preventDefault(); // Prevent default ^ insertion
