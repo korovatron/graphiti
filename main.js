@@ -827,6 +827,26 @@ class Graphiti {
                     }
                     field.style.setProperty('outline', 'none', 'important');
                 });
+                
+                // Auto-focus field when virtual keyboard toggle is clicked
+                field.addEventListener('click', (e) => {
+                    const path = e.composedPath();
+                    const toggleClicked = path.some(el => {
+                        return el.getAttribute && (
+                            el.getAttribute('part') === 'virtual-keyboard-toggle' ||
+                            el.classList?.contains('ML__virtual-keyboard-toggle')
+                        );
+                    });
+                    
+                    if (toggleClicked && !field.hasFocus()) {
+                        field.focus();
+                        if (field.getValue()) {
+                            setTimeout(() => {
+                                field.selection = { ranges: [[Infinity, Infinity]] };
+                            }, 10);
+                        }
+                    }
+                });
             });
         }
     }
@@ -891,6 +911,26 @@ class Graphiti {
                         field.style.setProperty('box-shadow', 'none', 'important');
                     }
                     field.style.setProperty('outline', 'none', 'important');
+                });
+                
+                // Auto-focus field when virtual keyboard toggle is clicked
+                field.addEventListener('click', (e) => {
+                    const path = e.composedPath();
+                    const toggleClicked = path.some(el => {
+                        return el.getAttribute && (
+                            el.getAttribute('part') === 'virtual-keyboard-toggle' ||
+                            el.classList?.contains('ML__virtual-keyboard-toggle')
+                        );
+                    });
+                    
+                    if (toggleClicked && !field.hasFocus()) {
+                        field.focus();
+                        if (field.getValue()) {
+                            setTimeout(() => {
+                                field.selection = { ranges: [[Infinity, Infinity]] };
+                            }, 10);
+                        }
+                    }
                 });
                 
                 // Add input event listener to capture LaTeX and validate
@@ -1380,6 +1420,33 @@ class Graphiti {
                 e.preventDefault();
                 mathField.blur();
                 return;
+            }
+        });
+        
+        // Auto-focus field when virtual keyboard toggle is clicked
+        // The toggle opens the keyboard but doesn't focus the field by default,
+        // making the keyboard non-functional until the field is clicked separately
+        mathField.addEventListener('click', (e) => {
+            // Check if the click was on the virtual keyboard toggle button
+            const path = e.composedPath(); // Get full event path including shadow DOM
+            const toggleClicked = path.some(el => {
+                // Check for the toggle button in shadow DOM
+                return el.getAttribute && (
+                    el.getAttribute('part') === 'virtual-keyboard-toggle' ||
+                    el.classList?.contains('ML__virtual-keyboard-toggle')
+                );
+            });
+            
+            if (toggleClicked && !mathField.hasFocus()) {
+                // Focus the field when toggle is clicked
+                mathField.focus();
+                // Move cursor to the end if field has content
+                if (mathField.getValue()) {
+                    // Use a small delay to ensure focus is complete
+                    setTimeout(() => {
+                        mathField.selection = { ranges: [[Infinity, Infinity]] };
+                    }, 10);
+                }
             }
         });
 
