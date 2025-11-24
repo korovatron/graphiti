@@ -381,7 +381,7 @@ class Graphiti {
                                 [
                                     // Variables and parentheses - reorganized
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
-                                    { latex: '\\theta', label: 'θ', class: 'variable-key' },
+                                    { latex: '\\theta', class: 'variable-key' },
                                     { latex: '(', label: '(' },
                                     { latex: ')', label: ')' },
                                     '[separator]',
@@ -534,7 +534,7 @@ class Graphiti {
                                 [
                                     // Variables and parentheses - same as numeric keyboard
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
-                                    { latex: '\\theta', label: 'θ', class: 'variable-key' },
+                                    { latex: '\\theta', class: 'variable-key' },
                                     { latex: '(', label: '(' },
                                     { latex: ')', label: ')' },
                                     '[separator]',
@@ -619,11 +619,69 @@ class Graphiti {
                             ]
                         };
 
-                        window.mathVirtualKeyboard.layouts = [customNumericLayout, functionsLayout, hyperbolicLayout];
+                        // Create variables layout for easy access to all variables and parameters
+                        const variablesLayout = {
+                            label: 'αβγ',
+                            labelClass: 'MLK__tex-math',
+                            tooltip: 'Variables & Parameters',
+                            rows: [
+                                [
+                                    // All variables in one row
+                                    { latex: 'x', class: 'variable-key' },
+                                    { latex: 'y', class: 'variable-key' },
+                                    { latex: 'r', class: 'variable-key' },
+                                    { latex: '\\theta', class: 'variable-key' },
+                                    '[separator]',
+                                    { latex: '7', label: '7' },
+                                    { latex: '8', label: '8' },
+                                    { latex: '9', label: '9' },
+                                    { insert: '\\frac{#@}{#?}', label: '/' }
+                                ],
+                                [
+                                    // All parameters in one row
+                                    { latex: '\\alpha', label: 'α', class: 'variable-key' },
+                                    { latex: '\\beta', label: 'β', class: 'variable-key' },
+                                    { latex: '\\gamma', label: 'γ', class: 'variable-key' },
+                                    { latex: '\\delta', label: 'δ', class: 'variable-key' },
+                                    '[separator]',
+                                    { latex: '4', label: '4' },
+                                    { latex: '5', label: '5' },
+                                    { latex: '6', label: '6' },
+                                    { latex: '\\cdot', label: '×' }
+                                ],
+                                [
+                                    // Constants
+                                    { latex: '\\pi', label: 'π', variants: ['e'] },
+                                    { latex: 'e', label: 'e' },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
+                                    '[separator]',
+                                    { latex: '1', label: '1' },
+                                    { latex: '2', label: '2' },
+                                    { latex: '3', label: '3' },
+                                    { latex: '+', label: '+' }
+                                ],
+                                [
+                                    // Bottom row with navigation
+                                    '[left]', '[right]',
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
+                                    '[separator]',
+                                    { latex: '0', label: '0' }, 
+                                    { latex: '.', label: '.' },
+                                    { label: '[shift]', width: 1 },
+                                    { latex: '-', label: '-' }
+                                ]
+                            ]
+                        };
+
+                        window.mathVirtualKeyboard.layouts = [customNumericLayout, functionsLayout, hyperbolicLayout, variablesLayout];
                         
                         // Store layout references for mode-aware updates
                         this.customNumericLayout = customNumericLayout;
                         this.functionsLayout = functionsLayout;
+                        this.hyperbolicLayout = hyperbolicLayout;
+                        this.variablesLayout = variablesLayout;
                         this.hyperbolicLayout = hyperbolicLayout;
                         
                         // Update keyboards for initial mode
@@ -7424,7 +7482,7 @@ class Graphiti {
         // Update the variable keys based on current mode
         const isCartesian = this.plotMode === 'cartesian';
         
-        // Update all three keyboard layouts
+        // Update only the first three keyboard layouts (not the variables layout which shows all variables)
         const layouts = [this.customNumericLayout, this.functionsLayout, this.hyperbolicLayout];
         
         layouts.forEach(layout => {
@@ -7454,10 +7512,10 @@ class Graphiti {
                     if (key.latex === 'y' || key.latex === '\\theta') {
                         if (isCartesian) {
                             // In Cartesian mode, show y
-                            row[index] = { latex: 'y', label: 'y', class: 'variable-key' };
+                            row[index] = { latex: 'y', class: 'variable-key' };
                         } else {
                             // In polar mode, show theta
-                            row[index] = { latex: '\\theta', label: 'θ', class: 'variable-key' };
+                            row[index] = { latex: '\\theta', class: 'variable-key' };
                         }
                     }
                 });
@@ -7465,7 +7523,7 @@ class Graphiti {
         });
         
         // Update the virtual keyboard with new layouts
-        window.mathVirtualKeyboard.layouts = [this.customNumericLayout, this.functionsLayout, this.hyperbolicLayout];
+        window.mathVirtualKeyboard.layouts = [this.customNumericLayout, this.functionsLayout, this.hyperbolicLayout, this.variablesLayout];
     }
     
     updateFunctionPlaceholders() {
