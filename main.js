@@ -58,11 +58,12 @@ class Graphiti {
             lastTimestamp: 0 // For smooth animation timing
         };
         
-        // Parameter system for alpha, beta, gamma
+        // Parameter system for alpha, beta, gamma, delta
         this.parameters = {
             alpha: { value: 1, min: -10, max: 10, inUse: false },
             beta: { value: 1, min: -10, max: 10, inUse: false },
-            gamma: { value: 1, min: -10, max: 10, inUse: false }
+            gamma: { value: 1, min: -10, max: 10, inUse: false },
+            delta: { value: 1, min: -10, max: 10, inUse: false }
         };
         
         // Canvas and viewport properties - separate for each mode
@@ -3858,11 +3859,13 @@ class Graphiti {
                 const hasAlpha = processedExpression.includes('alpha');
                 const hasBeta = processedExpression.includes('beta');
                 const hasGamma = processedExpression.includes('gamma');
+                const hasDelta = processedExpression.includes('delta');
                 
                 // Replace parameter names with placeholders
                 if (hasAlpha) processedExpression = processedExpression.replace(/alpha/g, '__ALPHA__');
                 if (hasBeta) processedExpression = processedExpression.replace(/beta/g, '__BETA__');
                 if (hasGamma) processedExpression = processedExpression.replace(/gamma/g, '__GAMMA__');
+                if (hasDelta) processedExpression = processedExpression.replace(/delta/g, '__DELTA__');
                 
                 // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
                 processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
@@ -3875,6 +3878,7 @@ class Graphiti {
                 if (hasAlpha) processedExpression = processedExpression.replace(/__ALPHA__/g, 'alpha');
                 if (hasBeta) processedExpression = processedExpression.replace(/__BETA__/g, 'beta');
                 if (hasGamma) processedExpression = processedExpression.replace(/__GAMMA__/g, 'gamma');
+                if (hasDelta) processedExpression = processedExpression.replace(/__DELTA__/g, 'delta');
             }
             
             // Basic math.js compatible conversions
@@ -8138,12 +8142,13 @@ class Graphiti {
             ...baseScope,
             alpha: this.parameters.alpha.value,
             beta: this.parameters.beta.value,
-            gamma: this.parameters.gamma.value
+            gamma: this.parameters.gamma.value,
+            delta: this.parameters.delta.value
         };
     }
     
     initializeParameterSliders() {
-        const sliders = ['alpha', 'beta', 'gamma'];
+        const sliders = ['alpha', 'beta', 'gamma', 'delta'];
         
         sliders.forEach(param => {
             const slider = document.getElementById(`${param}-slider`);
@@ -8220,7 +8225,7 @@ class Graphiti {
     
     updateParameterSliders() {
         // Scan all functions to see which parameters are in use
-        const usedParams = { alpha: false, beta: false, gamma: false };
+        const usedParams = { alpha: false, beta: false, gamma: false, delta: false };
         
         // Get all functions from current mode
         const allFunctions = this.getCurrentFunctions();
@@ -8233,6 +8238,7 @@ class Graphiti {
                     if (func.expression.includes('\\alpha')) usedParams.alpha = true;
                     if (func.expression.includes('\\beta')) usedParams.beta = true;
                     if (func.expression.includes('\\gamma')) usedParams.gamma = true;
+                    if (func.expression.includes('\\delta')) usedParams.delta = true;
                 }
             });
         }
@@ -8241,15 +8247,17 @@ class Graphiti {
         this.parameters.alpha.inUse = usedParams.alpha;
         this.parameters.beta.inUse = usedParams.beta;
         this.parameters.gamma.inUse = usedParams.gamma;
+        this.parameters.delta.inUse = usedParams.delta;
         
         // Show/hide sliders based on usage
         const sliderContainer = document.getElementById('parameter-sliders');
         const alphaContainer = document.getElementById('alpha-slider-container');
         const betaContainer = document.getElementById('beta-slider-container');
         const gammaContainer = document.getElementById('gamma-slider-container');
+        const deltaContainer = document.getElementById('delta-slider-container');
         
         // Show main container if any parameter is in use
-        const anyInUse = usedParams.alpha || usedParams.beta || usedParams.gamma;
+        const anyInUse = usedParams.alpha || usedParams.beta || usedParams.gamma || usedParams.delta;
         if (sliderContainer) {
             sliderContainer.style.display = anyInUse ? 'block' : 'none';
         }
@@ -8258,6 +8266,7 @@ class Graphiti {
         if (alphaContainer) alphaContainer.style.display = usedParams.alpha ? 'flex' : 'none';
         if (betaContainer) betaContainer.style.display = usedParams.beta ? 'flex' : 'none';
         if (gammaContainer) gammaContainer.style.display = usedParams.gamma ? 'flex' : 'none';
+        if (deltaContainer) deltaContainer.style.display = usedParams.delta ? 'flex' : 'none';
     }
     
     toggleAngleMode() {
@@ -11215,9 +11224,10 @@ class Graphiti {
         // Update all badge positions and properties after parameter values change
         // This preserves badges but recalculates their positions on the new curves
         
-        for (const badge of this.input.persistentBadges) {
-            // Skip special badge types that don't trace functions
-            if (badge.badgeType === 'intersection' || 
+        // First, remove all special badge types that will be recalculated
+        this.input.persistentBadges = this.input.persistentBadges.filter(badge => {
+            return !(
+                badge.badgeType === 'intersection' || 
                 badge.badgeType === 'x-intercept' || 
                 badge.badgeType === 'y-intercept' ||
                 badge.badgeType === 'tangent-intercept' ||
@@ -11226,11 +11236,13 @@ class Graphiti {
                 badge.badgeType === 'normal-intersection' ||
                 badge.badgeType === 'tangent-tangent-intersection' ||
                 badge.badgeType === 'normal-normal-intersection' ||
-                badge.badgeType === 'normal-tangent-intersection') {
-                // These badges are derived from other badges or curves
-                // They'll be recalculated by their respective systems
-                continue;
-            }
+                badge.badgeType === 'normal-tangent-intersection' ||
+                badge.badgeType === 'turning-point'
+            );
+        });
+        
+        // Then update remaining badges (point, tangent, normal, derivative, integral badges)
+        for (const badge of this.input.persistentBadges) {
             
             const func = this.findFunctionById(badge.functionId);
             if (!func) continue;
@@ -11282,11 +11294,11 @@ class Graphiti {
         }
         
         if (this.showIntercepts) {
-            this.updateCombinedIntercepts();
+            this.findAxisIntercepts();
         }
         
         if (this.showTurningPoints) {
-            this.updateTurningPoints();
+            this.findTurningPoints();
         }
     }
 
@@ -16489,12 +16501,14 @@ class Graphiti {
         expression = expression.replace(/\\alpha/g, 'alpha');
         expression = expression.replace(/\\beta/g, 'beta');
         expression = expression.replace(/\\gamma/g, 'gamma');
+        expression = expression.replace(/\\delta/g, 'delta');
         
         // Handle spaces: remove spaces that would break parameter-variable multiplication
         // e.g., "alpha x" -> "alphax", "beta y" -> "betay"
         expression = expression.replace(/\balpha\s+([xytrabcpi(])/g, 'alpha$1');
         expression = expression.replace(/\bbeta\s+([xytrabcpi(])/g, 'beta$1');
         expression = expression.replace(/\bgamma\s+([xytrabcpi(])/g, 'gamma$1');
+        expression = expression.replace(/\bdelta\s+([xytrabcpi(])/g, 'delta$1');
         
         // Inverse trigonometric functions (standard LaTeX)
         expression = expression.replace(/\\arcsin/g, 'asin');
@@ -16623,6 +16637,7 @@ class Graphiti {
         expression = expression.replace(/\balpha([xytrabcpi(])/g, 'alpha*$1');
         expression = expression.replace(/\bbeta([xytrabcpi(])/g, 'beta*$1');
         expression = expression.replace(/\bgamma([xytrabcpi(])/g, 'gamma*$1');
+        expression = expression.replace(/\bdelta([xytrabcpi(])/g, 'delta*$1');
         
         // Handle implicit multiplication between variables and function names
         // ysin(x) -> y*sin(x), xcos(t) -> x*cos(t), etc.
