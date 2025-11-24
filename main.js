@@ -5534,10 +5534,29 @@ class Graphiti {
         
         // Click on canvas to close hamburger menu (mobile and tablet)
         this.canvas.addEventListener('click', (e) => {
+            // Close keyboard when clicking canvas (for mouse/desktop usage)
+            if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                // FIRST: Blur all math-fields so MathLive won't reopen keyboard
+                const allMathFields = document.querySelectorAll('math-field');
+                allMathFields.forEach(mf => {
+                    if (mf.hasFocus()) {
+                        mf.blur();
+                    }
+                    mf.setAttribute('data-blur-protected', 'true');
+                });
+                // THEN: Hide keyboard after blur
+                window.mathVirtualKeyboard.hide();
+                // Remove protection after a delay
+                setTimeout(() => {
+                    allMathFields.forEach(mf => mf.removeAttribute('data-blur-protected'));
+                }, 500);
+            }
+            
             // Close function panel on narrow screens when clicking the graph area
             const isNarrowScreen = window.innerWidth < 1024;
             if (isNarrowScreen) {
                 const functionPanel = document.getElementById('function-panel');
+                // Close panel if it's open
                 if (functionPanel && functionPanel.classList.contains('mobile-open')) {
                     this.closeMobileMenu();
                 }
@@ -5576,6 +5595,25 @@ class Graphiti {
         
         this.canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
+            
+            // Close keyboard when tapping canvas on touch devices
+            if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                // FIRST: Blur all math-fields so MathLive won't reopen keyboard
+                const allMathFields = document.querySelectorAll('math-field');
+                allMathFields.forEach(mf => {
+                    if (mf.hasFocus()) {
+                        mf.blur();
+                    }
+                    mf.setAttribute('data-blur-protected', 'true');
+                });
+                // THEN: Hide keyboard after blur
+                window.mathVirtualKeyboard.hide();
+                // Remove protection after a delay
+                setTimeout(() => {
+                    allMathFields.forEach(mf => mf.removeAttribute('data-blur-protected'));
+                }, 500);
+            }
+            
             this.handleTouchEnd(e);
         }, { passive: false });
         
@@ -7841,44 +7879,25 @@ class Graphiti {
             }
         }
         
-        // Close MathLive virtual keyboard when closing mobile menu
+        // FIRST: Blur ALL mathfields so MathLive won't try to reopen keyboard
+        const allMathFields = document.querySelectorAll('math-field');
+        allMathFields.forEach(mf => {
+            if (mf.hasFocus()) {
+                mf.blur();
+            }
+            // Prevent any math-field from being focused during panel close animation
+            mf.setAttribute('data-blur-protected', 'true');
+        });
+        
+        // THEN: Close keyboard after fields are blurred
         if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
             window.mathVirtualKeyboard.hide();
         }
         
-        // For tablets, delay the blur to prevent immediate refocus from the same touch event
-        const isTablet = window.innerWidth > 500 && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-        const blurDelay = isTablet ? 150 : 0;
-        
+        // Remove protection after panel animation completes (300ms) plus buffer
         setTimeout(() => {
-            // Blur any focused mathfields to prevent keyboard from reopening
-            const focused = document.querySelector('math-field:focus');
-            if (focused) {
-                focused.blur();
-                
-                // For tablets, add a temporary flag to prevent immediate refocus
-                if (isTablet) {
-                    focused.setAttribute('data-blur-protected', 'true');
-                    setTimeout(() => {
-                        focused.removeAttribute('data-blur-protected');
-                    }, 300);
-                }
-            }
-        }, blurDelay);
-        
-        // Additional cleanup for tablets - sometimes the keyboard needs extra time to close
-        setTimeout(() => {
-            if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
-                window.mathVirtualKeyboard.hide();
-            }
-            // Clean up any lingering MathLive elements that might keep keyboard open
-            const backdrops = document.querySelectorAll('.MLK__backdrop');
-            backdrops.forEach(backdrop => {
-                if (backdrop.parentNode) {
-                    backdrop.parentNode.removeChild(backdrop);
-                }
-            });
-        }, 200);
+            allMathFields.forEach(mf => mf.removeAttribute('data-blur-protected'));
+        }, 500);
         
         // Overlay disabled - no dimming management needed
         // if (mobileOverlay) mobileOverlay.style.display = 'none';
