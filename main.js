@@ -16503,12 +16503,20 @@ class Graphiti {
         expression = expression.replace(/\\gamma/g, 'gamma');
         expression = expression.replace(/\\delta/g, 'delta');
         
-        // Handle spaces: remove spaces that would break parameter-variable multiplication
-        // e.g., "alpha x" -> "alphax", "beta y" -> "betay"
+        // Handle spaces: remove spaces that would break parameter-variable/function multiplication
+        // e.g., "alpha x" -> "alphax", "beta y" -> "betay", "alpha sin" -> "alphasin"
         expression = expression.replace(/\balpha\s+([xytrabcpi(])/g, 'alpha$1');
         expression = expression.replace(/\bbeta\s+([xytrabcpi(])/g, 'beta$1');
         expression = expression.replace(/\bgamma\s+([xytrabcpi(])/g, 'gamma$1');
         expression = expression.replace(/\bdelta\s+([xytrabcpi(])/g, 'delta$1');
+        
+        // Also remove spaces between parameters and function names
+        // "alpha sin" -> "alphasin", "beta cos" -> "betacos"
+        const funcPattern = '(asinh|acosh|atanh|asech|acsch|acoth|asin|acos|atan|asec|acsc|acot|sinh|cosh|tanh|sech|csch|coth|sin|cos|tan|sec|csc|cot|sqrt|cbrt|log|ln|exp|abs)';
+        expression = expression.replace(new RegExp(`\\balpha\\s+${funcPattern}`, 'g'), 'alpha$1');
+        expression = expression.replace(new RegExp(`\\bbeta\\s+${funcPattern}`, 'g'), 'beta$1');
+        expression = expression.replace(new RegExp(`\\bgamma\\s+${funcPattern}`, 'g'), 'gamma$1');
+        expression = expression.replace(new RegExp(`\\bdelta\\s+${funcPattern}`, 'g'), 'delta$1');
         
         // Inverse trigonometric functions (standard LaTeX)
         expression = expression.replace(/\\arcsin/g, 'asin');
@@ -16638,6 +16646,25 @@ class Graphiti {
         expression = expression.replace(/\bbeta([xytrabcpi(])/g, 'beta*$1');
         expression = expression.replace(/\bgamma([xytrabcpi(])/g, 'gamma*$1');
         expression = expression.replace(/\bdelta([xytrabcpi(])/g, 'delta*$1');
+        
+        // Add implicit multiplication for parameters followed by function names
+        // alphasin -> alpha*sin, betacos -> beta*cos, etc.
+        const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
+        const allFunctions = [
+            'asinh', 'acosh', 'atanh', 'asech', 'acsch', 'acoth',
+            'asin', 'acos', 'atan', 'asec', 'acsc', 'acot',
+            'sinh', 'cosh', 'tanh', 'sech', 'csch', 'coth',
+            'sin', 'cos', 'tan', 'sec', 'csc', 'cot',
+            'sqrt', 'cbrt', 'log', 'ln', 'exp', 'abs'
+        ];
+        
+        for (const param of paramNames) {
+            for (const func of allFunctions) {
+                // Match parameter followed by function name
+                const pattern = new RegExp(`\\b${param}(${func})\\(`, 'g');
+                expression = expression.replace(pattern, `${param}*$1(`);
+            }
+        }
         
         // Handle implicit multiplication between variables and function names
         // ysin(x) -> y*sin(x), xcos(t) -> x*cos(t), etc.
