@@ -58,6 +58,13 @@ class Graphiti {
             lastTimestamp: 0 // For smooth animation timing
         };
         
+        // Parameter system for alpha, beta, gamma
+        this.parameters = {
+            alpha: { value: 1, min: -10, max: 10, inUse: false },
+            beta: { value: 1, min: -10, max: 10, inUse: false },
+            gamma: { value: 1, min: -10, max: 10, inUse: false }
+        };
+        
         // Canvas and viewport properties - separate for each mode
         this.cartesianViewport = {
             width: 0,
@@ -349,6 +356,10 @@ class Graphiti {
                                     ...window.MathfieldElement.options?.inlineShortcuts,
                                     ...functionShortcuts
                                 },
+                                // Accept alpha, beta, gamma as valid variables
+                                mathModeSpace: '\\:',
+                                smartFence: true,
+                                smartMode: false,
                                 keybindings: [
                                     ...window.MathfieldElement.options?.keybindings || [],
                                     {
@@ -1463,6 +1474,9 @@ class Graphiti {
                 this.removeBadgesForFunction(func.id);
                 this.removeIntersectionBadgesForFunction(func.id);
                 
+                // Update parameter sliders when function expression changes
+                this.updateParameterSliders();
+                
                 // Stop animation when editing a function in polar mode
                 if (this.plotMode === 'polar' && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused)) {
                     this.stopPolarAnimation();
@@ -1711,7 +1725,7 @@ class Graphiti {
                         if (processedExpression.toLowerCase().startsWith('r=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
-                        math.evaluate(processedExpression, { t: 1, theta: 1 });
+                        math.evaluate(processedExpression, this.getEvaluationScope({ t: 1, theta: 1 }));
                     }
                 } else {
                     // For cartesian mode, check function type first
@@ -1735,7 +1749,7 @@ class Graphiti {
                         if (processedExpression.toLowerCase().startsWith('y=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
-                        math.evaluate(processedExpression, { x: 1 });
+                        math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
                         
                         // Additional validation: try to evaluate at x=0 for explicit functions only
                         const testResult = this.evaluateFunction(func.expression, 0);
@@ -1849,6 +1863,9 @@ class Graphiti {
         
         // Recalculate intersections and turning points for remaining functions
         this.handleViewportChange();
+        
+        // Update parameter sliders when function is removed
+        this.updateParameterSliders();
         
         // Redraw to update the display immediately
         this.draw();
@@ -2349,12 +2366,12 @@ class Graphiti {
                     let thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
                     
                     // Support both 'theta' and 't' as variable names
-                    const scope = { 
+                    const scope = this.getEvaluationScope({ 
                         theta: thetaForEval, 
                         t: thetaForEval,
                         pi: Math.PI,
                         e: Math.E
-                    };
+                    });
                     
                     let r = compiledExpression.evaluate(scope);
                     
@@ -3760,7 +3777,7 @@ class Graphiti {
     evaluateImplicitEquation(equation, x, y) {
         try {
             // Evaluate left side - right side
-            const scope = { x: x, y: y, pi: Math.PI, e: Math.E };
+            const scope = this.getEvaluationScope({ x: x, y: y, pi: Math.PI, e: Math.E });
             
             // Use existing infrastructure but with x,y scope
             const leftValue = this.evaluateMathExpression(equation.leftExpression, scope);
@@ -3784,14 +3801,29 @@ class Graphiti {
             
             // Handle implicit multiplication for adjacent variables and numbers
             // BUT avoid breaking function names that are already properly formatted
-            // Skip this processing if the expression already contains properly formatted functions
+            // AND avoid breaking parameter names (alpha, beta, gamma)
             if (!this.containsProperFunctions(processedExpression)) {
+                // Protect parameter names from being split
+                const hasAlpha = processedExpression.includes('alpha');
+                const hasBeta = processedExpression.includes('beta');
+                const hasGamma = processedExpression.includes('gamma');
+                
+                // Replace parameter names with placeholders
+                if (hasAlpha) processedExpression = processedExpression.replace(/alpha/g, '__ALPHA__');
+                if (hasBeta) processedExpression = processedExpression.replace(/beta/g, '__BETA__');
+                if (hasGamma) processedExpression = processedExpression.replace(/gamma/g, '__GAMMA__');
+                
                 // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
                 processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
                 processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
                 processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
                 processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
                 processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+                
+                // Restore parameter names
+                if (hasAlpha) processedExpression = processedExpression.replace(/__ALPHA__/g, 'alpha');
+                if (hasBeta) processedExpression = processedExpression.replace(/__BETA__/g, 'beta');
+                if (hasGamma) processedExpression = processedExpression.replace(/__GAMMA__/g, 'gamma');
             }
             
             // Basic math.js compatible conversions
@@ -5556,6 +5588,9 @@ class Graphiti {
             });
         }
         
+        // Parameter Sliders
+        this.initializeParameterSliders();
+        
         // Mobile Menu Events
         if (hamburgerMenu) {
             hamburgerMenu.addEventListener('click', () => {
@@ -7288,6 +7323,9 @@ class Graphiti {
                 this.getCurrentFunctions().push(func);
                 this.createFunctionUI(func);
             });
+            
+            // Update parameter sliders after loading functions
+            this.updateParameterSliders();
         }
         
         // Always ensure there's at least one blank function at the end
@@ -7344,6 +7382,9 @@ class Graphiti {
         
         // Replot all functions in current mode
         this.replotAllFunctions();
+        
+        // Update parameter sliders for the current mode
+        this.updateParameterSliders();
         
         // Save functions to localStorage after mode switch
         this.saveFunctionsToLocalStorage();
@@ -7722,6 +7763,9 @@ class Graphiti {
         // Set startup flag for immediate implicit function rendering
         this.isStartup = true;
         
+        // Update parameter sliders after loading functions from localStorage
+        this.updateParameterSliders();
+        
         // Always ensure there's at least one blank function at the end
         const currentFunctions = this.getCurrentFunctions();
         const hasBlankFunction = currentFunctions.some(func => !func.expression || func.expression.trim() === '');
@@ -8033,6 +8077,138 @@ class Graphiti {
         this.updateCanvasBackground();
     }
     
+    // ================================
+    // PARAMETER SYSTEM (Alpha, Beta, Gamma)
+    // ================================
+    
+    getEvaluationScope(baseScope = {}) {
+        // Create scope with parameter values for expression evaluation
+        return {
+            ...baseScope,
+            alpha: this.parameters.alpha.value,
+            beta: this.parameters.beta.value,
+            gamma: this.parameters.gamma.value
+        };
+    }
+    
+    initializeParameterSliders() {
+        const sliders = ['alpha', 'beta', 'gamma'];
+        
+        sliders.forEach(param => {
+            const slider = document.getElementById(`${param}-slider`);
+            const valueDisplay = document.getElementById(`${param}-value`);
+            
+            if (slider && valueDisplay) {
+                let plotTimer = null;
+                
+                // Update parameter value and replot
+                const updateParameter = (value) => {
+                    this.parameters[param].value = value;
+                    valueDisplay.textContent = value.toFixed(1);
+                    slider.value = value;
+                    
+                    // Debounce the replotting for smoother slider dragging
+                    if (plotTimer) {
+                        clearTimeout(plotTimer);
+                    }
+                    
+                    plotTimer = setTimeout(() => {
+                        this.replotAllFunctions();
+                        this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
+                        this.updateIntegralPairs(); // Recalculate integrals with new parameter values
+                        plotTimer = null;
+                    }, 16); // ~60fps update rate for smooth animation
+                };
+                
+                // Slider input event
+                slider.addEventListener('input', (e) => {
+                    updateParameter(parseFloat(e.target.value));
+                });
+            }
+        });
+        
+        // Arrow button event handlers
+        document.querySelectorAll('.arrow-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const param = e.currentTarget.dataset.param;
+                const dir = parseFloat(e.currentTarget.dataset.dir);
+                const slider = document.getElementById(`${param}-slider`);
+                
+                if (slider) {
+                    const currentValue = parseFloat(slider.value);
+                    let newValue;
+                    
+                    // If current value is not a whole number, go to nearest whole number in the direction
+                    if (currentValue !== Math.floor(currentValue)) {
+                        if (dir > 0) {
+                            // Going right: round up
+                            newValue = Math.ceil(currentValue);
+                        } else {
+                            // Going left: round down
+                            newValue = Math.floor(currentValue);
+                        }
+                    } else {
+                        // Already on whole number, add/subtract 1
+                        newValue = currentValue + dir;
+                    }
+                    
+                    // Clamp to range
+                    newValue = Math.max(-10, Math.min(10, newValue));
+                    
+                    this.parameters[param].value = newValue;
+                    slider.value = newValue;
+                    document.getElementById(`${param}-value`).textContent = newValue.toFixed(1);
+                    
+                    this.replotAllFunctions();
+                    this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
+                    this.updateIntegralPairs(); // Recalculate integrals with new parameter values
+                }
+            });
+        });
+    }
+    
+    updateParameterSliders() {
+        // Scan all functions to see which parameters are in use
+        const usedParams = { alpha: false, beta: false, gamma: false };
+        
+        // Get all functions from current mode
+        const allFunctions = this.getCurrentFunctions();
+        
+        // Only scan if there are functions in the current mode
+        if (allFunctions && allFunctions.length > 0) {
+            allFunctions.forEach(func => {
+                if (func.expression) {
+                    // Check for Greek letters in LaTeX
+                    if (func.expression.includes('\\alpha')) usedParams.alpha = true;
+                    if (func.expression.includes('\\beta')) usedParams.beta = true;
+                    if (func.expression.includes('\\gamma')) usedParams.gamma = true;
+                }
+            });
+        }
+        
+        // Update parameter tracking
+        this.parameters.alpha.inUse = usedParams.alpha;
+        this.parameters.beta.inUse = usedParams.beta;
+        this.parameters.gamma.inUse = usedParams.gamma;
+        
+        // Show/hide sliders based on usage
+        const sliderContainer = document.getElementById('parameter-sliders');
+        const alphaContainer = document.getElementById('alpha-slider-container');
+        const betaContainer = document.getElementById('beta-slider-container');
+        const gammaContainer = document.getElementById('gamma-slider-container');
+        
+        // Show main container if any parameter is in use
+        const anyInUse = usedParams.alpha || usedParams.beta || usedParams.gamma;
+        if (sliderContainer) {
+            sliderContainer.style.display = anyInUse ? 'block' : 'none';
+        }
+        
+        // Show/hide individual sliders
+        if (alphaContainer) alphaContainer.style.display = usedParams.alpha ? 'flex' : 'none';
+        if (betaContainer) betaContainer.style.display = usedParams.beta ? 'flex' : 'none';
+        if (gammaContainer) gammaContainer.style.display = usedParams.gamma ? 'flex' : 'none';
+    }
+    
     toggleAngleMode() {
         // Don't allow toggling in polar mode (radians only)
         if (this.plotMode === 'polar') {
@@ -8336,7 +8512,7 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
-            const result = compiledExpression.evaluate({ x: x }); // Use x directly, no conversion needed
+            const result = compiledExpression.evaluate(this.getEvaluationScope({ x: x })); // Use x directly, no conversion needed
             
             // Ensure the result is a finite number
             if (typeof result === 'number' && isFinite(result)) {
@@ -9623,7 +9799,7 @@ class Graphiti {
             try {
                 // Convert from LaTeX first since we now store LaTeX format
                 const expr = this.convertFromLatex(func.expression);
-                const scope = { x: 0 };
+                const scope = this.getEvaluationScope({ x: 0 });
                 const y = math.evaluate(expr, scope);
                 
                 if (isFinite(y) && Math.abs(y) < 1000) { // Reasonable bounds check
@@ -9655,7 +9831,7 @@ class Graphiti {
             const xMid = (x1 + x2) / 2;
             
             try {
-                const scope = { x: xMid };
+                const scope = this.getEvaluationScope({ x: xMid });
                 const yMid = math.evaluate(convertedExpression, scope);
                 
                 if (!isFinite(yMid)) {
@@ -9666,7 +9842,7 @@ class Graphiti {
                     return xMid;
                 }
                 
-                const scope1 = { x: x1 };
+                const scope1 = this.getEvaluationScope({ x: x1 });
                 const y1 = math.evaluate(convertedExpression, scope1);
                 
                 if (y1 * yMid < 0) {
@@ -10158,10 +10334,10 @@ class Graphiti {
                     }
                     
                     const compiledSecondDeriv = this.getCompiledExpression(processedSecondDerivExpr);
-                    secondDerivValue = compiledSecondDeriv.evaluate({x: x}); // Use x directly
+                    secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: x}));
                 } else {
                     const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
-                    secondDerivValue = compiledSecondDeriv.evaluate({x: x});
+                    secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: x}));
                 }
                 
                 let type = 'inflection'; // fallback
@@ -10242,7 +10418,7 @@ class Graphiti {
                 
                 // Evaluate the first derivative at the given x value
                 const compiledDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
-                const slope = compiledDeriv.evaluate({x: worldX, pi: Math.PI, e: Math.E});
+                const slope = compiledDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
                 
                 // Try to get second derivative, but don't fail if it's too complex
                 let secondDerivValue = null;
@@ -10250,7 +10426,7 @@ class Graphiti {
                     const secondDerivative = math.derivative(derivative, 'x');
                     const secondDerivativeStr = secondDerivative.toString();
                     const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr.toLowerCase());
-                    secondDerivValue = compiledSecondDeriv.evaluate({x: worldX, pi: Math.PI, e: Math.E});
+                    secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
                     
                     // Validate second derivative
                     if (!isFinite(secondDerivValue)) {
@@ -10288,26 +10464,38 @@ class Graphiti {
                     if (hasRegularTrigWithX) {
                         const processedExpr = this.convertTrigToDegreeMode(cleanExpression.toLowerCase());
                         const compiled = this.getCompiledExpression(processedExpr);
-                        yPlus = compiled.evaluate({x: worldX + h});
-                        yMinus = compiled.evaluate({x: worldX - h});
-                        yPlusPlus = compiled.evaluate({x: worldX + 2*h});
-                        yMinusMinus = compiled.evaluate({x: worldX - 2*h});
+                        const scope = this.getEvaluationScope({x: worldX + h});
+                        yPlus = compiled.evaluate(scope);
+                        scope.x = worldX - h;
+                        yMinus = compiled.evaluate(scope);
+                        scope.x = worldX + 2*h;
+                        yPlusPlus = compiled.evaluate(scope);
+                        scope.x = worldX - 2*h;
+                        yMinusMinus = compiled.evaluate(scope);
                     } else {
-                        yPlus = compiledExpr.evaluate({x: worldX + h});
-                        yMinus = compiledExpr.evaluate({x: worldX - h});
-                        yPlusPlus = compiledExpr.evaluate({x: worldX + 2*h});
-                        yMinusMinus = compiledExpr.evaluate({x: worldX - 2*h});
+                        const scope = this.getEvaluationScope({x: worldX + h});
+                        yPlus = compiledExpr.evaluate(scope);
+                        scope.x = worldX - h;
+                        yMinus = compiledExpr.evaluate(scope);
+                        scope.x = worldX + 2*h;
+                        yPlusPlus = compiledExpr.evaluate(scope);
+                        scope.x = worldX - 2*h;
+                        yMinusMinus = compiledExpr.evaluate(scope);
                     }
                 } else {
-                    yPlus = compiledExpr.evaluate({x: worldX + h});
-                    yMinus = compiledExpr.evaluate({x: worldX - h});
-                    yPlusPlus = compiledExpr.evaluate({x: worldX + 2*h});
-                    yMinusMinus = compiledExpr.evaluate({x: worldX - 2*h});
+                    const scope = this.getEvaluationScope({x: worldX + h});
+                    yPlus = compiledExpr.evaluate(scope);
+                    scope.x = worldX - h;
+                    yMinus = compiledExpr.evaluate(scope);
+                    scope.x = worldX + 2*h;
+                    yPlusPlus = compiledExpr.evaluate(scope);
+                    scope.x = worldX - 2*h;
+                    yMinusMinus = compiledExpr.evaluate(scope);
                 }
                 
                 const slope = (yPlus - yMinus) / (2 * h);
                 // Second derivative using five-point stencil: f''(x) ≈ (-f(x+2h) + 16f(x+h) - 30f(x) + 16f(x-h) - f(x-2h)) / (12h²)
-                const yCurrent = compiledExpr.evaluate({x: worldX});
+                const yCurrent = compiledExpr.evaluate(this.getEvaluationScope({x: worldX}));
                 const secondDeriv = (-yPlusPlus + 16*yPlus - 30*yCurrent + 16*yMinus - yMinusMinus) / (12 * h * h);
                 
                 if (isFinite(slope) && isFinite(secondDeriv)) {
@@ -10359,24 +10547,24 @@ class Graphiti {
             const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
             const hForEval = this.angleMode === 'degrees' ? h * Math.PI / 180 : h;
             
-            const scope0 = { 
+            const scope0 = this.getEvaluationScope({ 
                 theta: thetaForEval, 
                 t: thetaForEval,
                 pi: Math.PI,
                 e: Math.E
-            };
-            const scopePlus = { 
+            });
+            const scopePlus = this.getEvaluationScope({ 
                 theta: thetaForEval + hForEval, 
                 t: thetaForEval + hForEval,
                 pi: Math.PI,
                 e: Math.E
-            };
-            const scopeMinus = { 
+            });
+            const scopeMinus = this.getEvaluationScope({ 
                 theta: thetaForEval - hForEval, 
                 t: thetaForEval - hForEval,
                 pi: Math.PI,
                 e: Math.E
-            };
+            });
             
             const r = compiledR.evaluate(scope0);
             const rPlus = compiledR.evaluate(scopePlus);
@@ -10571,12 +10759,12 @@ class Graphiti {
                 // Convert theta to radians if in degree mode
                 const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
                 
-                const scope = { 
+                const scope = this.getEvaluationScope({ 
                     theta: thetaForEval, 
                     t: thetaForEval,
                     pi: Math.PI,
                     e: Math.E
-                };
+                });
                 
                 let r = compiledExpression.evaluate(scope);
                 
@@ -10643,7 +10831,7 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpr);
-            const result = compiledExpression.evaluate({x: xValue});
+            const result = compiledExpression.evaluate(this.getEvaluationScope({x: xValue}));
             
             return result;
         };
@@ -10725,7 +10913,7 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpr);
-            return compiledExpression.evaluate({x: xValue});
+            return compiledExpression.evaluate(this.getEvaluationScope({x: xValue}));
         };
         
         try {
@@ -10775,12 +10963,12 @@ class Graphiti {
             // Note: thetaValue is already in radians here
             const compiledExpression = this.getCompiledExpression(processedExpr);
             
-            const scope = {
+            const scope = this.getEvaluationScope({
                 theta: thetaValue,
                 t: thetaValue,
                 pi: Math.PI,
                 e: Math.E
-            };
+            });
             
             return compiledExpression.evaluate(scope);
         };
@@ -10857,12 +11045,12 @@ class Graphiti {
             // Note: thetaValue is in radians
             const compiledExpression = this.getCompiledExpression(processedExpr);
             
-            const scope = {
+            const scope = this.getEvaluationScope({
                 theta: thetaValue,
                 t: thetaValue,
                 pi: Math.PI,
                 e: Math.E
-            };
+            });
             return compiledExpression.evaluate(scope);
         };
         
@@ -10972,6 +11160,85 @@ class Graphiti {
         }
     }
 
+    updateBadgesAfterParameterChange() {
+        // Update all badge positions and properties after parameter values change
+        // This preserves badges but recalculates their positions on the new curves
+        
+        for (const badge of this.input.persistentBadges) {
+            // Skip special badge types that don't trace functions
+            if (badge.badgeType === 'intersection' || 
+                badge.badgeType === 'x-intercept' || 
+                badge.badgeType === 'y-intercept' ||
+                badge.badgeType === 'tangent-intercept' ||
+                badge.badgeType === 'normal-intercept' ||
+                badge.badgeType === 'tangent-intersection' ||
+                badge.badgeType === 'normal-intersection' ||
+                badge.badgeType === 'tangent-tangent-intersection' ||
+                badge.badgeType === 'normal-normal-intersection' ||
+                badge.badgeType === 'normal-tangent-intersection') {
+                // These badges are derived from other badges or curves
+                // They'll be recalculated by their respective systems
+                continue;
+            }
+            
+            const func = this.findFunctionById(badge.functionId);
+            if (!func) continue;
+            
+            const functionType = this.detectFunctionType(func.expression);
+            
+            if (this.plotMode === 'polar' && badge.theta !== null && badge.theta !== undefined) {
+                // Polar mode: keep theta, recalculate r and convert to x,y
+                const tracedPoint = this.tracePolarFunction(func, badge.worldX, badge.worldY, badge.theta, 0);
+                if (tracedPoint) {
+                    badge.worldX = tracedPoint.x;
+                    badge.worldY = tracedPoint.y;
+                    // theta stays the same
+                }
+            } else if (functionType === 'implicit') {
+                // Implicit functions: snap to nearest point on new curve
+                const tracedPoint = this.traceImplicitFunction(func, badge.worldX, badge.worldY);
+                if (tracedPoint) {
+                    badge.worldX = tracedPoint.x;
+                    badge.worldY = tracedPoint.y;
+                }
+            } else {
+                // Explicit functions: keep x, recalculate y
+                const newY = this.evaluateFunction(func.expression, badge.worldX);
+                if (isFinite(newY)) {
+                    badge.worldY = newY;
+                }
+            }
+            
+            // Recalculate tangent/normal slopes if badge has them
+            if (badge.hasTangent || badge.hasNormal) {
+                const slopeData = this.calculateSlopeAtPoint(func, badge.worldX, badge.worldY, badge.theta);
+                if (slopeData) {
+                    badge.tangentSlope = slopeData;
+                    badge.tangentExpression = slopeData.expression;
+                    badge.secondDerivative = slopeData.secondDerivative;
+                }
+            }
+            
+            // Update screen position
+            const screenPos = this.worldToScreen(badge.worldX, badge.worldY);
+            badge.screenX = screenPos.x;
+            badge.screenY = screenPos.y;
+        }
+        
+        // Recalculate derived features
+        if (this.showIntersections) {
+            this.updateCombinedIntersections();
+        }
+        
+        if (this.showIntercepts) {
+            this.updateCombinedIntercepts();
+        }
+        
+        if (this.showTurningPoints) {
+            this.updateTurningPoints();
+        }
+    }
+
     findClosestPolarPoint(func, screenX, screenY, tolerance) {
         try {
             let closestDistance = Infinity;
@@ -10990,7 +11257,7 @@ class Graphiti {
             
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
-                    const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
+                    const scope = this.getEvaluationScope({ t: theta, theta: theta, pi: Math.PI, e: Math.E });
                     let r = compiled.evaluate(scope);
                     
                     // Handle negative r values
@@ -11187,7 +11454,7 @@ class Graphiti {
                 }
                 
                 // Evaluate at new theta
-                const scope = { t: newTheta, theta: newTheta, pi: Math.PI, e: Math.E };
+                const scope = this.getEvaluationScope({ t: newTheta, theta: newTheta, pi: Math.PI, e: Math.E });
                 let r = compiled.evaluate(scope);
                 
                 // Handle negative r values
@@ -11219,7 +11486,7 @@ class Graphiti {
             
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
-                    const scope = { t: theta, theta: theta, pi: Math.PI, e: Math.E };
+                    const scope = this.getEvaluationScope({ t: theta, theta: theta, pi: Math.PI, e: Math.E });
                     let r = compiled.evaluate(scope);
                     
                     // Handle negative r values
@@ -16167,6 +16434,17 @@ class Graphiti {
         expression = expression.replace(/\\csc/g, 'csc');
         expression = expression.replace(/\\cot/g, 'cot');
         
+        // Greek letters for parameters
+        expression = expression.replace(/\\alpha/g, 'alpha');
+        expression = expression.replace(/\\beta/g, 'beta');
+        expression = expression.replace(/\\gamma/g, 'gamma');
+        
+        // Handle spaces: remove spaces that would break parameter-variable multiplication
+        // e.g., "alpha x" -> "alphax", "beta y" -> "betay"
+        expression = expression.replace(/\balpha\s+([xytrabcpi(])/g, 'alpha$1');
+        expression = expression.replace(/\bbeta\s+([xytrabcpi(])/g, 'beta$1');
+        expression = expression.replace(/\bgamma\s+([xytrabcpi(])/g, 'gamma$1');
+        
         // Inverse trigonometric functions (standard LaTeX)
         expression = expression.replace(/\\arcsin/g, 'asin');
         expression = expression.replace(/\\arccos/g, 'acos');
@@ -16288,6 +16566,12 @@ class Graphiti {
         // 2x -> 2*x, 3sin(x) -> 3*sin(x)
         expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
         expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+        
+        // Add implicit multiplication for parameters followed by variables or parentheses
+        // alphax -> alpha*x, alpha(x) -> alpha*(x), betay -> beta*y, gammat -> gamma*t, etc.
+        expression = expression.replace(/\balpha([xytrabcpi(])/g, 'alpha*$1');
+        expression = expression.replace(/\bbeta([xytrabcpi(])/g, 'beta*$1');
+        expression = expression.replace(/\bgamma([xytrabcpi(])/g, 'gamma*$1');
         
         // Handle implicit multiplication between variables and function names
         // ysin(x) -> y*sin(x), xcos(t) -> x*cos(t), etc.
