@@ -7697,7 +7697,9 @@ class Graphiti {
     }
 
     
-    replotAllFunctions(onlyExplicit = false) {
+    async replotAllFunctions(onlyExplicit = false) {
+        const plotPromises = [];
+        
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
                 // Check if this is an implicit function
@@ -7708,15 +7710,21 @@ class Graphiti {
                     return;
                 }
                 
-                this.plotFunctionWithValidation(func);
-                
-                // If function has no points after validation, clear its badges
-                if (!func.points || func.points.length === 0) {
-                    this.removeBadgesForFunction(func.id);
-                    this.removeIntersectionBadgesForFunction(func.id);
-                }
+                // Collect all plot promises to await them together
+                plotPromises.push(
+                    this.plotFunctionWithValidation(func).then(() => {
+                        // If function has no points after validation, clear its badges
+                        if (!func.points || func.points.length === 0) {
+                            this.removeBadgesForFunction(func.id);
+                            this.removeIntersectionBadgesForFunction(func.id);
+                        }
+                    })
+                );
             }
         });
+        
+        // Wait for all functions to complete before drawing
+        await Promise.all(plotPromises);
         
         // Update intersections after replotting (debounced for viewport changes)
         this.handleViewportChange();
@@ -8296,7 +8304,7 @@ class Graphiti {
                 let plotTimer = null;
                 
                 // Update parameter value and replot
-                const updateParameter = (value) => {
+                const updateParameter = async (value) => {
                     this.parameters[param].value = value;
                     valueDisplay.textContent = value.toFixed(1);
                     slider.value = value;
@@ -8306,8 +8314,8 @@ class Graphiti {
                         clearTimeout(plotTimer);
                     }
                     
-                    plotTimer = setTimeout(() => {
-                        this.replotAllFunctions();
+                    plotTimer = setTimeout(async () => {
+                        await this.replotAllFunctions();
                         this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
                         this.updateIntegralPairs(); // Recalculate integrals with new parameter values
                         plotTimer = null;
