@@ -2245,6 +2245,8 @@ class Graphiti {
             return;
         }
         
+        console.log(`[Plot] Starting to plot function ${func.id}: ${func.expression}`);
+        
         // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
             this.plotPolarFunction(func);
@@ -2252,6 +2254,8 @@ class Graphiti {
                 const elapsed = performance.now() - startTime;
                 this.performance.plotTimes.set(func.id, elapsed);
             }
+            const elapsed = performance.now() - startTime;
+            console.log(`[Plot] Polar function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
             return;
         }
         
@@ -2260,11 +2264,35 @@ class Graphiti {
         
         if (functionType === 'implicit') {
             await this.plotImplicitFunction(func, false, this.isStartup);
+            const elapsed = performance.now() - startTime;
+            console.log(`[Plot] Implicit function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
             return;
         }
         
         // Cartesian plotting (existing code)
         try {
+            const setupStart = performance.now();
+            
+            // Pre-process expression ONCE instead of 2000 times
+            let processedExpression = this.convertFromLatex(func.expression);
+            if (processedExpression.toLowerCase().startsWith('y=')) {
+                processedExpression = processedExpression.substring(2);
+            }
+            processedExpression = processedExpression.toLowerCase();
+            
+            // Handle degree mode preprocessing
+            if (this.angleMode === 'degrees') {
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                if (hasRegularTrigWithX) {
+                    processedExpression = this.convertTrigToDegreeMode(processedExpression);
+                }
+            }
+            
+            // Compile expression ONCE
+            const compiledExpression = this.getCompiledExpression(processedExpression);
+            const hasInverseTrig = this.angleMode === 'degrees' && this.getCachedRegex('inverseTrig').test(func.expression.toLowerCase());
+            const scope = this.getEvaluationScope({});
+            
             // Calculate points for the current viewport
             const points = [];
             // Apply adaptive resolution based on function count (balanced for quality and performance)
@@ -2292,6 +2320,9 @@ class Graphiti {
                 if (bufferedMinX <= -1 && bufferedMaxX >= -1) criticalPoints.push(-1);
             }
             
+            console.log(`[Plot] Setup took ${(performance.now() - setupStart).toFixed(2)}ms, evaluating ${numSteps} points`);
+            const evalStart = performance.now();
+            
             for (let i = 0; i <= numSteps; i++) {
                 let x = bufferedMinX + (i * step);
                 
@@ -2301,7 +2332,10 @@ class Graphiti {
                 }
                 
                 try {
-                    const y = this.evaluateFunction(func.expression, x);
+                    scope.x = x;
+                    const result = compiledExpression.evaluate(scope);
+                    const y = hasInverseTrig ? result * 180 / Math.PI : result;
+                    
                     if (isFinite(y)) {
                         points.push({ x, y, connected: true });
                     } else {
@@ -2318,13 +2352,18 @@ class Graphiti {
                 }
             }
             
+            console.log(`[Plot] Evaluation loop took ${(performance.now() - evalStart).toFixed(2)}ms`);
+            const postStart = performance.now();
+            
             // Add critical points that might have been missed due to step size
             for (const criticalX of criticalPoints) {
                 // Check if this critical point is already very close to an existing point
                 const existsAlready = points.some(p => Math.abs(p.x - criticalX) < step * 0.1);
                 if (!existsAlready) {
                     try {
-                        const y = this.evaluateFunction(func.expression, criticalX);
+                        scope.x = criticalX;
+                        const result = compiledExpression.evaluate(scope);
+                        const y = hasInverseTrig ? result * 180 / Math.PI : result;
                         if (isFinite(y)) {
                             points.push({ x: criticalX, y, connected: true });
                         }
@@ -2366,6 +2405,8 @@ class Graphiti {
                 }
             }
             
+            console.log(`[Plot] Post-processing took ${(performance.now() - postStart).toFixed(2)}ms`);
+            
             func.points = processedPoints;
         } catch (error) {
             console.error('Error parsing function:', error);
@@ -2378,6 +2419,9 @@ class Graphiti {
             const elapsed = performance.now() - startTime;
             this.performance.plotTimes.set(func.id, elapsed);
         }
+        
+        const elapsed = performance.now() - startTime;
+        console.log(`[Plot] Explicit function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
     }
     
     plotPolarFunction(func) {
