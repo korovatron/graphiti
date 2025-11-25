@@ -190,7 +190,7 @@ class Graphiti {
         
         // Implicit intersection timing control
         this.implicitIntersectionTimer = null;
-        this.implicitIntersectionDelay = 500; // ms after pan/zoom stops
+        this.implicitIntersectionDelay = 50; // ms after pan/zoom stops (reduced for faster response)
         this.implicitIntersectionsPending = false; // Track if implicit calculation is expected
         this.lastViewportState = null; // Track viewport changes
         
