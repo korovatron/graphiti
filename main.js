@@ -4170,10 +4170,8 @@ class Graphiti {
                 }
             });
             
-            // Replot implicit functions asynchronously to avoid blocking UI
-            setTimeout(() => {
-                this.replotImplicitFunctions();
-            }, 0);
+            // Replot implicit functions (now fast enough for immediate execution)
+            this.replotImplicitFunctions(true);
             
             // Skip badge calculations during polar animation or pause
             if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
@@ -4188,7 +4186,7 @@ class Graphiti {
                     this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
             }
-        }, 100); // Very short delay to minimize blocking period
+        }, 50); // Short delay optimized for fast implicit plotting
     }
     
     findIntersections() {
