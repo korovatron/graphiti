@@ -5687,6 +5687,9 @@ class Graphiti {
                 if (this.showIntersections) {
                     // Recalculate and show intersections using Web Worker
                     this.intersections = this.calculateIntersectionsWithWorker();
+                    
+                    // Immediately calculate tangent/normal intersections so they appear right away
+                    this.updateCombinedIntersections();
                 } else {
                     // Clear intersections
                     this.clearIntersections();
@@ -15080,7 +15083,7 @@ class Graphiti {
                 } else {
                     slopeStr = this.formatDerivative(displaySlope);
                 }
-                labelText += ` | dy/dx=${slopeStr}`;
+                labelText += ` | dy/dx = ${slopeStr}`;
                 
                 // Add second derivative if available
                 const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
@@ -15091,7 +15094,7 @@ class Graphiti {
                         displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
                     }
                     const secondDerivStr = this.formatDerivative(displaySecondDeriv);
-                    labelText += ` | d²y/dx²=${secondDerivStr}`;
+                    labelText += ` | d²y/dx² = ${secondDerivStr}`;
                 }
             }
         }
@@ -15103,7 +15106,7 @@ class Graphiti {
                 // Display polar derivative dr/dθ
                 const polarDerivStr = this.formatDerivative(tangentSlope.polarDerivative);
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
-                labelText += ` | dr/d${thetaSymbol}=${polarDerivStr}`;
+                labelText += ` | dr/d${thetaSymbol} = ${polarDerivStr}`;
             } else {
                 // Display Cartesian slope dy/dx
                 const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
@@ -15121,7 +15124,7 @@ class Graphiti {
                 } else {
                     slopeStr = this.formatDerivative(displaySlope);
                 }
-                labelText += ` | dy/dx=${slopeStr}`;
+                labelText += ` | dy/dx = ${slopeStr}`;
                 
                 // Add second derivative if available
                 const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
@@ -15132,7 +15135,7 @@ class Graphiti {
                         displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
                     }
                     const secondDerivStr = this.formatDerivative(displaySecondDeriv);
-                    labelText += ` | d²y/dx²=${secondDerivStr}`;
+                    labelText += ` | d²y/dx² = ${secondDerivStr}`;
                 }
             }
         }
@@ -15453,26 +15456,24 @@ class Graphiti {
         
         const absValue = Math.abs(value);
         
-        // Zero threshold - truly tiny values
-        if (absValue < 1e-10) return '0';
+        // Zero threshold - show as zero for very small values (makes classroom demos clearer)
+        // This makes it easier to demonstrate turning points where dy/dx = 0
+        if (absValue < 0.005) return '0';
         
         // Determine precision based on the magnitude of the derivative itself
+        // Using 2 decimal places for most values makes it easier to position at exactly 0
         let precision;
         if (absValue >= 100) {
             precision = 1; // Large derivatives
         } else if (absValue >= 10) {
             precision = 2;
         } else if (absValue >= 1) {
-            precision = 3;
+            precision = 2;
         } else if (absValue >= 0.1) {
-            precision = 4;
-        } else if (absValue >= 0.01) {
-            precision = 5;
-        } else if (absValue >= 0.001) {
-            precision = 6;
+            precision = 2;
         } else {
-            // For very small derivatives, use scientific notation
-            return value.toExponential(2);
+            // For small derivatives (0.005 to 0.1), use 2 decimal places
+            precision = 2;
         }
         
         const formatted = value.toFixed(precision);
