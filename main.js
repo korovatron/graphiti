@@ -3348,26 +3348,38 @@ class Graphiti {
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
         
-        // Optimized resolution scaling - constant grid density regardless of zoom
-        // Use a fixed resolution that provides good quality without performance penalty
+        // Adaptive resolution scaling for smooth curves at all zoom levels
+        // With optimized plotting (~20ms at 120×120), we can afford higher resolution when zoomed in
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
-        // Fixed resolution for better performance - marching squares quality doesn't need
-        // to increase when zoomed in since we're looking at the same level of detail
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - use moderate resolution
-            resolution = 100;
+            // Extremely zoomed out - good base quality
+            resolution = 120;
         } else if (viewportSize > 50) {
-            // Very zoomed out
-            resolution = 110;
+            // Very zoomed out - high base quality
+            resolution = 140;
         } else if (viewportSize > 20) {
-            // Normal zoom - balanced quality/performance
-            resolution = 120;
+            // Normal zoom - very high quality
+            resolution = 160;
+        } else if (viewportSize > 10) {
+            // Zoomed in - higher detail
+            resolution = 180;
+        } else if (viewportSize > 5) {
+            // Very zoomed in - excellent detail
+            resolution = 200;
+        } else if (viewportSize > 2) {
+            // Extremely zoomed in - high detail for busy regions
+            resolution = 240;
+        } else if (viewportSize > 1) {
+            // Very close - very high detail
+            resolution = 300;
+        } else if (viewportSize > 0.5) {
+            // Ultra close - maximum detail for sharp features
+            resolution = 360;
         } else {
-            // Zoomed in - maintain same resolution for consistent performance
-            // The physical grid density increases naturally as viewport shrinks
-            resolution = 120;
+            // Extreme magnification - ultra-high detail
+            resolution = 420;
         }
         
         const stepX = viewportWidth / resolution;
