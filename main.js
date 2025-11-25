@@ -2246,8 +2246,6 @@ class Graphiti {
             return;
         }
         
-        console.log(`[Plot] Starting to plot function ${func.id}: ${func.expression}`);
-        
         // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
             this.plotPolarFunction(func);
@@ -2255,8 +2253,6 @@ class Graphiti {
                 const elapsed = performance.now() - startTime;
                 this.performance.plotTimes.set(func.id, elapsed);
             }
-            const elapsed = performance.now() - startTime;
-            console.log(`[Plot] Polar function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
             return;
         }
         
@@ -2265,15 +2261,11 @@ class Graphiti {
         
         if (functionType === 'implicit') {
             await this.plotImplicitFunction(func, false, this.isStartup);
-            const elapsed = performance.now() - startTime;
-            console.log(`[Plot] Implicit function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
             return;
         }
         
         // Cartesian plotting (existing code)
         try {
-            const setupStart = performance.now();
-            
             // Pre-process expression ONCE instead of 2000 times
             let processedExpression = this.convertFromLatex(func.expression);
             if (processedExpression.toLowerCase().startsWith('y=')) {
@@ -2321,9 +2313,6 @@ class Graphiti {
                 if (bufferedMinX <= -1 && bufferedMaxX >= -1) criticalPoints.push(-1);
             }
             
-            console.log(`[Plot] Setup took ${(performance.now() - setupStart).toFixed(2)}ms, evaluating ${numSteps} points`);
-            const evalStart = performance.now();
-            
             for (let i = 0; i <= numSteps; i++) {
                 let x = bufferedMinX + (i * step);
                 
@@ -2352,9 +2341,6 @@ class Graphiti {
                     }
                 }
             }
-            
-            console.log(`[Plot] Evaluation loop took ${(performance.now() - evalStart).toFixed(2)}ms`);
-            const postStart = performance.now();
             
             // Add critical points that might have been missed due to step size
             for (const criticalX of criticalPoints) {
@@ -2406,8 +2392,6 @@ class Graphiti {
                 }
             }
             
-            console.log(`[Plot] Post-processing took ${(performance.now() - postStart).toFixed(2)}ms`);
-            
             func.points = processedPoints;
         } catch (error) {
             console.error('Error parsing function:', error);
@@ -2420,9 +2404,6 @@ class Graphiti {
             const elapsed = performance.now() - startTime;
             this.performance.plotTimes.set(func.id, elapsed);
         }
-        
-        const elapsed = performance.now() - startTime;
-        console.log(`[Plot] Explicit function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
     }
     
     plotPolarFunction(func) {
@@ -2991,9 +2972,6 @@ class Graphiti {
     // ================================
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
-        const startTime = performance.now();
-        console.log(`[Plot] Starting to plot function ${func.id}: ${func.expression}`);
-        
         try {
             // Register this calculation and update debug overlay
             const calculationId = ++this.implicitCalculationId;
@@ -3049,9 +3027,6 @@ class Graphiti {
                 const elapsed = performance.now() - startTime;
                 this.performance.plotTimes.set(func.id, elapsed);
             }
-            
-            const elapsed = performance.now() - startTime;
-            console.log(`[Plot] Implicit function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
             
         } catch (error) {
             console.error('Error plotting implicit function:', error);
@@ -3556,10 +3531,8 @@ class Graphiti {
         
         // Compile expressions once for performance - avoid recompiling for each grid point
         // Expressions are already processed by parseImplicitEquation
-        const compileStart = performance.now();
         const leftCompiled = this.getCompiledExpression(equation.leftExpression);
         const rightCompiled = this.getCompiledExpression(equation.rightExpression);
-        console.log(`  [Implicit] Compilation took ${(performance.now() - compileStart).toFixed(2)}ms`);
         
         // Create scope once and reuse it
         const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
@@ -3569,7 +3542,6 @@ class Graphiti {
         
         // Process grid creation in chunks to prevent blocking
         const chunkSize = 5; // Process 5 rows at a time for better responsiveness
-        const evalStart = performance.now();
         
         for (let chunkStart = 0; chunkStart <= resolution; chunkStart += chunkSize) {
             // Check for cancellation before each chunk
@@ -3601,10 +3573,7 @@ class Graphiti {
             // No setTimeout needed - fast enough without yielding
         }
         
-        console.log(`  [Implicit] Grid evaluation (${resolution}×${resolution}) took ${(performance.now() - evalStart).toFixed(2)}ms`);
-        
         // Process each cell for marching squares in chunks
-        const marchingStart = performance.now();
         for (let chunkStart = 0; chunkStart < resolution; chunkStart += chunkSize) {
             // Check for cancellation before each chunk
             if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
@@ -3641,10 +3610,7 @@ class Graphiti {
             // No setTimeout needed - fast enough without yielding
         }
         
-        console.log(`  [Implicit] Marching squares took ${(performance.now() - marchingStart).toFixed(2)}ms`);
-        
         // Convert segments to points format
-        const convertStart = performance.now();
         const points = [];
         for (const segment of segments) {
             points.push({ x: segment.start.x, y: segment.start.y, connected: true });
@@ -3652,9 +3618,6 @@ class Graphiti {
             // Add break between segments to prevent unwanted connections
             points.push({ x: NaN, y: NaN, connected: false });
         }
-        
-        console.log(`  [Implicit] Point conversion took ${(performance.now() - convertStart).toFixed(2)}ms`);
-        console.log(`  [Implicit] Total marchingSquaresAtResolutionAsync: ${(performance.now() - startTime).toFixed(2)}ms`);
         
         return points;
     }
@@ -10883,8 +10846,6 @@ class Graphiti {
             // Avoid division by zero
             if (Math.abs(dFdy) < 1e-10) {
                 // Vertical tangent - return very large slope
-                const elapsed = performance.now() - startTime;
-                console.log(`[Tangent] Implicit tangent calculation took ${elapsed.toFixed(3)}ms`);
                 return {
                     slope: dFdy >= 0 ? 1e10 : -1e10,
                     expression: "dy/dx",
@@ -10925,8 +10886,6 @@ class Graphiti {
                     const secondDeriv = (slope1 - slope) / dx;
                     
                     if (isFinite(slope) && isFinite(secondDeriv)) {
-                        const elapsed = performance.now() - startTime;
-                        console.log(`[Tangent] Implicit tangent calculation took ${elapsed.toFixed(3)}ms`);
                         return {
                             slope: slope,
                             expression: "dy/dx",
@@ -10939,8 +10898,6 @@ class Graphiti {
             
             // Fallback: return slope without second derivative
             if (isFinite(slope)) {
-                const elapsed = performance.now() - startTime;
-                console.log(`[Tangent] Implicit tangent calculation took ${elapsed.toFixed(3)}ms`);
                 return {
                     slope: slope,
                     expression: "dy/dx",
