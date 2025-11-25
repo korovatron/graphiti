@@ -9809,8 +9809,73 @@ class Graphiti {
         const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
         
         if (isImplicit) {
-            // For implicit functions, find points where y is closest to 0
-            // Strategy: Find regions where curve crosses x-axis, then pick closest point in each region
+            // For implicit functions, try to solve the equation at y=0 for accurate x-intercepts
+            try {
+                const equation = this.parseImplicitEquation(func.expression);
+                if (equation) {
+                    // Sample x values and find where F(x,0) ≈ 0
+                    const xValues = [];
+                    const sampleCount = 100;
+                    const xMin = this.viewport.minX;
+                    const xMax = this.viewport.maxX;
+                    const step = (xMax - xMin) / sampleCount;
+                    
+                    const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+                    const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+                    const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+                    
+                    let prevValue = null;
+                    let prevX = null;
+                    
+                    for (let i = 0; i <= sampleCount; i++) {
+                        const x = xMin + i * step;
+                        scope.x = x;
+                        scope.y = 0;
+                        
+                        try {
+                            const leftVal = leftCompiled.evaluate(scope);
+                            const rightVal = rightCompiled.evaluate(scope);
+                            const value = leftVal - rightVal;
+                            
+                            if (isFinite(value) && prevValue !== null && prevValue * value <= 0) {
+                                // Sign change detected - intercept between prevX and x
+                                // Use linear interpolation for better accuracy
+                                const interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
+                                
+                                if (isFinite(interceptX) && Math.abs(interceptX) > 0.15) {
+                                    const isDuplicate = xIntercepts.some(existing => 
+                                        Math.abs(existing.x - interceptX) < minDistance
+                                    );
+                                    
+                                    if (!isDuplicate) {
+                                        xIntercepts.push({
+                                            x: interceptX,
+                                            y: 0,
+                                            type: 'x-intercept',
+                                            functionId: func.id,
+                                            color: func.color
+                                        });
+                                    }
+                                }
+                            }
+                            
+                            prevValue = value;
+                            prevX = x;
+                        } catch (e) {
+                            // Skip invalid points
+                        }
+                    }
+                    
+                    // If we found intercepts analytically, return them
+                    if (xIntercepts.length > 0) {
+                        return xIntercepts;
+                    }
+                }
+            } catch (error) {
+                // Fall back to point-based search if analytical method fails
+            }
+            
+            // Fallback: search through plotted points for points close to y=0
             const candidates = [];
             
             for (let i = 0; i < points.length - 1; i++) {
@@ -9919,8 +9984,73 @@ class Graphiti {
         const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
         
         if (isImplicit) {
-            // For implicit functions, find points where x is closest to 0
-            // Strategy: Find regions where curve crosses y-axis, then pick closest point in each region
+            // For implicit functions, try to solve the equation at x=0 for accurate y-intercepts
+            try {
+                const equation = this.parseImplicitEquation(func.expression);
+                if (equation) {
+                    // Sample y values and find where F(0,y) ≈ 0
+                    const yValues = [];
+                    const sampleCount = 100;
+                    const yMin = this.viewport.minY;
+                    const yMax = this.viewport.maxY;
+                    const step = (yMax - yMin) / sampleCount;
+                    
+                    const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+                    const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+                    const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+                    
+                    let prevValue = null;
+                    let prevY = null;
+                    
+                    for (let i = 0; i <= sampleCount; i++) {
+                        const y = yMin + i * step;
+                        scope.x = 0;
+                        scope.y = y;
+                        
+                        try {
+                            const leftVal = leftCompiled.evaluate(scope);
+                            const rightVal = rightCompiled.evaluate(scope);
+                            const value = leftVal - rightVal;
+                            
+                            if (isFinite(value) && prevValue !== null && prevValue * value <= 0) {
+                                // Sign change detected - intercept between prevY and y
+                                // Use linear interpolation for better accuracy
+                                const interceptY = prevY - prevValue * (y - prevY) / (value - prevValue);
+                                
+                                if (isFinite(interceptY) && Math.abs(interceptY) > 0.15) {
+                                    const isDuplicate = yIntercepts.some(existing => 
+                                        Math.abs(existing.y - interceptY) < minDistance
+                                    );
+                                    
+                                    if (!isDuplicate) {
+                                        yIntercepts.push({
+                                            x: 0,
+                                            y: interceptY,
+                                            type: 'y-intercept',
+                                            functionId: func.id,
+                                            color: func.color
+                                        });
+                                    }
+                                }
+                            }
+                            
+                            prevValue = value;
+                            prevY = y;
+                        } catch (e) {
+                            // Skip invalid points
+                        }
+                    }
+                    
+                    // If we found intercepts analytically, return them
+                    if (yIntercepts.length > 0) {
+                        return yIntercepts;
+                    }
+                }
+            } catch (error) {
+                // Fall back to point-based search if analytical method fails
+            }
+            
+            // Fallback: search through plotted points for points close to x=0
             const candidates = [];
             
             for (let i = 0; i < points.length - 1; i++) {
