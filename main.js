@@ -8039,13 +8039,13 @@ class Graphiti {
             await this.plotFunctionWithValidation(func);
             this.draw(); // Show this implicit function
             
-            // Schedule next implicit function with longer delay to reduce stuttering
-            setTimeout(() => plotNextImplicit(index + 1), 16);
+            // Continue to next implicit function immediately during startup
+            await plotNextImplicit(index + 1);
         };
         
-        // Start plotting implicit functions after panel transition completes (300ms)
+        // Start plotting implicit functions immediately
         if (implicitFunctions.length > 0) {
-            setTimeout(() => plotNextImplicit(0), 350);
+            plotNextImplicit(0);
         }
         
         // Initialize intercepts toggle button state
