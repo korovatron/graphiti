@@ -93,6 +93,7 @@ class Graphiti {
         
         // Expression compilation cache for performance optimization
         this.expressionCache = new Map(); // Map<string, CompiledExpression>
+        this.parsedImplicitEquations = new Map(); // Map<string, {leftExpression, rightExpression}>
         
         // Regex pattern cache for performance optimization
         this.regexCache = new Map(); // Map<string, RegExp>
@@ -2458,18 +2459,22 @@ class Graphiti {
             // Calculate dynamic step size to prevent system hangs
             const thetaStep = this.calculateDynamicPolarStep(thetaMin, thetaMax);
             
+            // Create scope once and reuse it for performance
+            const scope = this.getEvaluationScope({ 
+                theta: 0, 
+                t: 0,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
                     // Convert theta to radians if in degree mode, since math.js trig functions expect radians
                     let thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
                     
-                    // Support both 'theta' and 't' as variable names
-                    const scope = this.getEvaluationScope({ 
-                        theta: thetaForEval, 
-                        t: thetaForEval,
-                        pi: Math.PI,
-                        e: Math.E
-                    });
+                    // Update scope values instead of creating new scope object
+                    scope.theta = thetaForEval;
+                    scope.t = thetaForEval;
                     
                     let r = compiledExpression.evaluate(scope);
                     
@@ -2987,6 +2992,7 @@ class Graphiti {
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
         const startTime = performance.now();
+        console.log(`[Plot] Starting to plot function ${func.id}: ${func.expression}`);
         
         try {
             // Register this calculation and update debug overlay
@@ -3043,6 +3049,9 @@ class Graphiti {
                 const elapsed = performance.now() - startTime;
                 this.performance.plotTimes.set(func.id, elapsed);
             }
+            
+            const elapsed = performance.now() - startTime;
+            console.log(`[Plot] Implicit function ${func.id} completed in ${elapsed.toFixed(2)}ms`);
             
         } catch (error) {
             console.error('Error plotting implicit function:', error);
@@ -3364,39 +3373,26 @@ class Graphiti {
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
         
-        // Balanced resolution scaling - performance vs quality
+        // Optimized resolution scaling - constant grid density regardless of zoom
+        // Use a fixed resolution that provides good quality without performance penalty
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
-        // Improved resolution scaling with better base quality for busy curves
-        // Higher minimum resolution to ensure curves don't disappear at any zoom level
+        // Fixed resolution for better performance - marching squares quality doesn't need
+        // to increase when zoomed in since we're looking at the same level of detail
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - good base quality
-            resolution = 120;
+            // Extremely zoomed out - use moderate resolution
+            resolution = 100;
         } else if (viewportSize > 50) {
-            // Very zoomed out - high base quality
-            resolution = 140;
+            // Very zoomed out
+            resolution = 110;
         } else if (viewportSize > 20) {
-            // Normal zoom - very high quality
-            resolution = 160;
-        } else if (viewportSize > 10) {
-            // Zoomed in - higher detail
-            resolution = 180;
-        } else if (viewportSize > 5) {
-            // Very zoomed in - excellent detail
-            resolution = 200;
-        } else if (viewportSize > 2) {
-            // Extremely zoomed in - high detail for busy regions
-            resolution = 240;
-        } else if (viewportSize > 1) {
-            // Very close - very high detail
-            resolution = 300;
-        } else if (viewportSize > 0.5) {
-            // Ultra close - maximum detail for sharp features
-            resolution = 360;
+            // Normal zoom - balanced quality/performance
+            resolution = 120;
         } else {
-            // Extreme magnification - ultra-high detail
-            resolution = 420;
+            // Zoomed in - maintain same resolution for consistent performance
+            // The physical grid density increases naturally as viewport shrinks
+            resolution = 120;
         }
         
         const stepX = viewportWidth / resolution;
@@ -3434,6 +3430,14 @@ class Graphiti {
     marchingSquaresAtResolution(equation, resolution, stepX, stepY) {
         const segments = [];
         
+        // Compile expressions once for performance
+        // Expressions are already processed by parseImplicitEquation
+        const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+        const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+        
+        // Create scope once and reuse it
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        
         // Create grid of function values
         const grid = [];
         for (let i = 0; i <= resolution; i++) {
@@ -3441,8 +3445,17 @@ class Graphiti {
             for (let j = 0; j <= resolution; j++) {
                 const x = this.viewport.minX + i * stepX;
                 const y = this.viewport.minY + j * stepY;
-                const value = this.evaluateImplicitEquation(equation, x, y);
-                grid[i][j] = value !== null ? value : 0;
+                
+                // Update scope and evaluate using compiled expressions
+                scope.x = x;
+                scope.y = y;
+                try {
+                    const leftValue = leftCompiled.evaluate(scope);
+                    const rightValue = rightCompiled.evaluate(scope);
+                    grid[i][j] = (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
+                } catch (error) {
+                    grid[i][j] = 0;
+                }
             }
         }
         
@@ -3538,13 +3551,25 @@ class Graphiti {
     }
 
     async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null) {
+        const startTime = performance.now();
         const segments = [];
+        
+        // Compile expressions once for performance - avoid recompiling for each grid point
+        // Expressions are already processed by parseImplicitEquation
+        const compileStart = performance.now();
+        const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+        const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+        console.log(`  [Implicit] Compilation took ${(performance.now() - compileStart).toFixed(2)}ms`);
+        
+        // Create scope once and reuse it
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
         
         // Create grid of function values
         const grid = [];
         
         // Process grid creation in chunks to prevent blocking
         const chunkSize = 5; // Process 5 rows at a time for better responsiveness
+        const evalStart = performance.now();
         
         for (let chunkStart = 0; chunkStart <= resolution; chunkStart += chunkSize) {
             // Check for cancellation before each chunk
@@ -3559,18 +3584,27 @@ class Graphiti {
                 for (let j = 0; j <= resolution; j++) {
                     const x = this.viewport.minX + i * stepX;
                     const y = this.viewport.minY + j * stepY;
-                    const value = this.evaluateImplicitEquation(equation, x, y);
-                    grid[i][j] = value !== null ? value : 0;
+                    
+                    // Update scope and evaluate using compiled expressions
+                    scope.x = x;
+                    scope.y = y;
+                    try {
+                        const leftValue = leftCompiled.evaluate(scope);
+                        const rightValue = rightCompiled.evaluate(scope);
+                        grid[i][j] = (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
+                    } catch (error) {
+                        grid[i][j] = 0;
+                    }
                 }
             }
             
-            // Yield control after each chunk (skip delay during immediate mode)
-            if (!immediate && chunkStart + chunkSize <= resolution) {
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
+            // No setTimeout needed - fast enough without yielding
         }
         
+        console.log(`  [Implicit] Grid evaluation (${resolution}×${resolution}) took ${(performance.now() - evalStart).toFixed(2)}ms`);
+        
         // Process each cell for marching squares in chunks
+        const marchingStart = performance.now();
         for (let chunkStart = 0; chunkStart < resolution; chunkStart += chunkSize) {
             // Check for cancellation before each chunk
             if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
@@ -3604,13 +3638,13 @@ class Graphiti {
                 }
             }
             
-            // Yield control after each chunk (skip delay during immediate mode)
-            if (!immediate && chunkStart + chunkSize < resolution) {
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
+            // No setTimeout needed - fast enough without yielding
         }
         
+        console.log(`  [Implicit] Marching squares took ${(performance.now() - marchingStart).toFixed(2)}ms`);
+        
         // Convert segments to points format
+        const convertStart = performance.now();
         const points = [];
         for (const segment of segments) {
             points.push({ x: segment.start.x, y: segment.start.y, connected: true });
@@ -3618,6 +3652,9 @@ class Graphiti {
             // Add break between segments to prevent unwanted connections
             points.push({ x: NaN, y: NaN, connected: false });
         }
+        
+        console.log(`  [Implicit] Point conversion took ${(performance.now() - convertStart).toFixed(2)}ms`);
+        console.log(`  [Implicit] Total marchingSquaresAtResolutionAsync: ${(performance.now() - startTime).toFixed(2)}ms`);
         
         return points;
     }
@@ -3847,6 +3884,11 @@ class Graphiti {
     }
 
     parseImplicitEquation(expression) {
+        // Check cache first
+        if (this.parsedImplicitEquations.has(expression)) {
+            return this.parsedImplicitEquations.get(expression);
+        }
+        
         try {
             // Convert from LaTeX first since we now store LaTeX format
             const convertedExpression = this.convertFromLatex(expression);
@@ -3860,16 +3902,66 @@ class Graphiti {
             const leftSide = parts[0].trim();
             const rightSide = parts[1].trim();
             
+            // Process expressions for math.js (handle implicit multiplication, etc.)
+            const leftProcessed = this.processImplicitExpression(leftSide);
+            const rightProcessed = this.processImplicitExpression(rightSide);
+            
             // Return the difference: left - right (so we solve for = 0)
-            return {
-                leftExpression: leftSide,
-                rightExpression: rightSide
+            const result = {
+                leftExpression: leftProcessed,
+                rightExpression: rightProcessed
             };
+            
+            // Cache the result
+            this.parsedImplicitEquations.set(expression, result);
+            
+            return result;
             
         } catch (error) {
             console.error('Error parsing implicit equation:', error);
             return null;
         }
+    }
+    
+    processImplicitExpression(expression) {
+        let processedExpression = expression.toLowerCase();
+        
+        // Handle implicit multiplication for adjacent variables and numbers
+        // BUT avoid breaking function names that are already properly formatted
+        // AND avoid breaking parameter names (alpha, beta, gamma)
+        if (!this.containsProperFunctions(processedExpression)) {
+            // Protect parameter names from being split
+            const hasAlpha = processedExpression.includes('alpha');
+            const hasBeta = processedExpression.includes('beta');
+            const hasGamma = processedExpression.includes('gamma');
+            const hasDelta = processedExpression.includes('delta');
+            
+            // Replace parameter names with placeholders
+            if (hasAlpha) processedExpression = processedExpression.replace(/alpha/g, '__ALPHA__');
+            if (hasBeta) processedExpression = processedExpression.replace(/beta/g, '__BETA__');
+            if (hasGamma) processedExpression = processedExpression.replace(/gamma/g, '__GAMMA__');
+            if (hasDelta) processedExpression = processedExpression.replace(/delta/g, '__DELTA__');
+            
+            // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
+            processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
+            processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
+            processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
+            processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
+            processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+            
+            // Restore parameter names
+            if (hasAlpha) processedExpression = processedExpression.replace(/__ALPHA__/g, 'alpha');
+            if (hasBeta) processedExpression = processedExpression.replace(/__BETA__/g, 'beta');
+            if (hasGamma) processedExpression = processedExpression.replace(/__GAMMA__/g, 'gamma');
+            if (hasDelta) processedExpression = processedExpression.replace(/__DELTA__/g, 'delta');
+        }
+        
+        // Basic math.js compatible conversions
+        processedExpression = processedExpression.replace(/\^/g, '^'); // Keep power notation
+        processedExpression = processedExpression.replace(/\bpi\b/g, 'pi');
+        processedExpression = processedExpression.replace(/\be\b/g, 'e');
+        
+        return processedExpression;
     }
 
     evaluateImplicitEquation(equation, x, y) {
