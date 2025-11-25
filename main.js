@@ -15990,13 +15990,18 @@ class Graphiti {
     }
     
     shouldShowCalculationIndicator() {
+        // Calculation indicator disabled due to optimizations making operations fast enough
+        // to feel instant (<100ms in most cases). Keep method for possible future use.
+        return false;
+        
+        // Original logic (commented out but preserved):
         // Show hourglass if:
         // 1. We have enabled implicit functions AND
         // 2. Either viewport is changing OR implicit calculations are active
-        if (!this.hasEnabledImplicitFunctions()) {
-            return false;
-        }
-        return this.isViewportChanging || this.hasActiveImplicitCalculations();
+        // if (!this.hasEnabledImplicitFunctions()) {
+        //     return false;
+        // }
+        // return this.isViewportChanging || this.hasActiveImplicitCalculations();
     }
     
     drawCalculationIndicator() {
