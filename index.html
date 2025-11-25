@@ -179,6 +179,12 @@
             touch-action: none;
             margin: 0;
             padding: 0;
+            opacity: 0;
+            transition: opacity 0.3s ease-in;
+        }
+        
+        #canvas.loaded {
+            opacity: 1;
         }
         
         #ui-overlay {
@@ -346,6 +352,12 @@
             background: #1A2F42; /* Fixed dark background */
             position: relative;
             z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s ease-in;
+        }
+        
+        .title-screen.loaded {
+            opacity: 1;
         }
         
         .title-screen .logo {
@@ -839,7 +851,12 @@
             z-index: 1000; /* Ensure it's above other elements */
             touch-action: manipulation; /* Improve touch responsiveness */
             z-index: 20;
+            opacity: 0;
             transition: all 0.3s ease;
+        }
+        
+        #hamburger-menu.loaded {
+            opacity: 1;
         }
         
         #hamburger-menu:hover {
@@ -1470,7 +1487,13 @@
             <!-- Title Screen -->
             <div id="title-screen" class="title-screen">
                 <img src="images/graphitiTitle.png" alt="Graphiti" class="logo" />
-                <p>Where Maths Gets Radical</p>
+                
+                <!-- Mathematical tagline -->
+                <div style="margin: 20px 0;">
+                    <math-field read-only style="font-size: 24px; background: transparent !important; border: none !important; color: #E8F4FD !important; --text-color: #E8F4FD; --primary-color: #E8F4FD; --secondary-color: #E8F4FD; pointer-events: none;">
+                        \text{get } \sqrt{\text{radical}}
+                    </math-field>
+                </div>
                 
                 <p class="copyright">© 2025 Neil Kendall<span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a></p>
             </div>

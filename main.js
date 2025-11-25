@@ -5280,6 +5280,16 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const titleScreen = document.getElementById('title-screen');
         
+        // Fade in title screen after MathLive renders to prevent layout shift
+        if (titleScreen) {
+            // Wait for MathLive to render the equation
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    titleScreen.classList.add('loaded');
+                });
+            });
+        }
+        
         // Title screen start listeners - click, touch, or keyboard
         if (titleScreen) {
             // Mouse click to start
@@ -8100,6 +8110,13 @@ class Graphiti {
                     // Set hamburger to show red close cross when panel opens
                     hamburgerMenu.classList.add('active');
                     hamburgerMenu.classList.add('panel-open');
+                    // Fade in hamburger menu
+                    hamburgerMenu.classList.add('loaded');
+                }
+                // Fade in canvas
+                const canvas = document.getElementById('canvas');
+                if (canvas) {
+                    canvas.classList.add('loaded');
                 }
                 break;
         }
