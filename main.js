@@ -10827,6 +10827,8 @@ class Graphiti {
             return null;
         }
         
+        const startTime = performance.now();
+        
         try {
             // Parse the implicit equation to get F(x,y)
             const equation = this.parseImplicitEquation(func.expression);
@@ -10834,16 +10836,36 @@ class Graphiti {
                 return null;
             }
             
+            // Get compiled expressions once (already cached via parseImplicitEquation)
+            const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+            const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+            
+            // Create scope once and reuse it for all 8 evaluations
+            const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+            
+            // Helper to evaluate F(x,y) = left - right using reused scope
+            const evalF = (x, y) => {
+                scope.x = x;
+                scope.y = y;
+                try {
+                    const leftValue = leftCompiled.evaluate(scope);
+                    const rightValue = rightCompiled.evaluate(scope);
+                    return (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : null;
+                } catch (error) {
+                    return null;
+                }
+            };
+            
             // Numerical partial derivatives using central difference
             const h = 0.0001;
             
             // ∂F/∂x ≈ (F(x+h, y) - F(x-h, y)) / (2h)
-            const fxPlus = this.evaluateImplicitEquation(equation, worldX + h, worldY);
-            const fxMinus = this.evaluateImplicitEquation(equation, worldX - h, worldY);
+            const fxPlus = evalF(worldX + h, worldY);
+            const fxMinus = evalF(worldX - h, worldY);
             
             // ∂F/∂y ≈ (F(x, y+h) - F(x, y-h)) / (2h)
-            const fyPlus = this.evaluateImplicitEquation(equation, worldX, worldY + h);
-            const fyMinus = this.evaluateImplicitEquation(equation, worldX, worldY - h);
+            const fyPlus = evalF(worldX, worldY + h);
+            const fyMinus = evalF(worldX, worldY - h);
             
             if (fxPlus === null || fxMinus === null || fyPlus === null || fyMinus === null) {
                 return null;
@@ -10855,6 +10877,8 @@ class Graphiti {
             // Avoid division by zero
             if (Math.abs(dFdy) < 1e-10) {
                 // Vertical tangent - return very large slope
+                const elapsed = performance.now() - startTime;
+                console.log(`[Tangent] Implicit tangent calculation took ${elapsed.toFixed(3)}ms`);
                 return {
                     slope: dFdy >= 0 ? 1e10 : -1e10,
                     expression: "dy/dx",
@@ -10872,9 +10896,6 @@ class Graphiti {
             // Calculate second derivative numerically using the slope function
             const h2 = 0.001;
             
-            // Get slope at nearby points
-            const equation2 = this.parseImplicitEquation(func.expression);
-            
             // Move slightly in x direction and calculate new point on curve
             // For implicit curve, we need to find y such that F(x+h2, y') = 0
             // We'll approximate by moving along the tangent and then projecting back
@@ -10883,11 +10904,11 @@ class Graphiti {
             const x1 = worldX + dx;
             const y1 = worldY + dy;
             
-            // Recalculate slope at new position
-            const fx1Plus = this.evaluateImplicitEquation(equation2, x1 + h, y1);
-            const fx1Minus = this.evaluateImplicitEquation(equation2, x1 - h, y1);
-            const fy1Plus = this.evaluateImplicitEquation(equation2, x1, y1 + h);
-            const fy1Minus = this.evaluateImplicitEquation(equation2, x1, y1 - h);
+            // Recalculate slope at new position using the same reused scope
+            const fx1Plus = evalF(x1 + h, y1);
+            const fx1Minus = evalF(x1 - h, y1);
+            const fy1Plus = evalF(x1, y1 + h);
+            const fy1Minus = evalF(x1, y1 - h);
             
             if (fx1Plus !== null && fx1Minus !== null && fy1Plus !== null && fy1Minus !== null) {
                 const dFdx1 = (fx1Plus - fx1Minus) / (2 * h);
@@ -10898,6 +10919,8 @@ class Graphiti {
                     const secondDeriv = (slope1 - slope) / dx;
                     
                     if (isFinite(slope) && isFinite(secondDeriv)) {
+                        const elapsed = performance.now() - startTime;
+                        console.log(`[Tangent] Implicit tangent calculation took ${elapsed.toFixed(3)}ms`);
                         return {
                             slope: slope,
                             expression: "dy/dx",
@@ -10910,6 +10933,8 @@ class Graphiti {
             
             // Fallback: return slope without second derivative
             if (isFinite(slope)) {
+                const elapsed = performance.now() - startTime;
+                console.log(`[Tangent] Implicit tangent calculation took ${elapsed.toFixed(3)}ms`);
                 return {
                     slope: slope,
                     expression: "dy/dx",
