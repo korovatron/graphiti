@@ -8267,7 +8267,7 @@ class Graphiti {
                 // Update parameter value and replot
                 const updateParameter = async (value) => {
                     this.parameters[param].value = value;
-                    valueDisplay.textContent = value.toFixed(1);
+                    valueDisplay.textContent = value.toFixed(2);
                     slider.value = value;
                     
                     // Debounce the replotting for smoother slider dragging
@@ -8320,7 +8320,7 @@ class Graphiti {
                     
                     this.parameters[param].value = newValue;
                     slider.value = newValue;
-                    document.getElementById(`${param}-value`).textContent = newValue.toFixed(1);
+                    document.getElementById(`${param}-value`).textContent = newValue.toFixed(2);
                     
                     this.replotAllFunctions();
                     this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
