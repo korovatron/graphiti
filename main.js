@@ -1843,7 +1843,12 @@ class Graphiti {
             
             // Update intercepts after plotting this function
             if (this.showIntercepts) {
+                console.log(`[DEBUG plotFunctionWithValidation] About to find intercepts for ${func.expression}`);
+                console.log(`[DEBUG] func.points: ${func.points?.length || 0}, func.displayPoints: ${func.displayPoints?.length || 0}`);
                 this.intercepts = this.findAxisIntercepts();
+                console.log(`[DEBUG] Found ${this.intercepts.length} intercepts total`);
+                this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                this.draw(); // Trigger redraw to display intercepts
             }
             
             // Update UI to show success (remove any error styling)
@@ -2419,11 +2424,15 @@ class Graphiti {
                 }
             }
             
+            // Double-buffering: Set both points and displayPoints for consistency with implicit functions
+            // This ensures intercepts and other features work reliably during viewport changes
             func.points = processedPoints;
+            func.displayPoints = processedPoints;
         } catch (error) {
             console.error('Error parsing function:', error);
             // Silent error for better UX during typing - no alert popup
             func.points = [];
+            func.displayPoints = [];
         }
         
         // Track plotting time for performance monitoring
@@ -3347,6 +3356,8 @@ class Graphiti {
             
             // Also update func.points for backward compatibility (intersections, etc.)
             func.points = points;
+            
+            console.log(`[DEBUG plotImplicitFunction] Set points for ${func.expression}: points=${points.length}, displayPoints=${func.displayPoints.length}`);
             
             this.activeImplicitCalculations.delete(func.id);
             
@@ -10117,7 +10128,7 @@ class Graphiti {
         const explicitFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled || f.points.length === 0) return false;
             const functionType = this.detectFunctionType(f.expression);
-            return functionType === 'explicit' || functionType === 'theta-constant';
+            return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'explicit-inequality';
         });
 
         if (explicitFunctions.length < 2) {
@@ -10164,7 +10175,10 @@ class Graphiti {
         }
 
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
-        const hasImplicitFunctions = allFunctions.some(f => this.detectFunctionType(f.expression) === 'implicit');
+        const hasImplicitFunctions = allFunctions.some(f => {
+            const funcType = this.detectFunctionType(f.expression);
+            return funcType === 'implicit' || funcType === 'implicit-inequality';
+        });
         
         if (!hasImplicitFunctions) {
             this.implicitIntersections = [];
@@ -10184,13 +10198,27 @@ class Graphiti {
     }
 
     async calculateImplicitIntersections() {
+        console.log('[DEBUG] calculateImplicitIntersections() called');
+        
         // During viewport changes, use cached points; otherwise use current points
         const allFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled) return false;
             const points = this.isViewportChanging ? (f.cachedPoints || []) : (f.points || []);
             return points.length > 0;
         });
-        const implicitFunctions = allFunctions.filter(f => this.detectFunctionType(f.expression) === 'implicit');
+        
+        console.log(`[DEBUG] allFunctions: ${allFunctions.length}`);
+        allFunctions.forEach((f, idx) => {
+            const funcType = this.detectFunctionType(f.expression);
+            console.log(`  [${idx}] ${f.expression}: type=${funcType}, points=${f.points?.length || 0}`);
+        });
+        
+        const implicitFunctions = allFunctions.filter(f => {
+            const funcType = this.detectFunctionType(f.expression);
+            return funcType === 'implicit' || funcType === 'implicit-inequality';
+        });
+        
+        console.log(`[DEBUG] implicitFunctions: ${implicitFunctions.length}`);
         
         // Need at least one implicit function and another function
         if (implicitFunctions.length === 0 || allFunctions.length < 2) {
@@ -10203,7 +10231,8 @@ class Graphiti {
         const highResFunctions = [];
         
         for (const func of allFunctions) {
-            if (this.detectFunctionType(func.expression) === 'implicit') {
+            const funcType = this.detectFunctionType(func.expression);
+            if (funcType === 'implicit' || funcType === 'implicit-inequality') {
                 // Create a copy and replot at high resolution
                 const highResFunc = {
                     ...func,
@@ -10223,14 +10252,17 @@ class Graphiti {
 
         // Use worker for intersection calculation with high-res data
         const workerData = {
-            functions: highResFunctions.map(func => ({
-                id: func.id,
-                expression: func.expression,
-                points: func.points,
-                color: func.color,
-                enabled: func.enabled,
-                isImplicit: this.detectFunctionType(func.expression) === 'implicit'
-            })),
+            functions: highResFunctions.map(func => {
+                const funcType = this.detectFunctionType(func.expression);
+                return {
+                    id: func.id,
+                    expression: func.expression,
+                    points: func.points,
+                    color: func.color,
+                    enabled: func.enabled,
+                    isImplicit: funcType === 'implicit' || funcType === 'implicit-inequality'
+                };
+            }),
             viewport: {
                 minX: this.viewport.minX,
                 maxX: this.viewport.maxX,
@@ -10453,20 +10485,25 @@ class Graphiti {
     }
     
     findCartesianAxisIntercepts() {
+        console.log('[DEBUG findCartesianAxisIntercepts] Starting...');
         const intercepts = [];
         const enabledFunctions = this.getCurrentFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
             // Use displayPoints (stable buffer) if available, otherwise fall back to points
             const pointsToCheck = f.displayPoints || f.points;
+            console.log(`[DEBUG] Checking function ${f.expression}: enabled=${f.enabled}, displayPoints=${f.displayPoints?.length || 0}, points=${f.points?.length || 0}`);
             if (!f.enabled || !pointsToCheck || pointsToCheck.length === 0) {
+                console.log(`[DEBUG] -> SKIPPED (${!f.enabled ? 'disabled' : 'no points'})`);
                 return false;
             }
             
             // Check that the expression is valid
             if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
+                console.log(`[DEBUG] -> SKIPPED (invalid expression)`);
                 return false;
             }
             
+            console.log(`[DEBUG] -> INCLUDED`);
             return true;
         });
         
@@ -10666,8 +10703,9 @@ class Graphiti {
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
         
-        // Check if it's an implicit function
-        const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+        // Check if it's an implicit function or implicit inequality
+        const funcType = this.detectFunctionType(func.expression);
+        const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
         
         if (isImplicit) {
             // For implicit functions, try to solve the equation at y=0 for accurate x-intercepts
@@ -10786,7 +10824,7 @@ class Graphiti {
                 }
             }
         } else {
-            // For explicit functions (y = f(x)), find where y crosses zero
+            // For explicit functions (y = f(x)) and explicit inequalities (y > f(x)), find where y crosses zero
             for (let i = 0; i < points.length - 1; i++) {
                 const x1 = points[i].x;
                 const y1 = points[i].y;
@@ -10799,9 +10837,17 @@ class Graphiti {
                 // Check for sign change (zero crossing) or exact zero
                 // Use <= to catch cases where one point is exactly zero
                 if ((y1 * y2 <= 0) && !(y1 === 0 && y2 === 0)) {
-                    // Extract just the right-hand side for bisection (e.g., "y=..." -> "...")
+                    // Extract the boundary equation for bisection
                     let exprForBisection = func.expression;
-                    if (exprForBisection.includes('=')) {
+                    
+                    // For explicit inequalities (y>f(x)), extract the right side
+                    if (funcType === 'explicit-inequality') {
+                        const inequality = this.parseInequality(func.expression);
+                        if (inequality && inequality.leftSide.toLowerCase() === 'y') {
+                            exprForBisection = inequality.rightSide;
+                        }
+                    } else if (exprForBisection.includes('=')) {
+                        // For regular equations (y=f(x)), extract after '='
                         exprForBisection = exprForBisection.split('=')[1];
                     }
                     
@@ -10842,7 +10888,8 @@ class Graphiti {
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
-        const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+        const funcType = this.detectFunctionType(func.expression);
+        const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
         
         if (isImplicit) {
             // For implicit functions, try to solve the equation at x=0 for accurate y-intercepts
@@ -10967,8 +11014,17 @@ class Graphiti {
             // Y-intercept occurs where x = 0
             // Evaluate the explicit function at x = 0
             try {
+                // For explicit inequalities, extract the boundary equation
+                let exprToEvaluate = func.expression;
+                if (funcType === 'explicit-inequality') {
+                    const inequality = this.parseInequality(func.expression);
+                    if (inequality && inequality.leftSide.toLowerCase() === 'y') {
+                        exprToEvaluate = 'y=' + inequality.rightSide;
+                    }
+                }
+                
                 // Convert from LaTeX first since we now store LaTeX format
-                const expr = this.convertFromLatex(func.expression);
+                const expr = this.convertFromLatex(exprToEvaluate);
                 const scope = this.getEvaluationScope({ x: 0 });
                 const y = math.evaluate(expr, scope);
                 
