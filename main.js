@@ -3672,14 +3672,18 @@ class Graphiti {
         
         // Adaptive resolution scaling for smooth curves at all zoom levels
         // With optimized plotting (~20ms at 120×120), we can afford higher resolution when zoomed in
+        // At very wide zoom (>80), use even higher resolution since full grid is used
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - good base quality
-            resolution = 120;
+            // Extremely zoomed out - need very high res for tiny curves
+            resolution = 300;
+        } else if (viewportSize > 80) {
+            // Very zoomed out - high res with full grid
+            resolution = 250;
         } else if (viewportSize > 50) {
-            // Very zoomed out - high base quality
+            // Zoomed out - good quality
             resolution = 140;
         } else if (viewportSize > 20) {
             // Normal zoom - high quality
@@ -3742,9 +3746,21 @@ class Graphiti {
         
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        const viewportSize = Math.max(viewportWidth, viewportHeight);
         
-        // Coarse grid resolution (fast initial pass)
-        const coarseResolution = 90;
+        // Adaptive coarse grid resolution - scale with viewport size to avoid missing thin curves
+        // When zoomed out, need more samples to catch features; when zoomed in, 90 is plenty
+        let coarseResolution;
+        if (viewportSize > 100) {
+            coarseResolution = 120; // Very zoomed out - need more samples
+        } else if (viewportSize > 50) {
+            coarseResolution = 110; // Zoomed out - slightly more samples
+        } else if (viewportSize > 20) {
+            coarseResolution = 100; // Normal - good coverage
+        } else {
+            coarseResolution = 90; // Zoomed in - standard is fine
+        }
+        
         const coarseStepX = viewportWidth / coarseResolution;
         const coarseStepY = viewportHeight / coarseResolution;
         
@@ -3752,6 +3768,10 @@ class Graphiti {
         const refineFactor = 8;
         
         console.log(`[Adaptive] Starting with coarse=${coarseResolution}×${coarseResolution}, refinement=${refineFactor}×${refineFactor}, viewport=${viewportWidth.toFixed(2)}×${viewportHeight.toFixed(2)}`);
+        
+        // At wide zoom (viewport > 50), localized contour optimization is too aggressive
+        // The curves are small, so just use high-res contour grid for smoothness
+        const useFullContourGrid = viewportSize > 50;
         
         // Compile expressions once
         const leftCompiled = this.getCompiledExpression(equation.leftExpression);
@@ -3869,12 +3889,15 @@ class Graphiti {
         const totalEvals = (coarseResolution + 1) * (coarseResolution + 1) + (boundaryCells.size * refineFactor * refineFactor);
         console.log(`[Adaptive] Phase 3: Refinement (${adaptiveCells.length} cells, ${totalEvals} total evals) took ${(refinementTime - boundaryDetectionTime).toFixed(1)}ms`);
         
-        // Phase 4: Localized contour generation - only evaluate near boundary cells
-        // Use same resolution scaling as implicit equations for consistent quality
-        const viewportSize = Math.max(viewportWidth, viewportHeight);
+        // Phase 4: Contour generation
+        // At wide zoom (viewport > 50), skip localized optimization and use full high-res grid
+        // The curves are small, so localized approach is too sparse - full grid is still fast
+        // Use HIGHER resolution at wide zoom to capture small curve details
         let contourResolution;
-        if (viewportSize > 50) {
-            contourResolution = 120;
+        if (viewportSize > 100) {
+            contourResolution = 200; // Very wide - need high res for tiny curves
+        } else if (viewportSize > 50) {
+            contourResolution = 180; // Wide - still need detail
         } else if (viewportSize > 20) {
             contourResolution = 150;
         } else if (viewportSize > 10) {
@@ -3892,28 +3915,7 @@ class Graphiti {
         const contourStepX = viewportWidth / contourResolution;
         const contourStepY = viewportHeight / contourResolution;
         
-        // Calculate bounding regions for boundary cells in contour grid space
-        const contourRegions = new Set();
-        const margin = 3; // Cells to expand around each boundary for smooth contours
-        
-        for (const cellKey of boundaryCells) {
-            const [i, j] = cellKey.split(',').map(Number);
-            
-            // Map coarse cell to contour grid coordinates
-            const contourI = Math.floor((i / coarseResolution) * contourResolution);
-            const contourJ = Math.floor((j / coarseResolution) * contourResolution);
-            const contourIEnd = Math.ceil(((i + 1) / coarseResolution) * contourResolution);
-            const contourJEnd = Math.ceil(((j + 1) / coarseResolution) * contourResolution);
-            
-            // Add cells with margin for smooth interpolation
-            for (let ci = Math.max(0, contourI - margin); ci <= Math.min(contourResolution, contourIEnd + margin); ci++) {
-                for (let cj = Math.max(0, contourJ - margin); cj <= Math.min(contourResolution, contourJEnd + margin); cj++) {
-                    contourRegions.add(`${ci},${cj}`);
-                }
-            }
-        }
-        
-        // Build sparse grid - only evaluate points in contour regions
+        // Build contour grid
         const contourGrid = [];
         let contourEvals = 0;
         
@@ -3921,52 +3923,93 @@ class Graphiti {
             contourGrid[i] = [];
         }
         
-        for (const regionKey of contourRegions) {
-            const [i, j] = regionKey.split(',').map(Number);
-            const x = this.viewport.minX + i * contourStepX;
-            const y = this.viewport.minY + j * contourStepY;
-            contourGrid[i][j] = evalPoint(x, y);
-            contourEvals++;
+        if (useFullContourGrid) {
+            // Wide zoom: Use full high-res grid for smooth contours (curves are small anyway)
+            for (let i = 0; i <= contourResolution; i++) {
+                for (let j = 0; j <= contourResolution; j++) {
+                    const x = this.viewport.minX + i * contourStepX;
+                    const y = this.viewport.minY + j * contourStepY;
+                    contourGrid[i][j] = evalPoint(x, y);
+                    contourEvals++;
+                    
+                    // Check cancellation periodically
+                    if (contourEvals % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                        return { points: [], gridData: null };
+                    }
+                }
+            }
+        } else {
+            // Zoomed in: Use localized evaluation near boundaries for performance
+            // Calculate bounding regions for boundary cells in contour grid space
+            const contourRegions = new Set();
+            const margin = 3; // Cells to expand around each boundary for smooth contours
             
-            // Check cancellation periodically
-            if (contourEvals % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                return { points: [], gridData: null };
+            for (const cellKey of boundaryCells) {
+                const [i, j] = cellKey.split(',').map(Number);
+                
+                // Map coarse cell to contour grid coordinates
+                const contourI = Math.floor((i / coarseResolution) * contourResolution);
+                const contourJ = Math.floor((j / coarseResolution) * contourResolution);
+                const contourIEnd = Math.ceil(((i + 1) / coarseResolution) * contourResolution);
+                const contourJEnd = Math.ceil(((j + 1) / coarseResolution) * contourResolution);
+                
+                // Add cells with margin for smooth interpolation
+                for (let ci = Math.max(0, contourI - margin); ci <= Math.min(contourResolution, contourIEnd + margin); ci++) {
+                    for (let cj = Math.max(0, contourJ - margin); cj <= Math.min(contourResolution, contourJEnd + margin); cj++) {
+                        contourRegions.add(`${ci},${cj}`);
+                    }
+                }
+            }
+            
+            // Build sparse grid - only evaluate points in contour regions
+            for (const regionKey of contourRegions) {
+                const [i, j] = regionKey.split(',').map(Number);
+                const x = this.viewport.minX + i * contourStepX;
+                const y = this.viewport.minY + j * contourStepY;
+                contourGrid[i][j] = evalPoint(x, y);
+                contourEvals++;
+                
+                // Check cancellation periodically
+                if (contourEvals % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                    return { points: [], gridData: null };
+                }
             }
         }
         
-        // Generate segments only from cells that have all corners evaluated
+        // Generate contour segments
         const segments = [];
-        for (const regionKey of contourRegions) {
-            const [i, j] = regionKey.split(',').map(Number);
-            
-            // Skip if we're at the edge or missing corner data
-            if (i >= contourResolution || j >= contourResolution) continue;
-            if (!contourGrid[i][j] && contourGrid[i][j] !== 0) continue;
-            if (!contourGrid[i+1][j] && contourGrid[i+1][j] !== 0) continue;
-            if (!contourGrid[i+1][j+1] && contourGrid[i+1][j+1] !== 0) continue;
-            if (!contourGrid[i][j+1] && contourGrid[i][j+1] !== 0) continue;
-            
-            const x = this.viewport.minX + i * contourStepX;
-            const y = this.viewport.minY + j * contourStepY;
-            
-            const corners = [
-                contourGrid[i][j],
-                contourGrid[i+1][j],
-                contourGrid[i+1][j+1],
-                contourGrid[i][j+1]
-            ];
-            
-            let config = 0;
-            for (let k = 0; k < 4; k++) {
-                if (corners[k] > 0) config |= (1 << k);
+        for (let i = 0; i < contourResolution; i++) {
+            for (let j = 0; j < contourResolution; j++) {
+                // Skip if missing corner data
+                if (!contourGrid[i][j] && contourGrid[i][j] !== 0) continue;
+                if (!contourGrid[i+1][j] && contourGrid[i+1][j] !== 0) continue;
+                if (!contourGrid[i+1][j+1] && contourGrid[i+1][j+1] !== 0) continue;
+                if (!contourGrid[i][j+1] && contourGrid[i][j+1] !== 0) continue;
+                
+                const x = this.viewport.minX + i * contourStepX;
+                const y = this.viewport.minY + j * contourStepY;
+                
+                const corners = [
+                    contourGrid[i][j],
+                    contourGrid[i+1][j],
+                    contourGrid[i+1][j+1],
+                    contourGrid[i][j+1]
+                ];
+                
+                let config = 0;
+                for (let k = 0; k < 4; k++) {
+                    if (corners[k] > 0) config |= (1 << k);
+                }
+                
+                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, contourStepX, contourStepY);
+                segments.push(...cellSegments);
             }
-            
-            const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, contourStepX, contourStepY);
-            segments.push(...cellSegments);
         }
         
         const contourTime = performance.now();
-        console.log(`[Adaptive] Phase 4: Localized contour (${contourEvals} evals in ${boundaryCells.size} boundary regions, ${segments.length} segments) took ${(contourTime - refinementTime).toFixed(1)}ms`);
+        const contourStrategy = useFullContourGrid ? 'full-res' : 'localized';
+        const totalContourGrid = (contourResolution + 1) * (contourResolution + 1);
+        console.log(`[Adaptive] Phase 4: ${contourStrategy} contour (${contourEvals} evals, ${segments.length} segments) took ${(contourTime - refinementTime).toFixed(1)}ms`);
         
         // Convert segments to points
         const points = [];
@@ -3988,8 +4031,9 @@ class Graphiti {
         const totalTime = performance.now() - startTime;
         const totalEvalsWithContour = totalEvals + contourEvals;
         const fullContourEvals = (contourResolution+1)*(contourResolution+1);
-        const reduction = Math.round((1 - contourEvals / fullContourEvals) * 100);
-        console.log(`[Adaptive] TOTAL: ${totalTime.toFixed(1)}ms (coarse: ${(coarseResolution+1)*(coarseResolution+1)} + refinement: ${boundaryCells.size * refineFactor * refineFactor} + localized contour: ${contourEvals} = ${totalEvalsWithContour} total evals, ${reduction}% reduction vs full ${fullContourEvals} contour grid)`);
+        const contourReduction = useFullContourGrid ? 0 : Math.round((1 - contourEvals / fullContourEvals) * 100);
+        const contourMsg = useFullContourGrid ? `${contourEvals} (full grid)` : `${contourEvals} (${contourReduction}% reduction)`;
+        console.log(`[Adaptive] TOTAL: ${totalTime.toFixed(1)}ms (coarse: ${(coarseResolution+1)*(coarseResolution+1)} + refinement: ${boundaryCells.size * refineFactor * refineFactor} + contour: ${contourMsg} = ${totalEvalsWithContour} total evals)`);
         
         return { points, gridData };
     }
@@ -4138,11 +4182,76 @@ class Graphiti {
             }
         };
         
-        // Optimization: Use coarse grid to find boundary regions for localized evaluation
-        // This dramatically reduces evaluations at extreme zoom (e.g., 420×420 = 176,400 → ~20,000)
-        const coarseResolution = Math.min(90, Math.floor(resolution / 3)); // Adaptive coarse resolution
+        // Optimization strategy depends on viewport size
+        // At very wide zoom (>80 units), curves are tiny - use full high-res grid
+        // At normal/close zoom, use localized optimization for speed
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        const viewportSize = Math.max(viewportWidth, viewportHeight);
+        const useFullGrid = viewportSize > 80;
+        
+        if (useFullGrid) {
+            // Wide zoom: Full grid evaluation for reliability
+            // Implicit equations need high resolution to catch thin curves
+            const grid = [];
+            let evals = 0;
+            
+            for (let i = 0; i <= resolution; i++) {
+                grid[i] = [];
+                for (let j = 0; j <= resolution; j++) {
+                    const x = this.viewport.minX + i * stepX;
+                    const y = this.viewport.minY + j * stepY;
+                    grid[i][j] = evalPoint(x, y);
+                    evals++;
+                    
+                    if (evals % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                        return { points: [], gridData: null };
+                    }
+                }
+            }
+            
+            // Generate contour segments from full grid
+            const segments = [];
+            for (let i = 0; i < resolution; i++) {
+                for (let j = 0; j < resolution; j++) {
+                    const x = this.viewport.minX + i * stepX;
+                    const y = this.viewport.minY + j * stepY;
+                    
+                    const corners = [
+                        grid[i][j],
+                        grid[i+1][j],
+                        grid[i+1][j+1],
+                        grid[i][j+1]
+                    ];
+                    
+                    let config = 0;
+                    for (let k = 0; k < 4; k++) {
+                        if (corners[k] > 0) config |= (1 << k);
+                    }
+                    
+                    if (config !== 0 && config !== 15) {
+                        const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+                        segments.push(...cellSegments);
+                    }
+                }
+            }
+            
+            const points = [];
+            for (const segment of segments) {
+                points.push({ x: segment.start.x, y: segment.start.y, connected: true });
+                points.push({ x: segment.end.x, y: segment.end.y, connected: true });
+                points.push({ x: NaN, y: NaN, connected: false });
+            }
+            
+            const endTime = performance.now();
+            console.log(`[Implicit] Full grid ${resolution}×${resolution} (${evals} evals, ${segments.length} segments) took ${(endTime - startTime).toFixed(1)}ms`);
+            
+            return { points, gridData: null };
+        }
+        
+        // Normal/close zoom: Use localized optimization for speed
+        // This dramatically reduces evaluations at extreme zoom (e.g., 420×420 = 176,400 → ~20,000)
+        const coarseResolution = Math.min(90, Math.floor(resolution / 3)); // Adaptive coarse resolution
         const coarseStepX = viewportWidth / coarseResolution;
         const coarseStepY = viewportHeight / coarseResolution;
         
