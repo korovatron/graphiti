@@ -1797,6 +1797,15 @@ class Graphiti {
                         if (testValue === null) {
                             throw new Error('Cannot evaluate implicit equation');
                         }
+                    } else if (functionType === 'explicit-inequality') {
+                        // For explicit inequalities, parse and validate the right side
+                        const inequality = this.parseInequality(func.expression);
+                        if (!inequality || inequality.leftSide.toLowerCase() !== 'y') {
+                            throw new Error('Invalid inequality format - must be y > f(x) or y < f(x)');
+                        }
+                        // Test that the right side is a valid expression
+                        processedExpression = inequality.rightSide;
+                        math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
                     } else {
                         // For explicit functions, test with x variable
                         processedExpression = this.convertFromLatex(func.expression);
@@ -2268,9 +2277,22 @@ class Graphiti {
         try {
             // Pre-process expression ONCE instead of 2000 times
             let processedExpression = this.convertFromLatex(func.expression);
-            if (processedExpression.toLowerCase().startsWith('y=')) {
+            
+            // Handle inequality: extract the function expression from y > f(x) format
+            if (functionType === 'explicit-inequality') {
+                const inequality = this.parseInequality(func.expression);
+                if (inequality && inequality.leftSide.toLowerCase() === 'y') {
+                    // For y > f(x) or y < f(x), use the right side as the expression
+                    processedExpression = inequality.rightSide;
+                } else {
+                    // Malformed inequality, can't plot
+                    func.points = [];
+                    return;
+                }
+            } else if (processedExpression.toLowerCase().startsWith('y=')) {
                 processedExpression = processedExpression.substring(2);
             }
+            
             processedExpression = processedExpression.toLowerCase();
             
             // Handle degree mode preprocessing
@@ -2913,6 +2935,17 @@ class Graphiti {
         // Convert from LaTeX first since we now store LaTeX format
         const clean = this.convertFromLatex(expression).trim();
         
+        // Check for inequality operators first (≥, ≤, >, <)
+        const hasInequality = /[><≥≤]|\\geq|\\leq|\\ge|\\le/.test(clean);
+        if (hasInequality) {
+            // Check if it's y > f(x) or y < f(x) format (explicit inequality)
+            if (/^y\s*[><≥≤]/.test(clean)) {
+                return 'explicit-inequality';
+            }
+            // Otherwise it's an implicit inequality like x^2 + y^2 > 4
+            return 'implicit-inequality';
+        }
+        
         // Check for equals sign first
         if (!clean.includes('=')) {
             return 'explicit'; // f(x) format - assume explicit
@@ -2965,6 +2998,175 @@ class Graphiti {
         }
         
         return 'explicit'; // Default fallback (could be parametric or other)
+    }
+
+    // ================================
+    // INEQUALITY PARSING AND RENDERING
+    // ================================
+
+    parseInequality(expression) {
+        // Convert from LaTeX first
+        const clean = this.convertFromLatex(expression).trim();
+        
+        // Detect inequality operator
+        let operator = null;
+        let parts = null;
+        
+        if (clean.includes('≥') || clean.includes('>=')) {
+            operator = '>=';
+            parts = clean.split(/≥|>=/);  
+        } else if (clean.includes('≤') || clean.includes('<=')) {
+            operator = '<=';
+            parts = clean.split(/≤|<=/);  
+        } else if (clean.includes('>')) {
+            operator = '>';
+            parts = clean.split('>');
+        } else if (clean.includes('<')) {
+            operator = '<';
+            parts = clean.split('<');
+        }
+        
+        if (!parts || parts.length !== 2) {
+            return null;
+        }
+        
+        return {
+            leftSide: parts[0].trim(),
+            rightSide: parts[1].trim(),
+            operator: operator,
+            isStrict: operator === '>' || operator === '<' // strict vs non-strict
+        };
+    }
+
+    fillAboveCurve(points, color) {
+        if (!points || points.length < 2) return;
+        
+        const ctx = this.ctx;
+        const alpha = 0.25; // 25% opacity for shading
+        
+        // Parse color and add alpha
+        const colorWithAlpha = this.addAlphaToColor(color, alpha);
+        ctx.fillStyle = colorWithAlpha;
+        
+        // For each connected segment, fill from curve to top of viewport
+        ctx.beginPath();
+        let segmentStarted = false;
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            
+            if (!isFinite(point.y)) {
+                // End current segment
+                if (segmentStarted) {
+                    // Close path by going to top of viewport and back
+                    ctx.lineTo(this.worldToScreen(points[i-1].x, this.viewport.maxY).x, 0);
+                    ctx.lineTo(this.worldToScreen(points[Math.max(0, i - 1)].x, this.viewport.maxY).x, 0);
+                    segmentStarted = false;
+                }
+                continue;
+            }
+            
+            const screenPos = this.worldToScreen(point.x, point.y);
+            
+            if (!segmentStarted) {
+                // Start new segment - go to top of viewport first
+                ctx.moveTo(screenPos.x, 0);
+                ctx.lineTo(screenPos.x, screenPos.y);
+                segmentStarted = true;
+            } else {
+                ctx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        // Close final segment
+        if (segmentStarted && points.length > 0) {
+            const lastPoint = points[points.length - 1];
+            if (isFinite(lastPoint.y)) {
+                const lastScreen = this.worldToScreen(lastPoint.x, lastPoint.y);
+                ctx.lineTo(lastScreen.x, 0);
+            }
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    fillBelowCurve(points, color) {
+        if (!points || points.length < 2) return;
+        
+        const ctx = this.ctx;
+        const alpha = 0.25; // 25% opacity for shading
+        
+        // Parse color and add alpha
+        const colorWithAlpha = this.addAlphaToColor(color, alpha);
+        ctx.fillStyle = colorWithAlpha;
+        
+        // For each connected segment, fill from curve to bottom of viewport
+        ctx.beginPath();
+        let segmentStarted = false;
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            
+            if (!isFinite(point.y)) {
+                // End current segment
+                if (segmentStarted) {
+                    // Close path by going to bottom of viewport and back
+                    const lastValidPoint = points[i-1];
+                    ctx.lineTo(this.worldToScreen(lastValidPoint.x, this.viewport.minY).x, this.viewport.height);
+                    segmentStarted = false;
+                }
+                continue;
+            }
+            
+            const screenPos = this.worldToScreen(point.x, point.y);
+            
+            if (!segmentStarted) {
+                // Start new segment - go to bottom of viewport first
+                ctx.moveTo(screenPos.x, this.viewport.height);
+                ctx.lineTo(screenPos.x, screenPos.y);
+                segmentStarted = true;
+            } else {
+                ctx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        // Close final segment
+        if (segmentStarted && points.length > 0) {
+            const lastPoint = points[points.length - 1];
+            if (isFinite(lastPoint.y)) {
+                const lastScreen = this.worldToScreen(lastPoint.x, lastPoint.y);
+                ctx.lineTo(lastScreen.x, this.viewport.height);
+            }
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    addAlphaToColor(color, alpha) {
+        // Convert hex color to rgba
+        let r, g, b;
+        
+        if (color.startsWith('#')) {
+            const hex = color.substring(1);
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+        } else if (color.startsWith('rgb')) {
+            // Already in rgb/rgba format
+            const match = color.match(/\d+/g);
+            if (match && match.length >= 3) {
+                r = parseInt(match[0]);
+                g = parseInt(match[1]);
+                b = parseInt(match[2]);
+            }
+        } else {
+            // Fallback to original color
+            return color;
+        }
+        
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
     // ================================
@@ -4166,7 +4368,7 @@ class Graphiti {
             this.getCurrentFunctions().forEach(func => {
                 if (func.expression && func.enabled) {
                     const functionType = this.detectFunctionType(func.expression);
-                    if (functionType === 'explicit' || functionType === 'theta-constant') {
+                    if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant') {
                         this.plotFunction(func);
                     }
                 }
@@ -12965,6 +13167,30 @@ class Graphiti {
     drawFunction(func) {
         if (!func.points || func.points.length < 2) return;
         
+        // Check if this is an inequality
+        const functionType = this.detectFunctionType(func.expression);
+        const isInequality = functionType === 'explicit-inequality';
+        
+        // If it's an inequality, render shading first, then boundary
+        if (isInequality) {
+            const inequality = this.parseInequality(func.expression);
+            if (inequality) {
+                // Render shading based on operator
+                if (inequality.operator === '>' || inequality.operator === '>=') {
+                    this.fillAboveCurve(func.points, func.color);
+                } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                    this.fillBelowCurve(func.points, func.color);
+                }
+                
+                // Set line style based on strict vs non-strict
+                if (inequality.isStrict) {
+                    this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                } else {
+                    this.ctx.setLineDash([]); // Solid line for non-strict
+                }
+            }
+        }
+        
         this.ctx.strokeStyle = func.color;
         this.ctx.lineWidth = 3;
         
@@ -13011,6 +13237,9 @@ class Graphiti {
         if (pathStarted) {
             this.ctx.stroke();
         }
+        
+        // Reset line dash after drawing (so inequalities don't affect other elements)
+        this.ctx.setLineDash([]);
     }
 
     drawImplicitFunction(func) {
