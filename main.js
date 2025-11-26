@@ -1786,16 +1786,21 @@ class Graphiti {
                     // For cartesian mode, check function type first
                     const functionType = this.detectFunctionType(func.expression);
                     
-                    if (functionType === 'implicit') {
-                        // Test implicit function with x,y variables
-                        const equation = this.parseImplicitEquation(func.expression);
+                    if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                        // Test implicit function/inequality with x,y variables
+                        let equation;
+                        if (functionType === 'implicit-inequality') {
+                            equation = this.parseImplicitInequality(func.expression);
+                        } else {
+                            equation = this.parseImplicitEquation(func.expression);
+                        }
                         if (!equation) {
-                            throw new Error('Invalid implicit equation format');
+                            throw new Error('Invalid implicit equation/inequality format');
                         }
                         // Test evaluation at a sample point
                         const testValue = this.evaluateImplicitEquation(equation, 1, 1);
                         if (testValue === null) {
-                            throw new Error('Cannot evaluate implicit equation');
+                            throw new Error('Cannot evaluate implicit equation/inequality');
                         }
                     } else if (functionType === 'explicit-inequality') {
                         // For explicit inequalities, parse and validate the right side
@@ -2268,7 +2273,7 @@ class Graphiti {
         // Detect function type for cartesian mode
         const functionType = this.detectFunctionType(func.expression);
         
-        if (functionType === 'implicit') {
+        if (functionType === 'implicit' || functionType === 'implicit-inequality') {
             await this.plotImplicitFunction(func, false, this.isStartup);
             return;
         }
@@ -3169,6 +3174,66 @@ class Graphiti {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
+    drawImplicitInequality(func) {
+        if (!func.gridData) return;
+        
+        // Extract operator from expression
+        const clean = this.convertFromLatex(func.expression).trim();
+        let operator = null;
+        
+        if (clean.includes('≥') || clean.includes('>=')) {
+            operator = '>=';
+        } else if (clean.includes('≤') || clean.includes('<=')) {
+            operator = '<=';
+        } else if (clean.includes('>')) {
+            operator = '>';
+        } else if (clean.includes('<')) {
+            operator = '<';
+        }
+        
+        if (!operator) return;
+        
+        const { width, height, values, minX, minY, cellWidth, cellHeight } = func.gridData;
+        const colorWithAlpha = this.addAlphaToColor(func.color, 0.25);
+        
+        this.ctx.fillStyle = colorWithAlpha;
+        
+        // Iterate through grid cells
+        // Note: grid is stored as values[i][j] where i=x-index, j=y-index
+        for (let i = 0; i < width - 1; i++) {
+            for (let j = 0; j < height - 1; j++) {
+                const value = values[i][j];
+                
+                // Check if inequality is satisfied
+                let satisfiesInequality = false;
+                if (operator === '>') {
+                    satisfiesInequality = value > 0;
+                } else if (operator === '>=') {
+                    satisfiesInequality = value >= 0;
+                } else if (operator === '<') {
+                    satisfiesInequality = value < 0;
+                } else if (operator === '<=') {
+                    satisfiesInequality = value <= 0;
+                }
+                
+                if (satisfiesInequality) {
+                    // Convert grid position to world coordinates
+                    const worldX = minX + i * cellWidth;
+                    const worldY = minY + j * cellHeight;
+                    
+                    // Convert to screen coordinates and draw
+                    const topLeft = this.worldToScreen(worldX, worldY);
+                    const bottomRight = this.worldToScreen(worldX + cellWidth, worldY + cellHeight);
+                    
+                    const rectWidth = bottomRight.x - topLeft.x;
+                    const rectHeight = bottomRight.y - topLeft.y;
+                    
+                    this.ctx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                }
+            }
+        }
+    }
+
     // ================================
     // IMPLICIT FUNCTION PLOTTING METHODS
     // ================================
@@ -3182,11 +3247,17 @@ class Graphiti {
             
             let points = [];
             
-            // Parse the implicit equation f(x,y) = g(x,y) into f(x,y) - g(x,y) = 0
-            const equation = this.parseImplicitEquation(func.expression);
+            // Parse the implicit equation/inequality f(x,y) = g(x,y) into f(x,y) - g(x,y) = 0
+            const functionType = this.detectFunctionType(func.expression);
+            let equation;
+            if (functionType === 'implicit-inequality') {
+                equation = this.parseImplicitInequality(func.expression);
+            } else {
+                equation = this.parseImplicitEquation(func.expression);
+            }
             
             if (!equation) {
-                console.warn('Could not parse implicit equation:', func.expression);
+                console.warn('Could not parse implicit equation/inequality:', func.expression);
                 // Don't clear existing points - keep them visible
                 this.activeImplicitCalculations.delete(func.id);
                 return;
@@ -3200,9 +3271,13 @@ class Graphiti {
             }
             
             if (highResForIntersections) {
-                points = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
+                const result = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
+                points = result.points || result; // Handle both old and new format
+                if (result.gridData) func.gridData = result.gridData;
             } else {
-                points = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
+                const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
+                points = result.points || result; // Handle both old and new format
+                if (result.gridData) func.gridData = result.gridData;
             }
             
             // Final cancellation check before setting results
@@ -3562,7 +3637,7 @@ class Graphiti {
             // Very zoomed out - high base quality
             resolution = 140;
         } else if (viewportSize > 20) {
-            // Normal zoom - very high quality
+            // Normal zoom - high quality
             resolution = 160;
         } else if (viewportSize > 10) {
             // Zoomed in - higher detail
@@ -3760,7 +3835,7 @@ class Graphiti {
         for (let chunkStart = 0; chunkStart <= resolution; chunkStart += chunkSize) {
             // Check for cancellation before each chunk
             if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                return []; // Return empty array if cancelled
+                return { points: [], gridData: null }; // Return empty result if cancelled
             }
             
             const chunkEnd = Math.min(chunkStart + chunkSize, resolution + 1);
@@ -3791,7 +3866,7 @@ class Graphiti {
         for (let chunkStart = 0; chunkStart < resolution; chunkStart += chunkSize) {
             // Check for cancellation before each chunk
             if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                return []; // Return empty array if cancelled
+                return { points: [], gridData: null }; // Return empty result if cancelled
             }
             
             const chunkEnd = Math.min(chunkStart + chunkSize, resolution);
@@ -3833,7 +3908,18 @@ class Graphiti {
             points.push({ x: NaN, y: NaN, connected: false });
         }
         
-        return points;
+        // Package grid data for inequality shading
+        const gridData = {
+            width: resolution + 1,
+            height: resolution + 1,
+            values: grid,
+            minX: this.viewport.minX,
+            minY: this.viewport.minY,
+            cellWidth: stepX,
+            cellHeight: stepY
+        };
+        
+        return { points, gridData };
     }
     
     findZeroCrossings(corners, x, y, stepX, stepY) {
@@ -4096,6 +4182,48 @@ class Graphiti {
             
         } catch (error) {
             console.error('Error parsing implicit equation:', error);
+            return null;
+        }
+    }
+
+    parseImplicitInequality(expression) {
+        try {
+            // Convert from LaTeX first
+            const convertedExpression = this.convertFromLatex(expression);
+            
+            // Check for inequality operators
+            const operators = ['<=', '>=', '<', '>'];
+            let operator = null;
+            let parts = null;
+            
+            for (const op of operators) {
+                if (convertedExpression.includes(op)) {
+                    operator = op;
+                    parts = convertedExpression.split(op);
+                    break;
+                }
+            }
+            
+            if (!parts || parts.length !== 2) {
+                return null;
+            }
+            
+            const leftSide = parts[0].trim();
+            const rightSide = parts[1].trim();
+            
+            // Process expressions for math.js
+            const leftProcessed = this.processImplicitExpression(leftSide);
+            const rightProcessed = this.processImplicitExpression(rightSide);
+            
+            // Return as equation format (left - right) for evaluation
+            // The inequality operator will be used during shading
+            return {
+                leftExpression: leftProcessed,
+                rightExpression: rightProcessed
+            };
+            
+        } catch (error) {
+            console.error('Error parsing implicit inequality:', error);
             return null;
         }
     }
@@ -4374,7 +4502,8 @@ class Graphiti {
                 }
             });
             
-            // Replot implicit functions (now fast enough for immediate execution)
+            // Replot implicit functions and inequalities
+            // For inequalities, this recalculates grid data at proper resolution
             this.replotImplicitFunctions(true);
             
             // Skip badge calculations during polar animation or pause
@@ -7951,10 +8080,17 @@ class Graphiti {
         // Cancel any ongoing implicit calculations
         this.cancelAllImplicitCalculations();
         
-        // Get implicit functions to replot
-        const implicitFunctions = this.getCurrentFunctions().filter(func => 
-            func.expression && func.enabled && this.detectFunctionType(func.expression) === 'implicit'
-        );
+        // Get implicit functions and inequalities to replot
+        const implicitFunctions = this.getCurrentFunctions().filter(func => {
+            if (!func.expression || !func.enabled) return false;
+            const functionType = this.detectFunctionType(func.expression);
+            // During viewport changes, skip inequalities - they'll use cached grid data
+            // After viewport settles, recalculate everything for proper resolution
+            if (this.isViewportChanging && functionType === 'implicit-inequality') {
+                return false; // Skip inequalities during interactive zoom/pan
+            }
+            return functionType === 'implicit' || functionType === 'implicit-inequality';
+        });
         
         if (implicitFunctions.length === 0) {
             this.draw();
@@ -12436,8 +12572,8 @@ class Graphiti {
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
                 const functionType = this.detectFunctionType(func.expression);
-                if (functionType === 'implicit') {
-                    // Draw implicit functions using displayPoints (stable during calculations)
+                if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                    // Draw implicit functions/inequalities using displayPoints (stable during calculations)
                     const pointsToCheck = func.displayPoints || func.points;
                     if (pointsToCheck && pointsToCheck.length > 0) {
                         this.drawImplicitFunction(func);
@@ -13249,6 +13385,15 @@ class Graphiti {
         
         if (!pointsToUse || pointsToUse.length === 0) return;
         
+        // Check if this is an implicit inequality
+        const functionType = this.detectFunctionType(func.expression);
+        const isInequality = functionType === 'implicit-inequality';
+        
+        // For implicit inequalities, render shading first if grid data is available
+        if (isInequality && func.gridData) {
+            this.drawImplicitInequality(func);
+        }
+        
         // Check if points should be connected (like for circles, ellipses, parabolas)
         const hasConnectedPoints = pointsToUse.some(p => p.connected);
         
@@ -13256,6 +13401,20 @@ class Graphiti {
             // For marching squares output, draw as individual line segments
             this.ctx.strokeStyle = func.color;
             this.ctx.lineWidth = 2;
+            
+            // Set line style for inequality boundaries
+            if (isInequality) {
+                // Extract operator to determine if strict or non-strict
+                const clean = this.convertFromLatex(func.expression).trim();
+                const isStrict = clean.includes('>') && !clean.includes('>=') || 
+                                clean.includes('<') && !clean.includes('<=');
+                
+                if (isStrict) {
+                    this.ctx.setLineDash([5, 5]); // Dashed for strict
+                } else {
+                    this.ctx.setLineDash([]); // Solid for non-strict
+                }
+            }
             
             // Draw individual line segments (every pair of connected points)
             for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
@@ -13281,6 +13440,11 @@ class Graphiti {
                         this.ctx.stroke();
                     }
                 }
+            }
+            
+            // Reset line dash
+            if (isInequality) {
+                this.ctx.setLineDash([]);
             }
         } else {
             // Draw as discrete points (for hyperbolas or general implicit functions)

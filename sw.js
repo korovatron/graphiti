@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-v1.431';
+const CACHE_NAME = 'graphiti-v1.432';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
