@@ -7657,12 +7657,12 @@ class Graphiti {
                             }
                         } else if (originalState.hasNormal && originalState.neonNormal && !originalState.hasIntegral) {
                             // State 5: Neon normal → integral (only if less than 2 integral badges exist on this function)
-                            // Skip integral for implicit functions (not well-defined)
+                            // Skip integral for implicit functions and inequalities (not well-defined)
                             const functionType = this.detectFunctionType(tracingFunction.expression);
-                            const isImplicit = (functionType === 'implicit');
+                            const isImplicit = (functionType === 'implicit' || functionType === 'implicit-inequality');
                             
                             if (isImplicit) {
-                                // For implicit functions, go directly to delete (cancel tracing)
+                                // For implicit functions/inequalities, go directly to delete (cancel tracing)
                                 this.input.tracing.active = false;
                                 this.input.tracing.functionId = null;
                                 
@@ -9830,8 +9830,14 @@ class Graphiti {
             // Convert from LaTeX format first (since we now store LaTeX)
             let processedExpression = this.convertFromLatex(expression);
             
-            // Remove y= prefix if present (since we store full equations now)
-            if (processedExpression.toLowerCase().startsWith('y=')) {
+            // Handle explicit inequalities: extract the right side (boundary function)
+            if (/^y\s*[><≥≤]/.test(processedExpression)) {
+                const match = processedExpression.match(/^y\s*[><≥≤]\s*(.+)$/);
+                if (match) {
+                    processedExpression = match[1].trim();
+                }
+            } else if (processedExpression.toLowerCase().startsWith('y=')) {
+                // Remove y= prefix if present
                 processedExpression = processedExpression.substring(2);
             }
             
@@ -10032,8 +10038,8 @@ class Graphiti {
             
             const functionType = this.detectFunctionType(func.expression);
             
-            // Handle implicit functions separately with segment-based detection
-            if (functionType === 'implicit') {
+            // Handle implicit functions and implicit inequalities with segment-based detection
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                 const result = this.findClosestImplicitPoint(func, screenX, screenY, tolerance);
                 if (result && result.distance < closestDistance) {
                     closestDistance = result.distance;
@@ -12143,10 +12149,14 @@ class Graphiti {
             // Convert from LaTeX first
             const convertedExpression = this.convertFromLatex(func.expression);
             
-            // Clean the expression - remove "y=" prefix if present
+            // Clean the expression - remove "y=" or inequality operators (y>, y<, y≥, y≤) if present
             let cleanExpression = convertedExpression.trim();
-            if (cleanExpression.toLowerCase().startsWith('y=')) {
-                cleanExpression = cleanExpression.substring(2).trim();
+            if (/^y\s*[=><≥≤]/.test(cleanExpression)) {
+                // Extract just the right side (boundary function)
+                const match = cleanExpression.match(/^y\s*[=><≥≤]\s*(.+)$/);
+                if (match) {
+                    cleanExpression = match[1].trim();
+                }
             }
             
             // Try symbolic derivative first (more accurate)
@@ -12380,7 +12390,7 @@ class Graphiti {
     }
     
     calculateImplicitTangent(func, worldX, worldY) {
-        // Calculate tangent for implicit function F(x,y) = 0
+        // Calculate tangent for implicit function F(x,y) = 0 or implicit inequality
         // Using implicit differentiation: dy/dx = -∂F/∂x / ∂F/∂y
         if (!func || !func.expression) {
             return null;
@@ -12389,8 +12399,13 @@ class Graphiti {
         const startTime = performance.now();
         
         try {
-            // Parse the implicit equation to get F(x,y)
-            const equation = this.parseImplicitEquation(func.expression);
+            // Parse the implicit equation or inequality to get F(x,y)
+            // For inequalities, we treat the boundary as an equation
+            const functionType = this.detectFunctionType(func.expression);
+            const equation = (functionType === 'implicit-inequality') 
+                ? this.parseImplicitInequality(func.expression)
+                : this.parseImplicitEquation(func.expression);
+            
             if (!equation) {
                 return null;
             }
@@ -13038,8 +13053,15 @@ class Graphiti {
             let closestWorldY = 0;
             let closestTheta = 0;
             
-            const processedExpression = this.convertFromLatex(func.expression);
-            const compiled = math.compile(processedExpression);
+            // For polar inequalities, use the boundary expression
+            let expressionToEvaluate;
+            if (func.inequality && func.inequality.compiledExpression) {
+                // Use pre-compiled boundary expression for inequalities
+                expressionToEvaluate = func.inequality.compiledExpression;
+            } else {
+                const processedExpression = this.convertFromLatex(func.expression);
+                expressionToEvaluate = math.compile(processedExpression);
+            }
             
             // Use dynamic step sizing for performance with higher resolution
             const baseThetaStep = this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax);
@@ -13050,7 +13072,7 @@ class Graphiti {
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
                     const scope = this.getEvaluationScope({ t: theta, theta: theta, pi: Math.PI, e: Math.E });
-                    let r = compiled.evaluate(scope);
+                    let r = expressionToEvaluate.evaluate(scope);
                     
                     // Handle negative r values
                     let adjustedR = r;
@@ -13169,8 +13191,8 @@ class Graphiti {
             // Check if this is an implicit function
             const functionType = this.detectFunctionType(func.expression);
             
-            if (functionType === 'implicit') {
-                // For implicit functions, find closest point on curve to (worldX, worldY)
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                // For implicit functions and inequalities, find closest point on curve to (worldX, worldY)
                 // We need a y coordinate hint for implicit functions
                 if (worldY === null) {
                     console.warn('Implicit function tracing requires both x and y coordinates');
@@ -13218,8 +13240,15 @@ class Graphiti {
         // For polar functions, use parametric tracing along theta
         // This prevents jumping between branches and provides smooth curve following
         try {
-            const processedExpression = this.convertFromLatex(func.expression);
-            const compiled = math.compile(processedExpression);
+            // For polar inequalities, use the boundary expression
+            let compiled;
+            if (func.inequality && func.inequality.compiledExpression) {
+                // Use pre-compiled boundary expression for inequalities
+                compiled = func.inequality.compiledExpression;
+            } else {
+                const processedExpression = this.convertFromLatex(func.expression);
+                compiled = math.compile(processedExpression);
+            }
             
             const thetaMin = this.polarSettings.thetaMin;
             const thetaMax = this.polarSettings.thetaMax;
