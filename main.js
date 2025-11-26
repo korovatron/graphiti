@@ -3193,16 +3193,13 @@ class Graphiti {
         
         if (!operator) return;
         
-        const { width, height, values, minX, minY, cellWidth, cellHeight } = func.gridData;
         const colorWithAlpha = this.addAlphaToColor(func.color, 0.25);
-        
         this.ctx.fillStyle = colorWithAlpha;
         
-        // Iterate through grid cells
-        // Note: grid is stored as values[i][j] where i=x-index, j=y-index
-        for (let i = 0; i < width - 1; i++) {
-            for (let j = 0; j < height - 1; j++) {
-                const value = values[i][j];
+        // Handle adaptive grid (coarse cells + refined boundary cells)
+        if (func.gridData.adaptiveCells) {
+            for (const cell of func.gridData.adaptiveCells) {
+                const { worldX, worldY, worldWidth, worldHeight, value } = cell;
                 
                 // Check if inequality is satisfied
                 let satisfiesInequality = false;
@@ -3217,18 +3214,50 @@ class Graphiti {
                 }
                 
                 if (satisfiesInequality) {
-                    // Convert grid position to world coordinates
-                    const worldX = minX + i * cellWidth;
-                    const worldY = minY + j * cellHeight;
-                    
                     // Convert to screen coordinates and draw
                     const topLeft = this.worldToScreen(worldX, worldY);
-                    const bottomRight = this.worldToScreen(worldX + cellWidth, worldY + cellHeight);
+                    const bottomRight = this.worldToScreen(worldX + worldWidth, worldY + worldHeight);
                     
                     const rectWidth = bottomRight.x - topLeft.x;
                     const rectHeight = bottomRight.y - topLeft.y;
                     
                     this.ctx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                }
+            }
+        } else {
+            // Handle uniform grid (legacy fallback)
+            const { width, height, values, minX, minY, cellWidth, cellHeight } = func.gridData;
+            
+            for (let i = 0; i < width - 1; i++) {
+                for (let j = 0; j < height - 1; j++) {
+                    const value = values[i][j];
+                    
+                    // Check if inequality is satisfied
+                    let satisfiesInequality = false;
+                    if (operator === '>') {
+                        satisfiesInequality = value > 0;
+                    } else if (operator === '>=') {
+                        satisfiesInequality = value >= 0;
+                    } else if (operator === '<') {
+                        satisfiesInequality = value < 0;
+                    } else if (operator === '<=') {
+                        satisfiesInequality = value <= 0;
+                    }
+                    
+                    if (satisfiesInequality) {
+                        // Convert grid position to world coordinates
+                        const worldX = minX + i * cellWidth;
+                        const worldY = minY + j * cellHeight;
+                        
+                        // Convert to screen coordinates and draw
+                        const topLeft = this.worldToScreen(worldX, worldY);
+                        const bottomRight = this.worldToScreen(worldX + cellWidth, worldY + cellHeight);
+                        
+                        const rectWidth = bottomRight.x - topLeft.x;
+                        const rectHeight = bottomRight.y - topLeft.y;
+                        
+                        this.ctx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                    }
                 }
             }
         }
@@ -3272,12 +3301,34 @@ class Graphiti {
             
             if (highResForIntersections) {
                 const result = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
+                if (!result) {
+                    console.warn('High-res marching squares returned undefined');
+                    this.activeImplicitCalculations.delete(func.id);
+                    return;
+                }
                 points = result.points || result; // Handle both old and new format
                 if (result.gridData) func.gridData = result.gridData;
             } else {
-                const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
-                points = result.points || result; // Handle both old and new format
-                if (result.gridData) func.gridData = result.gridData;
+                // Use adaptive resolution for inequalities (much faster), standard for equations
+                if (functionType === 'implicit-inequality') {
+                    const result = await this.marchingSquaresAdaptiveAsync(equation, immediate, func.id, calculationId);
+                    if (!result) {
+                        console.warn('Adaptive marching squares returned undefined');
+                        this.activeImplicitCalculations.delete(func.id);
+                        return;
+                    }
+                    points = result.points || result;
+                    if (result.gridData) func.gridData = result.gridData;
+                } else {
+                    const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
+                    if (!result) {
+                        console.warn('Standard marching squares returned undefined');
+                        this.activeImplicitCalculations.delete(func.id);
+                        return;
+                    }
+                    points = result.points || result;
+                    if (result.gridData) func.gridData = result.gridData;
+                }
             }
             
             // Final cancellation check before setting results
@@ -3602,26 +3653,20 @@ class Graphiti {
             resolution = 200;
         } else if (viewportSize > 2) {
             // Extremely zoomed in - high detail for busy regions
-            resolution = 240;
+            resolution = 250;
         } else if (viewportSize > 1) {
             // Very close - very high detail
-            resolution = 300;
+            resolution = 320;
         } else if (viewportSize > 0.5) {
             // Ultra close - maximum detail for sharp features
-            resolution = 360;
+            resolution = 380;
         } else {
             // Extreme magnification - ultra-high detail
-            resolution = 420;
+            resolution = 440;
         }
-        
-        const stepX = viewportWidth / resolution;
-        const stepY = viewportHeight / resolution;
-        
-        return this.marchingSquaresAtResolution(equation, resolution, stepX, stepY);
     }
 
     async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null) {
-        const segments = [];
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
         
@@ -3647,16 +3692,16 @@ class Graphiti {
             resolution = 200;
         } else if (viewportSize > 2) {
             // Extremely zoomed in - high detail for busy regions
-            resolution = 240;
+            resolution = 250;
         } else if (viewportSize > 1) {
             // Very close - very high detail
-            resolution = 300;
+            resolution = 320;
         } else if (viewportSize > 0.5) {
             // Ultra close - maximum detail for sharp features
-            resolution = 360;
+            resolution = 380;
         } else {
             // Extreme magnification - ultra-high detail
-            resolution = 420;
+            resolution = 440;
         }
         
         const stepX = viewportWidth / resolution;
@@ -3689,6 +3734,264 @@ class Graphiti {
         const stepY = viewportHeight / resolution;
         
         return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId);
+    }
+
+    async marchingSquaresAdaptiveAsync(equation, immediate = false, functionId = null, calculationId = null) {
+        // Adaptive resolution for inequalities: coarse grid everywhere, fine grid near boundary
+        const startTime = performance.now();
+        
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        
+        // Coarse grid resolution (fast initial pass)
+        const coarseResolution = 90;
+        const coarseStepX = viewportWidth / coarseResolution;
+        const coarseStepY = viewportHeight / coarseResolution;
+        
+        // Refinement factor (subdivide boundary cells) - increased for smoother shading
+        const refineFactor = 8;
+        
+        console.log(`[Adaptive] Starting with coarse=${coarseResolution}×${coarseResolution}, refinement=${refineFactor}×${refineFactor}, viewport=${viewportWidth.toFixed(2)}×${viewportHeight.toFixed(2)}`);
+        
+        // Compile expressions once
+        const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+        const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        
+        // Helper to evaluate grid point
+        const evalPoint = (x, y) => {
+            scope.x = x;
+            scope.y = y;
+            try {
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                return (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
+            } catch (error) {
+                return 0;
+            }
+        };
+        
+        // Phase 1: Create coarse grid
+        const coarseGrid = [];
+        for (let i = 0; i <= coarseResolution; i++) {
+            coarseGrid[i] = [];
+            for (let j = 0; j <= coarseResolution; j++) {
+                const x = this.viewport.minX + i * coarseStepX;
+                const y = this.viewport.minY + j * coarseStepY;
+                coarseGrid[i][j] = evalPoint(x, y);
+            }
+            
+            // Check cancellation periodically
+            if (i % 10 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return { points: [], gridData: null };
+            }
+        }
+        
+        const coarseGridTime = performance.now();
+        console.log(`[Adaptive] Phase 1: Coarse grid (${(coarseResolution + 1) * (coarseResolution + 1)} evals) took ${(coarseGridTime - startTime).toFixed(1)}ms`);
+        
+        // Phase 2: Detect boundary cells (where sign changes)
+        const boundaryCells = new Set();
+        for (let i = 0; i < coarseResolution; i++) {
+            for (let j = 0; j < coarseResolution; j++) {
+                const corners = [
+                    coarseGrid[i][j],
+                    coarseGrid[i+1][j],
+                    coarseGrid[i+1][j+1],
+                    coarseGrid[i][j+1]
+                ];
+                
+                // Check if signs differ (boundary crosses this cell)
+                const hasPositive = corners.some(v => v > 0);
+                const hasNegative = corners.some(v => v < 0);
+                
+                if (hasPositive && hasNegative) {
+                    boundaryCells.add(`${i},${j}`);
+                }
+            }
+        }
+        
+        const boundaryDetectionTime = performance.now();
+        console.log(`[Adaptive] Phase 2: Boundary detection (${boundaryCells.size} boundary cells) took ${(boundaryDetectionTime - coarseGridTime).toFixed(1)}ms`);
+        
+        // Phase 3: Build adaptive cell list
+        const adaptiveCells = [];
+        
+        for (let i = 0; i < coarseResolution; i++) {
+            for (let j = 0; j < coarseResolution; j++) {
+                const isBoundary = boundaryCells.has(`${i},${j}`);
+                
+                if (isBoundary) {
+                    // Subdivide boundary cell for smooth edges
+                    const cellStartX = this.viewport.minX + i * coarseStepX;
+                    const cellStartY = this.viewport.minY + j * coarseStepY;
+                    const fineStepX = coarseStepX / refineFactor;
+                    const fineStepY = coarseStepY / refineFactor;
+                    
+                    for (let fi = 0; fi < refineFactor; fi++) {
+                        for (let fj = 0; fj < refineFactor; fj++) {
+                            const worldX = cellStartX + fi * fineStepX;
+                            const worldY = cellStartY + fj * fineStepY;
+                            const value = evalPoint(worldX, worldY);
+                            
+                            adaptiveCells.push({
+                                worldX,
+                                worldY,
+                                worldWidth: fineStepX,
+                                worldHeight: fineStepY,
+                                value
+                            });
+                        }
+                    }
+                } else {
+                    // Use coarse cell value (fast)
+                    const worldX = this.viewport.minX + i * coarseStepX;
+                    const worldY = this.viewport.minY + j * coarseStepY;
+                    const value = coarseGrid[i][j];
+                    
+                    adaptiveCells.push({
+                        worldX,
+                        worldY,
+                        worldWidth: coarseStepX,
+                        worldHeight: coarseStepY,
+                        value
+                    });
+                }
+            }
+            
+            // Check cancellation periodically
+            if (i % 10 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return { points: [], gridData: null };
+            }
+        }
+        
+        const refinementTime = performance.now();
+        const totalEvals = (coarseResolution + 1) * (coarseResolution + 1) + (boundaryCells.size * refineFactor * refineFactor);
+        console.log(`[Adaptive] Phase 3: Refinement (${adaptiveCells.length} cells, ${totalEvals} total evals) took ${(refinementTime - boundaryDetectionTime).toFixed(1)}ms`);
+        
+        // Phase 4: Localized contour generation - only evaluate near boundary cells
+        // Use same resolution scaling as implicit equations for consistent quality
+        const viewportSize = Math.max(viewportWidth, viewportHeight);
+        let contourResolution;
+        if (viewportSize > 50) {
+            contourResolution = 120;
+        } else if (viewportSize > 20) {
+            contourResolution = 150;
+        } else if (viewportSize > 10) {
+            contourResolution = 180;
+        } else if (viewportSize > 5) {
+            contourResolution = 200;
+        } else if (viewportSize > 2) {
+            contourResolution = 250;
+        } else if (viewportSize > 0.5) {
+            contourResolution = 320;
+        } else {
+            contourResolution = 360;
+        }
+        
+        const contourStepX = viewportWidth / contourResolution;
+        const contourStepY = viewportHeight / contourResolution;
+        
+        // Calculate bounding regions for boundary cells in contour grid space
+        const contourRegions = new Set();
+        const margin = 3; // Cells to expand around each boundary for smooth contours
+        
+        for (const cellKey of boundaryCells) {
+            const [i, j] = cellKey.split(',').map(Number);
+            
+            // Map coarse cell to contour grid coordinates
+            const contourI = Math.floor((i / coarseResolution) * contourResolution);
+            const contourJ = Math.floor((j / coarseResolution) * contourResolution);
+            const contourIEnd = Math.ceil(((i + 1) / coarseResolution) * contourResolution);
+            const contourJEnd = Math.ceil(((j + 1) / coarseResolution) * contourResolution);
+            
+            // Add cells with margin for smooth interpolation
+            for (let ci = Math.max(0, contourI - margin); ci <= Math.min(contourResolution, contourIEnd + margin); ci++) {
+                for (let cj = Math.max(0, contourJ - margin); cj <= Math.min(contourResolution, contourJEnd + margin); cj++) {
+                    contourRegions.add(`${ci},${cj}`);
+                }
+            }
+        }
+        
+        // Build sparse grid - only evaluate points in contour regions
+        const contourGrid = [];
+        let contourEvals = 0;
+        
+        for (let i = 0; i <= contourResolution; i++) {
+            contourGrid[i] = [];
+        }
+        
+        for (const regionKey of contourRegions) {
+            const [i, j] = regionKey.split(',').map(Number);
+            const x = this.viewport.minX + i * contourStepX;
+            const y = this.viewport.minY + j * contourStepY;
+            contourGrid[i][j] = evalPoint(x, y);
+            contourEvals++;
+            
+            // Check cancellation periodically
+            if (contourEvals % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return { points: [], gridData: null };
+            }
+        }
+        
+        // Generate segments only from cells that have all corners evaluated
+        const segments = [];
+        for (const regionKey of contourRegions) {
+            const [i, j] = regionKey.split(',').map(Number);
+            
+            // Skip if we're at the edge or missing corner data
+            if (i >= contourResolution || j >= contourResolution) continue;
+            if (!contourGrid[i][j] && contourGrid[i][j] !== 0) continue;
+            if (!contourGrid[i+1][j] && contourGrid[i+1][j] !== 0) continue;
+            if (!contourGrid[i+1][j+1] && contourGrid[i+1][j+1] !== 0) continue;
+            if (!contourGrid[i][j+1] && contourGrid[i][j+1] !== 0) continue;
+            
+            const x = this.viewport.minX + i * contourStepX;
+            const y = this.viewport.minY + j * contourStepY;
+            
+            const corners = [
+                contourGrid[i][j],
+                contourGrid[i+1][j],
+                contourGrid[i+1][j+1],
+                contourGrid[i][j+1]
+            ];
+            
+            let config = 0;
+            for (let k = 0; k < 4; k++) {
+                if (corners[k] > 0) config |= (1 << k);
+            }
+            
+            const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, contourStepX, contourStepY);
+            segments.push(...cellSegments);
+        }
+        
+        const contourTime = performance.now();
+        console.log(`[Adaptive] Phase 4: Localized contour (${contourEvals} evals in ${boundaryCells.size} boundary regions, ${segments.length} segments) took ${(contourTime - refinementTime).toFixed(1)}ms`);
+        
+        // Convert segments to points
+        const points = [];
+        for (const segment of segments) {
+            points.push({ x: segment.start.x, y: segment.start.y, connected: true });
+            points.push({ x: segment.end.x, y: segment.end.y, connected: true });
+            points.push({ x: NaN, y: NaN, connected: false });
+        }
+        
+        // Package adaptive grid data
+        const gridData = {
+            adaptiveCells,
+            minX: this.viewport.minX,
+            minY: this.viewport.minY,
+            maxX: this.viewport.maxX,
+            maxY: this.viewport.maxY
+        };
+        
+        const totalTime = performance.now() - startTime;
+        const totalEvalsWithContour = totalEvals + contourEvals;
+        const fullContourEvals = (contourResolution+1)*(contourResolution+1);
+        const reduction = Math.round((1 - contourEvals / fullContourEvals) * 100);
+        console.log(`[Adaptive] TOTAL: ${totalTime.toFixed(1)}ms (coarse: ${(coarseResolution+1)*(coarseResolution+1)} + refinement: ${boundaryCells.size * refineFactor * refineFactor} + localized contour: ${contourEvals} = ${totalEvalsWithContour} total evals, ${reduction}% reduction vs full ${fullContourEvals} contour grid)`);
+        
+        return { points, gridData };
     }
 
     marchingSquaresAtResolution(equation, resolution, stepX, stepY) {
@@ -3816,95 +4119,144 @@ class Graphiti {
 
     async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null) {
         const startTime = performance.now();
-        const segments = [];
         
-        // Compile expressions once for performance - avoid recompiling for each grid point
-        // Expressions are already processed by parseImplicitEquation
+        // Compile expressions once for performance
         const leftCompiled = this.getCompiledExpression(equation.leftExpression);
         const rightCompiled = this.getCompiledExpression(equation.rightExpression);
-        
-        // Create scope once and reuse it
         const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
         
-        // Create grid of function values
+        // Helper to evaluate grid point
+        const evalPoint = (x, y) => {
+            scope.x = x;
+            scope.y = y;
+            try {
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                return (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
+            } catch (error) {
+                return 0;
+            }
+        };
+        
+        // Optimization: Use coarse grid to find boundary regions for localized evaluation
+        // This dramatically reduces evaluations at extreme zoom (e.g., 420×420 = 176,400 → ~20,000)
+        const coarseResolution = Math.min(90, Math.floor(resolution / 3)); // Adaptive coarse resolution
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        const coarseStepX = viewportWidth / coarseResolution;
+        const coarseStepY = viewportHeight / coarseResolution;
+        
+        // Phase 1: Coarse grid to find boundary cells
+        const coarseGrid = [];
+        for (let i = 0; i <= coarseResolution; i++) {
+            coarseGrid[i] = [];
+            for (let j = 0; j <= coarseResolution; j++) {
+                const x = this.viewport.minX + i * coarseStepX;
+                const y = this.viewport.minY + j * coarseStepY;
+                coarseGrid[i][j] = evalPoint(x, y);
+            }
+            if (i % 10 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return { points: [], gridData: null };
+            }
+        }
+        
+        // Phase 2: Detect boundary cells (where contour crosses)
+        const boundaryCells = new Set();
+        for (let i = 0; i < coarseResolution; i++) {
+            for (let j = 0; j < coarseResolution; j++) {
+                const corners = [
+                    coarseGrid[i][j],
+                    coarseGrid[i+1][j],
+                    coarseGrid[i+1][j+1],
+                    coarseGrid[i][j+1]
+                ];
+                const hasPositive = corners.some(v => v > 0);
+                const hasNegative = corners.some(v => v < 0);
+                if (hasPositive && hasNegative) {
+                    boundaryCells.add(`${i},${j}`);
+                }
+            }
+        }
+        
+        // Phase 3: Localized high-resolution evaluation near boundaries only
+        const margin = 3; // Cells to expand for smooth interpolation
+        const fineRegions = new Set();
+        
+        for (const cellKey of boundaryCells) {
+            const [i, j] = cellKey.split(',').map(Number);
+            const fineI = Math.floor((i / coarseResolution) * resolution);
+            const fineJ = Math.floor((j / coarseResolution) * resolution);
+            const fineIEnd = Math.ceil(((i + 1) / coarseResolution) * resolution);
+            const fineJEnd = Math.ceil(((j + 1) / coarseResolution) * resolution);
+            
+            for (let fi = Math.max(0, fineI - margin); fi <= Math.min(resolution, fineIEnd + margin); fi++) {
+                for (let fj = Math.max(0, fineJ - margin); fj <= Math.min(resolution, fineJEnd + margin); fj++) {
+                    fineRegions.add(`${fi},${fj}`);
+                }
+            }
+        }
+        
+        // Build sparse grid
         const grid = [];
-        
-        // Process grid creation in chunks to prevent blocking
-        const chunkSize = 5; // Process 5 rows at a time for better responsiveness
-        
-        for (let chunkStart = 0; chunkStart <= resolution; chunkStart += chunkSize) {
-            // Check for cancellation before each chunk
-            if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                return { points: [], gridData: null }; // Return empty result if cancelled
-            }
-            
-            const chunkEnd = Math.min(chunkStart + chunkSize, resolution + 1);
-            
-            for (let i = chunkStart; i < chunkEnd; i++) {
-                grid[i] = [];
-                for (let j = 0; j <= resolution; j++) {
-                    const x = this.viewport.minX + i * stepX;
-                    const y = this.viewport.minY + j * stepY;
-                    
-                    // Update scope and evaluate using compiled expressions
-                    scope.x = x;
-                    scope.y = y;
-                    try {
-                        const leftValue = leftCompiled.evaluate(scope);
-                        const rightValue = rightCompiled.evaluate(scope);
-                        grid[i][j] = (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
-                    } catch (error) {
-                        grid[i][j] = 0;
-                    }
-                }
-            }
-            
-            // No setTimeout needed - fast enough without yielding
+        for (let i = 0; i <= resolution; i++) {
+            grid[i] = [];
         }
         
-        // Process each cell for marching squares in chunks
-        for (let chunkStart = 0; chunkStart < resolution; chunkStart += chunkSize) {
-            // Check for cancellation before each chunk
-            if (functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                return { points: [], gridData: null }; // Return empty result if cancelled
-            }
-            
-            const chunkEnd = Math.min(chunkStart + chunkSize, resolution);
-            
-            for (let i = chunkStart; i < chunkEnd; i++) {
-                for (let j = 0; j < resolution; j++) {
-                    const x = this.viewport.minX + i * stepX;
-                    const y = this.viewport.minY + j * stepY;
-                    
-                    // Get the four corner values
-                    const corners = [
-                        grid[i][j],     // bottom-left
-                        grid[i+1][j],   // bottom-right
-                        grid[i+1][j+1], // top-right
-                        grid[i][j+1]    // top-left
-                    ];
-                    
-                    // Create binary configuration (1 if positive, 0 if negative)
-                    let config = 0;
-                    for (let k = 0; k < 4; k++) {
-                        if (corners[k] > 0) config |= (1 << k);
-                    }
-                    
-                    // Get line segments for this configuration
-                    const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
-                    segments.push(...cellSegments);
-                }
-            }
-            
-            // No setTimeout needed - fast enough without yielding
+        for (const regionKey of fineRegions) {
+            const [i, j] = regionKey.split(',').map(Number);
+            const x = this.viewport.minX + i * stepX;
+            const y = this.viewport.minY + j * stepY;
+            grid[i][j] = evalPoint(x, y);
         }
+        
+        const segments = [];
+        
+        // Generate segments only from cells with all corners evaluated
+        for (const regionKey of fineRegions) {
+            const [i, j] = regionKey.split(',').map(Number);
+            
+            if (i >= resolution || j >= resolution) continue;
+            if (!grid[i][j] && grid[i][j] !== 0) continue;
+            if (!grid[i+1][j] && grid[i+1][j] !== 0) continue;
+            if (!grid[i+1][j+1] && grid[i+1][j+1] !== 0) continue;
+            if (!grid[i][j+1] && grid[i][j+1] !== 0) continue;
+            
+            const x = this.viewport.minX + i * stepX;
+            const y = this.viewport.minY + j * stepY;
+            
+            const corners = [
+                grid[i][j],
+                grid[i+1][j],
+                grid[i+1][j+1],
+                grid[i][j+1]
+            ];
+            
+            let config = 0;
+            for (let k = 0; k < 4; k++) {
+                if (corners[k] > 0) config |= (1 << k);
+            }
+            
+            const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+            segments.push(...cellSegments);
+            
+            // Check cancellation periodically
+            if (segments.length % 100 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return { points: [], gridData: null };
+            }
+        }
+        
+        const totalTime = performance.now() - startTime;
+        const coarseEvals = (coarseResolution + 1) * (coarseResolution + 1);
+        const fineEvals = fineRegions.size;
+        const fullGridEvals = (resolution + 1) * (resolution + 1);
+        const reduction = Math.round((1 - fineEvals / fullGridEvals) * 100);
+        console.log(`[Implicit] Localized evaluation: ${totalTime.toFixed(1)}ms (coarse: ${coarseEvals} + localized: ${fineEvals} = ${coarseEvals + fineEvals} evals, ${reduction}% reduction vs full ${fullGridEvals} grid, ${segments.length} segments)`);
         
         // Convert segments to points format
         const points = [];
         for (const segment of segments) {
             points.push({ x: segment.start.x, y: segment.start.y, connected: true });
             points.push({ x: segment.end.x, y: segment.end.y, connected: true });
-            // Add break between segments to prevent unwanted connections
             points.push({ x: NaN, y: NaN, connected: false });
         }
         
