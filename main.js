@@ -1843,10 +1843,7 @@ class Graphiti {
             
             // Update intercepts after plotting this function
             if (this.showIntercepts) {
-                console.log(`[DEBUG plotFunctionWithValidation] About to find intercepts for ${func.expression}`);
-                console.log(`[DEBUG] func.points: ${func.points?.length || 0}, func.displayPoints: ${func.displayPoints?.length || 0}`);
                 this.intercepts = this.findAxisIntercepts();
-                console.log(`[DEBUG] Found ${this.intercepts.length} intercepts total`);
                 this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 this.draw(); // Trigger redraw to display intercepts
             }
@@ -3357,8 +3354,6 @@ class Graphiti {
             // Also update func.points for backward compatibility (intersections, etc.)
             func.points = points;
             
-            console.log(`[DEBUG plotImplicitFunction] Set points for ${func.expression}: points=${points.length}, displayPoints=${func.displayPoints.length}`);
-            
             this.activeImplicitCalculations.delete(func.id);
             
             // Track plotting time for performance monitoring
@@ -3778,8 +3773,6 @@ class Graphiti {
         // Refinement factor (subdivide boundary cells) - increased for smoother shading
         const refineFactor = 8;
         
-        console.log(`[Adaptive] Starting with coarse=${coarseResolution}×${coarseResolution}, refinement=${refineFactor}×${refineFactor}, viewport=${viewportWidth.toFixed(2)}×${viewportHeight.toFixed(2)}`);
-        
         // At wide zoom (viewport > 50), localized contour optimization is too aggressive
         // The curves are small, so just use high-res contour grid for smoothness
         const useFullContourGrid = viewportSize > 50;
@@ -3819,7 +3812,6 @@ class Graphiti {
         }
         
         const coarseGridTime = performance.now();
-        console.log(`[Adaptive] Phase 1: Coarse grid (${(coarseResolution + 1) * (coarseResolution + 1)} evals) took ${(coarseGridTime - startTime).toFixed(1)}ms`);
         
         // Phase 2: Detect boundary cells (where sign changes)
         const boundaryCells = new Set();
@@ -3843,7 +3835,6 @@ class Graphiti {
         }
         
         const boundaryDetectionTime = performance.now();
-        console.log(`[Adaptive] Phase 2: Boundary detection (${boundaryCells.size} boundary cells) took ${(boundaryDetectionTime - coarseGridTime).toFixed(1)}ms`);
         
         // Phase 3: Build adaptive cell list
         const adaptiveCells = [];
@@ -3898,7 +3889,6 @@ class Graphiti {
         
         const refinementTime = performance.now();
         const totalEvals = (coarseResolution + 1) * (coarseResolution + 1) + (boundaryCells.size * refineFactor * refineFactor);
-        console.log(`[Adaptive] Phase 3: Refinement (${adaptiveCells.length} cells, ${totalEvals} total evals) took ${(refinementTime - boundaryDetectionTime).toFixed(1)}ms`);
         
         // Phase 4: Contour generation
         // At wide zoom (viewport > 50), skip localized optimization and use full high-res grid
@@ -4020,7 +4010,6 @@ class Graphiti {
         const contourTime = performance.now();
         const contourStrategy = useFullContourGrid ? 'full-res' : 'localized';
         const totalContourGrid = (contourResolution + 1) * (contourResolution + 1);
-        console.log(`[Adaptive] Phase 4: ${contourStrategy} contour (${contourEvals} evals, ${segments.length} segments) took ${(contourTime - refinementTime).toFixed(1)}ms`);
         
         // Convert segments to points
         const points = [];
@@ -4044,7 +4033,6 @@ class Graphiti {
         const fullContourEvals = (contourResolution+1)*(contourResolution+1);
         const contourReduction = useFullContourGrid ? 0 : Math.round((1 - contourEvals / fullContourEvals) * 100);
         const contourMsg = useFullContourGrid ? `${contourEvals} (full grid)` : `${contourEvals} (${contourReduction}% reduction)`;
-        console.log(`[Adaptive] TOTAL: ${totalTime.toFixed(1)}ms (coarse: ${(coarseResolution+1)*(coarseResolution+1)} + refinement: ${boundaryCells.size * refineFactor * refineFactor} + contour: ${contourMsg} = ${totalEvalsWithContour} total evals)`);
         
         return { points, gridData };
     }
@@ -4370,7 +4358,6 @@ class Graphiti {
         const fineEvals = fineRegions.size;
         const fullGridEvals = (resolution + 1) * (resolution + 1);
         const reduction = Math.round((1 - fineEvals / fullGridEvals) * 100);
-        console.log(`[Implicit] Localized evaluation: ${totalTime.toFixed(1)}ms (coarse: ${coarseEvals} + localized: ${fineEvals} = ${coarseEvals + fineEvals} evals, ${reduction}% reduction vs full ${fullGridEvals} grid, ${segments.length} segments)`);
         
         // Convert segments to points format
         const points = [];
@@ -10198,8 +10185,6 @@ class Graphiti {
     }
 
     async calculateImplicitIntersections() {
-        console.log('[DEBUG] calculateImplicitIntersections() called');
-        
         // During viewport changes, use cached points; otherwise use current points
         const allFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled) return false;
@@ -10207,18 +10192,10 @@ class Graphiti {
             return points.length > 0;
         });
         
-        console.log(`[DEBUG] allFunctions: ${allFunctions.length}`);
-        allFunctions.forEach((f, idx) => {
-            const funcType = this.detectFunctionType(f.expression);
-            console.log(`  [${idx}] ${f.expression}: type=${funcType}, points=${f.points?.length || 0}`);
-        });
-        
         const implicitFunctions = allFunctions.filter(f => {
             const funcType = this.detectFunctionType(f.expression);
             return funcType === 'implicit' || funcType === 'implicit-inequality';
         });
-        
-        console.log(`[DEBUG] implicitFunctions: ${implicitFunctions.length}`);
         
         // Need at least one implicit function and another function
         if (implicitFunctions.length === 0 || allFunctions.length < 2) {
@@ -10485,25 +10462,20 @@ class Graphiti {
     }
     
     findCartesianAxisIntercepts() {
-        console.log('[DEBUG findCartesianAxisIntercepts] Starting...');
         const intercepts = [];
         const enabledFunctions = this.getCurrentFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
             // Use displayPoints (stable buffer) if available, otherwise fall back to points
             const pointsToCheck = f.displayPoints || f.points;
-            console.log(`[DEBUG] Checking function ${f.expression}: enabled=${f.enabled}, displayPoints=${f.displayPoints?.length || 0}, points=${f.points?.length || 0}`);
             if (!f.enabled || !pointsToCheck || pointsToCheck.length === 0) {
-                console.log(`[DEBUG] -> SKIPPED (${!f.enabled ? 'disabled' : 'no points'})`);
                 return false;
             }
             
             // Check that the expression is valid
             if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
-                console.log(`[DEBUG] -> SKIPPED (invalid expression)`);
                 return false;
             }
             
-            console.log(`[DEBUG] -> INCLUDED`);
             return true;
         });
         
@@ -11405,8 +11377,59 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
-                // Handle implicit functions separately
+                // Detect function type
                 const functionType = this.detectFunctionType(func.expression);
+                
+                // Handle inequalities by finding turning points on their boundary curves
+                if (functionType === 'explicit-inequality') {
+                    // Extract boundary equation from explicit inequality (y>f(x) -> y=f(x))
+                    const inequality = this.parseInequality(func.expression);
+                    if (inequality && inequality.leftSide.toLowerCase() === 'y') {
+                        // Create a temporary function object with the boundary equation
+                        const boundaryFunc = {
+                            ...func,
+                            expression: 'y=' + inequality.rightSide
+                        };
+                        // Process as regular explicit function
+                        const convertedExpression = this.convertFromLatex(boundaryFunc.expression);
+                        let cleanExpression = convertedExpression.trim();
+                        if (cleanExpression.toLowerCase().startsWith('y=')) {
+                            cleanExpression = cleanExpression.substring(2).trim();
+                        }
+                        
+                        try {
+                            math.parse(cleanExpression);
+                            const processedExpression = cleanExpression.toLowerCase();
+                            const derivative = math.derivative(processedExpression, 'x');
+                            const derivativeStr = derivative.toString();
+                            const secondDerivative = math.derivative(derivative, 'x');
+                            const secondDerivativeStr = secondDerivative.toString();
+                            const functionTurningPoints = this.findTurningPointsForFunction(boundaryFunc, derivativeStr, secondDerivativeStr);
+                            turningPoints.push(...functionTurningPoints);
+                        } catch (error) {
+                            console.warn(`Could not find turning points for boundary of ${func.expression}:`, error);
+                        }
+                    }
+                    continue;
+                }
+                
+                if (functionType === 'implicit-inequality') {
+                    // Extract boundary equation from implicit inequality (x^2+y^2>9 -> x^2+y^2=9)
+                    const inequality = this.parseImplicitInequality(func.expression);
+                    if (inequality) {
+                        // Create a temporary function object with the boundary equation
+                        const boundaryFunc = {
+                            ...func,
+                            expression: inequality.leftExpression + '=' + inequality.rightExpression
+                        };
+                        // Process as implicit function
+                        const implicitTurningPoints = this.findImplicitTurningPointsForFunction(boundaryFunc);
+                        turningPoints.push(...implicitTurningPoints);
+                    }
+                    continue;
+                }
+                
+                // Handle implicit functions separately
                 if (functionType === 'implicit') {
                     const implicitTurningPoints = this.findImplicitTurningPointsForFunction(func);
                     turningPoints.push(...implicitTurningPoints);
