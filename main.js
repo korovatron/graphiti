@@ -5735,6 +5735,9 @@ class Graphiti {
         const func1IsImplicit = points1.some(p => p.connected);
         const func2IsImplicit = points2.some(p => p.connected);
         
+        console.log(`[Intersections] func1: ${func1.expression}, points: ${points1.length}, implicit: ${func1IsImplicit}`);
+        console.log(`[Intersections] func2: ${func2.expression}, points: ${points2.length}, implicit: ${func2IsImplicit}`);
+        
         if (func1IsImplicit || func2IsImplicit) {
             // Use geometric intersection detection for implicit curves
             return this.findIntersectionsGeometric(func1, func2);
@@ -5753,6 +5756,8 @@ class Graphiti {
         // Extract line segments from both functions
         const segments1 = this.extractLineSegments(points1);
         const segments2 = this.extractLineSegments(points2);
+        
+        console.log(`[Intersections] segments1: ${segments1.length}, segments2: ${segments2.length}`);
         
         // Check each segment from func1 against each segment from func2
         for (const seg1 of segments1) {
