@@ -4991,7 +4991,14 @@ class Graphiti {
         
         // Find intersection points between all pairs of enabled functions
         const intersections = [];
+        const allFunctions = this.getCurrentFunctions();
+        console.log(`[Intersections] Total functions: ${allFunctions.length}`);
+        allFunctions.forEach((f, idx) => {
+            console.log(`  [${idx}] ${f.expression}: enabled=${f.enabled}, points=${f.points?.length || 0}`);
+        });
+        
         const enabledFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        console.log(`[Intersections] Enabled functions with points: ${enabledFunctions.length}`);
         
         // Check all pairs of functions
         for (let i = 0; i < enabledFunctions.length; i++) {
@@ -4999,11 +5006,14 @@ class Graphiti {
                 const func1 = enabledFunctions[i];
                 const func2 = enabledFunctions[j];
                 
+                console.log(`[Intersections] Checking pair: "${func1.expression}" vs "${func2.expression}"`);
                 const pairIntersections = this.findIntersectionsBetweenFunctions(func1, func2);
+                console.log(`[Intersections] Found ${pairIntersections.length} intersections`);
                 intersections.push(...pairIntersections);
             }
         }
         
+        console.log(`[Intersections] TOTAL: ${intersections.length} intersections found`);
         return intersections;
     }
     
