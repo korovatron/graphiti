@@ -1794,8 +1794,19 @@ class Graphiti {
                 if (this.plotMode === 'polar') {
                     // Skip validation for theta-constant rays (they're assignments, not evaluable expressions)
                     const functionType = this.detectFunctionType(func.expression);
-                    if (functionType !== 'theta-constant') {
-                        // For polar mode, test with theta/t variable - remove "r=" prefix if present
+                    if (functionType === 'theta-constant') {
+                        // Skip validation for theta=constant rays
+                    } else if (functionType === 'polar-inequality') {
+                        // For polar inequalities, parse and validate the right side
+                        const inequality = this.parsePolarInequality(func.expression);
+                        if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                            throw new Error('Invalid polar inequality format - must be r > f(θ) or r < f(θ)');
+                        }
+                        // Test that the right side is a valid expression
+                        processedExpression = inequality.rightSide;
+                        math.evaluate(processedExpression, this.getEvaluationScope({ t: 1, theta: 1 }));
+                    } else {
+                        // For regular polar functions, test with theta/t variable - remove "r=" prefix if present
                         processedExpression = this.convertFromLatex(func.expression);
                         processedExpression = processedExpression.trim();
                         if (processedExpression.toLowerCase().startsWith('r=')) {
@@ -2468,6 +2479,12 @@ class Graphiti {
             return;
         }
         
+        // Check if this is a polar inequality (r > f(θ) or r < f(θ))
+        if (functionType === 'polar-inequality') {
+            this.plotPolarInequality(func);
+            return;
+        }
+        
         try {
             // Convert from LaTeX first, then prepare the expression for evaluation
             let processedExpression = this.convertFromLatex(func.expression).trim();
@@ -2547,6 +2564,166 @@ class Graphiti {
         } catch (error) {
             console.error('Error parsing polar function:', error);
             // Silent error for better UX during typing - no alert popup
+            func.points = [];
+        }
+    }
+    
+    plotPolarInequality(func) {
+        try {
+            // Parse the polar inequality
+            const inequality = this.parsePolarInequality(func.expression);
+            if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                func.points = [];
+                return;
+            }
+            
+            // Process the right side expression (the boundary function)
+            let processedExpression = inequality.rightSide.toLowerCase();
+            
+            // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+            processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+            
+            // Use cached compiled expression for better performance
+            const compiledExpression = this.getCompiledExpression(processedExpression);
+            
+            const points = [];
+            const thetaMin = this.polarSettings.thetaMin;
+            const thetaMax = this.polarSettings.thetaMax;
+            
+            // Calculate dynamic step size
+            const thetaStep = this.calculateDynamicPolarStep(thetaMin, thetaMax);
+            
+            // Create scope once and reuse it for performance
+            const scope = this.getEvaluationScope({ 
+                theta: 0, 
+                t: 0,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
+            // Plot the boundary curve
+            for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
+                try {
+                    let thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    scope.theta = thetaForEval;
+                    scope.t = thetaForEval;
+                    
+                    let r = compiledExpression.evaluate(scope);
+                    
+                    // Handle negative r values
+                    let adjustedThetaForEval = thetaForEval;
+                    if (r < 0) {
+                        if (this.polarSettings.plotNegativeR) {
+                            r = Math.abs(r);
+                            adjustedThetaForEval = thetaForEval + Math.PI;
+                        } else {
+                            continue;
+                        }
+                    }
+                    
+                    // Convert polar to cartesian for the boundary
+                    const x = r * Math.cos(adjustedThetaForEval);
+                    const y = r * Math.sin(adjustedThetaForEval);
+                    
+                    if (isFinite(x) && isFinite(y)) {
+                        points.push({ x, y, connected: true });
+                    } else {
+                        points.push({ x: NaN, y: NaN, connected: false });
+                    }
+                } catch (e) {
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+            }
+            
+            func.points = points;
+            func.inequality = {
+                operator: inequality.operator,
+                expression: processedExpression,
+                compiledExpression: compiledExpression
+            };
+        } catch (error) {
+            console.error('Error parsing polar inequality:', error);
+            func.points = [];
+        }
+    }
+    
+    plotPolarInequality(func) {
+        try {
+            // Parse the polar inequality
+            const inequality = this.parsePolarInequality(func.expression);
+            if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                func.points = [];
+                return;
+            }
+            
+            // Process the right side expression (the boundary function)
+            let processedExpression = inequality.rightSide.toLowerCase();
+            
+            // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+            processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+            
+            // Use cached compiled expression for better performance
+            const compiledExpression = this.getCompiledExpression(processedExpression);
+            
+            const points = [];
+            const thetaMin = this.polarSettings.thetaMin;
+            const thetaMax = this.polarSettings.thetaMax;
+            
+            // Calculate dynamic step size
+            const thetaStep = this.calculateDynamicPolarStep(thetaMin, thetaMax);
+            
+            // Create scope once and reuse it for performance
+            const scope = this.getEvaluationScope({ 
+                theta: 0, 
+                t: 0,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
+            // Plot the boundary curve
+            for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
+                try {
+                    let thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    scope.theta = thetaForEval;
+                    scope.t = thetaForEval;
+                    
+                    let r = compiledExpression.evaluate(scope);
+                    
+                    // Handle negative r values
+                    let adjustedThetaForEval = thetaForEval;
+                    if (r < 0) {
+                        if (this.polarSettings.plotNegativeR) {
+                            r = Math.abs(r);
+                            adjustedThetaForEval = thetaForEval + Math.PI;
+                        } else {
+                            continue;
+                        }
+                    }
+                    
+                    // Convert polar to cartesian for the boundary
+                    const x = r * Math.cos(adjustedThetaForEval);
+                    const y = r * Math.sin(adjustedThetaForEval);
+                    
+                    if (isFinite(x) && isFinite(y)) {
+                        points.push({ x, y, connected: true });
+                    } else {
+                        points.push({ x: NaN, y: NaN, connected: false });
+                    }
+                } catch (e) {
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+            }
+            
+            func.points = points;
+            func.inequality = {
+                operator: inequality.operator,
+                expression: processedExpression,
+                compiledExpression: compiledExpression
+            };
+        } catch (error) {
+            console.error('Error parsing polar inequality:', error);
             func.points = [];
         }
     }
@@ -2970,6 +3147,10 @@ class Graphiti {
         // Check for inequality operators first (≥, ≤, >, <)
         const hasInequality = /[><≥≤]|\\geq|\\leq|\\ge|\\le/.test(clean);
         if (hasInequality) {
+            // In polar mode, check for r > f(θ) or r < f(θ) format
+            if (this.plotMode === 'polar' && /^r\s*[><≥≤]/.test(clean)) {
+                return 'polar-inequality';
+            }
             // Check if it's y > f(x) or y < f(x) format (explicit inequality)
             if (/^y\s*[><≥≤]/.test(clean)) {
                 return 'explicit-inequality';
@@ -3067,6 +3248,39 @@ class Graphiti {
             rightSide: parts[1].trim(),
             operator: operator,
             isStrict: operator === '>' || operator === '<' // strict vs non-strict
+        };
+    }
+
+    parsePolarInequality(expression) {
+        // Convert from LaTeX first
+        const clean = this.convertFromLatex(expression).trim();
+        
+        // Detect inequality operator
+        let operator = null;
+        let parts = null;
+        
+        if (clean.includes('≥') || clean.includes('>=')) {
+            operator = '>=';
+            parts = clean.split(/≥|>=/);
+        } else if (clean.includes('≤') || clean.includes('<=')) {
+            operator = '<=';
+            parts = clean.split(/≤|<=/);
+        } else if (clean.includes('>')) {
+            operator = '>';
+            parts = clean.split('>');
+        } else if (clean.includes('<')) {
+            operator = '<';
+            parts = clean.split('<');
+        }
+        
+        if (!parts || parts.length !== 2) {
+            return null;
+        }
+        
+        return {
+            leftSide: parts[0].trim(),
+            rightSide: parts[1].trim(),
+            operator: operator
         };
     }
 
@@ -3174,6 +3388,68 @@ class Graphiti {
         
         ctx.closePath();
         ctx.fill();
+    }
+
+    fillInsidePolarCurve(points, color, inequalityData) {
+        if (!points || points.length < 2) return;
+        
+        const ctx = this.ctx;
+        const alpha = 0.25; // 25% opacity for shading
+        const colorWithAlpha = this.addAlphaToColor(color, alpha);
+        ctx.fillStyle = colorWithAlpha;
+        
+        // For polar inequalities r < f(θ), fill from origin to the boundary curve
+        ctx.beginPath();
+        
+        // Start at origin
+        const origin = this.worldToScreen(0, 0);
+        ctx.moveTo(origin.x, origin.y);
+        
+        // Trace the boundary curve
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            if (isFinite(point.x) && isFinite(point.y)) {
+                const screenPos = this.worldToScreen(point.x, point.y);
+                ctx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        // Close path back to origin
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    fillOutsidePolarCurve(points, color, inequalityData) {
+        if (!points || points.length < 2) return;
+        
+        const ctx = this.ctx;
+        const alpha = 0.25; // 25% opacity for shading
+        const colorWithAlpha = this.addAlphaToColor(color, alpha);
+        ctx.fillStyle = colorWithAlpha;
+        
+        // For polar inequalities r > f(θ), fill from the boundary curve to viewport edge
+        // This is done by creating a large outer boundary and cutting out the inner curve
+        
+        ctx.beginPath();
+        
+        // Create outer rectangle (viewport boundary)
+        ctx.rect(0, 0, this.viewport.width, this.viewport.height);
+        
+        // Trace the boundary curve in reverse to create a "hole"
+        for (let i = points.length - 1; i >= 0; i--) {
+            const point = points[i];
+            if (isFinite(point.x) && isFinite(point.y)) {
+                const screenPos = this.worldToScreen(point.x, point.y);
+                if (i === points.length - 1) {
+                    ctx.moveTo(screenPos.x, screenPos.y);
+                } else {
+                    ctx.lineTo(screenPos.x, screenPos.y);
+                }
+            }
+        }
+        
+        ctx.closePath();
+        ctx.fill('evenodd'); // Use even-odd rule to create the hole
     }
 
     addAlphaToColor(color, alpha) {
@@ -11529,13 +11805,24 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
-                // Convert from LaTeX first since we now store LaTeX format
-                const convertedExpression = this.convertFromLatex(func.expression);
+                let cleanExpression;
                 
-                // Clean the expression - remove "r=" prefix if present
-                let cleanExpression = convertedExpression.trim();
-                if (cleanExpression.toLowerCase().startsWith('r=')) {
-                    cleanExpression = cleanExpression.substring(2).trim();
+                // For polar inequalities, use the boundary expression
+                if (func.inequality && func.inequality.expression) {
+                    cleanExpression = func.inequality.expression;
+                } else {
+                    // Convert from LaTeX first since we now store LaTeX format
+                    const convertedExpression = this.convertFromLatex(func.expression);
+                    
+                    // Clean the expression - remove "r=" or "r>", "r<", "r≥", "r≤" prefix if present
+                    cleanExpression = convertedExpression.trim();
+                    if (/^r\s*[=><≥≤]/.test(cleanExpression.toLowerCase())) {
+                        // Find the operator and take everything after it
+                        const match = cleanExpression.match(/^r\s*[=><≥≤]\s*(.+)$/i);
+                        if (match) {
+                            cleanExpression = match[1].trim();
+                        }
+                    }
                 }
                 
                 // Validate that the expression can be parsed before attempting derivatives
@@ -11988,19 +12275,26 @@ class Graphiti {
         }
         
         try {
-            // Convert from LaTeX first
-            const convertedExpression = this.convertFromLatex(func.expression);
+            let processedExpression;
             
-            // Clean the expression - remove "r=" prefix if present
-            let cleanExpression = convertedExpression.trim();
-            if (cleanExpression.toLowerCase().startsWith('r=')) {
-                cleanExpression = cleanExpression.substring(2).trim();
+            // For polar inequalities, use the boundary expression
+            if (func.inequality && func.inequality.expression) {
+                processedExpression = func.inequality.expression;
+            } else {
+                // Convert from LaTeX first
+                const convertedExpression = this.convertFromLatex(func.expression);
+                
+                // Clean the expression - remove "r=" prefix if present
+                let cleanExpression = convertedExpression.trim();
+                if (cleanExpression.toLowerCase().startsWith('r=')) {
+                    cleanExpression = cleanExpression.substring(2).trim();
+                }
+                
+                // Add implicit multiplication
+                processedExpression = cleanExpression.toLowerCase();
+                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
             }
-            
-            // Add implicit multiplication
-            let processedExpression = cleanExpression.toLowerCase();
-            processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
-            processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
             
             // Use numerical derivative to avoid angle unit issues with symbolic differentiation
             const h = 0.0001;
@@ -12221,14 +12515,27 @@ class Graphiti {
         
         for (const theta of roots) {
             try {
-                // Convert from LaTeX first since we now store LaTeX format
-                const convertedExpression = this.convertFromLatex(func.expression);
+                // Evaluate r at this theta - use same approach as findPolarTurningPoints
+                let cleanExpression;
                 
-                // Evaluate r at this theta
-                let cleanExpression = convertedExpression.trim();
-                if (cleanExpression.toLowerCase().startsWith('r=')) {
-                    cleanExpression = cleanExpression.substring(2).trim();
+                // For polar inequalities, use the boundary expression
+                if (func.inequality && func.inequality.expression) {
+                    cleanExpression = func.inequality.expression;
+                } else {
+                    // Convert from LaTeX first since we now store LaTeX format
+                    const convertedExpression = this.convertFromLatex(func.expression);
+                    
+                    // Clean the expression - remove "r=" or "r>", "r<", "r≥", "r≤" prefix if present
+                    cleanExpression = convertedExpression.trim();
+                    if (/^r\s*[=><≥≤]/.test(cleanExpression.toLowerCase())) {
+                        // Find the operator and take everything after it
+                        const match = cleanExpression.match(/^r\s*[=><≥≤]\s*(.+)$/i);
+                        if (match) {
+                            cleanExpression = match[1].trim();
+                        }
+                    }
                 }
+                
                 let processedExpression = cleanExpression.toLowerCase();
                 
                 // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
@@ -13893,24 +14200,45 @@ class Graphiti {
         
         // Check if this is an inequality
         const functionType = this.detectFunctionType(func.expression);
-        const isInequality = functionType === 'explicit-inequality';
+        const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         
         // If it's an inequality, render shading first, then boundary
         if (isInequality) {
-            const inequality = this.parseInequality(func.expression);
-            if (inequality) {
-                // Render shading based on operator
-                if (inequality.operator === '>' || inequality.operator === '>=') {
-                    this.fillAboveCurve(func.points, func.color);
-                } else if (inequality.operator === '<' || inequality.operator === '<=') {
-                    this.fillBelowCurve(func.points, func.color);
+            if (functionType === 'polar-inequality') {
+                // Handle polar inequality shading
+                const inequality = this.parsePolarInequality(func.expression);
+                if (inequality && func.inequality) {
+                    // For polar inequalities, shade the region
+                    if (inequality.operator === '>' || inequality.operator === '>=') {
+                        this.fillOutsidePolarCurve(func.points, func.color, func.inequality);
+                    } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                        this.fillInsidePolarCurve(func.points, func.color, func.inequality);
+                    }
+                    
+                    // Set line style based on strict vs non-strict
+                    if (inequality.operator === '>' || inequality.operator === '<') {
+                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                    } else {
+                        this.ctx.setLineDash([]); // Solid line for non-strict
+                    }
                 }
-                
-                // Set line style based on strict vs non-strict
-                if (inequality.isStrict) {
-                    this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
-                } else {
-                    this.ctx.setLineDash([]); // Solid line for non-strict
+            } else {
+                // Handle Cartesian inequality shading
+                const inequality = this.parseInequality(func.expression);
+                if (inequality) {
+                    // Render shading based on operator
+                    if (inequality.operator === '>' || inequality.operator === '>=') {
+                        this.fillAboveCurve(func.points, func.color);
+                    } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                        this.fillBelowCurve(func.points, func.color);
+                    }
+                    
+                    // Set line style based on strict vs non-strict
+                    if (inequality.operator === '>' || inequality.operator === '<') {
+                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                    } else {
+                        this.ctx.setLineDash([]); // Solid line for non-strict
+                    }
                 }
             }
         }

@@ -12,8 +12,6 @@ let isCancelled = false;
 // Intersection Detection Web Worker
 // Performs intersection calculations in a separate thread for better performance
 
-console.log('Intersection worker loaded');
-
 // Worker message handler
 self.onmessage = function(event) {
     const { type, data } = event.data;
