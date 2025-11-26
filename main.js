@@ -3901,35 +3901,48 @@ class Graphiti {
     processImplicitExpression(expression) {
         let processedExpression = expression.toLowerCase();
         
-        // Handle implicit multiplication for adjacent variables and numbers
-        // BUT avoid breaking function names that are already properly formatted
-        // AND avoid breaking parameter names (alpha, beta, gamma)
-        if (!this.containsProperFunctions(processedExpression)) {
-            // Protect parameter names from being split
-            const hasAlpha = processedExpression.includes('alpha');
-            const hasBeta = processedExpression.includes('beta');
-            const hasGamma = processedExpression.includes('gamma');
-            const hasDelta = processedExpression.includes('delta');
-            
-            // Replace parameter names with placeholders
-            if (hasAlpha) processedExpression = processedExpression.replace(/alpha/g, '__ALPHA__');
-            if (hasBeta) processedExpression = processedExpression.replace(/beta/g, '__BETA__');
-            if (hasGamma) processedExpression = processedExpression.replace(/gamma/g, '__GAMMA__');
-            if (hasDelta) processedExpression = processedExpression.replace(/delta/g, '__DELTA__');
-            
-            // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
-            processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
-            processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
-            processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
-            processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
-            processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
-            
-            // Restore parameter names
-            if (hasAlpha) processedExpression = processedExpression.replace(/__ALPHA__/g, 'alpha');
-            if (hasBeta) processedExpression = processedExpression.replace(/__BETA__/g, 'beta');
-            if (hasGamma) processedExpression = processedExpression.replace(/__GAMMA__/g, 'gamma');
-            if (hasDelta) processedExpression = processedExpression.replace(/__DELTA__/g, 'delta');
-        }
+        // Protect function names AND parameter names before processing implicit multiplication
+        const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+        const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
+        
+        // Replace function names with placeholders to protect them
+        const functionPlaceholders = {};
+        functionNames.forEach((func, index) => {
+            const placeholder = `__FUNC${index}__`;
+            const regex = new RegExp(`\\b${func}\\b`, 'g');
+            if (regex.test(processedExpression)) {
+                processedExpression = processedExpression.replace(regex, placeholder);
+                functionPlaceholders[placeholder] = func;
+            }
+        });
+        
+        // Replace parameter names with placeholders
+        const paramPlaceholders = {};
+        paramNames.forEach((param, index) => {
+            const placeholder = `__PARAM${index}__`;
+            if (processedExpression.includes(param)) {
+                processedExpression = processedExpression.replace(new RegExp(param, 'g'), placeholder);
+                paramPlaceholders[placeholder] = param;
+            }
+        });
+        
+        // Now do implicit multiplication - function names are protected
+        // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
+        processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
+        processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
+        processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
+        processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
+        processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+        
+        // Restore function names
+        Object.keys(functionPlaceholders).forEach(placeholder => {
+            processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), functionPlaceholders[placeholder]);
+        });
+        
+        // Restore parameter names
+        Object.keys(paramPlaceholders).forEach(placeholder => {
+            processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), paramPlaceholders[placeholder]);
+        });
         
         // Basic math.js compatible conversions
         processedExpression = processedExpression.replace(/\^/g, '^'); // Keep power notation
@@ -3964,35 +3977,48 @@ class Graphiti {
             // Process expression for math.js directly without convertFromLatex to avoid recursion
             let processedExpression = expression.toLowerCase();
             
-            // Handle implicit multiplication for adjacent variables and numbers
-            // BUT avoid breaking function names that are already properly formatted
-            // AND avoid breaking parameter names (alpha, beta, gamma)
-            if (!this.containsProperFunctions(processedExpression)) {
-                // Protect parameter names from being split
-                const hasAlpha = processedExpression.includes('alpha');
-                const hasBeta = processedExpression.includes('beta');
-                const hasGamma = processedExpression.includes('gamma');
-                const hasDelta = processedExpression.includes('delta');
-                
-                // Replace parameter names with placeholders
-                if (hasAlpha) processedExpression = processedExpression.replace(/alpha/g, '__ALPHA__');
-                if (hasBeta) processedExpression = processedExpression.replace(/beta/g, '__BETA__');
-                if (hasGamma) processedExpression = processedExpression.replace(/gamma/g, '__GAMMA__');
-                if (hasDelta) processedExpression = processedExpression.replace(/delta/g, '__DELTA__');
-                
-                // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
-                processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
-                processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
-                processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
-                processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
-                processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
-                
-                // Restore parameter names
-                if (hasAlpha) processedExpression = processedExpression.replace(/__ALPHA__/g, 'alpha');
-                if (hasBeta) processedExpression = processedExpression.replace(/__BETA__/g, 'beta');
-                if (hasGamma) processedExpression = processedExpression.replace(/__GAMMA__/g, 'gamma');
-                if (hasDelta) processedExpression = processedExpression.replace(/__DELTA__/g, 'delta');
-            }
+            // Protect function names AND parameter names before processing implicit multiplication
+            const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+            const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
+            
+            // Replace function names with placeholders to protect them
+            const functionPlaceholders = {};
+            functionNames.forEach((func, index) => {
+                const placeholder = `__FUNC${index}__`;
+                const regex = new RegExp(`\\b${func}\\b`, 'g');
+                if (regex.test(processedExpression)) {
+                    processedExpression = processedExpression.replace(regex, placeholder);
+                    functionPlaceholders[placeholder] = func;
+                }
+            });
+            
+            // Replace parameter names with placeholders
+            const paramPlaceholders = {};
+            paramNames.forEach((param, index) => {
+                const placeholder = `__PARAM${index}__`;
+                if (processedExpression.includes(param)) {
+                    processedExpression = processedExpression.replace(new RegExp(param, 'g'), placeholder);
+                    paramPlaceholders[placeholder] = param;
+                }
+            });
+            
+            // Now do implicit multiplication - function names are protected
+            // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
+            processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
+            processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2'); // number*variable
+            processedExpression = processedExpression.replace(/([a-z])(\d)/g, '$1*$2'); // variable*number
+            processedExpression = processedExpression.replace(/(\))([a-z\d])/g, '$1*$2'); // )*variable/number
+            processedExpression = processedExpression.replace(/([a-z\d])(\()/g, '$1*$2'); // variable/number*(
+            
+            // Restore function names
+            Object.keys(functionPlaceholders).forEach(placeholder => {
+                processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), functionPlaceholders[placeholder]);
+            });
+            
+            // Restore parameter names
+            Object.keys(paramPlaceholders).forEach(placeholder => {
+                processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), paramPlaceholders[placeholder]);
+            });
             
             // Basic math.js compatible conversions
             processedExpression = processedExpression.replace(/\^/g, '^'); // Keep power notation
@@ -4015,7 +4041,8 @@ class Graphiti {
     containsProperFunctions(expression) {
         // Check if expression contains properly formatted function calls
         // This helps avoid breaking function names with the variable*variable regex
-        const functionPattern = /\b(sin|cos|tan|sec|csc|cot|asin|acos|atan|sinh|cosh|tanh|log|log10|exp|sqrt|cbrt|abs)\s*\(/;
+        // Match function names regardless of spaces before the parenthesis
+        const functionPattern = /\b(sin|cos|tan|sec|csc|cot|asin|acos|atan|asinh|acosh|atanh|sinh|cosh|tanh|log|log10|log2|ln|exp|sqrt|cbrt|abs|ceil|floor|round|sign|min|max)\s*\(/i;
         return functionPattern.test(expression);
     }
     
