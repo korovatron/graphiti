@@ -345,7 +345,10 @@ class Graphiti {
                                 'log': '\\log',
                                 'log(': '\\log(#0)',
                                 'ln': '\\ln',
-                                'ln(': '\\ln(#0)'
+                                'ln(': '\\ln(#0)',
+                                // Inequality shortcuts - convert >= to ≥ and <= to ≤
+                                '>=': '\\geq',
+                                '<=': '\\leq'
                             };
                             
                             // Set default options for all mathfields
@@ -641,11 +644,29 @@ class Graphiti {
                                     { insert: '\\frac{#@}{#?}', label: '/' }
                                 ],
                                 [
-                                    // All parameters in one row
-                                    { latex: '\\alpha', label: 'α', class: 'variable-key' },
-                                    { latex: '\\beta', label: 'β', class: 'variable-key' },
-                                    { latex: '\\gamma', label: 'γ', class: 'variable-key' },
-                                    { latex: '\\delta', label: 'δ', class: 'variable-key' },
+                                    // Parameters with shift variants, and inequality operators
+                                    { 
+                                        latex: '\\alpha', 
+                                        label: 'α', 
+                                        class: 'variable-key',
+                                        shift: { latex: '\\gamma', label: 'γ', class: 'variable-key' }
+                                    },
+                                    { 
+                                        latex: '\\beta', 
+                                        label: 'β', 
+                                        class: 'variable-key',
+                                        shift: { latex: '\\delta', label: 'δ', class: 'variable-key' }
+                                    },
+                                    { 
+                                        latex: '<', 
+                                        label: '<',
+                                        shift: { latex: '\\leq', label: '≤' }
+                                    },
+                                    { 
+                                        latex: '>', 
+                                        label: '>',
+                                        shift: { latex: '\\geq', label: '≥' }
+                                    },
                                     '[separator]',
                                     { latex: '4', label: '4' },
                                     { latex: '5', label: '5' },
@@ -4650,17 +4671,23 @@ class Graphiti {
             // Convert from LaTeX first
             const convertedExpression = this.convertFromLatex(expression);
             
-            // Check for inequality operators
-            const operators = ['<=', '>=', '<', '>'];
+            // Check for inequality operators (both Unicode symbols and ASCII)
             let operator = null;
             let parts = null;
             
-            for (const op of operators) {
-                if (convertedExpression.includes(op)) {
-                    operator = op;
-                    parts = convertedExpression.split(op);
-                    break;
-                }
+            // Check in order of specificity (>= before >, <= before <)
+            if (convertedExpression.includes('≥') || convertedExpression.includes('>=')) {
+                operator = '>=';
+                parts = convertedExpression.split(/≥|>=/);
+            } else if (convertedExpression.includes('≤') || convertedExpression.includes('<=')) {
+                operator = '<=';
+                parts = convertedExpression.split(/≤|<=/);
+            } else if (convertedExpression.includes('>')) {
+                operator = '>';
+                parts = convertedExpression.split('>');
+            } else if (convertedExpression.includes('<')) {
+                operator = '<';
+                parts = convertedExpression.split('<');
             }
             
             if (!parts || parts.length !== 2) {
@@ -18072,6 +18099,12 @@ class Graphiti {
         // Multiplication symbols
         expression = expression.replace(/\\cdot/g, '*');
         expression = expression.replace(/\\times/g, '*');
+        
+        // Inequality symbols - convert LaTeX to Unicode symbols
+        expression = expression.replace(/\\geq/g, '≥');
+        expression = expression.replace(/\\ge/g, '≥');
+        expression = expression.replace(/\\leq/g, '≤');
+        expression = expression.replace(/\\le/g, '≤');
         
         // Fix MathLive bug: when typing "2arccoth" it creates \operatorname{2\mathrm{arccoth}}
         // Extract the coefficient and function name
