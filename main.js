@@ -10710,7 +10710,10 @@ class Graphiti {
         if (isImplicit) {
             // For implicit functions, try to solve the equation at y=0 for accurate x-intercepts
             try {
-                const equation = this.parseImplicitEquation(func.expression);
+                // Use appropriate parser based on function type
+                const equation = funcType === 'implicit-inequality' 
+                    ? this.parseImplicitInequality(func.expression)
+                    : this.parseImplicitEquation(func.expression);
                 if (equation) {
                     // Sample x values and find where F(x,0) ≈ 0
                     const xValues = [];
@@ -10894,7 +10897,10 @@ class Graphiti {
         if (isImplicit) {
             // For implicit functions, try to solve the equation at x=0 for accurate y-intercepts
             try {
-                const equation = this.parseImplicitEquation(func.expression);
+                // Use appropriate parser based on function type
+                const equation = funcType === 'implicit-inequality' 
+                    ? this.parseImplicitInequality(func.expression)
+                    : this.parseImplicitEquation(func.expression);
                 if (equation) {
                     // Sample y values and find where F(0,y) ≈ 0
                     const yValues = [];
@@ -11785,12 +11791,12 @@ class Graphiti {
             return this.calculatePolarSlope(func, theta, worldX, worldY);
         }
         
-        // Check if this is an implicit function
+        // Check if this is an implicit function or implicit inequality
         const functionType = this.detectFunctionType(func.expression);
-        if (functionType === 'implicit') {
-            // For implicit functions, we need both x and y coordinates
+        if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+            // For implicit functions/inequalities, we need both x and y coordinates
             if (worldY === null) {
-                console.warn('Implicit function requires both x and y coordinates');
+                console.warn('Implicit function/inequality requires both x and y coordinates');
                 return null;
             }
             return this.calculateImplicitTangent(func, worldX, worldY);
