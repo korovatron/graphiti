@@ -10502,10 +10502,12 @@ class Graphiti {
         
         for (const func of enabledFunctions) {
             try {
-                // Skip implicit functions - use proper function type detection
+                // Handle implicit functions separately
                 const functionType = this.detectFunctionType(func.expression);
                 if (functionType === 'implicit') {
-                    continue; // Implicit functions don't have simple turning points
+                    const implicitTurningPoints = this.findImplicitTurningPointsForFunction(func);
+                    turningPoints.push(...implicitTurningPoints);
+                    continue;
                 }
                 
                 // Convert from LaTeX first since we now store LaTeX format
@@ -10690,6 +10692,185 @@ class Graphiti {
                 // Skip this root if evaluation fails
                 continue;
             }
+        }
+        
+        return turningPoints;
+    }
+    
+    // Find turning points for implicit functions F(x,y) = 0
+    // These occur where horizontal tangents (∂F/∂x = 0) or vertical tangents (∂F/∂y = 0) exist
+    findImplicitTurningPointsForFunction(func) {
+        const turningPoints = [];
+        
+        if (!func.points || func.points.length < 2) {
+            return turningPoints;
+        }
+        
+        try {
+            // Parse the implicit equation
+            const equation = this.parseImplicitEquation(func.expression);
+            if (!equation) {
+                return turningPoints;
+            }
+            
+            const { leftExpression, rightExpression } = equation;
+            
+            // Get compiled expressions for efficient evaluation
+            const leftCompiled = this.getCompiledExpression(leftExpression.toLowerCase());
+            const rightCompiled = this.getCompiledExpression(rightExpression.toLowerCase());
+            const scope = this.getEvaluationScope({});
+            
+            // Helper to evaluate F(x,y) = left - right
+            const evalF = (x, y) => {
+                scope.x = x;
+                scope.y = y;
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                return (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : null;
+            };
+            
+            // Numerical differentiation parameters
+            const h = 0.0001;
+            const threshold = 1e-8; // Threshold for considering partial derivative as zero
+            
+            // Helper to calculate partial derivatives at a point
+            const calculatePartials = (x, y) => {
+                const fxPlus = evalF(x + h, y);
+                const fxMinus = evalF(x - h, y);
+                const fyPlus = evalF(x, y + h);
+                const fyMinus = evalF(x, y - h);
+                
+                if (fxPlus === null || fxMinus === null || fyPlus === null || fyMinus === null) {
+                    return null;
+                }
+                
+                const dFdx = (fxPlus - fxMinus) / (2 * h);
+                const dFdy = (fyPlus - fyMinus) / (2 * h);
+                
+                return { dFdx, dFdy };
+            };
+            
+            // Scan through plotted points looking for sign changes in partial derivatives
+            for (let i = 0; i < func.points.length - 1; i++) {
+                const p1 = func.points[i];
+                const p2 = func.points[i + 1];
+                
+                if (!p1 || !p2 || !isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) {
+                    continue;
+                }
+                
+                const partials1 = calculatePartials(p1.x, p1.y);
+                const partials2 = calculatePartials(p2.x, p2.y);
+                
+                if (!partials1 || !partials2) {
+                    continue;
+                }
+                
+                // Check for horizontal tangent: ∂F/∂x changes sign (and ∂F/∂y is non-zero)
+                // This means dy/dx = -∂F/∂x / ∂F/∂y = 0
+                if (partials1.dFdx * partials2.dFdx < 0 && 
+                    Math.abs(partials1.dFdy) > threshold && 
+                    Math.abs(partials2.dFdy) > threshold) {
+                    
+                    // Refine location using bisection
+                    let xa = p1.x, ya = p1.y;
+                    let xb = p2.x, yb = p2.y;
+                    
+                    for (let iter = 0; iter < 10; iter++) {
+                        const xm = (xa + xb) / 2;
+                        const ym = (ya + yb) / 2;
+                        const partialsM = calculatePartials(xm, ym);
+                        
+                        if (!partialsM) break;
+                        
+                        if (partials1.dFdx * partialsM.dFdx < 0) {
+                            xb = xm;
+                            yb = ym;
+                        } else {
+                            xa = xm;
+                            ya = ym;
+                        }
+                    }
+                    
+                    const xTurn = (xa + xb) / 2;
+                    const yTurn = (ya + yb) / 2;
+                    
+                    // Calculate second derivative to classify as max or min
+                    const partialsTurn = calculatePartials(xTurn, yTurn);
+                    let type = 'horizontal-tangent';
+                    
+                    if (partialsTurn && Math.abs(partialsTurn.dFdy) > threshold) {
+                        // Calculate d²y/dx² using implicit differentiation
+                        // d²y/dx² = -(F_xx * F_y² - 2*F_xy*F_x*F_y + F_yy*F_x²) / F_y³
+                        const fxxPlus = evalF(xTurn + 2*h, yTurn);
+                        const fxxMinus = evalF(xTurn - 2*h, yTurn);
+                        const fyyPlus = evalF(xTurn, yTurn + 2*h);
+                        const fyyMinus = evalF(xTurn, yTurn - 2*h);
+                        
+                        if (fxxPlus !== null && fxxMinus !== null && fyyPlus !== null && fyyMinus !== null) {
+                            const fxx = (fxxPlus - 2*evalF(xTurn, yTurn) + fxxMinus) / (4 * h * h);
+                            const fyy = (fyyPlus - 2*evalF(xTurn, yTurn) + fyyMinus) / (4 * h * h);
+                            
+                            // For horizontal tangent where F_x ≈ 0, second derivative sign is approximately -F_xx/F_y
+                            const secondDeriv = -fxx / partialsTurn.dFdy;
+                            
+                            if (Math.abs(secondDeriv) > 1e-10) {
+                                type = secondDeriv > 0 ? 'minimum' : 'maximum';
+                            }
+                        }
+                    }
+                    
+                    turningPoints.push({
+                        x: xTurn,
+                        y: yTurn,
+                        func: func,
+                        type: type,
+                        derivative: 'implicit',
+                        secondDerivative: 'implicit'
+                    });
+                }
+                
+                // Check for vertical tangent: ∂F/∂y changes sign (and ∂F/∂x is non-zero)
+                // This means dy/dx = -∂F/∂x / ∂F/∂y = undefined
+                if (partials1.dFdy * partials2.dFdy < 0 && 
+                    Math.abs(partials1.dFdx) > threshold && 
+                    Math.abs(partials2.dFdx) > threshold) {
+                    
+                    // Refine location using bisection
+                    let xa = p1.x, ya = p1.y;
+                    let xb = p2.x, yb = p2.y;
+                    
+                    for (let iter = 0; iter < 10; iter++) {
+                        const xm = (xa + xb) / 2;
+                        const ym = (ya + yb) / 2;
+                        const partialsM = calculatePartials(xm, ym);
+                        
+                        if (!partialsM) break;
+                        
+                        if (partials1.dFdy * partialsM.dFdy < 0) {
+                            xb = xm;
+                            yb = ym;
+                        } else {
+                            xa = xm;
+                            ya = ym;
+                        }
+                    }
+                    
+                    const xTurn = (xa + xb) / 2;
+                    const yTurn = (ya + yb) / 2;
+                    
+                    turningPoints.push({
+                        x: xTurn,
+                        y: yTurn,
+                        func: func,
+                        type: 'vertical-tangent',
+                        derivative: 'implicit',
+                        secondDerivative: 'implicit'
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Error finding implicit turning points:', error);
         }
         
         return turningPoints;
