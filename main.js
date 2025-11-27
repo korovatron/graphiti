@@ -15142,11 +15142,13 @@ class Graphiti {
             return { x: intersection.x, y: intersection.y };
         }
         
-        // Check if either function is implicit
+        // Check if either function is implicit (including implicit inequalities)
         const func1 = intersection.func1;
         const func2 = intersection.func2;
-        const func1IsImplicit = !func1.expression || this.detectFunctionType(func1.expression) === 'implicit';
-        const func2IsImplicit = !func2.expression || this.detectFunctionType(func2.expression) === 'implicit';
+        const func1Type = func1.expression ? this.detectFunctionType(func1.expression) : 'unknown';
+        const func2Type = func2.expression ? this.detectFunctionType(func2.expression) : 'unknown';
+        const func1IsImplicit = !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality';
+        const func2IsImplicit = !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality';
         
         // If either function is implicit, don't refine - the line segment intersection is already accurate
         if (func1IsImplicit || func2IsImplicit) {
