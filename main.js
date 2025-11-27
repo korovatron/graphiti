@@ -1322,15 +1322,18 @@ class Graphiti {
                     --selection-background-color: var(--accent-color);
                     --selection-color: #fff;
                     --contains-highlight-background-color: var(--accent-color);
-                ">${func.expression}</math-field>
+                "></math-field>
             <div class="function-controls">
                 <div class="color-indicator" style="background-color: ${func.color}; opacity: ${func.enabled ? '1' : '0.3'}; filter: ${func.enabled ? 'none' : 'grayscale(100%)'}" title="Click to ${func.enabled ? 'hide' : 'show'} function"></div>
                 <button class="remove-btn" title="Delete function">×</button>
             </div>
         `;
         
-        // Get the MathLive element
+        // Get the MathLive element and set its value safely (avoiding HTML injection issues with < and >)
         const mathField = funcDiv.querySelector('math-field');
+        if (mathField && func.expression) {
+            mathField.value = func.expression;
+        }
         
         // Set inline shortcuts for this field after it's mounted
         if (mathField) {
@@ -14246,7 +14249,7 @@ class Graphiti {
                     
                     // Set line style based on strict vs non-strict
                     if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                        this.ctx.setLineDash([10, 10]); // Dashed line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
                     }
@@ -14264,7 +14267,7 @@ class Graphiti {
                     
                     // Set line style based on strict vs non-strict
                     if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                        this.ctx.setLineDash([10, 10]); // Dashed line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
                     }
@@ -14355,7 +14358,7 @@ class Graphiti {
                                 clean.includes('<') && !clean.includes('<=');
                 
                 if (isStrict) {
-                    this.ctx.setLineDash([5, 5]); // Dashed for strict
+                    this.ctx.setLineDash([15, 15]); // Longer dashes for implicit curves (many small segments)
                 } else {
                     this.ctx.setLineDash([]); // Solid for non-strict
                 }
