@@ -125,9 +125,9 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
         return intersections;
     }
     
-    // Check if either function is implicit (has NaN separators)
-    const isImplicit1 = points1.some(p => !isFinite(p.x) || !isFinite(p.y));
-    const isImplicit2 = points2.some(p => !isFinite(p.x) || !isFinite(p.y));
+    // Check if either function is implicit (has connected segments or NaN separators)
+    const isImplicit1 = points1.some(p => p.connected || !isFinite(p.x) || !isFinite(p.y));
+    const isImplicit2 = points2.some(p => p.connected || !isFinite(p.x) || !isFinite(p.y));
     
     // Handle different combinations of function types
     if (isImplicit1 && isImplicit2) {

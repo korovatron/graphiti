@@ -42,6 +42,8 @@ class Graphiti {
         this.polarSettings = {
             thetaMin: 0,
             thetaMax: 2 * Math.PI,
+            thetaMinLatex: '0', // Store symbolic representation
+            thetaMaxLatex: '2\\pi', // Store symbolic representation
             plotNegativeR: true,  // Default to plotting negative r (matches checkbox default)
             step: 0.01 // theta increment
         };
@@ -4541,9 +4543,6 @@ class Graphiti {
                 points.push({ x: segment.end.x, y: segment.end.y, connected: true });
                 points.push({ x: NaN, y: NaN, connected: false });
             }
-            
-            const endTime = performance.now();
-            console.log(`[Implicit] Full grid ${resolution}×${resolution} (${evals} evals, ${segments.length} segments) took ${(endTime - startTime).toFixed(1)}ms`);
             
             return { points, gridData: null };
         }
@@ -10427,7 +10426,7 @@ class Graphiti {
         const explicitFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled || f.points.length === 0) return false;
             const functionType = this.detectFunctionType(f.expression);
-            return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'explicit-inequality';
+            return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         });
 
         if (explicitFunctions.length < 2) {
@@ -14249,9 +14248,11 @@ class Graphiti {
                     
                     // Set line style based on strict vs non-strict
                     if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([10, 10]); // Dashed line for strict inequalities
+                        this.ctx.setLineDash([]); // Solid line for strict (matching Cartesian behavior)
+                        this.ctx.lineWidth = 1; // Thin line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
+                        this.ctx.lineWidth = 3; // Standard line width (same as equations)
                     }
                 }
             } else {
@@ -14271,7 +14272,7 @@ class Graphiti {
                         this.ctx.lineWidth = 1; // Thin line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = 4; // Thick line for non-strict inequalities
+                        this.ctx.lineWidth = 3; // Standard line width (same as equations)
                     }
                 }
             }
@@ -14352,18 +14353,18 @@ class Graphiti {
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
             // Check if this is a strict inequality (< or >) vs non-strict (≤ or ≥)
-            // Use line thickness to distinguish: 1px for strict, 4px for non-strict/equations
-            let lineWidth = 2; // Default for equations
+            // Use line thickness to distinguish: 1px for strict, 3px for non-strict/equations
+            let lineWidth = 3; // Default for equations (consistent with explicit)
             if (isInequality) {
                 const clean = this.convertFromLatex(func.expression).trim();
                 const isStrict = clean.includes('>') && !clean.includes('>=') || 
                                 clean.includes('<') && !clean.includes('<=');
                 
-                // Consistent with explicit inequalities: 1px for strict, 4px for non-strict
+                // Consistent with explicit inequalities: 1px for strict, 3px for non-strict
                 if (isStrict) {
                     lineWidth = 1;
                 } else {
-                    lineWidth = 4;
+                    lineWidth = 3;
                 }
             }
             
