@@ -6417,9 +6417,12 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const titleScreen = document.getElementById('title-screen');
         
-        // Fade in title screen after MathLive renders to prevent layout shift
+        // Fade in title screen and initialize sine wave
         if (titleScreen) {
-            // Wait for MathLive to render the equation
+            // Initialize sine wave text
+            this.initSineWaveTagline();
+            
+            // Fade in title screen
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     titleScreen.classList.add('loaded');
@@ -9224,6 +9227,136 @@ class Graphiti {
         this.showKeyboardHint();
     }
     
+    initSineWaveTagline() {
+        const taglineContainer = document.getElementById('sine-wave-tagline');
+        if (!taglineContainer) return;
+        
+        // Clear any existing animation interval
+        if (this.sineWaveInterval) {
+            clearInterval(this.sineWaveInterval);
+            this.sineWaveInterval = null;
+        }
+        
+        // Clear existing content
+        taglineContainer.innerHTML = '';
+        
+        const text = 'Interactive Function Graphing';
+        const words = text.split(' ');
+        
+        // Bright neon street art colors
+        const neonColors = [
+            '#FF006E', // Hot pink
+            '#FFBE0B', // Electric yellow
+            '#FB5607', // Orange
+            '#8338EC', // Purple
+            '#3A86FF', // Bright blue
+            '#06FFA5', // Neon green
+            '#FF006E', // Hot pink (repeat for variety)
+            '#FFBE0B'  // Electric yellow
+        ];
+        
+        // Target color (white)
+        const targetColor = '#FFFFFF';
+        
+        // Parse RGB from hex
+        const hexToRgb = (hex) => {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        };
+        
+        const targetRgb = hexToRgb(targetColor);
+        
+        // Create spans for each character with index and initial color
+        let charIndex = 0;
+        const allSpans = [];
+        words.forEach((word, wordIdx) => {
+            word.split('').forEach(char => {
+                const span = document.createElement('span');
+                span.textContent = char;
+                span.style.setProperty('--char-index', charIndex);
+                span.style.setProperty('--amplitude', '1');
+                
+                // Assign random neon color
+                const neonColor = neonColors[Math.floor(Math.random() * neonColors.length)];
+                span.dataset.startColor = neonColor;
+                span.style.color = neonColor;
+                
+                taglineContainer.appendChild(span);
+                allSpans.push(span);
+                charIndex++;
+            });
+            
+            // Add space between words (except after last word)
+            if (wordIdx < words.length - 1) {
+                const space = document.createElement('span');
+                space.textContent = '\u00A0'; // Non-breaking space
+                space.style.setProperty('--char-index', charIndex);
+                space.style.setProperty('--amplitude', '1');
+                
+                // Assign random neon color to space too
+                const neonColor = neonColors[Math.floor(Math.random() * neonColors.length)];
+                space.dataset.startColor = neonColor;
+                space.style.color = neonColor;
+                
+                taglineContainer.appendChild(space);
+                allSpans.push(space);
+                charIndex++;
+            }
+        });
+        
+        // Gradually reduce amplitude and transition colors over 5 seconds
+        const totalDuration = 5000; // 5 seconds
+        const steps = 80; // Number of amplitude updates
+        const stepDuration = totalDuration / steps;
+        let currentStep = 0;
+        
+        this.sineWaveInterval = setInterval(() => {
+            currentStep++;
+            const progress = currentStep / steps;
+            // Exponential decay for smooth reduction
+            const amplitude = Math.max(0, 1 - Math.pow(progress, 1.5));
+            
+            // Update all character spans - amplitude and color
+            allSpans.forEach(span => {
+                span.style.setProperty('--amplitude', amplitude.toFixed(3));
+                
+                // Interpolate color from neon to target
+                const startRgb = hexToRgb(span.dataset.startColor);
+                if (startRgb && targetRgb) {
+                    const r = Math.round(startRgb.r + (targetRgb.r - startRgb.r) * progress);
+                    const g = Math.round(startRgb.g + (targetRgb.g - startRgb.g) * progress);
+                    const b = Math.round(startRgb.b + (targetRgb.b - startRgb.b) * progress);
+                    span.style.color = `rgb(${r}, ${g}, ${b})`;
+                }
+            });
+            
+            if (currentStep >= steps) {
+                clearInterval(this.sineWaveInterval);
+                this.sineWaveInterval = null;
+                // Set final amplitude to 0 and final color
+                allSpans.forEach(span => {
+                    span.style.setProperty('--amplitude', '0');
+                    span.style.color = targetColor;
+                });
+            }
+        }, stepDuration);
+    }
+    
+    restartSineWaveAnimation() {
+        // Clear any existing interval
+        if (this.sineWaveInterval) {
+            clearInterval(this.sineWaveInterval);
+            this.sineWaveInterval = null;
+        }
+        
+        // Reinitialize the animation
+        this.initSineWaveTagline();
+    }
+    
     changeState(newState) {
         this.previousState = this.currentState;
         this.currentState = newState;
@@ -9239,6 +9372,8 @@ class Graphiti {
                 if (functionPanel) functionPanel.classList.add('hidden');
                 if (hamburgerMenu) hamburgerMenu.style.display = 'none';
                 this.closeMobileMenu();
+                // Restart sine wave animation when returning to title screen
+                this.restartSineWaveAnimation();
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
