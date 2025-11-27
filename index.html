@@ -379,6 +379,24 @@
             color: #4A90E2;
             margin: 20px 0;
             min-height: 60px;
+            padding: 0 15px;
+        }
+        
+        /* Smaller font size on mobile */
+        @media (max-width: 500px) {
+            .sine-wave-text {
+                font-size: 1.1em;
+                gap: 1px;
+                padding: 0 20px;
+            }
+        }
+        
+        /* Even smaller on very narrow screens */
+        @media (max-width: 380px) {
+            .sine-wave-text {
+                font-size: 0.95em;
+                padding: 0 15px;
+            }
         }
         
         .sine-wave-text span {
@@ -392,10 +410,10 @@
                 transform: translateY(0);
             }
             25% {
-                transform: translateY(calc(-40px * var(--amplitude)));
+                transform: translateY(calc(-25px * var(--amplitude)));
             }
             75% {
-                transform: translateY(calc(40px * var(--amplitude)));
+                transform: translateY(calc(25px * var(--amplitude)));
             }
         }
         

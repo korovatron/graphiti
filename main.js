@@ -9243,32 +9243,8 @@ class Graphiti {
         const text = 'Interactive Function Graphing';
         const words = text.split(' ');
         
-        // Bright neon street art colors
-        const neonColors = [
-            '#FF006E', // Hot pink
-            '#FFBE0B', // Electric yellow
-            '#FB5607', // Orange
-            '#8338EC', // Purple
-            '#3A86FF', // Bright blue
-            '#06FFA5', // Neon green
-            '#FF006E', // Hot pink (repeat for variety)
-            '#FFBE0B'  // Electric yellow
-        ];
-        
-        // Target color (white)
-        const targetColor = '#FFFFFF';
-        
-        // Parse RGB from hex
-        const hexToRgb = (hex) => {
-            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-            return result ? {
-                r: parseInt(result[1], 16),
-                g: parseInt(result[2], 16),
-                b: parseInt(result[3], 16)
-            } : null;
-        };
-        
-        const targetRgb = hexToRgb(targetColor);
+        // White color throughout
+        const whiteColor = '#FFFFFF';
         
         // Create spans for each character with index and initial color
         let charIndex = 0;
@@ -9279,11 +9255,7 @@ class Graphiti {
                 span.textContent = char;
                 span.style.setProperty('--char-index', charIndex);
                 span.style.setProperty('--amplitude', '1');
-                
-                // Assign random neon color
-                const neonColor = neonColors[Math.floor(Math.random() * neonColors.length)];
-                span.dataset.startColor = neonColor;
-                span.style.color = neonColor;
+                span.style.color = whiteColor;
                 
                 taglineContainer.appendChild(span);
                 allSpans.push(span);
@@ -9296,11 +9268,7 @@ class Graphiti {
                 space.textContent = '\u00A0'; // Non-breaking space
                 space.style.setProperty('--char-index', charIndex);
                 space.style.setProperty('--amplitude', '1');
-                
-                // Assign random neon color to space too
-                const neonColor = neonColors[Math.floor(Math.random() * neonColors.length)];
-                space.dataset.startColor = neonColor;
-                space.style.color = neonColor;
+                space.style.color = whiteColor;
                 
                 taglineContainer.appendChild(space);
                 allSpans.push(space);
@@ -9320,27 +9288,17 @@ class Graphiti {
             // Exponential decay for smooth reduction
             const amplitude = Math.max(0, 1 - Math.pow(progress, 1.5));
             
-            // Update all character spans - amplitude and color
+            // Update all character spans - amplitude only
             allSpans.forEach(span => {
                 span.style.setProperty('--amplitude', amplitude.toFixed(3));
-                
-                // Interpolate color from neon to target
-                const startRgb = hexToRgb(span.dataset.startColor);
-                if (startRgb && targetRgb) {
-                    const r = Math.round(startRgb.r + (targetRgb.r - startRgb.r) * progress);
-                    const g = Math.round(startRgb.g + (targetRgb.g - startRgb.g) * progress);
-                    const b = Math.round(startRgb.b + (targetRgb.b - startRgb.b) * progress);
-                    span.style.color = `rgb(${r}, ${g}, ${b})`;
-                }
             });
             
             if (currentStep >= steps) {
                 clearInterval(this.sineWaveInterval);
                 this.sineWaveInterval = null;
-                // Set final amplitude to 0 and final color
+                // Set final amplitude to 0
                 allSpans.forEach(span => {
                     span.style.setProperty('--amplitude', '0');
-                    span.style.color = targetColor;
                 });
             }
         }, stepDuration);
