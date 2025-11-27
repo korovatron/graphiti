@@ -14267,16 +14267,20 @@ class Graphiti {
                     
                     // Set line style based on strict vs non-strict
                     if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([10, 10]); // Dashed line for strict inequalities
+                        this.ctx.setLineDash([]); // Solid line for strict
+                        this.ctx.lineWidth = 1; // Thin line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
+                        this.ctx.lineWidth = 4; // Thick line for non-strict inequalities
                     }
                 }
             }
         }
         
         this.ctx.strokeStyle = func.color;
-        this.ctx.lineWidth = 3;
+        if (!func.expression.match(/[<>]/)) {
+            this.ctx.lineWidth = 3; // Default for equations without inequalities
+        }
         
         let pathStarted = false;
         
@@ -14347,22 +14351,26 @@ class Graphiti {
         
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
-            this.ctx.strokeStyle = func.color;
-            this.ctx.lineWidth = 2;
-            
-            // Set line style for inequality boundaries
+            // Check if this is a strict inequality (< or >) vs non-strict (≤ or ≥)
+            // Use line thickness to distinguish: 1px for strict, 4px for non-strict/equations
+            let lineWidth = 2; // Default for equations
             if (isInequality) {
-                // Extract operator to determine if strict or non-strict
                 const clean = this.convertFromLatex(func.expression).trim();
                 const isStrict = clean.includes('>') && !clean.includes('>=') || 
                                 clean.includes('<') && !clean.includes('<=');
                 
+                // Consistent with explicit inequalities: 1px for strict, 4px for non-strict
                 if (isStrict) {
-                    this.ctx.setLineDash([15, 15]); // Longer dashes for implicit curves (many small segments)
+                    lineWidth = 1;
                 } else {
-                    this.ctx.setLineDash([]); // Solid for non-strict
+                    lineWidth = 4;
                 }
             }
+            
+            // Always draw boundary in function color (to hide pixelated shading edges)
+            this.ctx.strokeStyle = func.color;
+            this.ctx.lineWidth = lineWidth;
+            this.ctx.setLineDash([]); // Always solid line
             
             // Draw individual line segments (every pair of connected points)
             for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
@@ -14388,11 +14396,6 @@ class Graphiti {
                         this.ctx.stroke();
                     }
                 }
-            }
-            
-            // Reset line dash
-            if (isInequality) {
-                this.ctx.setLineDash([]);
             }
         } else {
             // Draw as discrete points (for hyperbolas or general implicit functions)
