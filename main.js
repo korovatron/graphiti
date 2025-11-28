@@ -15859,10 +15859,10 @@ class Graphiti {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
         
-        // Format area value
-        const areaText = Math.abs(linkedPair.areaBetween) < 0.01 ?
-            linkedPair.areaBetween.toExponential(2) :
-            linkedPair.areaBetween.toFixed(3);
+        // Format area value - snap near-zero to 0 and use proper formatting
+        // Use more aggressive zero threshold for areas (0.01) to handle numerical integration errors
+        const snappedArea = Math.abs(linkedPair.areaBetween) < 0.01 ? 0 : linkedPair.areaBetween;
+        const areaText = this.formatCoordinate(snappedArea);
         
         const text = `Area between = ${areaText}`;
         
@@ -16336,10 +16336,10 @@ class Graphiti {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
         
-        // Format area value
-        const areaText = Math.abs(pair.area) < 0.01 ? 
-            pair.area.toExponential(2) : 
-            pair.area.toFixed(3);
+        // Format area value - snap near-zero to 0 and use proper formatting
+        // Use more aggressive zero threshold for areas (0.01) to handle numerical integration errors
+        const snappedArea = Math.abs(pair.area) < 0.01 ? 0 : pair.area;
+        const areaText = this.formatCoordinate(snappedArea);
         
         const text = this.plotMode === 'polar' ? 
             `Area = ${areaText}` : 
