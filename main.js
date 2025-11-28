@@ -139,7 +139,15 @@ class Graphiti {
                 startY: 0, // Starting Y position
                 holdThreshold: 250, // milliseconds - time to distinguish tap vs hold (shorter for better UX)
                 moveThreshold: 15, // pixels - movement that cancels badge interaction
-                isHolding: false // Whether we're in hold mode
+                isHolding: false, // Whether we're in hold mode
+                // Snap-to-significant-point tracking (Desmos-like behavior)
+                snapState: {
+                    isSnapped: false, // Whether currently snapped to a significant point
+                    snapStartTime: 0, // When snap started
+                    snapDuration: 300, // milliseconds to hold at snap point before allowing drag to continue
+                    snappedPoint: null, // The point we're snapped to {x, y, type}
+                    snapReleaseTimeout: null // Timer for releasing snap after duration
+                }
             },
             // Pinch gesture tracking
             pinch: {
@@ -7369,15 +7377,53 @@ class Graphiti {
                 const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
                 
                 if (tracingFunction) {
-                    // Trace the function at the new position
-                    // Pass theta for polar functions, x/y for implicit, x for explicit
-                    const tracePoint = this.traceFunction(
+                    // Check for nearby significant points to snap to
+                    let finalTracePoint;
+                    const preliminaryTracePoint = this.traceFunction(
                         tracingFunction, 
                         currentWorldPos.x, 
                         currentWorldPos.y,
-                        this.input.tracing.theta, // Pass current theta for polar parametric tracing
-                        deltaX // Pass actual mouse movement for polar functions
+                        this.input.tracing.theta,
+                        deltaX
                     );
+                    
+                    if (preliminaryTracePoint) {
+                        // Check if we should snap to a nearby significant point
+                        const snapResult = this.checkSnapToSignificantPoint(
+                            preliminaryTracePoint,
+                            tracingFunction,
+                            deltaX,
+                            deltaY
+                        );
+                        
+                        finalTracePoint = snapResult.point;
+                        
+                        // Handle snap state transitions
+                        if (snapResult.shouldSnap && !this.input.badgeInteraction.snapState.isSnapped) {
+                            // Entering snap state
+                            this.input.badgeInteraction.snapState.isSnapped = true;
+                            this.input.badgeInteraction.snapState.snapStartTime = Date.now();
+                            this.input.badgeInteraction.snapState.snappedPoint = snapResult.significantPoint;
+                            
+                            // Set timeout to release snap after duration
+                            this.input.badgeInteraction.snapState.snapReleaseTimeout = setTimeout(() => {
+                                this.input.badgeInteraction.snapState.isSnapped = false;
+                                this.input.badgeInteraction.snapState.snappedPoint = null;
+                            }, this.input.badgeInteraction.snapState.snapDuration);
+                        } else if (!snapResult.shouldSnap && this.input.badgeInteraction.snapState.isSnapped) {
+                            // Exiting snap state (moved away from significant point)
+                            this.input.badgeInteraction.snapState.isSnapped = false;
+                            this.input.badgeInteraction.snapState.snappedPoint = null;
+                            if (this.input.badgeInteraction.snapState.snapReleaseTimeout) {
+                                clearTimeout(this.input.badgeInteraction.snapState.snapReleaseTimeout);
+                                this.input.badgeInteraction.snapState.snapReleaseTimeout = null;
+                            }
+                        }
+                    } else {
+                        finalTracePoint = null;
+                    }
+                    
+                    const tracePoint = finalTracePoint;
                     
                     if (tracePoint) {
                         this.input.tracing.worldX = tracePoint.x;
@@ -7452,6 +7498,117 @@ class Graphiti {
         
         this.input.mouse.x = canvasX;
         this.input.mouse.y = canvasY;
+    }
+    
+    checkSnapToSignificantPoint(tracePoint, tracingFunction, deltaX, deltaY) {
+        // Check if the trace point is near a significant point and should snap to it
+        // Returns: { shouldSnap: boolean, point: {x, y, theta?}, significantPoint: {x, y, type} }
+        
+        if (!tracePoint) {
+            return { shouldSnap: false, point: null, significantPoint: null };
+        }
+        
+        // If currently snapped and haven't exceeded the snap duration, stay snapped
+        const snapState = this.input.badgeInteraction.snapState;
+        if (snapState.isSnapped) {
+            const snapElapsed = Date.now() - snapState.snapStartTime;
+            const movementMagnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // Stay snapped if:
+            // 1. Still within snap duration AND
+            // 2. Movement is relatively small (not a strong drag)
+            if (snapElapsed < snapState.snapDuration && movementMagnitude < 5) {
+                // Return the snapped point
+                return {
+                    shouldSnap: true,
+                    point: {
+                        x: snapState.snappedPoint.x,
+                        y: snapState.snappedPoint.y,
+                        theta: tracePoint.theta // Preserve theta for polar functions
+                    },
+                    significantPoint: snapState.snappedPoint
+                };
+            }
+        }
+        
+        // Define snap tolerance in world coordinates
+        const worldRange = this.viewport.maxX - this.viewport.minX;
+        const snapTolerance = worldRange * 0.015; // 1.5% of viewport width
+        
+        // Check all significant points for nearby matches
+        const significantPoints = [];
+        
+        // Add intersections
+        if (this.intersections) {
+            this.intersections.forEach(intersection => {
+                significantPoints.push({
+                    x: intersection.x,
+                    y: intersection.y,
+                    type: 'intersection'
+                });
+            });
+        }
+        
+        // Add intercepts
+        if (this.intercepts) {
+            this.intercepts.forEach(intercept => {
+                significantPoints.push({
+                    x: intercept.x,
+                    y: intercept.y,
+                    type: 'intercept'
+                });
+            });
+        }
+        
+        // Add turning points for this specific function
+        if (this.turningPoints) {
+            this.turningPoints.forEach(tp => {
+                // Only snap to turning points on the same function being traced
+                // turningPoints use 'func' property which is the function object
+                if (tp.func && tp.func.id === tracingFunction.id) {
+                    significantPoints.push({
+                        x: tp.x,
+                        y: tp.y,
+                        type: 'turningPoint'
+                    });
+                }
+            });
+        }
+        
+        // Find nearest significant point
+        let nearestPoint = null;
+        let nearestDistance = Infinity;
+        
+        for (const sigPoint of significantPoints) {
+            const dx = tracePoint.x - sigPoint.x;
+            const dy = tracePoint.y - sigPoint.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < snapTolerance && distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestPoint = sigPoint;
+            }
+        }
+        
+        if (nearestPoint) {
+            // Snap to the significant point
+            return {
+                shouldSnap: true,
+                point: {
+                    x: nearestPoint.x,
+                    y: nearestPoint.y,
+                    theta: tracePoint.theta // Preserve theta for polar functions
+                },
+                significantPoint: nearestPoint
+            };
+        }
+        
+        // No nearby significant point - return original trace point
+        return {
+            shouldSnap: false,
+            point: tracePoint,
+            significantPoint: null
+        };
     }
     
     handlePointerEnd() {
@@ -7744,6 +7901,14 @@ class Graphiti {
             // Clear badge state temp storage
             this.input.badgeInteraction.wasTap = false;
             this.input.badgeInteraction.originalBadgeState = null;
+            
+            // Clear snap state and timeout
+            if (this.input.badgeInteraction.snapState.snapReleaseTimeout) {
+                clearTimeout(this.input.badgeInteraction.snapState.snapReleaseTimeout);
+                this.input.badgeInteraction.snapState.snapReleaseTimeout = null;
+            }
+            this.input.badgeInteraction.snapState.isSnapped = false;
+            this.input.badgeInteraction.snapState.snappedPoint = null;
             
             // Clear frozen intercept badges and set viewport stable BEFORE any calculations
             // This ensures that updateCombinedIntersections will call draw()
