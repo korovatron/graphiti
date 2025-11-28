@@ -139,15 +139,7 @@ class Graphiti {
                 startY: 0, // Starting Y position
                 holdThreshold: 250, // milliseconds - time to distinguish tap vs hold (shorter for better UX)
                 moveThreshold: 15, // pixels - movement that cancels badge interaction
-                isHolding: false, // Whether we're in hold mode
-                // Snap-to-significant-point tracking (Desmos-like behavior)
-                snapState: {
-                    isSnapped: false, // Whether currently snapped to a significant point
-                    snapStartTime: 0, // When snap started
-                    snapDuration: 300, // milliseconds to hold at snap point before allowing drag to continue
-                    snappedPoint: null, // The point we're snapped to {x, y, type}
-                    snapReleaseTimeout: null // Timer for releasing snap after duration
-                }
+                isHolding: false // Whether we're in hold mode
             },
             // Pinch gesture tracking
             pinch: {
@@ -7377,53 +7369,13 @@ class Graphiti {
                 const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
                 
                 if (tracingFunction) {
-                    // Check for nearby significant points to snap to
-                    let finalTracePoint;
-                    const preliminaryTracePoint = this.traceFunction(
+                    const tracePoint = this.traceFunction(
                         tracingFunction, 
                         currentWorldPos.x, 
                         currentWorldPos.y,
                         this.input.tracing.theta,
                         deltaX
                     );
-                    
-                    if (preliminaryTracePoint) {
-                        // Check if we should snap to a nearby significant point
-                        const snapResult = this.checkSnapToSignificantPoint(
-                            preliminaryTracePoint,
-                            tracingFunction,
-                            deltaX,
-                            deltaY
-                        );
-                        
-                        finalTracePoint = snapResult.point;
-                        
-                        // Handle snap state transitions
-                        if (snapResult.shouldSnap && !this.input.badgeInteraction.snapState.isSnapped) {
-                            // Entering snap state
-                            this.input.badgeInteraction.snapState.isSnapped = true;
-                            this.input.badgeInteraction.snapState.snapStartTime = Date.now();
-                            this.input.badgeInteraction.snapState.snappedPoint = snapResult.significantPoint;
-                            
-                            // Set timeout to release snap after duration
-                            this.input.badgeInteraction.snapState.snapReleaseTimeout = setTimeout(() => {
-                                this.input.badgeInteraction.snapState.isSnapped = false;
-                                this.input.badgeInteraction.snapState.snappedPoint = null;
-                            }, this.input.badgeInteraction.snapState.snapDuration);
-                        } else if (!snapResult.shouldSnap && this.input.badgeInteraction.snapState.isSnapped) {
-                            // Exiting snap state (moved away from significant point)
-                            this.input.badgeInteraction.snapState.isSnapped = false;
-                            this.input.badgeInteraction.snapState.snappedPoint = null;
-                            if (this.input.badgeInteraction.snapState.snapReleaseTimeout) {
-                                clearTimeout(this.input.badgeInteraction.snapState.snapReleaseTimeout);
-                                this.input.badgeInteraction.snapState.snapReleaseTimeout = null;
-                            }
-                        }
-                    } else {
-                        finalTracePoint = null;
-                    }
-                    
-                    const tracePoint = finalTracePoint;
                     
                     if (tracePoint) {
                         this.input.tracing.worldX = tracePoint.x;
@@ -7502,33 +7454,10 @@ class Graphiti {
     
     checkSnapToSignificantPoint(tracePoint, tracingFunction, deltaX, deltaY) {
         // Check if the trace point is near a significant point and should snap to it
-        // Returns: { shouldSnap: boolean, point: {x, y, theta?}, significantPoint: {x, y, type} }
+        // Returns: { shouldSnap: boolean, point: {x, y, theta?}, significantPoint: {x, y, type, theta?} }
         
         if (!tracePoint) {
             return { shouldSnap: false, point: null, significantPoint: null };
-        }
-        
-        // If currently snapped and haven't exceeded the snap duration, stay snapped
-        const snapState = this.input.badgeInteraction.snapState;
-        if (snapState.isSnapped) {
-            const snapElapsed = Date.now() - snapState.snapStartTime;
-            const movementMagnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-            
-            // Stay snapped if:
-            // 1. Still within snap duration AND
-            // 2. Movement is relatively small (not a strong drag)
-            if (snapElapsed < snapState.snapDuration && movementMagnitude < 5) {
-                // Return the snapped point
-                return {
-                    shouldSnap: true,
-                    point: {
-                        x: snapState.snappedPoint.x,
-                        y: snapState.snappedPoint.y,
-                        theta: tracePoint.theta // Preserve theta for polar functions
-                    },
-                    significantPoint: snapState.snappedPoint
-                };
-            }
         }
         
         // Define snap tolerance in world coordinates
@@ -7597,9 +7526,12 @@ class Graphiti {
                 point: {
                     x: nearestPoint.x,
                     y: nearestPoint.y,
-                    theta: tracePoint.theta // Preserve theta for polar functions
+                    theta: tracePoint.theta // Store current theta for polar functions
                 },
-                significantPoint: nearestPoint
+                significantPoint: {
+                    ...nearestPoint,
+                    theta: tracePoint.theta // Include theta in significant point for storage
+                }
             };
         }
         
@@ -7901,14 +7833,6 @@ class Graphiti {
             // Clear badge state temp storage
             this.input.badgeInteraction.wasTap = false;
             this.input.badgeInteraction.originalBadgeState = null;
-            
-            // Clear snap state and timeout
-            if (this.input.badgeInteraction.snapState.snapReleaseTimeout) {
-                clearTimeout(this.input.badgeInteraction.snapState.snapReleaseTimeout);
-                this.input.badgeInteraction.snapState.snapReleaseTimeout = null;
-            }
-            this.input.badgeInteraction.snapState.isSnapped = false;
-            this.input.badgeInteraction.snapState.snappedPoint = null;
             
             // Clear frozen intercept badges and set viewport stable BEFORE any calculations
             // This ensures that updateCombinedIntersections will call draw()
@@ -14128,8 +14052,9 @@ class Graphiti {
         
         // Check if this is a multiple of π/24 (smallest grid unit)
         // This dynamically handles ANY fraction of π, not just a hardcoded list
+        // Use slightly larger tolerance (0.03) to handle numerical integration errors
         const twentyFourthsRatio = piMultiple * 24;
-        if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.01) {
+        if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.03) {
             const numerator = Math.round(twentyFourthsRatio);
             const denominator = 24;
             
@@ -15709,14 +15634,14 @@ class Graphiti {
             }
         }
         
-        // For polar functions, use theta instead of worldX for proper display
-        const displayX = (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) 
+        // For polar functions, pass theta as separate parameter for proper polar coordinate display
+        const thetaValue = (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) 
             ? this.input.tracing.theta 
-            : this.input.tracing.worldX;
+            : null;
         
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
-            displayX, this.input.tracing.worldY, true, false, null, null, 
-            hasTangent, hasNormal, hasIntegral, neonIntegral, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction, null, integralLimitType);
+            this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
+            hasTangent, hasNormal, hasIntegral, neonIntegral, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction, null, integralLimitType, thetaValue);
         
         // Draw theta hint for polar functions
         if (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
@@ -15862,7 +15787,23 @@ class Graphiti {
         // Format area value - snap near-zero to 0 and use proper formatting
         // Use more aggressive zero threshold for areas (0.01) to handle numerical integration errors
         const snappedArea = Math.abs(linkedPair.areaBetween) < 0.01 ? 0 : linkedPair.areaBetween;
-        const areaText = this.formatCoordinate(snappedArea);
+        
+        // Try to format as pi fraction if either function has trig and we're in radians
+        let areaText;
+        if (this.angleMode === 'radians' && (linkedPair.pair1 || linkedPair.pair2)) {
+            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+            const func1HasTrig = linkedPair.pair1 && linkedPair.pair1.func && linkedPair.pair1.func.expression && trigRegex.test(linkedPair.pair1.func.expression);
+            const func2HasTrig = linkedPair.pair2 && linkedPair.pair2.func && linkedPair.pair2.func.expression && trigRegex.test(linkedPair.pair2.func.expression);
+            
+            if (func1HasTrig || func2HasTrig) {
+                const piFraction = this.formatAsPiFraction(snappedArea);
+                areaText = piFraction || this.formatCoordinate(snappedArea);
+            } else {
+                areaText = this.formatCoordinate(snappedArea);
+            }
+        } else {
+            areaText = this.formatCoordinate(snappedArea);
+        }
         
         const text = `Area between = ${areaText}`;
         
@@ -16339,7 +16280,15 @@ class Graphiti {
         // Format area value - snap near-zero to 0 and use proper formatting
         // Use more aggressive zero threshold for areas (0.01) to handle numerical integration errors
         const snappedArea = Math.abs(pair.area) < 0.01 ? 0 : pair.area;
-        const areaText = this.formatCoordinate(snappedArea);
+        
+        // Try to format as pi fraction if in polar mode in radians (pi fractions are natural for polar areas)
+        let areaText;
+        if (this.plotMode === 'polar' && this.angleMode === 'radians') {
+            const piFraction = this.formatAsPiFraction(snappedArea);
+            areaText = piFraction || this.formatCoordinate(snappedArea);
+        } else {
+            areaText = this.formatCoordinate(snappedArea);
+        }
         
         const text = this.plotMode === 'polar' ? 
             `Area = ${areaText}` : 
@@ -16519,12 +16468,18 @@ class Graphiti {
             }
             
             // Draw the persistent badge with hold indication
-            // For polar functions, pass theta instead of worldX for proper display
-            const displayX = (func && this.plotMode === 'polar' && badge.theta !== null && badge.theta !== undefined) 
+            // For polar functions, pass theta as separate parameter for proper polar coordinate display
+            const displayX = badge.worldX; // Always use Cartesian worldX for position
+            const thetaValue = (this.plotMode === 'polar' && badge.theta !== null && badge.theta !== undefined) 
                 ? badge.theta 
-                : badge.worldX;
+                : null;
             
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType);
+            // Debug: log if we're missing theta
+            if (this.plotMode === 'polar' && !thetaValue && badge.functionId) {
+                console.log('Badge missing theta:', badge.id, 'theta:', badge.theta);
+            }
+            
+            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue);
         }
         
         // Draw badge tooltip (after all badges so it appears on top)
@@ -16803,7 +16758,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -16852,19 +16807,22 @@ class Graphiti {
             if (this.plotMode === 'polar') {
                 // For polar mode, show theta value
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
-                let thetaValue;
+                let thetaValueStr;
+                
+                // Use provided theta if available, otherwise calculate from worldX/worldY
+                const theta = (thetaValue !== null && thetaValue !== undefined) ? thetaValue : Math.atan2(worldY, worldX);
                 
                 if (this.angleMode === 'degrees') {
-                    const thetaDegrees = worldX * 180 / Math.PI;
-                    thetaValue = this.formatCoordinate(thetaDegrees) + '°';
+                    const thetaDegrees = theta * 180 / Math.PI;
+                    thetaValueStr = this.formatCoordinate(thetaDegrees) + '°';
                 } else {
                     // Try to format as pi fraction
-                    const piFraction = this.formatAsPiFraction(worldX);
-                    thetaValue = piFraction || this.formatCoordinate(worldX);
+                    const piFraction = this.formatAsPiFraction(theta);
+                    thetaValueStr = piFraction || this.formatCoordinate(theta);
                 }
                 
                 const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
-                labelText = `∫ | ${thetaSymbol}=${thetaValue} | ${limitLabel}`;
+                labelText = `∫ | ${thetaSymbol}=${thetaValueStr} | ${limitLabel}`;
             } else {
                 // For cartesian mode, show x value
                 // Check if function contains trig and format x with pi fractions if appropriate
@@ -16889,7 +16847,7 @@ class Graphiti {
             labelText = `∫ | Add 2nd marker`;
         } else if (badgeType) {
             // Badge with type-specific label
-            const coords = this.formatCoordinates(worldX, worldY, func, func2);
+            const coords = this.formatCoordinates(worldX, worldY, func, func2, thetaValue);
             switch (badgeType) {
                 case 'maximum':
                     labelText = `Local Maximum: ${coords}`;
@@ -16907,10 +16865,10 @@ class Graphiti {
             }
         } else if (isActive) {
             // Active tracing badge
-            labelText = this.formatCoordinates(worldX, worldY, func);
+            labelText = this.formatCoordinates(worldX, worldY, func, null, thetaValue);
         } else {
             // Regular badge (intersections, etc.)
-            labelText = this.formatCoordinates(worldX, worldY, func);
+            labelText = this.formatCoordinates(worldX, worldY, func, null, thetaValue);
         }
         
         // Add derivative information if tangent is present
@@ -17111,10 +17069,11 @@ class Graphiti {
     }
     
     
-    formatCoordinates(worldX, worldY, func = null, func2 = null) {
+    formatCoordinates(worldX, worldY, func = null, func2 = null, thetaValue = null) {
         // If specific function(s) are provided, check if THEY contain trig functions
         // For intersections, check if EITHER function has trig
         // In polar mode, always use pi fractions for theta (angles are inherently related to pi)
+        // thetaValue: if provided (polar mode), use this theta instead of calculating from worldX/worldY
         // Otherwise fall back to global check (for grid labels, etc.)
         let shouldUsePiFractions, shouldUseCommonValues;
         
@@ -17146,10 +17105,20 @@ class Graphiti {
         if (this.plotMode === 'polar') {
             // Convert cartesian coordinates back to polar for display
             const r = Math.sqrt(worldX * worldX + worldY * worldY);
-            let theta = Math.atan2(worldY, worldX);
             
-            // Normalize theta to 0-2π range
-            if (theta < 0) theta += 2 * Math.PI;
+            // Use provided theta value if available (from stored badge.theta), otherwise calculate from coordinates
+            let theta;
+            if (thetaValue !== null && thetaValue !== undefined) {
+                theta = thetaValue; // Use stored parametric theta from badge
+            } else {
+                theta = Math.atan2(worldY, worldX); // Calculate from Cartesian coordinates
+                // Normalize theta to 0-2π range
+                if (theta < 0) theta += 2 * Math.PI;
+            }
+            
+            // Normalize theta to 0-2π range (in case stored theta is outside this range)
+            while (theta < 0) theta += 2 * Math.PI;
+            while (theta >= 2 * Math.PI) theta -= 2 * Math.PI;
             
             // Format based on angle mode
             if (this.angleMode === 'degrees') {
