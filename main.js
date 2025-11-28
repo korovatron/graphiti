@@ -16702,7 +16702,20 @@ class Graphiti {
                 labelText = `∫ | ${thetaSymbol}=${thetaValue} | ${limitLabel}`;
             } else {
                 // For cartesian mode, show x value
-                const xValue = func ? this.formatCoordinate(worldX, func, true, false) : worldX.toFixed(3);
+                // Check if function contains trig and format x with pi fractions if appropriate
+                let xValue;
+                if (func && this.angleMode === 'radians') {
+                    const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+                    const funcHasTrig = func.expression && trigRegex.test(func.expression);
+                    if (funcHasTrig) {
+                        const piFraction = this.formatAsPiFraction(worldX);
+                        xValue = piFraction || this.formatCoordinate(worldX);
+                    } else {
+                        xValue = this.formatCoordinate(worldX);
+                    }
+                } else {
+                    xValue = func ? this.formatCoordinate(worldX) : worldX.toFixed(3);
+                }
                 const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
                 labelText = `∫ | x=${xValue} | ${limitLabel}`;
             }
