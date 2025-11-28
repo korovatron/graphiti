@@ -15127,12 +15127,13 @@ class Graphiti {
         
         // Create and add badge using snapped coordinates
         const badge = {
+            id: this.input.badgeIdCounter++,
             worldX: snappedX,
             worldY: snappedY,
             screenX: screenPos.x,
             screenY: screenPos.y,
             label: label,
-            functionId: functionId, // Link badge to the function for proper cleanup
+            functionId: null, // Null prevents dragging - intercepts are fixed coordinate displays
             tangentBadgeId: tangentBadgeId, // Link badge to tangent for proper cleanup
             normalBadgeId: normalBadgeId, // Link badge to normal for proper cleanup
             functionColor: '#808080', // Neutral gray color for intercepts
@@ -15472,14 +15473,25 @@ class Graphiti {
                 badgeColor = '#808080'; // Gray for inflection/other (matches marker)
         }
         
-        this.addTraceBadge(
-            func.id, // Associate with the function
-            worldX,
-            worldY,
-            badgeColor,
-            null, // No custom text - let system format coordinates dynamically
-            type  // Badge type for display (maximum, minimum, etc.)
-        );
+        // Snap coordinates to zero if they're very close
+        const snappedX = this.snapCoordinateForDisplay(worldX);
+        const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Create turning point badge as non-draggable (like intersections)
+        const badge = {
+            id: this.input.badgeIdCounter++,
+            functionId: null, // Null prevents dragging - turning points are fixed coordinate displays
+            worldX: snappedX,
+            worldY: snappedY,
+            functionColor: badgeColor,
+            customText: null,
+            badgeType: type, // 'maximum', 'minimum', etc.
+            screenX: 0, // Will be updated during rendering
+            screenY: 0  // Will be updated during rendering
+        };
+        
+        this.input.persistentBadges.push(badge);
+        return badge.id;
     }
 
     drawActiveTracingIndicator() {
