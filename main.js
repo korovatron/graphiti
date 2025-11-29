@@ -6178,6 +6178,60 @@ class Graphiti {
         };
     }
     
+    calculateRiemannSum(func, x1, x2, n, method = 'midpoint') {
+        // Calculate Riemann sum approximation for integral from x1 to x2 with n rectangles
+        // Returns { approximation, rectangles } where rectangles is array of rectangle coordinates for drawing
+        // method can be 'left', 'right', or 'midpoint'
+        
+        // Ensure x1 < x2
+        if (x1 > x2) [x1, x2] = [x2, x1];
+        
+        const h = (x2 - x1) / n; // Width of each rectangle
+        let sum = 0;
+        const rectangles = [];
+        
+        // Evaluate function at each rectangle
+        for (let i = 0; i < n; i++) {
+            const xLeft = x1 + i * h;
+            const xRight = x1 + (i + 1) * h;
+            
+            // Determine sample point based on method
+            let xSample;
+            if (method === 'left') {
+                xSample = xLeft;
+            } else if (method === 'right') {
+                xSample = xRight;
+            } else { // midpoint (default)
+                xSample = (xLeft + xRight) / 2;
+            }
+            
+            // Evaluate function at sample point
+            const yValue = this.evaluateFunction(func.expression, xSample);
+            
+            // Skip if evaluation failed
+            if (yValue === null || isNaN(yValue)) {
+                continue;
+            }
+            
+            // Calculate area of this rectangle: h * y
+            const rectangleArea = h * yValue;
+            sum += rectangleArea;
+            
+            // Store rectangle coordinates for drawing
+            rectangles.push({
+                xLeft: xLeft,
+                xRight: xRight,
+                yValue: yValue,
+                method: method
+            });
+        }
+        
+        return {
+            approximation: sum,
+            rectangles: rectangles
+        };
+    }
+
     findIntersectionsBetweenFunctions(func1, func2) {
         const intersections = [];
         const points1 = func1.points;
@@ -16184,8 +16238,8 @@ class Graphiti {
             
             this.ctx.restore();
             
-            // Draw trapezoid outlines if enabled
-            if (pair.showTrapeziumRule && pair.trapeziumResult && this.plotMode === 'cartesian') {
+            // Draw numerical integration shapes if enabled
+            if (pair.showTrapeziumRule && pair.numericalResult && this.plotMode === 'cartesian') {
                 this.drawTrapezoidOutlines(pair);
             }
             
@@ -16197,63 +16251,122 @@ class Graphiti {
     }
     
     drawTrapezoidOutlines(pair) {
-        // Draw trapezoid outlines and error regions for trapezium rule visualization
-        if (!pair.trapeziumResult || !pair.trapeziumResult.strips) return;
+        // Draw trapezoid/rectangle outlines and error regions for numerical integration visualization
+        if (!pair.numericalResult) return;
         
         this.ctx.save();
         
-        // First, shade the error regions (difference between trapezoid and curve) in red
-        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Semi-transparent red
+        // Determine if we're drawing trapezoids or rectangles
+        const isRiemann = pair.numericalMethod === 'riemann';
+        const shapes = isRiemann ? pair.numericalResult.rectangles : pair.numericalResult.strips;
         
-        // For each trapezoid, draw the area between the straight top and the curve
-        for (const strip of pair.trapeziumResult.strips) {
-            const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
-            const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
-            
-            // Sample points along the curve between xLeft and xRight
-            const numSamples = 20;
-            const dx = (strip.xRight - strip.xLeft) / numSamples;
-            
-            this.ctx.beginPath();
-            // Start at left point on trapezoid top
-            this.ctx.moveTo(leftScreen.x, leftScreen.y);
-            
-            // Draw along the actual curve
-            for (let i = 0; i <= numSamples; i++) {
-                const x = strip.xLeft + i * dx;
-                const y = this.evaluateFunction(pair.func.expression, x);
-                if (y !== null && !isNaN(y)) {
-                    const screenPos = this.worldToScreen(x, y);
-                    this.ctx.lineTo(screenPos.x, screenPos.y);
-                }
-            }
-            
-            // Close by drawing back along the trapezoid top
-            this.ctx.lineTo(rightScreen.x, rightScreen.y);
-            this.ctx.lineTo(leftScreen.x, leftScreen.y);
-            this.ctx.closePath();
-            this.ctx.fill();
+        if (!shapes) {
+            this.ctx.restore();
+            return;
         }
         
-        // Now draw the trapezoid outlines in gold
+        // First, shade the error regions (difference between shape and curve) in red
+        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Semi-transparent red
+        
+        if (isRiemann) {
+            // For rectangles, draw the area between the rectangle top and the curve
+            for (const rect of shapes) {
+                const leftScreen = this.worldToScreen(rect.xLeft, rect.yValue);
+                const rightScreen = this.worldToScreen(rect.xRight, rect.yValue);
+                
+                // Sample points along the curve between xLeft and xRight
+                const numSamples = 20;
+                const dx = (rect.xRight - rect.xLeft) / numSamples;
+                
+                this.ctx.beginPath();
+                // Start at left point on rectangle top
+                this.ctx.moveTo(leftScreen.x, leftScreen.y);
+                
+                // Draw along the actual curve
+                for (let i = 0; i <= numSamples; i++) {
+                    const x = rect.xLeft + i * dx;
+                    const y = this.evaluateFunction(pair.func.expression, x);
+                    if (y !== null && !isNaN(y)) {
+                        const screenPos = this.worldToScreen(x, y);
+                        this.ctx.lineTo(screenPos.x, screenPos.y);
+                    }
+                }
+                
+                // Close back to right point on rectangle top
+                this.ctx.lineTo(rightScreen.x, rightScreen.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+        } else {
+            // For trapezoids, draw the area between the straight top and the curve
+            for (const strip of shapes) {
+                const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
+                const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
+                
+                // Sample points along the curve between xLeft and xRight
+                const numSamples = 20;
+                const dx = (strip.xRight - strip.xLeft) / numSamples;
+                
+                this.ctx.beginPath();
+                // Start at left point on trapezoid top
+                this.ctx.moveTo(leftScreen.x, leftScreen.y);
+                
+                // Draw along the actual curve
+                for (let i = 0; i <= numSamples; i++) {
+                    const x = strip.xLeft + i * dx;
+                    const y = this.evaluateFunction(pair.func.expression, x);
+                    if (y !== null && !isNaN(y)) {
+                        const screenPos = this.worldToScreen(x, y);
+                        this.ctx.lineTo(screenPos.x, screenPos.y);
+                    }
+                }
+                
+                // Close by drawing back along the trapezoid top
+                this.ctx.lineTo(rightScreen.x, rightScreen.y);
+                this.ctx.lineTo(leftScreen.x, leftScreen.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+        }
+        
+        // Now draw the shape outlines in gold
         this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // Gold
         this.ctx.lineWidth = 2;
         
-        // Draw each trapezoid
-        for (const strip of pair.trapeziumResult.strips) {
-            const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
-            const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
-            const leftBase = this.worldToScreen(strip.xLeft, 0);
-            const rightBase = this.worldToScreen(strip.xRight, 0);
-            
-            // Draw trapezoid outline
-            this.ctx.beginPath();
-            this.ctx.moveTo(leftBase.x, leftBase.y);
-            this.ctx.lineTo(leftScreen.x, leftScreen.y);
-            this.ctx.lineTo(rightScreen.x, rightScreen.y);
-            this.ctx.lineTo(rightBase.x, rightBase.y);
-            this.ctx.closePath();
-            this.ctx.stroke();
+        if (isRiemann) {
+            // Draw each rectangle
+            for (const rect of shapes) {
+                const leftTop = this.worldToScreen(rect.xLeft, rect.yValue);
+                const rightTop = this.worldToScreen(rect.xRight, rect.yValue);
+                const leftBase = this.worldToScreen(rect.xLeft, 0);
+                const rightBase = this.worldToScreen(rect.xRight, 0);
+                
+                // Draw rectangle outline
+                this.ctx.beginPath();
+                this.ctx.moveTo(leftBase.x, leftBase.y);
+                this.ctx.lineTo(leftTop.x, leftTop.y);
+                this.ctx.lineTo(rightTop.x, rightTop.y);
+                this.ctx.lineTo(rightBase.x, rightBase.y);
+                this.ctx.closePath();
+                this.ctx.stroke();
+            }
+        } else {
+            // Draw each trapezoid
+            for (const strip of shapes) {
+                const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
+                const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
+                const leftBase = this.worldToScreen(strip.xLeft, 0);
+                const rightBase = this.worldToScreen(strip.xRight, 0);
+                
+                // Draw trapezoid outline
+                this.ctx.beginPath();
+                this.ctx.moveTo(leftBase.x, leftBase.y);
+                this.ctx.lineTo(leftScreen.x, leftScreen.y);
+                this.ctx.lineTo(rightScreen.x, rightScreen.y);
+                this.ctx.lineTo(rightBase.x, rightBase.y);
+                this.ctx.closePath();
+                this.ctx.stroke();
+            }
         }
         
         this.ctx.restore();
@@ -16917,9 +17030,14 @@ class Graphiti {
         if (showTrapControls) {
             const controlsY = panelY + basePanelHeight; // No gap at all
             
-            // Always calculate numerical approximation
-            const trapResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
-            const approximation = trapResult.approximation;
+            // Calculate numerical approximation based on selected method
+            let numericalResult;
+            if (pair.numericalMethod === 'riemann') {
+                numericalResult = this.calculateRiemannSum(pair.func, pair.start, pair.end, pair.trapeziumStripCount, 'midpoint');
+            } else {
+                numericalResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+            }
+            const approximation = numericalResult.approximation;
             
             // Display approximation value
             // Label left-aligned, value right-aligned
@@ -17096,10 +17214,10 @@ class Graphiti {
                 height: buttonHeight
             };
             
-            // Store trapezium result for drawing on graph
-            pair.trapeziumResult = trapResult;
+            // Store numerical result for drawing on graph
+            pair.numericalResult = numericalResult;
         } else {
-            pair.trapeziumResult = null;
+            pair.numericalResult = null;
         }
         
         // Store panel bounds for potential click detection
