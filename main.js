@@ -16138,12 +16138,45 @@ class Graphiti {
     }
     
     drawTrapezoidOutlines(pair) {
-        // Draw trapezoid outlines for trapezium rule visualization
+        // Draw trapezoid outlines and error regions for trapezium rule visualization
         if (!pair.trapeziumResult || !pair.trapeziumResult.strips) return;
         
         this.ctx.save();
         
-        // Use bright contrasting color for trapezoid outlines
+        // First, shade the error regions (difference between trapezoid and curve) in red
+        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Semi-transparent red
+        
+        // For each trapezoid, draw the area between the straight top and the curve
+        for (const strip of pair.trapeziumResult.strips) {
+            const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
+            const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
+            
+            // Sample points along the curve between xLeft and xRight
+            const numSamples = 20;
+            const dx = (strip.xRight - strip.xLeft) / numSamples;
+            
+            this.ctx.beginPath();
+            // Start at left point on trapezoid top
+            this.ctx.moveTo(leftScreen.x, leftScreen.y);
+            
+            // Draw along the actual curve
+            for (let i = 0; i <= numSamples; i++) {
+                const x = strip.xLeft + i * dx;
+                const y = this.evaluateFunction(pair.func.expression, x);
+                if (y !== null && !isNaN(y)) {
+                    const screenPos = this.worldToScreen(x, y);
+                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                }
+            }
+            
+            // Close by drawing back along the trapezoid top
+            this.ctx.lineTo(rightScreen.x, rightScreen.y);
+            this.ctx.lineTo(leftScreen.x, leftScreen.y);
+            this.ctx.closePath();
+            this.ctx.fill();
+        }
+        
+        // Now draw the trapezoid outlines in gold
         this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // Gold
         this.ctx.lineWidth = 2;
         
