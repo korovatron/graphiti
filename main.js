@@ -7345,12 +7345,25 @@ class Graphiti {
             }
             
             if (curvePoint) {
+                // Check if the most recent badge on this function has an integral
+                // If so, and there's only 1 integral, the next badge should also be an integral (for pairing)
+                const badgesOnFunction = this.input.persistentBadges
+                    .filter(b => b.functionId === curvePoint.function.id);
+                
+                const recentBadges = badgesOnFunction.sort((a, b) => b.id - a.id); // Sort by ID descending (most recent first)
+                const mostRecentBadge = recentBadges[0];
+                const integralCount = badgesOnFunction.filter(b => b.hasIntegral).length;
+                
+                // Only add integral next if most recent is integral AND there's only 1 integral badge
+                const shouldAddIntegral = mostRecentBadge && mostRecentBadge.hasIntegral && integralCount === 1;
+                
                 // Enter tracing mode (don't clear existing badges)
                 this.input.tracing.active = true;
                 this.input.tracing.functionId = curvePoint.function.id;
                 this.input.tracing.worldX = curvePoint.worldX;
                 this.input.tracing.worldY = curvePoint.worldY;
                 this.input.tracing.theta = curvePoint.theta; // Store theta for polar parametric tracing
+                this.input.tracing.addIntegralNext = shouldAddIntegral; // Flag to add integral directly
             } else {
                 // Normal panning mode
                 this.input.tracing.active = false;
@@ -7876,9 +7889,37 @@ class Graphiti {
             if (!originalState) {
                 const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
                 if (newBadge) {
-                    const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
-                    this.showBadgeTooltip('Coordinates - drag to change - tap for more tools', screenPos.x, screenPos.y);
+                    // Check if we should add integral directly (for pairing with existing integral)
+                    if (this.input.tracing.addIntegralNext && tracingFunction) {
+                        // Check if this is an implicit function (integration not supported)
+                        const functionType = this.detectFunctionType(tracingFunction.expression);
+                        const isImplicit = (functionType === 'implicit' || functionType === 'implicit-inequality');
+                        
+                        if (!isImplicit) {
+                            // Add integral directly
+                            newBadge.hasTangent = false;
+                            newBadge.neonTangent = false;
+                            newBadge.hasNormal = false;
+                            newBadge.neonNormal = false;
+                            newBadge.hasIntegral = true;
+                            newBadge.neonIntegral = false;
+                            
+                            const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                            this.showBadgeTooltip('Integral pair added', screenPos.x, screenPos.y);
+                        } else {
+                            // Show regular tooltip for implicit functions
+                            const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                            this.showBadgeTooltip('Coordinates - drag to change - tap for more tools', screenPos.x, screenPos.y);
+                        }
+                    } else {
+                        // Show regular tooltip
+                        const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                        this.showBadgeTooltip('Coordinates - drag to change - tap for more tools', screenPos.x, screenPos.y);
+                    }
                 }
+                
+                // Clear the flag
+                this.input.tracing.addIntegralNext = false;
             }
             
             if (originalState) {
