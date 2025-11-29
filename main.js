@@ -1977,6 +1977,10 @@ class Graphiti {
             funcDiv.remove();
         }
         
+        // Clear intercepts and frozen badges immediately to prevent displaying stale data
+        this.intercepts = [];
+        this.frozenInterceptBadges = [];
+        
         // Recalculate intersections and turning points for remaining functions
         this.handleViewportChange();
         
