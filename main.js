@@ -8207,6 +8207,25 @@ class Graphiti {
             this.input.badgeInteraction.wasTap = false;
             this.input.badgeInteraction.originalBadgeState = null;
             
+            // Track if we need to update integral pairs (only if integral badges changed)
+            let needsIntegralUpdate = false;
+            
+            // Check if we added/removed/changed an integral badge
+            if (originalState) {
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                if (newBadge) {
+                    // If integral state changed, we need to update
+                    needsIntegralUpdate = (originalState.hasIntegral !== newBadge.hasIntegral) ||
+                                         (originalState.neonIntegral !== newBadge.neonIntegral);
+                }
+            } else {
+                // New badge was added - check if it has integral
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                if (newBadge && newBadge.hasIntegral) {
+                    needsIntegralUpdate = true;
+                }
+            }
+            
             // Clear frozen intercept badges and set viewport stable BEFORE any calculations
             // This ensures that updateCombinedIntersections will call draw()
             this.frozenInterceptBadges = [];
@@ -8224,8 +8243,10 @@ class Graphiti {
                 this.updateCombinedIntersections();
             }
             
-            // Detect and calculate integral pairs
-            this.updateIntegralPairs();
+            // Detect and calculate integral pairs - only if integral badges changed
+            if (needsIntegralUpdate) {
+                this.updateIntegralPairs();
+            }
             
             // Always draw to ensure intercepts are displayed
             this.draw();
@@ -16224,9 +16245,21 @@ class Graphiti {
     
     drawAreaBetweenPanelLabel(linkedPair, index) {
         const panelX = this.viewport.width - 250;
-        const panelY = this.viewport.height - 60 - (index * 50);
         const panelWidth = 240;
         const panelHeight = 45;
+        
+        // Calculate total height of all integral panels below this one
+        let totalHeightAbove = 0;
+        for (let i = 0; i < index; i++) {
+            const prevPair = this.integralPairs[i];
+            const prevShowTrap = this.plotMode === 'cartesian' && 
+                                 this.detectFunctionType(prevPair.func.expression) === 'explicit';
+            const prevHeight = 45 + (prevShowTrap ? 75 : 0);
+            totalHeightAbove += prevHeight + 5; // +5 for spacing
+        }
+        
+        // Position above all integral panels with 5px spacing
+        const panelY = this.viewport.height - 10 - totalHeightAbove - 5 - panelHeight;
         
         this.ctx.save();
         
@@ -16274,9 +16307,21 @@ class Graphiti {
     
     drawAreaBetweenHintLabel(index) {
         const panelX = this.viewport.width - 250;
-        const panelY = this.viewport.height - 60 - (index * 50);
         const panelWidth = 240;
         const panelHeight = 45;
+        
+        // Calculate total height of all integral panels below this one
+        let totalHeightAbove = 0;
+        for (let i = 0; i < index; i++) {
+            const prevPair = this.integralPairs[i];
+            const prevShowTrap = this.plotMode === 'cartesian' && 
+                                 this.detectFunctionType(prevPair.func.expression) === 'explicit';
+            const prevHeight = 45 + (prevShowTrap ? 75 : 0);
+            totalHeightAbove += prevHeight + 5; // +5 for spacing
+        }
+        
+        // Position above all integral panels with 5px spacing
+        const panelY = this.viewport.height - 10 - totalHeightAbove - 5 - panelHeight;
         
         this.ctx.save();
         
@@ -16735,7 +16780,7 @@ class Graphiti {
             totalHeightAbove += prevHeight + 5; // +5 for spacing
         }
         
-        const panelY = this.viewport.height - 60 - totalHeightAbove - panelHeight;
+        const panelY = this.viewport.height - 10 - totalHeightAbove - panelHeight;
         const panelWidth = 240;
         
         this.ctx.save();
