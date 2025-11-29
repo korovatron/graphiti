@@ -1206,25 +1206,32 @@ class Graphiti {
         
         // If expression is provided, plot it immediately
         if (expression) {
-            this.plotFunction(func);
-            
-            // Skip badge calculations during polar animation or pause
-            if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
-                // Update intersections after adding this function (immediate calculation)
-                if (this.showIntersections) {
-                    this.calculateIntersectionsWithWorker(true); // true = immediate
+            // Use async IIFE to handle async plotFunction
+            (async () => {
+                await this.plotFunction(func);
+                
+                // Skip badge calculations during polar animation or pause
+                if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+                    // Update intersections after adding this function (immediate calculation)
+                    if (this.showIntersections) {
+                        this.calculateIntersectionsWithWorker(true); // true = immediate
+                    }
+                    
+                    // Update turning points after adding this function
+                    if (this.showTurningPoints) {
+                        this.turningPoints = this.findTurningPoints();
+                    }
+                    
+                    // Update intercepts after adding this function
+                    if (this.showIntercepts) {
+                        this.intercepts = this.findAxisIntercepts();
+                        this.cullInterceptMarkers(); // Pre-calculate culled markers
+                    }
                 }
                 
-                // Update turning points after adding this function
-                if (this.showTurningPoints) {
-                    this.turningPoints = this.findTurningPoints();
-                }
-                
-                // Update intercepts after adding this function
-                if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                }
-            }
+                // Force a redraw to display everything
+                this.draw();
+            })();
         }
         
         // Save functions to localStorage
@@ -1238,7 +1245,7 @@ class Graphiti {
     }
 
     // Add an example function - fills empty slot if available, otherwise adds new
-    addExampleFunction(expression) {
+    async addExampleFunction(expression) {
         const emptyFunc = this.findFirstEmptyFunction();
         
         if (emptyFunc) {
@@ -1254,8 +1261,8 @@ class Graphiti {
                 }
             }
             
-            // Plot the function
-            this.plotFunction(emptyFunc);
+            // Plot the function and wait for it to complete
+            await this.plotFunction(emptyFunc);
             
             // Skip badge calculations during polar animation or pause
             if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
@@ -1268,8 +1275,12 @@ class Graphiti {
                 }
                 if (this.showIntercepts) {
                     this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers
                 }
             }
+            
+            // Force a redraw to display everything
+            this.draw();
         } else {
             // No empty slot found, add as new function
             this.addFunction(expression);
