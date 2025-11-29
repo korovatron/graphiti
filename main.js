@@ -145,7 +145,8 @@ class Graphiti {
                     isSnapped: false, // Whether trace is currently snapped
                     snapStartTime: 0, // When snap started
                     snapDuration: 300, // How long to hold snap (ms)
-                    snappedPoint: null // {worldX, worldY, type} of snapped point
+                    snappedPoint: null, // {worldX, worldY, type, theta?} of snapped point
+                    cooldownUntil: 0 // Prevent re-snap until this timestamp
                 }
             },
             // Pinch gesture tracking
@@ -7385,10 +7386,15 @@ class Graphiti {
                         
                         // If snap duration hasn't expired, keep using snapped coordinates
                         if (elapsed < snapState.snapDuration) {
-                            // Freeze at snapped point
+                            // Freeze at snapped point - don't call traceFunction at all
                             this.input.tracing.worldX = snapState.snappedPoint.worldX;
                             this.input.tracing.worldY = snapState.snappedPoint.worldY;
-                            // Continue to slope/integral updates below
+                            
+                            // For polar functions, also freeze theta by using stored value
+                            if (tracingFunction.mode === 'polar' && snapState.snappedPoint.theta !== undefined) {
+                                this.input.tracing.theta = snapState.snappedPoint.theta;
+                            }
+                            // Skip traceFunction call entirely - continue to slope/integral updates below
                         } else {
                             // Snap duration expired - check if mouse moved far enough to break snap
                             const dx = currentWorldPos.x - snapState.snappedPoint.worldX;
@@ -7400,15 +7406,24 @@ class Graphiti {
                             if (distance > breakThreshold) {
                                 snapState.isSnapped = false;
                                 snapState.snappedPoint = null;
+                                // Set cooldown to prevent immediate re-snap
+                                snapState.cooldownUntil = now + 200; // 200ms cooldown
+                                // Will fall through to normal tracing below
                             } else {
                                 // Still close, keep snapped
                                 this.input.tracing.worldX = snapState.snappedPoint.worldX;
                                 this.input.tracing.worldY = snapState.snappedPoint.worldY;
+                                
+                                // For polar functions, also freeze theta
+                                if (tracingFunction.mode === 'polar' && snapState.snappedPoint.theta !== undefined) {
+                                    this.input.tracing.theta = snapState.snappedPoint.theta;
+                                }
+                                // Skip traceFunction call - continue to slope/integral updates
                             }
                         }
                     }
                     
-                    // If not snapped (or snap just broke), do normal tracing
+                    // Only do normal tracing if not currently snapped
                     if (!snapState.isSnapped) {
                         const tracePoint = this.traceFunction(
                             tracingFunction, 
@@ -7427,12 +7442,18 @@ class Graphiti {
                                 this.input.tracing.theta = tracePoint.theta;
                             }
                             
-                            // Check if we should snap to a significant point (Cartesian only for now)
+                            // Check if we should snap to a significant point
+                            // Skip if we're in cooldown period after breaking a previous snap
+                            if (now < snapState.cooldownUntil) {
+                                // In cooldown, don't check for snaps
+                                return; // Skip snap detection, just use traced coordinates
+                            }
+                            
+                            const snapTolerance = 0.15; // World units
+                            let nearestSignificantPoint = null;
+                            let nearestDistance = snapTolerance;
+                            
                             if (tracingFunction.mode === 'cartesian') {
-                                const snapTolerance = 0.15; // World units
-                                let nearestSignificantPoint = null;
-                                let nearestDistance = snapTolerance;
-                                
                                 // Check turning points
                                 if (this.showTurningPoints) {
                                     for (const tp of this.turningPoints) {
@@ -7482,15 +7503,90 @@ class Graphiti {
                                         }
                                     }
                                 }
+                            } else if (tracingFunction.mode === 'polar') {
+                                // For polar functions, check the same significant points
+                                // Check turning points
+                                if (this.showTurningPoints) {
+                                    for (const tp of this.turningPoints) {
+                                        if (tp.func && tp.func.id === tracingFunction.id) {
+                                            const dx = tracePoint.x - tp.x;
+                                            const dy = tracePoint.y - tp.y;
+                                            const dist = Math.sqrt(dx * dx + dy * dy);
+                                            if (dist < nearestDistance) {
+                                                nearestDistance = dist;
+                                                // Calculate theta from the actual significant point coordinates
+                                                const theta = Math.atan2(tp.y, tp.x);
+                                                nearestSignificantPoint = { 
+                                                    worldX: tp.x, 
+                                                    worldY: tp.y, 
+                                                    theta: theta,
+                                                    type: 'turning' 
+                                                };
+                                            }
+                                        }
+                                    }
+                                }
                                 
-                                // If we found a significant point to snap to, enter snap state
-                                if (nearestSignificantPoint) {
-                                    snapState.isSnapped = true;
-                                    snapState.snapStartTime = now;
-                                    snapState.snappedPoint = nearestSignificantPoint;
-                                    // Immediately use snapped coordinates
-                                    this.input.tracing.worldX = nearestSignificantPoint.worldX;
-                                    this.input.tracing.worldY = nearestSignificantPoint.worldY;
+                                // Check intercepts
+                                if (this.showIntercepts) {
+                                    for (const intercept of this.intercepts) {
+                                        if (intercept.functionId === tracingFunction.id) {
+                                            const dx = tracePoint.x - intercept.x;
+                                            const dy = tracePoint.y - intercept.y;
+                                            const dist = Math.sqrt(dx * dx + dy * dy);
+                                            if (dist < nearestDistance) {
+                                                nearestDistance = dist;
+                                                // Calculate theta from the actual significant point coordinates
+                                                const theta = Math.atan2(intercept.y, intercept.x);
+                                                nearestSignificantPoint = { 
+                                                    worldX: intercept.x, 
+                                                    worldY: intercept.y, 
+                                                    theta: theta,
+                                                    type: 'intercept' 
+                                                };
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Check intersections
+                                if (this.showIntersections) {
+                                    for (const intersection of this.intersections) {
+                                        const func1Id = intersection.func1Id || (intersection.func1 && intersection.func1.id);
+                                        const func2Id = intersection.func2Id || (intersection.func2 && intersection.func2.id);
+                                        
+                                        if (func1Id === tracingFunction.id || func2Id === tracingFunction.id) {
+                                            const dx = tracePoint.x - intersection.x;
+                                            const dy = tracePoint.y - intersection.y;
+                                            const dist = Math.sqrt(dx * dx + dy * dy);
+                                            if (dist < nearestDistance) {
+                                                nearestDistance = dist;
+                                                // Calculate theta from the actual significant point coordinates
+                                                const theta = Math.atan2(intersection.y, intersection.x);
+                                                nearestSignificantPoint = { 
+                                                    worldX: intersection.x, 
+                                                    worldY: intersection.y, 
+                                                    theta: theta,
+                                                    type: 'intersection' 
+                                                };
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // If we found a significant point to snap to, enter snap state
+                            if (nearestSignificantPoint) {
+                                snapState.isSnapped = true;
+                                snapState.snapStartTime = now;
+                                snapState.snappedPoint = nearestSignificantPoint;
+                                // Immediately use snapped coordinates
+                                this.input.tracing.worldX = nearestSignificantPoint.worldX;
+                                this.input.tracing.worldY = nearestSignificantPoint.worldY;
+                                
+                                // For polar functions, also store and use snapped theta
+                                if (tracingFunction.mode === 'polar' && nearestSignificantPoint.theta !== undefined) {
+                                    this.input.tracing.theta = nearestSignificantPoint.theta;
                                 }
                             }
                         }
