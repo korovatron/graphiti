@@ -225,7 +225,7 @@ class Graphiti {
         
         // Trapezium rule visualization
         this.showTrapeziumRule = false; // Toggle for trapezium rule visualization
-        this.trapeziumStripCount = 10; // Number of strips for trapezium rule (default 10)
+        this.trapeziumStripCount = 4; // Number of strips for trapezium rule (default 4)
         
         // Implicit function calculation cancellation system
         this.implicitCalculationId = 0; // Counter for tracking calculation sessions
@@ -7500,21 +7500,6 @@ class Graphiti {
         const canvasX = x - rect.left;
         const canvasY = y - rect.top;
         
-        // Handle trapezium slider dragging
-        if (this.input.trapSliderDragging && this.input.trapSliderPair) {
-            const pair = this.input.trapSliderPair;
-            if (pair.trapSliderBounds) {
-                const bounds = pair.trapSliderBounds;
-                // Calculate new n value based on mouse position
-                const relativeX = Math.max(0, Math.min(canvasX - bounds.x, bounds.width));
-                const ratio = relativeX / bounds.width;
-                const newN = Math.round(bounds.minN + ratio * (bounds.maxN - bounds.minN));
-                this.trapeziumStripCount = Math.max(bounds.minN, Math.min(bounds.maxN, newN));
-                this.draw();
-            }
-            return;
-        }
-        
         if (this.input.mouse.down && this.currentState === this.states.GRAPHING) {
             const deltaX = canvasX - this.input.lastX;
             const deltaY = canvasY - this.input.lastY;
@@ -7904,13 +7889,6 @@ class Graphiti {
     }
     
     handlePointerEnd() {
-        // Stop trapezium slider dragging
-        if (this.input.trapSliderDragging) {
-            this.input.trapSliderDragging = false;
-            this.input.trapSliderPair = null;
-            return;
-        }
-        
         // Safety check: prevent duplicate handling if already processed
         if (!this.input.mouse.down) {
             return;
@@ -16826,40 +16804,65 @@ class Graphiti {
                 height: toggleHeight
             };
             
-            // Slider for n (number of strips) - only show if trapezium is enabled
+            // Plus/minus buttons for n (number of strips) - only show if trapezium is enabled
             if (this.showTrapeziumRule) {
-                const sliderX = panelX + 80;
-                const sliderY = controlsY + 5;
-                const sliderWidth = 140;
+                const buttonY = controlsY + 5;
+                const buttonSize = 25;
+                const buttonSpacing = 5;
                 
-                // Slider track
+                // Minus button
+                const minusX = panelX + 80;
+                this.ctx.fillStyle = '#555555';
+                this.ctx.fillRect(minusX, buttonY, buttonSize, buttonSize);
+                this.ctx.strokeStyle = '#FFFFFF';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(minusX, buttonY, buttonSize, buttonSize);
+                
+                this.ctx.font = 'bold 18px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillStyle = '#FFFFFF';
+                this.ctx.fillText('−', minusX + buttonSize / 2, buttonY + buttonSize / 2);
+                
+                // Store minus button bounds
+                pair.trapMinusBounds = {
+                    x: minusX,
+                    y: buttonY,
+                    width: buttonSize,
+                    height: buttonSize
+                };
+                
+                // N value display
+                const labelX = minusX + buttonSize + buttonSpacing;
+                const labelWidth = 60;
                 this.ctx.fillStyle = '#333333';
-                this.ctx.fillRect(sliderX, sliderY, sliderWidth, 15);
+                this.ctx.fillRect(labelX, buttonY, labelWidth, buttonSize);
                 this.ctx.strokeStyle = '#666666';
                 this.ctx.lineWidth = 1;
-                this.ctx.strokeRect(sliderX, sliderY, sliderWidth, 15);
+                this.ctx.strokeRect(labelX, buttonY, labelWidth, buttonSize);
                 
-                // Slider thumb (n ranges from 4 to 50)
-                const minN = 4;
-                const maxN = 50;
-                const thumbPos = ((this.trapeziumStripCount - minN) / (maxN - minN)) * sliderWidth;
-                this.ctx.fillStyle = '#4A90E2';
-                this.ctx.fillRect(sliderX + thumbPos - 3, sliderY - 2, 6, 19);
-                
-                // Label showing n value
-                this.ctx.font = 'bold 10px Arial';
-                this.ctx.textAlign = 'center';
+                this.ctx.font = 'bold 14px Arial';
                 this.ctx.fillStyle = '#FFFFFF';
-                this.ctx.fillText(`n=${this.trapeziumStripCount}`, sliderX + sliderWidth / 2, sliderY + 30);
+                this.ctx.fillText(`n = ${this.trapeziumStripCount}`, labelX + labelWidth / 2, buttonY + buttonSize / 2);
                 
-                // Store slider bounds
-                pair.trapSliderBounds = {
-                    x: sliderX,
-                    y: sliderY,
-                    width: sliderWidth,
-                    height: 15,
-                    minN: minN,
-                    maxN: maxN
+                // Plus button
+                const plusX = labelX + labelWidth + buttonSpacing;
+                this.ctx.fillStyle = '#555555';
+                this.ctx.fillRect(plusX, buttonY, buttonSize, buttonSize);
+                this.ctx.strokeStyle = '#FFFFFF';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(plusX, buttonY, buttonSize, buttonSize);
+                
+                this.ctx.font = 'bold 18px Arial';
+                this.ctx.fillStyle = '#FFFFFF';
+                this.ctx.fillText('+', plusX + buttonSize / 2, buttonY + buttonSize / 2);
+                
+                // Store plus button bounds
+                pair.trapPlusBounds = {
+                    x: plusX,
+                    y: buttonY,
+                    width: buttonSize,
+                    height: buttonSize
                 };
                 
                 // Calculate and display trapezium approximation
@@ -16907,12 +16910,21 @@ class Graphiti {
                 }
             }
             
-            // Check trapezium slider
-            if (pair.trapSliderBounds) {
-                const bounds = pair.trapSliderBounds;
+            // Check trapezium minus button
+            if (pair.trapMinusBounds) {
+                const bounds = pair.trapMinusBounds;
                 if (x >= bounds.x && x <= bounds.x + bounds.width &&
                     y >= bounds.y && y <= bounds.y + bounds.height) {
-                    return { pair, type: 'trapSlider' };
+                    return { pair, type: 'trapMinus' };
+                }
+            }
+            
+            // Check trapezium plus button
+            if (pair.trapPlusBounds) {
+                const bounds = pair.trapPlusBounds;
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    return { pair, type: 'trapPlus' };
                 }
             }
             
@@ -16941,10 +16953,17 @@ class Graphiti {
             return;
         }
         
-        if (type === 'trapSlider') {
-            // Start dragging slider - set up mouse move handler
-            this.input.trapSliderDragging = true;
-            this.input.trapSliderPair = pair;
+        if (type === 'trapMinus') {
+            // Decrease n (minimum 1)
+            this.trapeziumStripCount = Math.max(1, this.trapeziumStripCount - 1);
+            this.draw();
+            return;
+        }
+        
+        if (type === 'trapPlus') {
+            // Increase n (maximum 50)
+            this.trapeziumStripCount = Math.min(50, this.trapeziumStripCount + 1);
+            this.draw();
             return;
         }
         
