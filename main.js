@@ -7471,14 +7471,11 @@ class Graphiti {
                             
                             // Check if we should snap to a significant point
                             // Skip if we're in cooldown period after breaking a previous snap
-                            if (now < snapState.cooldownUntil) {
-                                // In cooldown, don't check for snaps
-                                return; // Skip snap detection, just use traced coordinates
-                            }
-                            
-                            const snapTolerance = 0.15; // World units
-                            let nearestSignificantPoint = null;
-                            let nearestDistance = snapTolerance;
+                            if (now >= snapState.cooldownUntil) {
+                                // Not in cooldown, check for snaps
+                                const snapTolerance = 0.15; // World units
+                                let nearestSignificantPoint = null;
+                                let nearestDistance = snapTolerance;
                             
                             if (tracingFunction.mode === 'cartesian') {
                                 // Check turning points
@@ -7615,6 +7612,7 @@ class Graphiti {
                                 if (tracingFunction.mode === 'polar' && nearestSignificantPoint.theta !== undefined) {
                                     this.input.tracing.theta = nearestSignificantPoint.theta;
                                 }
+                            }
                             }
                         }
                     }
@@ -16907,6 +16905,7 @@ class Graphiti {
         this.ctx.lineTo(endScreen.x, endScreen.y);
         this.ctx.stroke();
         
+        this.ctx.setLineDash([]); // Reset dash pattern
         this.ctx.restore();
     }
     
@@ -17029,6 +17028,7 @@ class Graphiti {
         this.ctx.lineTo(endScreen.x, endScreen.y);
         this.ctx.stroke();
         
+        this.ctx.setLineDash([]); // Reset dash pattern
         this.ctx.restore();
     }
     
