@@ -5886,7 +5886,9 @@ class Graphiti {
                     end: end,
                     area: area,
                     color: func.color,
-                    neon: badge1.neonIntegral || badge2.neonIntegral
+                    neon: badge1.neonIntegral || badge2.neonIntegral,
+                    showTrapeziumRule: oldPair ? oldPair.showTrapeziumRule : false, // Preserve or default to false
+                    trapeziumStripCount: oldPair ? oldPair.trapeziumStripCount : 4 // Preserve or default to 4
                 };
                 
                 // Preserve labelBounds if it existed
@@ -16147,7 +16149,7 @@ class Graphiti {
             this.ctx.restore();
             
             // Draw trapezoid outlines if enabled
-            if (this.showTrapeziumRule && pair.trapeziumResult && this.plotMode === 'cartesian') {
+            if (pair.showTrapeziumRule && pair.trapeziumResult && this.plotMode === 'cartesian') {
                 this.drawTrapezoidOutlines(pair);
             }
             
@@ -16255,10 +16257,13 @@ class Graphiti {
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
             const prevHeight = 45 + (prevShowTrap ? 75 : 0);
-            totalHeightAbove += prevHeight + 5; // +5 for spacing
+            totalHeightAbove += prevHeight;
+            if (i < index - 1) {
+                totalHeightAbove += 5; // Add spacing between panels, but not after the last one
+            }
         }
         
-        // Position above all integral panels with 5px spacing
+        // Position above all integral panels with standard 5px spacing
         const panelY = this.viewport.height - 10 - totalHeightAbove - 5 - panelHeight;
         
         this.ctx.save();
@@ -16317,10 +16322,13 @@ class Graphiti {
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
             const prevHeight = 45 + (prevShowTrap ? 75 : 0);
-            totalHeightAbove += prevHeight + 5; // +5 for spacing
+            totalHeightAbove += prevHeight;
+            if (i < index - 1) {
+                totalHeightAbove += 5; // Add spacing between panels, but not after the last one
+            }
         }
         
-        // Position above all integral panels with 5px spacing
+        // Position above all integral panels with standard 5px spacing
         const panelY = this.viewport.height - 10 - totalHeightAbove - 5 - panelHeight;
         
         this.ctx.save();
@@ -16863,7 +16871,7 @@ class Graphiti {
             const toggleWidth = 60;
             const toggleHeight = 25;
             
-            this.ctx.fillStyle = this.showTrapeziumRule ? '#4A90E2' : '#555555';
+            this.ctx.fillStyle = pair.showTrapeziumRule ? '#4A90E2' : '#555555';
             this.ctx.fillRect(toggleX, toggleY, toggleWidth, toggleHeight);
             this.ctx.strokeStyle = '#FFFFFF';
             this.ctx.lineWidth = 1;
@@ -16883,7 +16891,7 @@ class Graphiti {
             };
             
             // Plus/minus buttons for n (number of strips) - only show if trapezium is enabled
-            if (this.showTrapeziumRule) {
+            if (pair.showTrapeziumRule) {
                 const buttonY = controlsY + 5;
                 const buttonSize = 25;
                 const buttonSpacing = 5;
@@ -16921,7 +16929,7 @@ class Graphiti {
                 
                 this.ctx.font = 'bold 14px Arial';
                 this.ctx.fillStyle = '#FFFFFF';
-                this.ctx.fillText(`n = ${this.trapeziumStripCount}`, labelX + labelWidth / 2, buttonY + buttonSize / 2);
+                this.ctx.fillText(`n = ${pair.trapeziumStripCount}`, labelX + labelWidth / 2, buttonY + buttonSize / 2);
                 
                 // Plus button
                 const plusX = labelX + labelWidth + buttonSpacing;
@@ -16944,7 +16952,7 @@ class Graphiti {
                 };
                 
                 // Calculate and display trapezium approximation
-                const trapResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, this.trapeziumStripCount);
+                const trapResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
                 const trapText = `≈ ${this.formatCoordinate(trapResult.approximation)}`;
                 this.ctx.font = 'bold 14px Arial';
                 this.ctx.textAlign = 'left';
@@ -17025,22 +17033,22 @@ class Graphiti {
         const type = clickInfo.type;
         
         if (type === 'trapToggle') {
-            // Toggle trapezium rule visualization
-            this.showTrapeziumRule = !this.showTrapeziumRule;
+            // Toggle trapezium rule visualization for this specific pair
+            pair.showTrapeziumRule = !pair.showTrapeziumRule;
             this.draw();
             return;
         }
         
         if (type === 'trapMinus') {
-            // Decrease n (minimum 1)
-            this.trapeziumStripCount = Math.max(1, this.trapeziumStripCount - 1);
+            // Decrease n for this specific pair (minimum 1)
+            pair.trapeziumStripCount = Math.max(1, pair.trapeziumStripCount - 1);
             this.draw();
             return;
         }
         
         if (type === 'trapPlus') {
-            // Increase n (maximum 50)
-            this.trapeziumStripCount = Math.min(50, this.trapeziumStripCount + 1);
+            // Increase n for this specific pair (maximum 50)
+            pair.trapeziumStripCount = Math.min(50, pair.trapeziumStripCount + 1);
             this.draw();
             return;
         }
