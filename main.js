@@ -14034,6 +14034,13 @@ class Graphiti {
             this.drawPerformanceOverlay();
         }
         
+        // Explicitly reset all canvas state to prevent leaking (especially important for mobile)
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.globalAlpha = 1.0;
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.setLineDash([]);
+        
         // UI overlays removed - cleaner interface
     }
     
@@ -16003,6 +16010,10 @@ class Graphiti {
                 this.ctx.setLineDash([]);
             }
             
+            // Explicitly reset shadow effects to prevent leaking on mobile
+            this.ctx.shadowBlur = 0;
+            this.ctx.shadowColor = 'transparent';
+            
             this.ctx.restore();
             
             // Don't draw label here - will be drawn in panel at bottom
@@ -16906,6 +16917,8 @@ class Graphiti {
         this.ctx.stroke();
         
         this.ctx.setLineDash([]); // Reset dash pattern
+        this.ctx.shadowBlur = 0; // Reset shadow
+        this.ctx.shadowColor = 'transparent';
         this.ctx.restore();
     }
     
@@ -17029,6 +17042,8 @@ class Graphiti {
         this.ctx.stroke();
         
         this.ctx.setLineDash([]); // Reset dash pattern
+        this.ctx.shadowBlur = 0; // Reset shadow
+        this.ctx.shadowColor = 'transparent';
         this.ctx.restore();
     }
     
