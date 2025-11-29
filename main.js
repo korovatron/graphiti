@@ -5887,8 +5887,9 @@ class Graphiti {
                     area: area,
                     color: func.color,
                     neon: badge1.neonIntegral || badge2.neonIntegral,
-                    showTrapeziumRule: oldPair ? oldPair.showTrapeziumRule : false, // Preserve or default to false
-                    trapeziumStripCount: oldPair ? oldPair.trapeziumStripCount : 4 // Preserve or default to 4
+                    showTrapeziumRule: oldPair ? oldPair.showTrapeziumRule : false, // Preserve or default to false (controls drawing on graph)
+                    trapeziumStripCount: oldPair ? oldPair.trapeziumStripCount : 4, // Preserve or default to 4
+                    numericalMethod: oldPair ? oldPair.numericalMethod : 'trapezium' // Preserve or default to trapezium
                 };
                 
                 // Preserve labelBounds if it existed
@@ -5926,6 +5927,29 @@ class Graphiti {
         
         // Remove any linked pairs that are no longer valid
         this.linkedBadgePairs = this.linkedBadgePairs.filter(lp => !lp._remove);
+        
+        // Automatically link when exactly 2 integrals exist
+        if (this.integralPairs.length === 2) {
+            const pair1 = this.integralPairs[0];
+            const pair2 = this.integralPairs[1];
+            
+            // Only link if they're on different functions
+            if (pair1.func.id !== pair2.func.id) {
+                // Preserve existing linked pair state if it exists
+                const oldLinkedPair = this.linkedBadgePairs.find(lp => lp.pair1 && lp.pair2);
+                this.linkedBadgePairs = [{
+                    pair1: pair1,
+                    pair2: pair2,
+                    showAreaBetween: oldLinkedPair ? oldLinkedPair.showAreaBetween : true
+                }];
+            } else {
+                // Same function - can't link
+                this.linkedBadgePairs = [];
+            }
+        } else if (this.integralPairs.length !== 2) {
+            // Not exactly 2 integrals - clear links
+            this.linkedBadgePairs = [];
+        }
         
         // Update checkbox references to point to new pair objects
         for (let i = 0; i < this.integralPanelCheckboxes.length; i++) {
@@ -8142,10 +8166,12 @@ class Graphiti {
                                 const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
                                 this.showBadgeTooltip('Integration not supported for implicit functions', screenPos.x, screenPos.y);
                             } else {
-                                // Explicit function - allow integral
-                                const existingIntegralCount = this.input.persistentBadges.filter(b => 
-                                    b.hasIntegral && b.functionId === newBadge.functionId
+                                // Explicit function - allow integral (max 2 total across all functions)
+                                // Note: Each integral has 2 badges (lower and upper bound)
+                                const existingIntegralBadgeCount = this.input.persistentBadges.filter(b => 
+                                    b.hasIntegral && b.id !== badgeId
                                 ).length;
+                                const existingIntegralCount = existingIntegralBadgeCount / 2;
                                 
                                 if (existingIntegralCount < 2) {
                                     // Allow transition to integral
@@ -8159,9 +8185,19 @@ class Graphiti {
                                     // Show tooltip
                                     const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
                                     this.showBadgeTooltip('Integral - add second to calculate', screenPos.x, screenPos.y);
+                                } else {
+                                    // Max 2 integrals reached - skip to delete (cancel tracing)
+                                    this.input.tracing.active = false;
+                                    this.input.tracing.functionId = null;
+                                    
+                                    // Remove the badge
+                                    this.input.persistentBadges = this.input.persistentBadges.filter(b => b.id !== badgeId);
+                                    
+                                    // Show tooltip explaining why
+                                    const screenPos = this.worldToScreen(newBadge.worldX, newBadge.worldY);
+                                    this.showBadgeTooltip('Maximum 2 integrals reached', screenPos.x, screenPos.y);
                                 }
                             }
-                            // Note: If existingIntegralCount >= 2, the badge was already deleted by canceling tracing above
                         } else if (originalState.hasIntegral && !originalState.neonIntegral) {
                             // State 6: Integral → neon integral
                             newBadge.hasTangent = false;
@@ -16056,11 +16092,11 @@ class Graphiti {
     }
     
     drawIntegrationRegions() {
-        // Draw regular integral pairs (not linked)
+        // Draw regular integral pairs (not linked, or linked but area-between disabled)
         for (const pair of this.integralPairs) {
-            // Skip if this pair is part of a linked set
+            // Skip if this pair is part of a linked set with area-between enabled
             const isLinked = this.linkedBadgePairs.some(lp => 
-                lp.pair1 === pair || lp.pair2 === pair
+                (lp.pair1 === pair || lp.pair2 === pair) && lp.showAreaBetween !== false
             );
             if (isLinked) continue;
             
@@ -16229,19 +16265,15 @@ class Graphiti {
             this.drawIntegrationLabel(this.integralPairs[i], i);
         }
         
-        // Draw "Area between" result if two are checked
-        if (this.integralPanelCheckboxes.length === 2) {
+        // Draw "Area between" panel if exactly 2 integrals exist
+        if (this.integralPairs.length === 2) {
             const linkedPair = this.linkedBadgePairs.find(lp =>
-                this.integralPanelCheckboxes.includes(lp.pair1) &&
-                this.integralPanelCheckboxes.includes(lp.pair2)
+                lp.pair1 && lp.pair2
             );
             
-            if (linkedPair && linkedPair.areaBetween !== undefined) {
+            if (linkedPair) {
                 this.drawAreaBetweenPanelLabel(linkedPair, this.integralPairs.length);
             }
-        } else if (this.integralPairs.length >= 2) {
-            // Show hint when there are 2+ integrals but less than 2 checked
-            this.drawAreaBetweenHintLabel(this.integralPairs.length);
         }
     }
     
@@ -16256,7 +16288,7 @@ class Graphiti {
             const prevPair = this.integralPairs[i];
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
-            const prevHeight = 45 + (prevShowTrap ? 75 : 0);
+            const prevHeight = 45 + (prevShowTrap ? 85 : 0);
             totalHeightAbove += prevHeight;
             if (i < index - 1) {
                 totalHeightAbove += 5; // Add spacing between panels, but not after the last one
@@ -16277,35 +16309,72 @@ class Graphiti {
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
         
-        // Format area value - snap near-zero to 0 and use proper formatting
-        // Use more aggressive zero threshold for areas (0.01) to handle numerical integration errors
-        const snappedArea = Math.abs(linkedPair.areaBetween) < 0.01 ? 0 : linkedPair.areaBetween;
+        // Draw toggle checkbox for enabling area-between calculation
+        const toggleX = panelX + 10;
+        const toggleY = panelY + 12;
+        const toggleSize = 20;
         
-        // Try to format as pi fraction if either function has trig and we're in radians
-        let areaText;
-        if (this.angleMode === 'radians' && (linkedPair.pair1 || linkedPair.pair2)) {
-            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
-            const func1HasTrig = linkedPair.pair1 && linkedPair.pair1.func && linkedPair.pair1.func.expression && trigRegex.test(linkedPair.pair1.func.expression);
-            const func2HasTrig = linkedPair.pair2 && linkedPair.pair2.func && linkedPair.pair2.func.expression && trigRegex.test(linkedPair.pair2.func.expression);
+        // Checkbox background
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillRect(toggleX, toggleY, toggleSize, toggleSize);
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(toggleX, toggleY, toggleSize, toggleSize);
+        
+        // Check if area-between calculation is enabled
+        const isEnabled = linkedPair.showAreaBetween !== false; // Default to true
+        if (isEnabled) {
+            // Draw checkmark
+            this.ctx.strokeStyle = '#00AA00';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.moveTo(toggleX + 4, toggleY + 10);
+            this.ctx.lineTo(toggleX + 8, toggleY + 15);
+            this.ctx.lineTo(toggleX + 16, toggleY + 5);
+            this.ctx.stroke();
+        }
+        
+        // Store bounds for toggle
+        linkedPair.areaBetweenToggleBounds = {
+            x: toggleX,
+            y: toggleY,
+            width: toggleSize,
+            height: toggleSize
+        };
+        
+        // Display area value or "disabled" message
+        let text;
+        if (isEnabled && linkedPair.areaBetween !== undefined) {
+            // Format area value - snap near-zero to 0 and use proper formatting
+            const snappedArea = Math.abs(linkedPair.areaBetween) < 0.01 ? 0 : linkedPair.areaBetween;
             
-            if (func1HasTrig || func2HasTrig) {
-                const piFraction = this.formatAsPiFraction(snappedArea);
-                areaText = piFraction || this.formatCoordinate(snappedArea);
+            // Try to format as pi fraction if either function has trig and we're in radians
+            let areaText;
+            if (this.angleMode === 'radians' && (linkedPair.pair1 || linkedPair.pair2)) {
+                const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+                const func1HasTrig = linkedPair.pair1 && linkedPair.pair1.func && linkedPair.pair1.func.expression && trigRegex.test(linkedPair.pair1.func.expression);
+                const func2HasTrig = linkedPair.pair2 && linkedPair.pair2.func && linkedPair.pair2.func.expression && trigRegex.test(linkedPair.pair2.func.expression);
+                
+                if (func1HasTrig || func2HasTrig) {
+                    const piFraction = this.formatAsPiFraction(snappedArea);
+                    areaText = piFraction || this.formatCoordinate(snappedArea);
+                } else {
+                    areaText = this.formatCoordinate(snappedArea);
+                }
             } else {
                 areaText = this.formatCoordinate(snappedArea);
             }
+            text = `Area between = ${areaText}`;
         } else {
-            areaText = this.formatCoordinate(snappedArea);
+            text = 'Calculate area between';
         }
         
-        const text = `Area between = ${areaText}`;
-        
         // Text
-        this.ctx.font = 'bold 16px Arial';
-        this.ctx.textAlign = 'center';
+        this.ctx.font = 'bold 14px Arial';
+        this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#000000';
-        this.ctx.fillText(text, panelX + panelWidth / 2, panelY + panelHeight / 2);
+        this.ctx.fillText(text, panelX + 40, panelY + 22);
         
         this.ctx.restore();
     }
@@ -16321,7 +16390,7 @@ class Graphiti {
             const prevPair = this.integralPairs[i];
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
-            const prevHeight = 45 + (prevShowTrap ? 75 : 0);
+            const prevHeight = 45 + (prevShowTrap ? 85 : 0);
             totalHeightAbove += prevHeight;
             if (i < index - 1) {
                 totalHeightAbove += 5; // Add spacing between panels, but not after the last one
@@ -16360,10 +16429,13 @@ class Graphiti {
             
             if (!pair1 || !pair2 || !pair1.func || !pair2.func) continue;
             
-            if (this.plotMode === 'polar') {
-                this.drawLinkedPolarIntegrationRegion(linkedPair, pair1, pair2);
-            } else {
-                this.drawLinkedCartesianIntegrationRegion(linkedPair, pair1, pair2);
+            // Only draw area-between if toggle is enabled
+            if (linkedPair.showAreaBetween !== false) {
+                if (this.plotMode === 'polar') {
+                    this.drawLinkedPolarIntegrationRegion(linkedPair, pair1, pair2);
+                } else {
+                    this.drawLinkedCartesianIntegrationRegion(linkedPair, pair1, pair2);
+                }
             }
         }
     }
@@ -16775,7 +16847,7 @@ class Graphiti {
         // Draw in bottom-right panel instead of on graph
         const panelX = this.viewport.width - 250;
         const basePanelHeight = 45;
-        const trapControlsHeight = showTrapControls ? 75 : 0; // Extra height for trapezium controls
+        const trapControlsHeight = showTrapControls ? 85 : 0; // Increased from 75 to 85
         const panelHeight = basePanelHeight + trapControlsHeight;
         
         // Calculate total height needed for all panels up to this one
@@ -16784,7 +16856,7 @@ class Graphiti {
             const prevPair = this.integralPairs[i];
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
-            const prevHeight = 45 + (prevShowTrap ? 75 : 0);
+            const prevHeight = 45 + (prevShowTrap ? 85 : 0);
             totalHeightAbove += prevHeight + 5; // +5 for spacing
         }
         
@@ -16815,63 +16887,123 @@ class Graphiti {
             areaText = this.formatCoordinate(snappedArea);
         }
         
-        const text = this.plotMode === 'polar' ? 
-            `Area = ${areaText}` : 
-            `∫ = ${areaText}`;
+        // Display actual integral value (without checkbox)
+        const actualText = this.plotMode === 'polar' ? 
+            `Actual ∫: ${snappedArea.toFixed(4)}` : 
+            `Actual ∫: ${snappedArea.toFixed(4)}`;
         
-        // Text
-        this.ctx.font = 'bold 18px Arial';
+        this.ctx.font = 'bold 14px Arial';
         this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.fillText(text, panelX + 40, panelY + 22);
-        
-        // Draw checkbox
-        const checkboxX = panelX + 10;
-        const checkboxY = panelY + 12;
-        const checkboxSize = 20;
-        
-        // Checkbox background
-        this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.fillRect(checkboxX, checkboxY, checkboxSize, checkboxSize);
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(checkboxX, checkboxY, checkboxSize, checkboxSize);
-        
-        // Check if this pair is checked (by badge IDs, not object reference)
-        const isChecked = this.integralPanelCheckboxes.some(p => 
-            p.badge1Id === pair.badge1Id && p.badge2Id === pair.badge2Id
-        );
-        if (isChecked) {
-            // Draw checkmark
-            this.ctx.strokeStyle = '#00AA00';
-            this.ctx.lineWidth = 3;
-            this.ctx.beginPath();
-            this.ctx.moveTo(checkboxX + 4, checkboxY + 10);
-            this.ctx.lineTo(checkboxX + 8, checkboxY + 15);
-            this.ctx.lineTo(checkboxX + 16, checkboxY + 5);
-            this.ctx.stroke();
-        }
-        
-        // Store clickable bounds for checkbox
-        pair.checkboxBounds = {
-            x: checkboxX,
-            y: checkboxY,
-            width: checkboxSize,
-            height: checkboxSize
-        };
+        this.ctx.fillText(actualText, panelX + 10, panelY + 22);
         
         // Draw trapezium rule controls if applicable
         if (showTrapControls) {
-            const controlsY = panelY + basePanelHeight + 5;
+            const controlsY = panelY + basePanelHeight; // No gap at all
             
-            // Toggle button for trapezium rule
+            // Always calculate numerical approximation
+            const trapResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+            const approximation = trapResult.approximation;
+            
+            // Display approximation value
+            const approxText = `Approx ∫: ${approximation.toFixed(4)}`;
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillStyle = '#FFFFFF'; // White like actual
+            this.ctx.fillText(approxText, panelX + 40, controlsY + 2);
+            
+            // Method selector dropdown
+            const methodX = panelX + 10;
+            const methodY = controlsY + 16; // Reduced from +18 to +16
+            const methodWidth = 100;
+            const methodHeight = 25;
+            
+            this.ctx.fillStyle = '#444444';
+            this.ctx.fillRect(methodX, methodY, methodWidth, methodHeight);
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(methodX, methodY, methodWidth, methodHeight);
+            
+            this.ctx.font = 'bold 11px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillStyle = '#FFFFFF';
+            const methodName = pair.numericalMethod === 'trapezium' ? 'Trapezium' : 'Riemann';
+            this.ctx.fillText(methodName, methodX + methodWidth / 2, methodY + methodHeight / 2);
+            
+            // Store method selector bounds
+            pair.methodSelectorBounds = {
+                x: methodX,
+                y: methodY,
+                width: methodWidth,
+                height: methodHeight
+            };
+            
+            // Plus/minus buttons for n
+            const buttonY = methodY;
+            const buttonSize = 25;
+            const buttonSpacing = 5;
+            
+            // Minus button
+            const minusX = methodX + methodWidth + 10;
+            this.ctx.fillStyle = '#555555';
+            this.ctx.fillRect(minusX, buttonY, buttonSize, buttonSize);
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(minusX, buttonY, buttonSize, buttonSize);
+            
+            this.ctx.font = 'bold 18px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fillText('−', minusX + buttonSize / 2, buttonY + buttonSize / 2);
+            
+            pair.trapMinusBounds = {
+                x: minusX,
+                y: buttonY,
+                width: buttonSize,
+                height: buttonSize
+            };
+            
+            // N value display
+            const labelX = minusX + buttonSize + buttonSpacing;
+            const labelWidth = 50;
+            this.ctx.fillStyle = '#333333';
+            this.ctx.fillRect(labelX, buttonY, labelWidth, buttonSize);
+            this.ctx.strokeStyle = '#666666';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(labelX, buttonY, labelWidth, buttonSize);
+            
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fillText(`n=${pair.trapeziumStripCount}`, labelX + labelWidth / 2, buttonY + buttonSize / 2);
+            
+            // Plus button
+            const plusX = labelX + labelWidth + buttonSpacing;
+            this.ctx.fillStyle = '#555555';
+            this.ctx.fillRect(plusX, buttonY, buttonSize, buttonSize);
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(plusX, buttonY, buttonSize, buttonSize);
+            
+            this.ctx.font = 'bold 18px Arial';
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fillText('+', plusX + buttonSize / 2, buttonY + buttonSize / 2);
+            
+            pair.trapPlusBounds = {
+                x: plusX,
+                y: buttonY,
+                width: buttonSize,
+                height: buttonSize
+            };
+            
+            // Toggle button for showing trapeziums on graph
             const toggleX = panelX + 10;
-            const toggleY = controlsY;
-            const toggleWidth = 60;
+            const toggleY = methodY + methodHeight + 5;
+            const toggleWidth = 100;
             const toggleHeight = 25;
             
-            this.ctx.fillStyle = pair.showTrapeziumRule ? '#4A90E2' : '#555555';
+            this.ctx.fillStyle = pair.showTrapeziumRule ? '#4A90E2' : '#444444';
             this.ctx.fillRect(toggleX, toggleY, toggleWidth, toggleHeight);
             this.ctx.strokeStyle = '#FFFFFF';
             this.ctx.lineWidth = 1;
@@ -16880,9 +17012,8 @@ class Graphiti {
             this.ctx.font = 'bold 11px Arial';
             this.ctx.textAlign = 'center';
             this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText('Trapez', toggleX + toggleWidth / 2, toggleY + toggleHeight / 2);
+            this.ctx.fillText('Show on graph', toggleX + toggleWidth / 2, toggleY + toggleHeight / 2);
             
-            // Store toggle button bounds
             pair.trapToggleBounds = {
                 x: toggleX,
                 y: toggleY,
@@ -16890,80 +17021,10 @@ class Graphiti {
                 height: toggleHeight
             };
             
-            // Plus/minus buttons for n (number of strips) - only show if trapezium is enabled
-            if (pair.showTrapeziumRule) {
-                const buttonY = controlsY + 5;
-                const buttonSize = 25;
-                const buttonSpacing = 5;
-                
-                // Minus button
-                const minusX = panelX + 80;
-                this.ctx.fillStyle = '#555555';
-                this.ctx.fillRect(minusX, buttonY, buttonSize, buttonSize);
-                this.ctx.strokeStyle = '#FFFFFF';
-                this.ctx.lineWidth = 1;
-                this.ctx.strokeRect(minusX, buttonY, buttonSize, buttonSize);
-                
-                this.ctx.font = 'bold 18px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.textBaseline = 'middle';
-                this.ctx.fillStyle = '#FFFFFF';
-                this.ctx.fillText('−', minusX + buttonSize / 2, buttonY + buttonSize / 2);
-                
-                // Store minus button bounds
-                pair.trapMinusBounds = {
-                    x: minusX,
-                    y: buttonY,
-                    width: buttonSize,
-                    height: buttonSize
-                };
-                
-                // N value display
-                const labelX = minusX + buttonSize + buttonSpacing;
-                const labelWidth = 60;
-                this.ctx.fillStyle = '#333333';
-                this.ctx.fillRect(labelX, buttonY, labelWidth, buttonSize);
-                this.ctx.strokeStyle = '#666666';
-                this.ctx.lineWidth = 1;
-                this.ctx.strokeRect(labelX, buttonY, labelWidth, buttonSize);
-                
-                this.ctx.font = 'bold 14px Arial';
-                this.ctx.fillStyle = '#FFFFFF';
-                this.ctx.fillText(`n = ${pair.trapeziumStripCount}`, labelX + labelWidth / 2, buttonY + buttonSize / 2);
-                
-                // Plus button
-                const plusX = labelX + labelWidth + buttonSpacing;
-                this.ctx.fillStyle = '#555555';
-                this.ctx.fillRect(plusX, buttonY, buttonSize, buttonSize);
-                this.ctx.strokeStyle = '#FFFFFF';
-                this.ctx.lineWidth = 1;
-                this.ctx.strokeRect(plusX, buttonY, buttonSize, buttonSize);
-                
-                this.ctx.font = 'bold 18px Arial';
-                this.ctx.fillStyle = '#FFFFFF';
-                this.ctx.fillText('+', plusX + buttonSize / 2, buttonY + buttonSize / 2);
-                
-                // Store plus button bounds
-                pair.trapPlusBounds = {
-                    x: plusX,
-                    y: buttonY,
-                    width: buttonSize,
-                    height: buttonSize
-                };
-                
-                // Calculate and display trapezium approximation
-                const trapResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
-                const trapText = `≈ ${this.formatCoordinate(trapResult.approximation)}`;
-                this.ctx.font = 'bold 14px Arial';
-                this.ctx.textAlign = 'left';
-                this.ctx.fillStyle = '#FFD700'; // Gold color for approximation
-                this.ctx.fillText(trapText, panelX + 10, controlsY + 50);
-                
-                // Store trapezium result for drawing
-                pair.trapeziumResult = trapResult;
-            } else {
-                pair.trapeziumResult = null;
-            }
+            // Store trapezium result for drawing on graph
+            pair.trapeziumResult = trapResult;
+        } else {
+            pair.trapeziumResult = null;
         }
         
         // Store panel bounds for potential click detection
@@ -16987,7 +17048,16 @@ class Graphiti {
     findIntegralLabelAtPoint(x, y) {
         // Check all integral pairs for various interactive elements
         for (const pair of this.integralPairs) {
-            // Check trapezium toggle button first
+            // Check method selector
+            if (pair.methodSelectorBounds) {
+                const bounds = pair.methodSelectorBounds;
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    return { pair, type: 'methodSelector' };
+                }
+            }
+            
+            // Check trapezium toggle button
             if (pair.trapToggleBounds) {
                 const bounds = pair.trapToggleBounds;
                 if (x >= bounds.x && x <= bounds.x + bounds.width &&
@@ -17015,14 +17085,28 @@ class Graphiti {
             }
             
             // Check checkbox
-            if (pair.checkboxBounds) {
-                const bounds = pair.checkboxBounds;
+            // No longer checking for checkbox bounds in integral panels
+            if (false) {
+                const bounds = null;
                 if (x >= bounds.x && x <= bounds.x + bounds.width &&
                     y >= bounds.y && y <= bounds.y + bounds.height) {
                     return { pair, type: 'checkbox' };
                 }
             }
         }
+        
+        // Check area-between toggle if exactly 2 integrals exist
+        if (this.integralPairs.length === 2 && this.linkedBadgePairs.length > 0) {
+            const linkedPair = this.linkedBadgePairs[0];
+            if (linkedPair.areaBetweenToggleBounds) {
+                const bounds = linkedPair.areaBetweenToggleBounds;
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    return { pair: linkedPair, type: 'areaBetweenToggle' };
+                }
+            }
+        }
+        
         return null;
     }
     
@@ -17031,6 +17115,13 @@ class Graphiti {
         
         const pair = clickInfo.pair;
         const type = clickInfo.type;
+        
+        if (type === 'methodSelector') {
+            // Toggle between trapezium and riemann
+            pair.numericalMethod = pair.numericalMethod === 'trapezium' ? 'riemann' : 'trapezium';
+            this.draw();
+            return;
+        }
         
         if (type === 'trapToggle') {
             // Toggle trapezium rule visualization for this specific pair
@@ -17053,45 +17144,13 @@ class Graphiti {
             return;
         }
         
-        if (type === 'checkbox') {
-            // Toggle checkbox state (find by badge IDs, not object reference)
-            const index = this.integralPanelCheckboxes.findIndex(p => 
-                p.badge1Id === pair.badge1Id && p.badge2Id === pair.badge2Id
-            );
+        if (type === 'areaBetweenToggle') {
+            // Toggle area-between calculation
+            pair.showAreaBetween = !pair.showAreaBetween;
             
-            if (index !== -1) {
-                // Uncheck - remove from array
-                this.integralPanelCheckboxes.splice(index, 1);
-            } else {
-                // Check - add to array (max 2)
-                if (this.integralPanelCheckboxes.length < 2) {
-                    this.integralPanelCheckboxes.push(pair);
-                } else {
-                    // Already have 2 checked - replace the first one
-                    this.integralPanelCheckboxes.shift();
-                    this.integralPanelCheckboxes.push(pair);
-                }
-            }
-            
-            // Update linked pairs based on checked boxes
-            if (this.integralPanelCheckboxes.length === 2) {
-                const pair1 = this.integralPanelCheckboxes[0];
-                const pair2 = this.integralPanelCheckboxes[1];
-                
-                // Only link if they're on different functions
-                if (pair1.func.id !== pair2.func.id) {
-                    // Clear existing links and create new one
-                    this.linkedBadgePairs = [{
-                        pair1: pair1,
-                        pair2: pair2
-                    }];
-                } else {
-                    // Same function - can't link, uncheck the second one
-                    this.integralPanelCheckboxes.pop();
-                }
-            } else {
-                // Less than 2 checked - clear links
-                this.linkedBadgePairs = [];
+            // If disabling, remove areaBetween value
+            if (!pair.showAreaBetween) {
+                delete pair.areaBetween;
             }
             
             this.draw();
