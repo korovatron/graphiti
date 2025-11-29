@@ -17255,10 +17255,12 @@ class Graphiti {
         // Text - position inside the background rectangle with proper alignment
         this.ctx.fillStyle = this.getContrastingTextColor(color); // Dynamic text color for optimal contrast
         this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
-        this.ctx.textBaseline = 'middle'; // Use middle for better cross-browser vertical centering
-        // Position at exact vertical center of the box (labelY - textHeight - padding is top, + half of box height)
+        this.ctx.textBaseline = 'alphabetic'; // Use alphabetic baseline for more consistent rendering
+        // Position at calculated vertical center accounting for typical font ascent
         const boxHeight = textHeight + 2 * padding;
-        this.ctx.fillText(labelText, labelX, labelY - textHeight - padding + boxHeight / 2);
+        const boxTop = labelY - textHeight - padding;
+        // For alphabetic baseline, position approximately 70% down from top of box for visual centering
+        this.ctx.fillText(labelText, labelX, boxTop + boxHeight * 0.7);
         
         // Draw close button (X)
         const closeButtonX = labelX + textWidth + padding + closeButtonMargin;
