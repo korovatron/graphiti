@@ -223,6 +223,10 @@ class Graphiti {
         this.pendingLabelClick = null; // Store pending click to check after next draw
         this.integralPanelCheckboxes = []; // Track which integral pairs have checkboxes checked
         
+        // Trapezium rule visualization
+        this.showTrapeziumRule = false; // Toggle for trapezium rule visualization
+        this.trapeziumStripCount = 10; // Number of strips for trapezium rule (default 10)
+        
         // Implicit function calculation cancellation system
         this.implicitCalculationId = 0; // Counter for tracking calculation sessions
         this.currentImplicitCalculations = new Map(); // Track active calculations per function
@@ -5858,7 +5862,13 @@ class Graphiti {
                 } else {
                     start = badge1.worldX;
                     end = badge2.worldX;
-                    area = this.calculateCartesianIntegral(func, start, end);
+                    // Use fast point-based method during dragging for performance
+                    const isDragging = this.input.tracing.active && this.input.badgeInteraction.targetBadge;
+                    if (isDragging) {
+                        area = this.calculateCartesianIntegralFromPoints(func, start, end);
+                    } else {
+                        area = this.calculateCartesianIntegral(func, start, end);
+                    }
                 }
                 
                 // Find if this pair existed before to preserve labelBounds
@@ -5935,7 +5945,47 @@ class Graphiti {
     }
     
     calculateCartesianIntegral(func, x1, x2) {
-        // Use trapezoidal rule on function points
+        // Use high-accuracy trapezoidal rule for formula-based calculation
+        // This ensures the "exact" integral is more accurate than the visualization approximations
+        
+        // Ensure x1 < x2
+        if (x1 > x2) [x1, x2] = [x2, x1];
+        
+        // Check if function is implicit - if so, fall back to point-based method
+        const functionType = this.detectFunctionType(func.expression);
+        const isImplicit = (functionType === 'implicit');
+        
+        if (isImplicit) {
+            // For implicit functions, use the pre-plotted points (no choice)
+            return this.calculateCartesianIntegralFromPoints(func, x1, x2);
+        }
+        
+        // For explicit functions, use formula-based calculation with n=1000 for high accuracy
+        const n = 1000;
+        const h = (x2 - x1) / n;
+        let sum = 0;
+        
+        for (let i = 0; i < n; i++) {
+            const xLeft = x1 + i * h;
+            const xRight = x1 + (i + 1) * h;
+            
+            const yLeft = this.evaluateFunction(func.expression, xLeft);
+            const yRight = this.evaluateFunction(func.expression, xRight);
+            
+            // Skip if either evaluation failed
+            if (yLeft === null || yRight === null || isNaN(yLeft) || isNaN(yRight)) {
+                continue;
+            }
+            
+            // Trapezoidal rule: h * (y1 + y2) / 2
+            sum += h * (yLeft + yRight) / 2;
+        }
+        
+        return sum;
+    }
+    
+    calculateCartesianIntegralFromPoints(func, x1, x2) {
+        // Legacy method using pre-plotted points (for implicit functions)
         const points = func.points;
         if (points.length === 0) return 0;
         
@@ -6056,6 +6106,50 @@ class Graphiti {
         }
         
         return area;
+    }
+    
+    calculateTrapeziumRule(func, x1, x2, n) {
+        // Calculate trapezium rule approximation for integral from x1 to x2 with n strips
+        // Returns { approximation, strips } where strips is array of trapezoid coordinates for drawing
+        
+        // Ensure x1 < x2
+        if (x1 > x2) [x1, x2] = [x2, x1];
+        
+        const h = (x2 - x1) / n; // Width of each strip
+        let sum = 0;
+        const strips = [];
+        
+        // Evaluate function at each point
+        for (let i = 0; i < n; i++) {
+            const xLeft = x1 + i * h;
+            const xRight = x1 + (i + 1) * h;
+            
+            // Evaluate function at both ends of the strip
+            const yLeft = this.evaluateFunction(func.expression, xLeft);
+            const yRight = this.evaluateFunction(func.expression, xRight);
+            
+            // Skip if either evaluation failed
+            if (yLeft === null || yRight === null || isNaN(yLeft) || isNaN(yRight)) {
+                continue;
+            }
+            
+            // Calculate area of this trapezoid: h * (y1 + y2) / 2
+            const trapezoidArea = h * (yLeft + yRight) / 2;
+            sum += trapezoidArea;
+            
+            // Store strip coordinates for drawing
+            strips.push({
+                xLeft: xLeft,
+                xRight: xRight,
+                yLeft: yLeft,
+                yRight: yRight
+            });
+        }
+        
+        return {
+            approximation: sum,
+            strips: strips
+        };
     }
     
     findIntersectionsBetweenFunctions(func1, func2) {
@@ -7406,6 +7500,21 @@ class Graphiti {
         const canvasX = x - rect.left;
         const canvasY = y - rect.top;
         
+        // Handle trapezium slider dragging
+        if (this.input.trapSliderDragging && this.input.trapSliderPair) {
+            const pair = this.input.trapSliderPair;
+            if (pair.trapSliderBounds) {
+                const bounds = pair.trapSliderBounds;
+                // Calculate new n value based on mouse position
+                const relativeX = Math.max(0, Math.min(canvasX - bounds.x, bounds.width));
+                const ratio = relativeX / bounds.width;
+                const newN = Math.round(bounds.minN + ratio * (bounds.maxN - bounds.minN));
+                this.trapeziumStripCount = Math.max(bounds.minN, Math.min(bounds.maxN, newN));
+                this.draw();
+            }
+            return;
+        }
+        
         if (this.input.mouse.down && this.currentState === this.states.GRAPHING) {
             const deltaX = canvasX - this.input.lastX;
             const deltaY = canvasY - this.input.lastY;
@@ -7795,6 +7904,13 @@ class Graphiti {
     }
     
     handlePointerEnd() {
+        // Stop trapezium slider dragging
+        if (this.input.trapSliderDragging) {
+            this.input.trapSliderDragging = false;
+            this.input.trapSliderPair = null;
+            return;
+        }
+        
         // Safety check: prevent duplicate handling if already processed
         if (!this.input.mouse.down) {
             return;
@@ -16031,11 +16147,46 @@ class Graphiti {
             
             this.ctx.restore();
             
+            // Draw trapezoid outlines if enabled
+            if (this.showTrapeziumRule && pair.trapeziumResult && this.plotMode === 'cartesian') {
+                this.drawTrapezoidOutlines(pair);
+            }
+            
             // Don't draw label here - will be drawn in panel at bottom
         }
         
         // Draw linked badge pairs (area between curves)
         this.drawLinkedIntegrationRegions();
+    }
+    
+    drawTrapezoidOutlines(pair) {
+        // Draw trapezoid outlines for trapezium rule visualization
+        if (!pair.trapeziumResult || !pair.trapeziumResult.strips) return;
+        
+        this.ctx.save();
+        
+        // Use bright contrasting color for trapezoid outlines
+        this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // Gold
+        this.ctx.lineWidth = 2;
+        
+        // Draw each trapezoid
+        for (const strip of pair.trapeziumResult.strips) {
+            const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
+            const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
+            const leftBase = this.worldToScreen(strip.xLeft, 0);
+            const rightBase = this.worldToScreen(strip.xRight, 0);
+            
+            // Draw trapezoid outline
+            this.ctx.beginPath();
+            this.ctx.moveTo(leftBase.x, leftBase.y);
+            this.ctx.lineTo(leftScreen.x, leftScreen.y);
+            this.ctx.lineTo(rightScreen.x, rightScreen.y);
+            this.ctx.lineTo(rightBase.x, rightBase.y);
+            this.ctx.closePath();
+            this.ctx.stroke();
+        }
+        
+        this.ctx.restore();
     }
     
     drawIntegralPanel() {
@@ -16553,11 +16704,28 @@ class Graphiti {
     }
     
     drawIntegrationLabel(pair, index) {
+        // Check if we should show trapezium controls for this pair
+        const showTrapControls = this.plotMode === 'cartesian' && 
+                                 this.detectFunctionType(pair.func.expression) === 'explicit';
+        
         // Draw in bottom-right panel instead of on graph
         const panelX = this.viewport.width - 250;
-        const panelY = this.viewport.height - 60 - (index * 50);
+        const basePanelHeight = 45;
+        const trapControlsHeight = showTrapControls ? 75 : 0; // Extra height for trapezium controls
+        const panelHeight = basePanelHeight + trapControlsHeight;
+        
+        // Calculate total height needed for all panels up to this one
+        let totalHeightAbove = 0;
+        for (let i = 0; i < index; i++) {
+            const prevPair = this.integralPairs[i];
+            const prevShowTrap = this.plotMode === 'cartesian' && 
+                                 this.detectFunctionType(prevPair.func.expression) === 'explicit';
+            const prevHeight = 45 + (prevShowTrap ? 75 : 0);
+            totalHeightAbove += prevHeight + 5; // +5 for spacing
+        }
+        
+        const panelY = this.viewport.height - 60 - totalHeightAbove - panelHeight;
         const panelWidth = 240;
-        const panelHeight = 45;
         
         this.ctx.save();
         
@@ -16592,7 +16760,7 @@ class Graphiti {
         this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.fillText(text, panelX + 40, panelY + panelHeight / 2);
+        this.ctx.fillText(text, panelX + 40, panelY + 22);
         
         // Draw checkbox
         const checkboxX = panelX + 10;
@@ -16629,6 +16797,86 @@ class Graphiti {
             height: checkboxSize
         };
         
+        // Draw trapezium rule controls if applicable
+        if (showTrapControls) {
+            const controlsY = panelY + basePanelHeight + 5;
+            
+            // Toggle button for trapezium rule
+            const toggleX = panelX + 10;
+            const toggleY = controlsY;
+            const toggleWidth = 60;
+            const toggleHeight = 25;
+            
+            this.ctx.fillStyle = this.showTrapeziumRule ? '#4A90E2' : '#555555';
+            this.ctx.fillRect(toggleX, toggleY, toggleWidth, toggleHeight);
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(toggleX, toggleY, toggleWidth, toggleHeight);
+            
+            this.ctx.font = 'bold 11px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fillText('Trapez', toggleX + toggleWidth / 2, toggleY + toggleHeight / 2);
+            
+            // Store toggle button bounds
+            pair.trapToggleBounds = {
+                x: toggleX,
+                y: toggleY,
+                width: toggleWidth,
+                height: toggleHeight
+            };
+            
+            // Slider for n (number of strips) - only show if trapezium is enabled
+            if (this.showTrapeziumRule) {
+                const sliderX = panelX + 80;
+                const sliderY = controlsY + 5;
+                const sliderWidth = 140;
+                
+                // Slider track
+                this.ctx.fillStyle = '#333333';
+                this.ctx.fillRect(sliderX, sliderY, sliderWidth, 15);
+                this.ctx.strokeStyle = '#666666';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(sliderX, sliderY, sliderWidth, 15);
+                
+                // Slider thumb (n ranges from 4 to 50)
+                const minN = 4;
+                const maxN = 50;
+                const thumbPos = ((this.trapeziumStripCount - minN) / (maxN - minN)) * sliderWidth;
+                this.ctx.fillStyle = '#4A90E2';
+                this.ctx.fillRect(sliderX + thumbPos - 3, sliderY - 2, 6, 19);
+                
+                // Label showing n value
+                this.ctx.font = 'bold 10px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillStyle = '#FFFFFF';
+                this.ctx.fillText(`n=${this.trapeziumStripCount}`, sliderX + sliderWidth / 2, sliderY + 30);
+                
+                // Store slider bounds
+                pair.trapSliderBounds = {
+                    x: sliderX,
+                    y: sliderY,
+                    width: sliderWidth,
+                    height: 15,
+                    minN: minN,
+                    maxN: maxN
+                };
+                
+                // Calculate and display trapezium approximation
+                const trapResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, this.trapeziumStripCount);
+                const trapText = `≈ ${this.formatCoordinate(trapResult.approximation)}`;
+                this.ctx.font = 'bold 14px Arial';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillStyle = '#FFD700'; // Gold color for approximation
+                this.ctx.fillText(trapText, panelX + 10, controlsY + 50);
+                
+                // Store trapezium result for drawing
+                pair.trapeziumResult = trapResult;
+            } else {
+                pair.trapeziumResult = null;
+            }
+        }
+        
         // Store panel bounds for potential click detection
         pair.panelBounds = {
             x: panelX,
@@ -16648,61 +16896,101 @@ class Graphiti {
     }
     
     findIntegralLabelAtPoint(x, y) {
-        // Check all integral pairs for checkbox hit
+        // Check all integral pairs for various interactive elements
         for (const pair of this.integralPairs) {
+            // Check trapezium toggle button first
+            if (pair.trapToggleBounds) {
+                const bounds = pair.trapToggleBounds;
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    return { pair, type: 'trapToggle' };
+                }
+            }
+            
+            // Check trapezium slider
+            if (pair.trapSliderBounds) {
+                const bounds = pair.trapSliderBounds;
+                if (x >= bounds.x && x <= bounds.x + bounds.width &&
+                    y >= bounds.y && y <= bounds.y + bounds.height) {
+                    return { pair, type: 'trapSlider' };
+                }
+            }
+            
+            // Check checkbox
             if (pair.checkboxBounds) {
                 const bounds = pair.checkboxBounds;
                 if (x >= bounds.x && x <= bounds.x + bounds.width &&
                     y >= bounds.y && y <= bounds.y + bounds.height) {
-                    return pair;
+                    return { pair, type: 'checkbox' };
                 }
             }
         }
         return null;
     }
     
-    handleIntegralLabelClick(pair) {
-        // Toggle checkbox state (find by badge IDs, not object reference)
-        const index = this.integralPanelCheckboxes.findIndex(p => 
-            p.badge1Id === pair.badge1Id && p.badge2Id === pair.badge2Id
-        );
+    handleIntegralLabelClick(clickInfo) {
+        if (!clickInfo) return;
         
-        if (index !== -1) {
-            // Uncheck - remove from array
-            this.integralPanelCheckboxes.splice(index, 1);
-        } else {
-            // Check - add to array (max 2)
-            if (this.integralPanelCheckboxes.length < 2) {
-                this.integralPanelCheckboxes.push(pair);
-            } else {
-                // Already have 2 checked - replace the first one
-                this.integralPanelCheckboxes.shift();
-                this.integralPanelCheckboxes.push(pair);
-            }
+        const pair = clickInfo.pair;
+        const type = clickInfo.type;
+        
+        if (type === 'trapToggle') {
+            // Toggle trapezium rule visualization
+            this.showTrapeziumRule = !this.showTrapeziumRule;
+            this.draw();
+            return;
         }
         
-        // Update linked pairs based on checked boxes
-        if (this.integralPanelCheckboxes.length === 2) {
-            const pair1 = this.integralPanelCheckboxes[0];
-            const pair2 = this.integralPanelCheckboxes[1];
+        if (type === 'trapSlider') {
+            // Start dragging slider - set up mouse move handler
+            this.input.trapSliderDragging = true;
+            this.input.trapSliderPair = pair;
+            return;
+        }
+        
+        if (type === 'checkbox') {
+            // Toggle checkbox state (find by badge IDs, not object reference)
+            const index = this.integralPanelCheckboxes.findIndex(p => 
+                p.badge1Id === pair.badge1Id && p.badge2Id === pair.badge2Id
+            );
             
-            // Only link if they're on different functions
-            if (pair1.func.id !== pair2.func.id) {
-                // Clear existing links and create new one
-                this.linkedBadgePairs = [{
-                    pair1: pair1,
-                    pair2: pair2
-                }];
+            if (index !== -1) {
+                // Uncheck - remove from array
+                this.integralPanelCheckboxes.splice(index, 1);
             } else {
-                // Same function - can't link, uncheck the second one
-                this.integralPanelCheckboxes.pop();
+                // Check - add to array (max 2)
+                if (this.integralPanelCheckboxes.length < 2) {
+                    this.integralPanelCheckboxes.push(pair);
+                } else {
+                    // Already have 2 checked - replace the first one
+                    this.integralPanelCheckboxes.shift();
+                    this.integralPanelCheckboxes.push(pair);
+                }
             }
-        } else {
-            // Less than 2 checked - clear links
-            this.linkedBadgePairs = [];
+            
+            // Update linked pairs based on checked boxes
+            if (this.integralPanelCheckboxes.length === 2) {
+                const pair1 = this.integralPanelCheckboxes[0];
+                const pair2 = this.integralPanelCheckboxes[1];
+                
+                // Only link if they're on different functions
+                if (pair1.func.id !== pair2.func.id) {
+                    // Clear existing links and create new one
+                    this.linkedBadgePairs = [{
+                        pair1: pair1,
+                        pair2: pair2
+                    }];
+                } else {
+                    // Same function - can't link, uncheck the second one
+                    this.integralPanelCheckboxes.pop();
+                }
+            } else {
+                // Less than 2 checked - clear links
+                this.linkedBadgePairs = [];
+            }
+            
+            this.draw();
         }
-        
-        this.draw();
     }
     
     drawPersistentBadges() {
