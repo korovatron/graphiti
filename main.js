@@ -7206,6 +7206,20 @@ class Graphiti {
                 return; // Exit early
             }
             
+            // Check if user clicked on any badge's close button (check ALL badges, not just nearby ones)
+            for (const badge of this.input.persistentBadges) {
+                if (badge.closeButton) {
+                    const cb = badge.closeButton;
+                    if (canvasX >= cb.x && canvasX <= cb.x + cb.width &&
+                        canvasY >= cb.y && canvasY <= cb.y + cb.height) {
+                        // Close button clicked - remove the badge
+                        this.removeBadgeById(badge.id);
+                        this.draw();
+                        return; // Exit early
+                    }
+                }
+            }
+            
             // Check if user clicked on an existing badge marker
             const targetBadge = this.findBadgeAtScreenPosition(canvasX, canvasY, 25);
             if (targetBadge) {
@@ -10701,6 +10715,9 @@ class Graphiti {
             
             // Remove the pair
             this.integralPairs.splice(pairIndex, 1);
+        } else {
+            // No pair found - this is a single unpaired integral badge, just remove it
+            this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.id !== badgeId);
         }
     }
 
@@ -16731,7 +16748,12 @@ class Graphiti {
                 console.log('Badge missing theta:', badge.id, 'theta:', badge.theta);
             }
             
-            this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue);
+            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue);
+            
+            // Store close button bounds for click detection
+            if (badgeInfo && badgeInfo.closeButton) {
+                badge.closeButton = badgeInfo.closeButton;
+            }
         }
         
         // Draw badge tooltip (after all badges so it appears on top)
@@ -17213,6 +17235,10 @@ class Graphiti {
         
         // Background rectangle - solid color matching the function
         const padding = 6; // Increased padding for larger text
+        const closeButtonSize = 16; // Size of the close button (X)
+        const closeButtonMargin = 6; // Margin between text and close button
+        
+        const totalWidth = textWidth + 2 * padding + closeButtonSize + closeButtonMargin + 4; // Extra padding on right
         
         this.ctx.fillStyle = color; // Use function color for solid background
         this.ctx.lineWidth = 1;
@@ -17220,7 +17246,7 @@ class Graphiti {
         this.ctx.roundRect(
             labelX - padding, 
             labelY - textHeight - padding, 
-            textWidth + 2 * padding, 
+            totalWidth, 
             textHeight + 2 * padding, 
             3
         );
@@ -17231,6 +17257,44 @@ class Graphiti {
         this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
         this.ctx.textBaseline = 'top'; // Set baseline to top for consistent positioning
         this.ctx.fillText(labelText, labelX, labelY - textHeight);
+        
+        // Draw close button (X)
+        const closeButtonX = labelX + textWidth + padding + closeButtonMargin;
+        const closeButtonY = labelY - textHeight;
+        const closeButtonCenterX = closeButtonX + closeButtonSize / 2;
+        const closeButtonCenterY = closeButtonY + closeButtonSize / 2;
+        
+        // Draw subtle button background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.roundRect(closeButtonX, closeButtonY, closeButtonSize, closeButtonSize, 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        // Draw X
+        this.ctx.strokeStyle = this.getContrastingTextColor(color);
+        this.ctx.lineWidth = 2;
+        const xSize = 10; // Size of the X
+        this.ctx.beginPath();
+        this.ctx.moveTo(closeButtonCenterX - xSize / 2, closeButtonCenterY - xSize / 2);
+        this.ctx.lineTo(closeButtonCenterX + xSize / 2, closeButtonCenterY + xSize / 2);
+        this.ctx.moveTo(closeButtonCenterX + xSize / 2, closeButtonCenterY - xSize / 2);
+        this.ctx.lineTo(closeButtonCenterX - xSize / 2, closeButtonCenterY + xSize / 2);
+        this.ctx.stroke();
+        
+        // Return close button bounds for click detection (if not active tracing)
+        if (!isActive) {
+            return {
+                closeButton: {
+                    x: closeButtonX,
+                    y: closeButtonY,
+                    width: closeButtonSize,
+                    height: closeButtonSize
+                }
+            };
+        }
         
         this.ctx.restore();
     }
