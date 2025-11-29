@@ -17149,7 +17149,7 @@ class Graphiti {
                 // Display polar derivative dr/dθ
                 const polarDerivStr = this.formatDerivative(tangentSlope.polarDerivative);
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
-                labelText += ` | dr/d${thetaSymbol}=${polarDerivStr}`;
+                labelText += ` | dr/d${thetaSymbol} = ${polarDerivStr}`;
             } else {
                 // Display Cartesian slope dy/dx
                 const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
@@ -17255,8 +17255,10 @@ class Graphiti {
         // Text - position inside the background rectangle with proper alignment
         this.ctx.fillStyle = this.getContrastingTextColor(color); // Dynamic text color for optimal contrast
         this.ctx.textAlign = 'left'; // Ensure consistent horizontal alignment
-        this.ctx.textBaseline = 'top'; // Set baseline to top for consistent positioning
-        this.ctx.fillText(labelText, labelX, labelY - textHeight);
+        this.ctx.textBaseline = 'middle'; // Use middle for better cross-browser vertical centering
+        // Position at exact vertical center of the box (labelY - textHeight - padding is top, + half of box height)
+        const boxHeight = textHeight + 2 * padding;
+        this.ctx.fillText(labelText, labelX, labelY - textHeight - padding + boxHeight / 2);
         
         // Draw close button (X)
         const closeButtonX = labelX + textWidth + padding + closeButtonMargin;
