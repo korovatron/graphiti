@@ -139,7 +139,14 @@ class Graphiti {
                 startY: 0, // Starting Y position
                 holdThreshold: 250, // milliseconds - time to distinguish tap vs hold (shorter for better UX)
                 moveThreshold: 15, // pixels - movement that cancels badge interaction
-                isHolding: false // Whether we're in hold mode
+                isHolding: false, // Whether we're in hold mode
+                // Snap-and-stick state for trace markers at significant points
+                snapState: {
+                    isSnapped: false, // Whether trace is currently snapped
+                    snapStartTime: 0, // When snap started
+                    snapDuration: 300, // How long to hold snap (ms)
+                    snappedPoint: null // {worldX, worldY, type} of snapped point
+                }
             },
             // Pinch gesture tracking
             pinch: {
@@ -7369,43 +7376,151 @@ class Graphiti {
                 const tracingFunction = this.findFunctionById(this.input.tracing.functionId);
                 
                 if (tracingFunction) {
-                    const tracePoint = this.traceFunction(
-                        tracingFunction, 
-                        currentWorldPos.x, 
-                        currentWorldPos.y,
-                        this.input.tracing.theta,
-                        deltaX
-                    );
+                    const snapState = this.input.badgeInteraction.snapState;
+                    const now = performance.now();
                     
-                    if (tracePoint) {
-                        this.input.tracing.worldX = tracePoint.x;
-                        this.input.tracing.worldY = tracePoint.y;
+                    // Check if we're in an active snap
+                    if (snapState.isSnapped) {
+                        const elapsed = now - snapState.snapStartTime;
                         
-                        // Update theta if returned (for polar functions)
-                        if (tracePoint.theta !== undefined) {
-                            this.input.tracing.theta = tracePoint.theta;
-                        }
-                        
-                        // If original badge had a tangent or normal, recalculate slope at new position
-                        if (this.input.badgeInteraction.originalBadgeState && 
-                            (this.input.badgeInteraction.originalBadgeState.hasTangent || 
-                             this.input.badgeInteraction.originalBadgeState.hasNormal)) {
-                            // Pass both x and y for implicit functions, theta for polar functions
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, tracePoint.x, tracePoint.y, this.input.tracing.theta);
-                            if (slopeData) {
-                                this.input.tracing.currentSlope = slopeData;
-                                this.input.tracing.currentSecondDerivative = slopeData.secondDerivative;
-                            }
+                        // If snap duration hasn't expired, keep using snapped coordinates
+                        if (elapsed < snapState.snapDuration) {
+                            // Freeze at snapped point
+                            this.input.tracing.worldX = snapState.snappedPoint.worldX;
+                            this.input.tracing.worldY = snapState.snappedPoint.worldY;
+                            // Continue to slope/integral updates below
                         } else {
-                            this.input.tracing.currentSlope = null;
-                            this.input.tracing.currentSecondDerivative = null;
+                            // Snap duration expired - check if mouse moved far enough to break snap
+                            const dx = currentWorldPos.x - snapState.snappedPoint.worldX;
+                            const dy = currentWorldPos.y - snapState.snappedPoint.worldY;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // Break snap if mouse moved beyond threshold
+                            const breakThreshold = 0.1; // World units
+                            if (distance > breakThreshold) {
+                                snapState.isSnapped = false;
+                                snapState.snappedPoint = null;
+                            } else {
+                                // Still close, keep snapped
+                                this.input.tracing.worldX = snapState.snappedPoint.worldX;
+                                this.input.tracing.worldY = snapState.snappedPoint.worldY;
+                            }
                         }
+                    }
+                    
+                    // If not snapped (or snap just broke), do normal tracing
+                    if (!snapState.isSnapped) {
+                        const tracePoint = this.traceFunction(
+                            tracingFunction, 
+                            currentWorldPos.x, 
+                            currentWorldPos.y,
+                            this.input.tracing.theta,
+                            deltaX
+                        );
                         
-                        // If original badge was an integral badge, update integral pairs in real-time
-                        if (this.input.badgeInteraction.originalBadgeState && 
-                            this.input.badgeInteraction.originalBadgeState.hasIntegral) {
-                            this.updateIntegralPairs();
+                        if (tracePoint) {
+                            this.input.tracing.worldX = tracePoint.x;
+                            this.input.tracing.worldY = tracePoint.y;
+                            
+                            // Update theta if returned (for polar functions)
+                            if (tracePoint.theta !== undefined) {
+                                this.input.tracing.theta = tracePoint.theta;
+                            }
+                            
+                            // Check if we should snap to a significant point (Cartesian only for now)
+                            if (tracingFunction.mode === 'cartesian') {
+                                const snapTolerance = 0.15; // World units
+                                let nearestSignificantPoint = null;
+                                let nearestDistance = snapTolerance;
+                                
+                                // Check turning points
+                                if (this.showTurningPoints) {
+                                    for (const tp of this.turningPoints) {
+                                        if (tp.func && tp.func.id === tracingFunction.id) {
+                                            const dx = tracePoint.x - tp.x;
+                                            const dy = tracePoint.y - tp.y;
+                                            const dist = Math.sqrt(dx * dx + dy * dy);
+                                            if (dist < nearestDistance) {
+                                                nearestDistance = dist;
+                                                nearestSignificantPoint = { worldX: tp.x, worldY: tp.y, type: 'turning' };
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Check intercepts
+                                if (this.showIntercepts) {
+                                    for (const intercept of this.intercepts) {
+                                        if (intercept.functionId === tracingFunction.id) {
+                                            const dx = tracePoint.x - intercept.x;
+                                            const dy = tracePoint.y - intercept.y;
+                                            const dist = Math.sqrt(dx * dx + dy * dy);
+                                            if (dist < nearestDistance) {
+                                                nearestDistance = dist;
+                                                nearestSignificantPoint = { worldX: intercept.x, worldY: intercept.y, type: 'intercept' };
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Check intersections
+                                if (this.showIntersections) {
+                                    for (const intersection of this.intersections) {
+                                        // Check if this intersection involves the current function
+                                        // Intersections have func1/func2 objects, not func1Id/func2Id
+                                        const func1Id = intersection.func1Id || (intersection.func1 && intersection.func1.id);
+                                        const func2Id = intersection.func2Id || (intersection.func2 && intersection.func2.id);
+                                        
+                                        if (func1Id === tracingFunction.id || func2Id === tracingFunction.id) {
+                                            const dx = tracePoint.x - intersection.x;
+                                            const dy = tracePoint.y - intersection.y;
+                                            const dist = Math.sqrt(dx * dx + dy * dy);
+                                            if (dist < nearestDistance) {
+                                                nearestDistance = dist;
+                                                nearestSignificantPoint = { worldX: intersection.x, worldY: intersection.y, type: 'intersection' };
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // If we found a significant point to snap to, enter snap state
+                                if (nearestSignificantPoint) {
+                                    snapState.isSnapped = true;
+                                    snapState.snapStartTime = now;
+                                    snapState.snappedPoint = nearestSignificantPoint;
+                                    // Immediately use snapped coordinates
+                                    this.input.tracing.worldX = nearestSignificantPoint.worldX;
+                                    this.input.tracing.worldY = nearestSignificantPoint.worldY;
+                                }
+                            }
                         }
+                    }
+                    
+                    // After snap/trace logic, handle slope and integral updates
+                    // If original badge had a tangent or normal, recalculate slope at new position
+                    if (this.input.badgeInteraction.originalBadgeState && 
+                        (this.input.badgeInteraction.originalBadgeState.hasTangent || 
+                         this.input.badgeInteraction.originalBadgeState.hasNormal)) {
+                        // Pass both x and y for implicit functions, theta for polar functions
+                        const slopeData = this.calculateSlopeAtPoint(
+                            tracingFunction, 
+                            this.input.tracing.worldX, 
+                            this.input.tracing.worldY, 
+                            this.input.tracing.theta
+                        );
+                        if (slopeData) {
+                            this.input.tracing.currentSlope = slopeData;
+                            this.input.tracing.currentSecondDerivative = slopeData.secondDerivative;
+                        }
+                    } else {
+                        this.input.tracing.currentSlope = null;
+                        this.input.tracing.currentSecondDerivative = null;
+                    }
+                    
+                    // If original badge was an integral badge, update integral pairs in real-time
+                    if (this.input.badgeInteraction.originalBadgeState && 
+                        this.input.badgeInteraction.originalBadgeState.hasIntegral) {
+                        this.updateIntegralPairs();
                     }
                 }
                 
