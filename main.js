@@ -7221,6 +7221,22 @@ class Graphiti {
             });
         }
         
+        // Return to Title Screen Button
+        const returnToTitleButton = document.getElementById('return-to-title');
+        if (returnToTitleButton) {
+            returnToTitleButton.addEventListener('click', () => {
+                this.changeState(this.states.TITLE);
+            });
+        }
+        
+        // Help Button (How to Use)
+        const helpButtonPanel = document.getElementById('help-button');
+        if (helpButtonPanel) {
+            helpButtonPanel.addEventListener('click', () => {
+                this.toggleShortcutsOverlay();
+            });
+        }
+        
         // Keyboard Shortcuts Overlay
         const shortcutsOverlay = document.getElementById('shortcuts-overlay');
         if (shortcutsOverlay) {
@@ -8956,6 +8972,10 @@ class Graphiti {
         
         if (overlay.classList.contains('show')) {
             overlay.classList.remove('show');
+            // Remove focus from button to clear hover state
+            if (document.activeElement) {
+                document.activeElement.blur();
+            }
         } else {
             overlay.classList.add('show');
         }

@@ -227,6 +227,12 @@
             box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
         }
         
+        /* Remove box-shadow from title/help buttons */
+        #return-to-title:hover,
+        #help-button:hover {
+            box-shadow: none;
+        }
+        
         input[type="text"], input[type="number"] {
             padding: 8px;
             border: 1px solid var(--border-color);
@@ -2016,6 +2022,25 @@
                         <svg id="dark-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 1;">
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                         </svg>
+                    </button>
+                </div>
+                
+                <!-- Title Screen and Help Buttons Row -->
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button id="return-to-title" style="padding: 8px 12px; font-size: 11px; flex: 1; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.2;" title="Return to Title Screen">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        <span>TITLE<br>SCREEN</span>
+                    </button>
+                    <button id="help-button" style="padding: 8px 12px; font-size: 11px; flex: 1; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.2;" title="How to Use">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <circle cx="12" cy="17" r="0.5" fill="currentColor"></circle>
+                        </svg>
+                        <span>HOW TO<br>USE</span>
                     </button>
                 </div>
             </div>
