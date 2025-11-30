@@ -7866,7 +7866,9 @@ class Graphiti {
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
                                                 // Calculate theta from the actual significant point coordinates
-                                                const theta = Math.atan2(tp.y, tp.x);
+                                                let theta = Math.atan2(tp.y, tp.x);
+                                                // Normalize to [0, 2π] range to match user expectations
+                                                if (theta < 0) theta += 2 * Math.PI;
                                                 nearestSignificantPoint = { 
                                                     worldX: tp.x, 
                                                     worldY: tp.y, 
@@ -7888,7 +7890,9 @@ class Graphiti {
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
                                                 // Calculate theta from the actual significant point coordinates
-                                                const theta = Math.atan2(intercept.y, intercept.x);
+                                                let theta = Math.atan2(intercept.y, intercept.x);
+                                                // Normalize to [0, 2π] range to match user expectations
+                                                if (theta < 0) theta += 2 * Math.PI;
                                                 nearestSignificantPoint = { 
                                                     worldX: intercept.x, 
                                                     worldY: intercept.y, 
@@ -7913,7 +7917,9 @@ class Graphiti {
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
                                                 // Calculate theta from the actual significant point coordinates
-                                                const theta = Math.atan2(intersection.y, intersection.x);
+                                                let theta = Math.atan2(intersection.y, intersection.x);
+                                                // Normalize to [0, 2π] range to match user expectations
+                                                if (theta < 0) theta += 2 * Math.PI;
                                                 nearestSignificantPoint = { 
                                                     worldX: intersection.x, 
                                                     worldY: intersection.y, 
