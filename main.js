@@ -14777,6 +14777,84 @@ class Graphiti {
         return null;
     }
     
+    formatIntegralValue(value) {
+        // Format integral results as special values (fractions, surds, π multiples)
+        // Only returns simplified fractions with small denominators to avoid ugly results
+        const tolerance = 0.001;
+        
+        // 1. Check for exact zero
+        if (Math.abs(value) < tolerance) return '0';
+        
+        // 2. Check for π multiples and fractions (common in polar integrals and trig)
+        const piFraction = this.formatAsPiFraction(value);
+        if (piFraction) return piFraction;
+        
+        // 3. Check for common surds and surd combinations
+        const commonSurds = [
+            { value: Math.sqrt(2), label: '√2' },
+            { value: Math.sqrt(3), label: '√3' },
+            { value: Math.sqrt(5), label: '√5' },
+            { value: 2*Math.sqrt(2), label: '2√2' },
+            { value: 2*Math.sqrt(3), label: '2√3' },
+            { value: Math.sqrt(2)/2, label: '√2/2' },
+            { value: Math.sqrt(3)/2, label: '√3/2' },
+            { value: Math.sqrt(3)/3, label: '√3/3' },
+            { value: 2*Math.sqrt(3)/3, label: '2√3/3' },
+            { value: Math.E, label: 'e' },
+            { value: Math.E - 1, label: 'e-1' },
+            { value: 1 - 1/Math.E, label: '1-1/e' },
+        ];
+        
+        const sign = value < 0 ? '-' : '';
+        const absValue = Math.abs(value);
+        
+        for (let item of commonSurds) {
+            if (Math.abs(absValue - item.value) < tolerance) {
+                return sign + item.label;
+            }
+        }
+        
+        // 4. Check for simple fractions using continued fractions algorithm
+        // Only accept fractions with denominators up to 20
+        const fraction = this.decimalToFraction(absValue, tolerance, 20);
+        if (fraction && fraction.denominator <= 20 && fraction.denominator > 1) {
+            // Only return if it's a "nice" fraction
+            return sign + fraction.numerator + '/' + fraction.denominator;
+        }
+        
+        // 5. No special form found, return null to use decimal
+        return null;
+    }
+    
+    decimalToFraction(decimal, tolerance = 0.001, maxDenominator = 20) {
+        // Continued fraction algorithm to find best rational approximation
+        if (Math.abs(decimal) < tolerance) return null;
+        
+        const sign = decimal < 0 ? -1 : 1;
+        decimal = Math.abs(decimal);
+        
+        // Start with integer part
+        const intPart = Math.floor(decimal);
+        let remainder = decimal - intPart;
+        
+        if (remainder < tolerance) {
+            return { numerator: intPart * sign, denominator: 1 };
+        }
+        
+        // Try simple fractions first (faster and more reliable)
+        for (let den = 2; den <= maxDenominator; den++) {
+            for (let num = 1; num < den; num++) {
+                const fraction = intPart + num / den;
+                if (Math.abs(decimal - fraction) < tolerance) {
+                    return { numerator: (intPart * den + num) * sign, denominator: den };
+                }
+            }
+        }
+        
+        // No good fraction found
+        return null;
+    }
+    
     getPolarLabelOffset(theta) {
         // Adjust label position slightly based on angle to avoid overlapping with grid lines
         const offsetDistance = 8;
@@ -17251,14 +17329,9 @@ class Graphiti {
         // Use more aggressive zero threshold for areas (0.01) to handle numerical integration errors
         const snappedArea = Math.abs(pair.area) < 0.01 ? 0 : pair.area;
         
-        // Try to format as pi fraction if in polar mode in radians (pi fractions are natural for polar areas)
-        let areaText;
-        if (this.plotMode === 'polar' && this.angleMode === 'radians') {
-            const piFraction = this.formatAsPiFraction(snappedArea);
-            areaText = piFraction || this.formatCoordinate(snappedArea);
-        } else {
-            areaText = this.formatCoordinate(snappedArea);
-        }
+        // Try to format as special value (fractions, surds, π multiples)
+        const specialFormat = this.formatIntegralValue(snappedArea);
+        const areaText = specialFormat || snappedArea.toFixed(4);
         
         // Display actual integral value (without checkbox)
         // Label left-aligned, value right-aligned
@@ -17270,7 +17343,7 @@ class Graphiti {
         this.ctx.fillText('Actual Integral:', panelX + 18, panelY + 22); // +8 for strip width + 10 padding
         
         this.ctx.textAlign = 'right';
-        this.ctx.fillText(snappedArea.toFixed(4), panelX + panelWidth - 10, panelY + 22);
+        this.ctx.fillText(areaText, panelX + panelWidth - 10, panelY + 22);
         
         // Draw trapezium rule controls if applicable
         if (showTrapControls) {
