@@ -5887,6 +5887,11 @@ class Graphiti {
                     continue;
                 }
                 
+                // Find if this pair existed before to preserve cached values
+                const oldPair = oldPairs.find(p => 
+                    p.badge1Id === badge1.id && p.badge2Id === badge2.id
+                );
+                
                 // Calculate the integral
                 let area, start, end;
                 if (this.plotMode === 'polar') {
@@ -5896,19 +5901,24 @@ class Graphiti {
                 } else {
                     start = badge1.worldX;
                     end = badge2.worldX;
+                    
                     // Use fast point-based method during dragging for performance
                     const isDragging = this.input.tracing.active && this.input.badgeInteraction.targetBadge;
                     if (isDragging) {
                         area = this.calculateCartesianIntegralFromPoints(func, start, end);
                     } else {
-                        area = this.calculateCartesianIntegral(func, start, end);
+                        // Check if we have a cached high-precision area with matching bounds
+                        if (oldPair && oldPair.cachedArea !== undefined && 
+                            Math.abs(oldPair.start - start) < 0.0001 && 
+                            Math.abs(oldPair.end - end) < 0.0001) {
+                            // Use cached high-precision value
+                            area = oldPair.cachedArea;
+                        } else {
+                            // Calculate new high-precision value
+                            area = this.calculateCartesianIntegral(func, start, end);
+                        }
                     }
                 }
-                
-                // Find if this pair existed before to preserve labelBounds
-                const oldPair = oldPairs.find(p => 
-                    p.badge1Id === badge1.id && p.badge2Id === badge2.id
-                );
                 
                 // Create pair object
                 const newPair = {
@@ -5925,6 +5935,19 @@ class Graphiti {
                     trapeziumStripCount: oldPair ? oldPair.trapeziumStripCount : 4, // Preserve or default to 4
                     numericalMethod: oldPair ? oldPair.numericalMethod : 'trapezium' // Preserve or default to trapezium
                 };
+                
+                // Store high-precision area in cache (only for calculations using the high-precision method)
+                if (this.plotMode === 'cartesian') {
+                    const isDragging = this.input.tracing.active && this.input.badgeInteraction.targetBadge;
+                    if (!isDragging) {
+                        // We just calculated with high precision, cache it
+                        newPair.cachedArea = area;
+                    } else if (oldPair && oldPair.cachedArea !== undefined) {
+                        // Preserve existing high-precision cache during dragging (don't overwrite with point-based value)
+                        newPair.cachedArea = oldPair.cachedArea;
+                    }
+                    // Note: If dragging and no cache exists, don't set cachedArea (will be calculated after drag ends)
+                }
                 
                 // Preserve labelBounds if it existed
                 if (oldPair && oldPair.labelBounds) {
@@ -8452,6 +8475,17 @@ class Graphiti {
             
             // Detect and calculate integral pairs - only if integral badges changed
             if (needsIntegralUpdate) {
+                this.updateIntegralPairs();
+            }
+            
+            // Also update integral pairs if we were dragging an integral badge (to recalculate with high precision)
+            if (originalState && originalState.hasIntegral) {
+                // Clear the cache to force recalculation with high precision
+                this.integralPairs.forEach(pair => {
+                    if (pair.badge1Id === badgeId || pair.badge2Id === badgeId) {
+                        delete pair.cachedArea;
+                    }
+                });
                 this.updateIntegralPairs();
             }
             
