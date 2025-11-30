@@ -14697,9 +14697,9 @@ class Graphiti {
         
         // Check if this is a multiple of π/24 (smallest grid unit)
         // This dynamically handles ANY fraction of π, not just a hardcoded list
-        // Use slightly larger tolerance (0.03) to handle numerical integration errors
+        // Use tight tolerance to avoid false positives
         const twentyFourthsRatio = piMultiple * 24;
-        if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.03) {
+        if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.01) {
             const numerator = Math.round(twentyFourthsRatio);
             const denominator = 24;
             
@@ -14780,7 +14780,7 @@ class Graphiti {
     formatIntegralValue(value) {
         // Format integral results as special values (fractions, surds, π multiples)
         // Only returns simplified fractions with small denominators to avoid ugly results
-        const tolerance = 0.001;
+        const tolerance = 0.0001; // Tight tolerance to avoid false positive fraction matches
         
         // 1. Check for exact zero
         if (Math.abs(value) < tolerance) return '0';
@@ -17333,7 +17333,13 @@ class Graphiti {
         const specialFormat = this.formatIntegralValue(snappedArea);
         let areaText;
         if (specialFormat) {
-            areaText = specialFormat;
+            // Show special format with decimal approximation (except for zero)
+            if (specialFormat === '0') {
+                areaText = '0';
+            } else {
+                const decimalValue = parseFloat(snappedArea.toPrecision(5));
+                areaText = `${specialFormat} ≈ ${decimalValue}`;
+            }
         } else {
             // Check if it's close to an integer
             if (Math.abs(snappedArea - Math.round(snappedArea)) < 0.0001) {
