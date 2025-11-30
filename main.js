@@ -9213,6 +9213,14 @@ class Graphiti {
         // Clear turning points when switching modes (will be recalculated in new mode)
         this.turningPoints = [];
         
+        // Clear intercepts when switching modes (will be recalculated in new mode)
+        this.intercepts = [];
+        
+        // Clear intersections when switching modes (will be recalculated in new mode)
+        this.intersections = [];
+        this.explicitIntersections = [];
+        this.implicitIntersections = [];
+        
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
         // Handle angle mode: polar always uses radians, cartesian restores user preference
