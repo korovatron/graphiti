@@ -16658,6 +16658,7 @@ class Graphiti {
         this.ctx.save();
         
         const isSimpson = pair.numericalMethod === 'simpson';
+        const isDarkMode = document.documentElement.getAttribute('data-theme') !== 'light';
         
         // Draw error regions using cached world coords (transform to screen on the fly)
         this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
@@ -16675,7 +16676,8 @@ class Graphiti {
         }
         
         // Draw shape outlines using cached world coords
-        this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)';
+        // Gold in dark mode, dark orange in light mode for better visibility
+        this.ctx.strokeStyle = isDarkMode ? 'rgba(255, 215, 0, 0.8)' : 'rgba(204, 102, 0, 0.9)';
         this.ctx.lineWidth = 2;
         for (const outline of pair.cachedShapePaths.outlines) {
             if (outline.length < 2) continue;
@@ -16693,7 +16695,8 @@ class Graphiti {
         // Draw dashed lines for Simpson's rule
         if (isSimpson && pair.cachedShapePaths.dashedLines) {
             this.ctx.setLineDash([5, 5]);
-            this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
+            // Gold in dark mode, dark orange in light mode
+            this.ctx.strokeStyle = isDarkMode ? 'rgba(255, 215, 0, 0.6)' : 'rgba(204, 102, 0, 0.7)';
             this.ctx.lineWidth = 1.5;
             
             for (const line of pair.cachedShapePaths.dashedLines) {
@@ -16923,8 +16926,9 @@ class Graphiti {
         this.ctx.save();
         
         // Use a blend of both colors with gold tint to indicate linking
-        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)'; // Gold with transparency
-        this.ctx.strokeStyle = '#FFD700'; // Gold
+        const isDarkMode = document.documentElement.getAttribute('data-theme') !== 'light';
+        this.ctx.fillStyle = isDarkMode ? 'rgba(255, 215, 0, 0.3)' : 'rgba(204, 102, 0, 0.3)'; // Gold in dark mode, dark orange in light mode
+        this.ctx.strokeStyle = isDarkMode ? '#FFD700' : '#CC6600'; // Gold in dark mode, dark orange in light mode
         this.ctx.lineWidth = 2;
         
         // Draw the region between curves
@@ -17005,9 +17009,10 @@ class Graphiti {
         
         this.ctx.save();
         
-        // Gold color for linked region
-        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
-        this.ctx.strokeStyle = '#FFD700';
+        // Gold color for linked region (theme-aware)
+        const isDarkMode = document.documentElement.getAttribute('data-theme') !== 'light';
+        this.ctx.fillStyle = isDarkMode ? 'rgba(255, 215, 0, 0.3)' : 'rgba(204, 102, 0, 0.3)';
+        this.ctx.strokeStyle = isDarkMode ? '#FFD700' : '#CC6600';
         this.ctx.lineWidth = 2;
         
         // Draw the region between the two curves (not from center)
