@@ -248,6 +248,9 @@ class Graphiti {
         this.frozenInterceptBadges = []; // Store intercept badges during viewport changes
         this.culledInterceptMarkers = []; // Cache culled intercept markers for performance
         
+        // Flag for skipping expensive numerical integration recalculations during drag
+        this.isDraggingBadge = false;
+        
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
         this.isWorkerCalculating = false;
@@ -5962,9 +5965,21 @@ class Graphiti {
                     newPair.labelBounds = oldPair.labelBounds;
                 }
                 
-                // Preserve cached numerical result if start/end haven't changed
-                if (oldPair && oldPair.cachedNumericalResult && 
+                // Preserve cached numerical result and shape paths during badge dragging (even if bounds changed)
+                // This prevents expensive recalculation during drag operations
+                if (this.isDraggingBadge && oldPair) {
+                    if (oldPair.cachedNumericalResult) {
+                        newPair.cachedNumericalResult = oldPair.cachedNumericalResult;
+                    }
+                    if (oldPair.cachedShapePaths) {
+                        newPair.cachedShapePaths = oldPair.cachedShapePaths;
+                    }
+                    if (oldPair.numericalResult) {
+                        newPair.numericalResult = oldPair.numericalResult;
+                    }
+                } else if (oldPair && oldPair.cachedNumericalResult && 
                     oldPair.start === start && oldPair.end === end) {
+                    // When not changing viewport, preserve cache only if start/end unchanged
                     newPair.cachedNumericalResult = oldPair.cachedNumericalResult;
                 }
                 
@@ -7653,6 +7668,9 @@ class Graphiti {
                 this.input.badgeInteraction.startY = y;
                 this.input.badgeInteraction.isHolding = true; // Start in hold mode immediately
                 
+                // Set dragging flag to use cached numerical integration during drag
+                this.isDraggingBadge = true;
+                
                 // If badge has tangent or normal, clear frozen intercepts
                 if ((targetBadge.hasTangent || targetBadge.hasNormal) && this.showIntercepts) {
                     this.frozenInterceptBadges = [];
@@ -7757,6 +7775,9 @@ class Graphiti {
                 this.input.tracing.worldY = curvePoint.worldY;
                 this.input.tracing.theta = curvePoint.theta; // Store theta for polar parametric tracing
                 this.input.tracing.addIntegralNext = shouldAddIntegral; // Flag to add integral directly
+                
+                // Set dragging flag to use cached numerical integration during drag
+                this.isDraggingBadge = true;
             } else {
                 // Normal panning mode
                 this.input.tracing.active = false;
@@ -8542,6 +8563,9 @@ class Graphiti {
                 this.integralPairs.forEach(pair => {
                     if (pair.badge1Id === badgeId || pair.badge2Id === badgeId) {
                         delete pair.cachedArea;
+                        delete pair.cachedNumericalResult;
+                        delete pair.cachedShapePaths;
+                        delete pair.numericalResult;
                     }
                 });
                 this.updateIntegralPairs();
@@ -8557,6 +8581,9 @@ class Graphiti {
         this.input.tracing.neonTangent = false;
         this.input.tracing.hasNormal = false;
         this.input.tracing.neonNormal = false;
+        
+        // Clear dragging flag
+        this.isDraggingBadge = false;
         
         // Don't trigger viewport change on pointer end - it's already handled by debounced timer
         // The timer in handleViewportChange triggers when movement stops (even before pointer release)
@@ -8583,6 +8610,32 @@ class Graphiti {
         this.input.zoomRect.startY = canvasY;
         this.input.zoomRect.endX = canvasX;
         this.input.zoomRect.endY = canvasY;
+        
+        // Freeze intercepts, turning points, and intersections for display during zoom
+        if (this.showIntercepts && this.intercepts.length > 0) {
+            this.frozenInterceptBadges = this.intercepts.map(intercept => ({
+                x: intercept.x,
+                y: intercept.y,
+                type: intercept.type,
+                functionColor: '#808080'
+            }));
+        }
+        
+        if (this.showTurningPoints && this.turningPoints.length > 0) {
+            this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
+                x: turningPoint.x,
+                y: turningPoint.y,
+                type: turningPoint.type,
+                func: turningPoint.func
+            }));
+        }
+        
+        if (this.intersections.length > 0) {
+            this.frozenIntersectionBadges = this.intersections.map(intersection => ({
+                x: intersection.x,
+                y: intersection.y
+            }));
+        }
         
         // Set viewport changing flag to use cached paths during drag
         this.isViewportChanging = true;
@@ -8652,8 +8705,11 @@ class Graphiti {
         this.input.zoomRect.startY = 0;
         this.input.zoomRect.endX = 0;
         
-        // Clear viewport changing flag
+        // Clear viewport changing flag and frozen badges
         this.isViewportChanging = false;
+        this.frozenInterceptBadges = [];
+        this.frozenTurningPointBadges = [];
+        this.frozenIntersectionBadges = [];
         this.input.zoomRect.endY = 0;
         
         this.draw(); // Redraw to remove rectangle
@@ -16694,13 +16750,8 @@ class Graphiti {
             
             this.ctx.restore();
             
-            // Draw numerical integration shapes if enabled
+            // Draw numerical integration shapes if enabled (uses cached world coordinates)
             if (pair.showTrapeziumRule && pair.numericalResult && this.plotMode === 'cartesian') {
-                // During viewport changes, use cached paths; otherwise recalculate
-                if (!this.isViewportChanging || !pair.cachedShapePaths) {
-                    // Precompute all the shape paths and cache them
-                    this.cacheNumericalShapePaths(pair);
-                }
                 this.drawTrapezoidOutlines(pair);
             }
             
@@ -17600,9 +17651,9 @@ class Graphiti {
         
         // Draw trapezium rule controls if applicable
         if (showTrapControls) {
-            // During ANY viewport change (pan/zoom), skip this entire section to avoid hundreds of calls per second
+            // During ANY viewport change (pan/zoom/drag), skip this entire section to avoid hundreds of calls per second
             // The shapes will still draw using the existing pair.numericalResult from before viewport change started
-            if (!this.isViewportChanging) {
+            if (!this.isViewportChanging && !this.isDraggingBadge) {
                 // Calculate numerical approximation based on selected method
                 // Cache the result on the pair object itself to avoid recalculating during pan/zoom
                 let numericalResult;
@@ -17630,6 +17681,9 @@ class Graphiti {
                 
                 // Store numerical result for drawing shapes on graph
                 pair.numericalResult = numericalResult;
+                
+                // Cache the shape paths in world coordinates for fast drawing during viewport changes
+                this.cacheNumericalShapePaths(pair);
             }
             
             // If we have a numerical result, display the UI
