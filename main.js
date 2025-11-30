@@ -8621,8 +8621,9 @@ class Graphiti {
             this.updateViewportScale();
             this.updateRangeInputs();
             
-            // Redraw and recalculate
+            // Redraw and recalculate integrals
             this.draw();
+            this.updateIntegralPairs(); // Recalculate integrals for new viewport
             this.handleViewportChange(); // Debounced recalculation
         }
         
