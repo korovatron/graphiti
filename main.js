@@ -17331,7 +17331,18 @@ class Graphiti {
         
         // Try to format as special value (fractions, surds, π multiples)
         const specialFormat = this.formatIntegralValue(snappedArea);
-        const areaText = specialFormat || snappedArea.toFixed(4);
+        let areaText;
+        if (specialFormat) {
+            areaText = specialFormat;
+        } else {
+            // Check if it's close to an integer
+            if (Math.abs(snappedArea - Math.round(snappedArea)) < 0.0001) {
+                areaText = Math.round(snappedArea).toString();
+            } else {
+                // Use 5 significant figures, automatically strips trailing zeros
+                areaText = parseFloat(snappedArea.toPrecision(5)).toString();
+            }
+        }
         
         // Display actual integral value (without checkbox)
         // Label left-aligned, value right-aligned
