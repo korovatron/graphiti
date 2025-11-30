@@ -9374,6 +9374,18 @@ class Graphiti {
                 angleModeToggle.style.background = '#1a2a3f';
                 angleModeToggle.style.cursor = 'not-allowed';
             }
+            
+            // Reset viewport to polar defaults when switching to polar mode
+            // This prevents aspect ratio issues from Cartesian mode
+            this.resetPolarRange();
+            const polarViewport = this.getPolarResetViewport();
+            this.viewport.minX = polarViewport.minX;
+            this.viewport.maxX = polarViewport.maxX;
+            this.viewport.minY = polarViewport.minY;
+            this.viewport.maxY = polarViewport.maxY;
+            this.updateViewportScale();
+            this.enforcePolarAspectRatio();
+            this.updateRangeInputs();
         } else {
             // Restore cartesian angle mode preference
             this.angleMode = this.cartesianAngleMode;
