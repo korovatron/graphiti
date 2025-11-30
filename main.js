@@ -9212,14 +9212,17 @@ class Graphiti {
         
         // Clear turning points when switching modes (will be recalculated in new mode)
         this.turningPoints = [];
+        this.frozenTurningPointBadges = [];
         
         // Clear intercepts when switching modes (will be recalculated in new mode)
         this.intercepts = [];
+        this.frozenInterceptBadges = [];
         
         // Clear intersections when switching modes (will be recalculated in new mode)
         this.intersections = [];
         this.explicitIntersections = [];
         this.implicitIntersections = [];
+        this.frozenIntersectionBadges = [];
         
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
@@ -13874,11 +13877,11 @@ class Graphiti {
         }
         
         if (this.showIntercepts) {
-            this.findAxisIntercepts();
+            this.intercepts = this.findAxisIntercepts();
         }
         
         if (this.showTurningPoints) {
-            this.findTurningPoints();
+            this.turningPoints = this.findTurningPoints();
         }
     }
 
