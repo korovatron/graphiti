@@ -6232,6 +6232,81 @@ class Graphiti {
         };
     }
 
+    calculateSimpsonsRule(func, x1, x2, n) {
+        // Calculate Simpson's rule approximation for integral from x1 to x2 with n strips
+        // Returns { approximation, strips } where strips is array of parabola segment coordinates for drawing
+        // Note: n must be even for Simpson's rule
+        
+        // Ensure x1 < x2
+        if (x1 > x2) [x1, x2] = [x2, x1];
+        
+        // Ensure n is even (round up if odd)
+        if (n % 2 !== 0) {
+            n = n + 1;
+        }
+        
+        const h = (x2 - x1) / n; // Width of each strip
+        let sum = 0;
+        const strips = [];
+        
+        // Evaluate function at all points
+        const points = [];
+        for (let i = 0; i <= n; i++) {
+            const x = x1 + i * h;
+            const y = this.evaluateFunction(func.expression, x);
+            if (y === null || isNaN(y)) {
+                // If any point fails, return empty result
+                return { approximation: 0, strips: [] };
+            }
+            points.push({ x, y });
+        }
+        
+        // Apply Simpson's rule: (h/3)[f(x0) + 4f(x1) + 2f(x2) + 4f(x3) + ... + f(xn)]
+        sum = points[0].y; // First point coefficient is 1
+        
+        for (let i = 1; i < n; i++) {
+            if (i % 2 === 1) {
+                sum += 4 * points[i].y; // Odd indices get coefficient 4
+            } else {
+                sum += 2 * points[i].y; // Even indices get coefficient 2
+            }
+        }
+        
+        sum += points[n].y; // Last point coefficient is 1
+        sum *= h / 3;
+        
+        // Store strips for drawing (pairs of intervals for parabolas)
+        for (let i = 0; i < n; i += 2) {
+            strips.push({
+                x0: points[i].x,
+                y0: points[i].y,
+                x1: points[i + 1].x,
+                y1: points[i + 1].y,
+                x2: points[i + 2].x,
+                y2: points[i + 2].y
+            });
+        }
+        
+        return {
+            approximation: sum,
+            strips: strips
+        };
+    }
+
+    quadraticInterpolate(x0, y0, x1, y1, x2, y2, x) {
+        // Lagrange interpolation for a parabola through 3 points
+        // L0(x) = (x-x1)(x-x2) / ((x0-x1)(x0-x2))
+        // L1(x) = (x-x0)(x-x2) / ((x1-x0)(x1-x2))
+        // L2(x) = (x-x0)(x-x1) / ((x2-x0)(x2-x1))
+        // y = y0*L0(x) + y1*L1(x) + y2*L2(x)
+        
+        const L0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2));
+        const L1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2));
+        const L2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1));
+        
+        return y0 * L0 + y1 * L1 + y2 * L2;
+    }
+
     findIntersectionsBetweenFunctions(func1, func2) {
         const intersections = [];
         const points1 = func1.points;
@@ -16251,14 +16326,17 @@ class Graphiti {
     }
     
     drawTrapezoidOutlines(pair) {
-        // Draw trapezoid/rectangle outlines and error regions for numerical integration visualization
+        // Draw trapezoid/rectangle/parabola outlines and error regions for numerical integration visualization
         if (!pair.numericalResult) return;
         
         this.ctx.save();
         
-        // Determine if we're drawing trapezoids or rectangles
+        // Determine which method we're using
+        const isSimpson = pair.numericalMethod === 'simpson';
         const isRiemann = pair.numericalMethod === 'riemann';
-        const shapes = isRiemann ? pair.numericalResult.rectangles : pair.numericalResult.strips;
+        const shapes = isSimpson ? pair.numericalResult.strips : 
+                       isRiemann ? pair.numericalResult.rectangles : 
+                       pair.numericalResult.strips;
         
         if (!shapes) {
             this.ctx.restore();
@@ -16268,7 +16346,50 @@ class Graphiti {
         // First, shade the error regions (difference between shape and curve) in red
         this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Semi-transparent red
         
-        if (isRiemann) {
+        if (isSimpson) {
+            // For Simpson's rule, draw the area between the parabola and the curve
+            for (const segment of shapes) {
+                // Sample points along the curve between x0 and x2
+                const numSamples = 30;
+                const dx = (segment.x2 - segment.x0) / numSamples;
+                
+                this.ctx.beginPath();
+                
+                // Start at left point on parabola
+                const leftScreen = this.worldToScreen(segment.x0, segment.y0);
+                this.ctx.moveTo(leftScreen.x, leftScreen.y);
+                
+                // Draw along the actual curve
+                for (let i = 0; i <= numSamples; i++) {
+                    const x = segment.x0 + i * dx;
+                    const y = this.evaluateFunction(pair.func.expression, x);
+                    if (y !== null && !isNaN(y)) {
+                        const screenPos = this.worldToScreen(x, y);
+                        this.ctx.lineTo(screenPos.x, screenPos.y);
+                    }
+                }
+                
+                // Draw back along the parabola (from x2 to x0)
+                for (let i = numSamples; i >= 0; i--) {
+                    const t = i / numSamples; // Parameter from 0 to 1
+                    const x = segment.x0 + t * (segment.x2 - segment.x0);
+                    
+                    // Quadratic interpolation through 3 points
+                    const y = this.quadraticInterpolate(
+                        segment.x0, segment.y0,
+                        segment.x1, segment.y1,
+                        segment.x2, segment.y2,
+                        x
+                    );
+                    
+                    const screenPos = this.worldToScreen(x, y);
+                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                }
+                
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+        } else if (isRiemann) {
             // For rectangles, draw the area between the rectangle top and the curve
             for (const rect of shapes) {
                 const leftScreen = this.worldToScreen(rect.xLeft, rect.yValue);
@@ -16333,7 +16454,66 @@ class Graphiti {
         this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // Gold
         this.ctx.lineWidth = 2;
         
-        if (isRiemann) {
+        if (isSimpson) {
+            // Draw each parabola segment
+            for (const segment of shapes) {
+                const numPoints = 30;
+                
+                this.ctx.beginPath();
+                
+                // Start at left base
+                const leftBase = this.worldToScreen(segment.x0, 0);
+                this.ctx.moveTo(leftBase.x, leftBase.y);
+                
+                // Draw up to parabola at x0
+                const leftTop = this.worldToScreen(segment.x0, segment.y0);
+                this.ctx.lineTo(leftTop.x, leftTop.y);
+                
+                // Draw along the parabola
+                for (let i = 1; i <= numPoints; i++) {
+                    const t = i / numPoints;
+                    const x = segment.x0 + t * (segment.x2 - segment.x0);
+                    
+                    // Quadratic interpolation through 3 points
+                    const y = this.quadraticInterpolate(
+                        segment.x0, segment.y0,
+                        segment.x1, segment.y1,
+                        segment.x2, segment.y2,
+                        x
+                    );
+                    
+                    const screenPos = this.worldToScreen(x, y);
+                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                }
+                
+                // Draw down to right base
+                const rightBase = this.worldToScreen(segment.x2, 0);
+                this.ctx.lineTo(rightBase.x, rightBase.y);
+                
+                // Close along x-axis
+                this.ctx.lineTo(leftBase.x, leftBase.y);
+                
+                this.ctx.stroke();
+            }
+            
+            // Draw dashed lines for the intermediate ordinates (x1 in each segment)
+            this.ctx.setLineDash([5, 5]); // 5px dash, 5px gap
+            this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; // Slightly transparent gold
+            this.ctx.lineWidth = 1.5;
+            
+            for (const segment of shapes) {
+                // Draw dashed line at the middle point (x1, y1)
+                const midTop = this.worldToScreen(segment.x1, segment.y1);
+                const midBase = this.worldToScreen(segment.x1, 0);
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(midBase.x, midBase.y);
+                this.ctx.lineTo(midTop.x, midTop.y);
+                this.ctx.stroke();
+            }
+            
+            this.ctx.setLineDash([]); // Reset to solid lines
+        } else if (isRiemann) {
             // Draw each rectangle
             for (const rect of shapes) {
                 const leftTop = this.worldToScreen(rect.xLeft, rect.yValue);
@@ -17034,6 +17214,8 @@ class Graphiti {
             let numericalResult;
             if (pair.numericalMethod === 'riemann') {
                 numericalResult = this.calculateRiemannSum(pair.func, pair.start, pair.end, pair.trapeziumStripCount, 'midpoint');
+            } else if (pair.numericalMethod === 'simpson') {
+                numericalResult = this.calculateSimpsonsRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
             } else {
                 numericalResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
             }
@@ -17080,7 +17262,14 @@ class Graphiti {
             this.ctx.font = 'bold 11px Arial';
             this.ctx.textAlign = 'center';
             this.ctx.fillStyle = '#FFFFFF';
-            const methodName = pair.numericalMethod === 'trapezium' ? 'Trapezium' : 'Riemann';
+            let methodName;
+            if (pair.numericalMethod === 'trapezium') {
+                methodName = 'Trapezium';
+            } else if (pair.numericalMethod === 'simpson') {
+                methodName = 'Simpson';
+            } else {
+                methodName = 'Mid-Ordinate';
+            }
             this.ctx.fillText(methodName, methodX + methodWidth / 2, methodY + methodHeight / 2);
             
             // Store method selector bounds
@@ -17310,8 +17499,18 @@ class Graphiti {
         const type = clickInfo.type;
         
         if (type === 'methodSelector') {
-            // Toggle between trapezium and riemann
-            pair.numericalMethod = pair.numericalMethod === 'trapezium' ? 'riemann' : 'trapezium';
+            // Cycle through trapezium -> simpson -> riemann (mid-ordinate)
+            if (pair.numericalMethod === 'trapezium') {
+                pair.numericalMethod = 'simpson';
+                // Ensure strip count is even for Simpson's rule
+                if (pair.trapeziumStripCount % 2 !== 0) {
+                    pair.trapeziumStripCount = pair.trapeziumStripCount + 1;
+                }
+            } else if (pair.numericalMethod === 'simpson') {
+                pair.numericalMethod = 'riemann';
+            } else {
+                pair.numericalMethod = 'trapezium';
+            }
             this.draw();
             return;
         }
@@ -17324,15 +17523,25 @@ class Graphiti {
         }
         
         if (type === 'trapMinus') {
-            // Decrease n for this specific pair (minimum 1)
-            pair.trapeziumStripCount = Math.max(1, pair.trapeziumStripCount - 1);
+            // Decrease n for this specific pair (minimum 1, or 2 for Simpson)
+            if (pair.numericalMethod === 'simpson') {
+                // For Simpson's rule, decrement by 2 to keep even
+                pair.trapeziumStripCount = Math.max(2, pair.trapeziumStripCount - 2);
+            } else {
+                pair.trapeziumStripCount = Math.max(1, pair.trapeziumStripCount - 1);
+            }
             this.draw();
             return;
         }
         
         if (type === 'trapPlus') {
             // Increase n for this specific pair (maximum 50)
-            pair.trapeziumStripCount = Math.min(50, pair.trapeziumStripCount + 1);
+            if (pair.numericalMethod === 'simpson') {
+                // For Simpson's rule, increment by 2 to keep even
+                pair.trapeziumStripCount = Math.min(50, pair.trapeziumStripCount + 2);
+            } else {
+                pair.trapeziumStripCount = Math.min(50, pair.trapeziumStripCount + 1);
+            }
             this.draw();
             return;
         }
