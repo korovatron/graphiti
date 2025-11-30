@@ -6773,28 +6773,25 @@ class Graphiti {
             });
         }
         
-        // Title screen start listeners - click, touch, or keyboard
-        if (titleScreen) {
-            // Mouse click to start
-            titleScreen.addEventListener('click', (e) => {
-                if (this.currentState === this.states.TITLE) {
-                    // Don't trigger on link clicks
-                    if (e.target.tagName !== 'A') {
-                        this.startGraphing();
-                    }
-                }
+        // Title screen button listeners
+        const startButton = document.getElementById('title-start-button');
+        if (startButton) {
+            startButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.startGraphing();
             });
-            
-            // Touch tap to start (separate from click to avoid double triggering)
-            titleScreen.addEventListener('touchend', (e) => {
-                if (this.currentState === this.states.TITLE) {
-                    // Don't trigger on link taps
-                    if (e.target.tagName !== 'A') {
-                        e.preventDefault(); // Prevent click event
-                        e.stopPropagation(); // Prevent event bubbling to document handlers
-                        this.startGraphing();
-                    }
-                }
+        }
+        
+        const helpButton = document.getElementById('title-help-button');
+        if (helpButton) {
+            helpButton.addEventListener('click', (e) => {
+                this.toggleShortcutsOverlay();
+            });
+            // Touch support for help button
+            helpButton.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleShortcutsOverlay();
             });
         }
         

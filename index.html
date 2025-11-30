@@ -424,6 +424,52 @@
             color: #FFFFFF; /* Fixed white text */
         }
         
+        .title-screen .title-button {
+            background: #2A3F5A;
+            color: white;
+            border: 1px solid #555;
+            padding: 12px 30px;
+            font-size: 1em;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            display: inline-block;
+            min-width: 180px;
+        }
+        
+        .title-screen .title-button:hover {
+            background: #3A5170;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        
+        .title-screen .title-button:active {
+            transform: translateY(0);
+        }
+        
+        .title-screen .button-container {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        
+        /* Stack buttons vertically on narrow screens */
+        @media (max-width: 500px) {
+            .title-screen .button-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .title-screen .title-button {
+                width: 200px;
+                margin: 5px;
+            }
+        }
+        
         .title-screen a {
             color: #4A90E2; /* Fixed blue color */
             text-decoration: underline;
@@ -1383,10 +1429,21 @@
             color: #888;
             font-size: 13px;
         }
-
-        /* Hide shortcuts overlay on touch devices */
+        
+        /* Device-aware content visibility */
+        .touch-only {
+            display: none;
+        }
+        
+        .desktop-only {
+            display: inline;
+        }
+        
         @media (hover: none) and (pointer: coarse) {
-            .shortcuts-overlay {
+            .touch-only {
+                display: inline;
+            }
+            .desktop-only {
                 display: none !important;
             }
         }
@@ -1543,6 +1600,11 @@
                 <!-- Animated sine wave tagline -->
                 <div id="sine-wave-tagline" class="sine-wave-text">
                     <!-- JavaScript will populate this with animated letters -->
+                </div>
+                
+                <div class="button-container">
+                    <button id="title-start-button" class="title-button">Start Graphing</button>
+                    <button id="title-help-button" class="title-button">How to Use</button>
                 </div>
                 
                 <p class="copyright">© 2025 Neil Kendall<span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a></p>
@@ -2022,81 +2084,104 @@
         Press <kbd>?</kbd> for keyboard shortcuts
     </div>
 
-    <!-- Keyboard shortcuts overlay -->
+    <!-- Help overlay (device-aware) -->
     <div id="shortcuts-overlay" class="shortcuts-overlay">
         <div class="shortcuts-content">
-            <h2>Keyboard Shortcuts</h2>
+            <h2>How to Use Graphiti</h2>
             
+            <!-- Interactive Features -->
             <div class="shortcuts-section">
-                <h3>Navigation</h3>
+                <h3>Interactive Tracing</h3>
                 <div class="shortcut-item">
-                    <span class="shortcut-description">Pan up</span>
-                    <div class="shortcut-keys">
-                        <kbd>↑</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>W</kbd>
-                    </div>
+                    <span class="shortcut-description"><span class="touch-only">Tap</span><span class="desktop-only">Click</span> graph to place trace marker</span>
                 </div>
                 <div class="shortcut-item">
-                    <span class="shortcut-description">Pan down</span>
-                    <div class="shortcut-keys">
-                        <kbd>↓</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>S</kbd>
-                    </div>
+                    <span class="shortcut-description"><span class="touch-only">Tap</span><span class="desktop-only">Click</span> marker to cycle: tangent → normal → integral</span>
                 </div>
                 <div class="shortcut-item">
-                    <span class="shortcut-description">Pan left</span>
-                    <div class="shortcut-keys">
-                        <kbd>←</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>A</kbd>
-                    </div>
-                </div>
-                <div class="shortcut-item">
-                    <span class="shortcut-description">Pan right</span>
-                    <div class="shortcut-keys">
-                        <kbd>→</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>D</kbd>
-                    </div>
+                    <span class="shortcut-description">Drag marker to reposition on curve</span>
                 </div>
             </div>
 
-            <div class="shortcuts-section">
-                <h3>Zoom</h3>
+            <!-- Navigation (Desktop) -->
+            <div class="shortcuts-section desktop-only">
+                <h3>Navigation (Keyboard)</h3>
                 <div class="shortcut-item">
-                    <span class="shortcut-description">Zoom in</span>
+                    <span class="shortcut-description">Pan</span>
                     <div class="shortcut-keys">
-                        <kbd>=</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>+</kbd>
+                        Left-click drag or <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>
                     </div>
                 </div>
                 <div class="shortcut-item">
-                    <span class="shortcut-description">Zoom out</span>
+                    <span class="shortcut-description">Zoom</span>
                     <div class="shortcut-keys">
-                        <kbd>-</kbd><span style="color: #666; margin: 0 5px;">or</span><kbd>_</kbd>
+                        <kbd>+</kbd> <kbd>-</kbd> or mouse wheel
                     </div>
                 </div>
                 <div class="shortcut-item">
                     <span class="shortcut-description">Zoom to region (Cartesian only)</span>
                     <div class="shortcut-keys">
-                        <kbd>Right-click</kbd><span style="color: #666; margin: 0 5px;">and drag</span>
+                        Right-click and drag
                     </div>
                 </div>
             </div>
-
-            <div class="shortcuts-section">
-                <h3>Math input</h3>
+            
+            <!-- Touch Controls -->
+            <div class="shortcuts-section touch-only">
+                <h3>Touch Controls</h3>
                 <div class="shortcut-item">
-                    <div class="shortcut-keys">
-                        Type <kbd>pi</kbd> to insert <span style="font-family: 'Times New Roman', serif;">π</span>
-                    </div>
+                    <span class="shortcut-description">Pan: Drag with one finger</span>
                 </div>
                 <div class="shortcut-item">
-                    <div class="shortcut-keys">
-                        Type <kbd>theta</kbd> to insert <span style="font-family: 'Times New Roman', serif;">θ</span>
-                    </div>
+                    <span class="shortcut-description">Zoom: Pinch with two fingers</span>
                 </div>
                 <div class="shortcut-item">
-                    <div class="shortcut-keys">
-                        Type <kbd>alpha</kbd>, <kbd>beta</kbd>, <kbd>gamma</kbd>, or <kbd>delta</kbd> for parameters <span style="font-family: 'Times New Roman', serif;">α, β, γ, δ</span>
-                    </div>
+                    <span class="shortcut-description">Directional zoom: Pinch horizontally or vertically</span>
                 </div>
             </div>
 
-            <p class="shortcuts-close">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
+            <!-- Math Input -->
+            <div class="shortcuts-section desktop-only">
+                <h3>Math Input</h3>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Greek letters:</strong> Type <kbd>pi</kbd> for <span style="font-family: 'Times New Roman', serif;">π</span>, <kbd>theta</kbd> for <span style="font-family: 'Times New Roman', serif;">θ</span></span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Parameters:</strong> Type <kbd>alpha</kbd>, <kbd>beta</kbd>, <kbd>gamma</kbd>, <kbd>delta</kbd> for parameter sliders</span>
+                </div>
+            </div>
+
+            <!-- Function Syntax -->
+            <div class="shortcuts-section desktop-only">
+                <h3>Function Syntax</h3>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Basic operations:</strong> <kbd>+</kbd> <kbd>-</kbd> <kbd>*</kbd> <kbd>/</kbd> <kbd>^</kbd> (exponent)</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Roots:</strong> <kbd>sqrt(x)</kbd> for √x, <kbd>x^(1/n)</kbd> for nth root</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Trigonometry:</strong> <kbd>sin</kbd>, <kbd>cos</kbd>, <kbd>tan</kbd>, <kbd>sec</kbd>, <kbd>csc</kbd>, <kbd>cot</kbd></span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Inverse trig:</strong> <kbd>arcsin</kbd>, <kbd>arccos</kbd>, <kbd>arctan</kbd>, <kbd>arcsec</kbd>, <kbd>arccsc</kbd>, <kbd>arccot</kbd></span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Hyperbolics:</strong> <kbd>sinh</kbd>, <kbd>cosh</kbd>, <kbd>tanh</kbd>, <kbd>sech</kbd>, <kbd>csch</kbd>, <kbd>coth</kbd></span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Inverse hyperbolics:</strong> <kbd>arcsinh</kbd>, <kbd>arccosh</kbd>, <kbd>arctanh</kbd>, <kbd>arcsech</kbd>, <kbd>arccsch</kbd>, <kbd>arccoth</kbd></span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Logarithms:</strong> <kbd>ln(x)</kbd> (natural log), <kbd>log(x)</kbd> (base 10)</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Exponentials:</strong> <kbd>exp(x)</kbd> for e<sup>x</sup>, <kbd>e^x</kbd></span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-description"><strong>Absolute value:</strong> <kbd>abs(x)</kbd></span>
+                </div>
+            </div>
         </div>
     </div>
     
