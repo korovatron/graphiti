@@ -5931,6 +5931,12 @@ class Graphiti {
                     newPair.labelBounds = oldPair.labelBounds;
                 }
                 
+                // Preserve cached numerical result if start/end haven't changed
+                if (oldPair && oldPair.cachedNumericalResult && 
+                    oldPair.start === start && oldPair.end === end) {
+                    newPair.cachedNumericalResult = oldPair.cachedNumericalResult;
+                }
+                
                 this.integralPairs.push(newPair);
             }
         }
@@ -16349,6 +16355,11 @@ class Graphiti {
             
             // Draw numerical integration shapes if enabled
             if (pair.showTrapeziumRule && pair.numericalResult && this.plotMode === 'cartesian') {
+                // During viewport changes, use cached paths; otherwise recalculate
+                if (!this.isViewportChanging || !pair.cachedShapePaths) {
+                    // Precompute all the shape paths and cache them
+                    this.cacheNumericalShapePaths(pair);
+                }
                 this.drawTrapezoidOutlines(pair);
             }
             
@@ -16359,228 +16370,215 @@ class Graphiti {
         this.drawLinkedIntegrationRegions();
     }
     
-    drawTrapezoidOutlines(pair) {
-        // Draw trapezoid/rectangle/parabola outlines and error regions for numerical integration visualization
+    cacheNumericalShapePaths(pair) {
+        // Pre-compute all WORLD coordinates for drawing shapes
+        // We cache world coords, not screen coords, so they move correctly during pan/zoom
         if (!pair.numericalResult) return;
         
-        this.ctx.save();
-        
-        // Determine which method we're using
         const isSimpson = pair.numericalMethod === 'simpson';
         const isRiemann = pair.numericalMethod === 'riemann';
         const shapes = isSimpson ? pair.numericalResult.strips : 
                        isRiemann ? pair.numericalResult.rectangles : 
                        pair.numericalResult.strips;
         
-        if (!shapes) {
-            this.ctx.restore();
-            return;
-        }
+        if (!shapes) return;
         
-        // First, shade the error regions (difference between shape and curve) in red
-        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Semi-transparent red
+        pair.cachedShapePaths = {
+            errorRegions: [],
+            outlines: [],
+            dashedLines: []
+        };
         
         if (isSimpson) {
-            // For Simpson's rule, draw the area between the parabola and the curve
+            const numSamples = 30;
+            
+            // Cache error regions (world coords)
             for (const segment of shapes) {
-                // Sample points along the curve between x0 and x2
-                const numSamples = 30;
                 const dx = (segment.x2 - segment.x0) / numSamples;
+                const errorPath = [];
                 
-                this.ctx.beginPath();
-                
-                // Start at left point on parabola
-                const leftScreen = this.worldToScreen(segment.x0, segment.y0);
-                this.ctx.moveTo(leftScreen.x, leftScreen.y);
-                
-                // Draw along the actual curve
+                // Points along curve (forward)
                 for (let i = 0; i <= numSamples; i++) {
                     const x = segment.x0 + i * dx;
                     const y = this.evaluateFunction(pair.func.expression, x);
                     if (y !== null && !isNaN(y)) {
-                        const screenPos = this.worldToScreen(x, y);
-                        this.ctx.lineTo(screenPos.x, screenPos.y);
+                        errorPath.push({x, y});
                     }
                 }
                 
-                // Draw back along the parabola (from x2 to x0)
+                // Points along parabola (backward)
                 for (let i = numSamples; i >= 0; i--) {
-                    const t = i / numSamples; // Parameter from 0 to 1
+                    const t = i / numSamples;
                     const x = segment.x0 + t * (segment.x2 - segment.x0);
-                    
-                    // Quadratic interpolation through 3 points
                     const y = this.quadraticInterpolate(
                         segment.x0, segment.y0,
                         segment.x1, segment.y1,
                         segment.x2, segment.y2,
                         x
                     );
-                    
-                    const screenPos = this.worldToScreen(x, y);
-                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                    errorPath.push({x, y});
                 }
                 
-                this.ctx.closePath();
-                this.ctx.fill();
+                pair.cachedShapePaths.errorRegions.push(errorPath);
             }
+            
+            // Cache outlines (world coords)
+            for (const segment of shapes) {
+                const outline = [];
+                outline.push({x: segment.x0, y: 0}); // left base
+                outline.push({x: segment.x0, y: segment.y0}); // left top
+                
+                // Points along parabola
+                for (let i = 1; i <= numSamples; i++) {
+                    const t = i / numSamples;
+                    const x = segment.x0 + t * (segment.x2 - segment.x0);
+                    const y = this.quadraticInterpolate(
+                        segment.x0, segment.y0,
+                        segment.x1, segment.y1,
+                        segment.x2, segment.y2,
+                        x
+                    );
+                    outline.push({x, y});
+                }
+                
+                outline.push({x: segment.x2, y: 0}); // right base
+                pair.cachedShapePaths.outlines.push(outline);
+            }
+            
+            // Cache dashed lines (world coords)
+            for (const segment of shapes) {
+                pair.cachedShapePaths.dashedLines.push([
+                    {x: segment.x1, y: 0},
+                    {x: segment.x1, y: segment.y1}
+                ]);
+            }
+            
         } else if (isRiemann) {
-            // For rectangles, draw the area between the rectangle top and the curve
+            const numSamples = 20;
+            
+            // Cache error regions (world coords)
             for (const rect of shapes) {
-                const leftScreen = this.worldToScreen(rect.xLeft, rect.yValue);
-                const rightScreen = this.worldToScreen(rect.xRight, rect.yValue);
-                
-                // Sample points along the curve between xLeft and xRight
-                const numSamples = 20;
                 const dx = (rect.xRight - rect.xLeft) / numSamples;
+                const errorPath = [];
                 
-                this.ctx.beginPath();
-                // Start at left point on rectangle top
-                this.ctx.moveTo(leftScreen.x, leftScreen.y);
+                errorPath.push({x: rect.xLeft, y: rect.yValue});
                 
-                // Draw along the actual curve
+                // Points along curve
                 for (let i = 0; i <= numSamples; i++) {
                     const x = rect.xLeft + i * dx;
                     const y = this.evaluateFunction(pair.func.expression, x);
                     if (y !== null && !isNaN(y)) {
-                        const screenPos = this.worldToScreen(x, y);
-                        this.ctx.lineTo(screenPos.x, screenPos.y);
+                        errorPath.push({x, y});
                     }
                 }
                 
-                // Close back to right point on rectangle top
-                this.ctx.lineTo(rightScreen.x, rightScreen.y);
-                this.ctx.closePath();
-                this.ctx.fill();
+                errorPath.push({x: rect.xRight, y: rect.yValue});
+                pair.cachedShapePaths.errorRegions.push(errorPath);
             }
+            
+            // Cache outlines (world coords)
+            for (const rect of shapes) {
+                pair.cachedShapePaths.outlines.push([
+                    {x: rect.xLeft, y: 0},
+                    {x: rect.xLeft, y: rect.yValue},
+                    {x: rect.xRight, y: rect.yValue},
+                    {x: rect.xRight, y: 0}
+                ]);
+            }
+            
         } else {
-            // For trapezoids, draw the area between the straight top and the curve
+            // Trapezium
+            const numSamples = 20;
+            
+            // Cache error regions (world coords)
             for (const strip of shapes) {
-                const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
-                const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
-                
-                // Sample points along the curve between xLeft and xRight
-                const numSamples = 20;
                 const dx = (strip.xRight - strip.xLeft) / numSamples;
+                const errorPath = [];
                 
-                this.ctx.beginPath();
-                // Start at left point on trapezoid top
-                this.ctx.moveTo(leftScreen.x, leftScreen.y);
+                errorPath.push({x: strip.xLeft, y: strip.yLeft});
                 
-                // Draw along the actual curve
+                // Points along curve
                 for (let i = 0; i <= numSamples; i++) {
                     const x = strip.xLeft + i * dx;
                     const y = this.evaluateFunction(pair.func.expression, x);
                     if (y !== null && !isNaN(y)) {
-                        const screenPos = this.worldToScreen(x, y);
-                        this.ctx.lineTo(screenPos.x, screenPos.y);
+                        errorPath.push({x, y});
                     }
                 }
                 
-                // Close by drawing back along the trapezoid top
-                this.ctx.lineTo(rightScreen.x, rightScreen.y);
-                this.ctx.lineTo(leftScreen.x, leftScreen.y);
-                this.ctx.closePath();
-                this.ctx.fill();
+                errorPath.push({x: strip.xRight, y: strip.yRight});
+                pair.cachedShapePaths.errorRegions.push(errorPath);
+            }
+            
+            // Cache outlines (world coords)
+            for (const strip of shapes) {
+                pair.cachedShapePaths.outlines.push([
+                    {x: strip.xLeft, y: 0},
+                    {x: strip.xLeft, y: strip.yLeft},
+                    {x: strip.xRight, y: strip.yRight},
+                    {x: strip.xRight, y: 0}
+                ]);
             }
         }
+    }
+    
+    drawTrapezoidOutlines(pair) {
+        // Draw trapezoid/rectangle/parabola outlines and error regions for numerical integration visualization
+        if (!pair.cachedShapePaths) return;
         
-        // Now draw the shape outlines in gold
-        this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // Gold
-        this.ctx.lineWidth = 2;
+        this.ctx.save();
         
-        if (isSimpson) {
-            // Draw each parabola segment
-            for (const segment of shapes) {
-                const numPoints = 30;
-                
-                this.ctx.beginPath();
-                
-                // Start at left base
-                const leftBase = this.worldToScreen(segment.x0, 0);
-                this.ctx.moveTo(leftBase.x, leftBase.y);
-                
-                // Draw up to parabola at x0
-                const leftTop = this.worldToScreen(segment.x0, segment.y0);
-                this.ctx.lineTo(leftTop.x, leftTop.y);
-                
-                // Draw along the parabola
-                for (let i = 1; i <= numPoints; i++) {
-                    const t = i / numPoints;
-                    const x = segment.x0 + t * (segment.x2 - segment.x0);
-                    
-                    // Quadratic interpolation through 3 points
-                    const y = this.quadraticInterpolate(
-                        segment.x0, segment.y0,
-                        segment.x1, segment.y1,
-                        segment.x2, segment.y2,
-                        x
-                    );
-                    
-                    const screenPos = this.worldToScreen(x, y);
-                    this.ctx.lineTo(screenPos.x, screenPos.y);
-                }
-                
-                // Draw down to right base
-                const rightBase = this.worldToScreen(segment.x2, 0);
-                this.ctx.lineTo(rightBase.x, rightBase.y);
-                
-                // Close along x-axis
-                this.ctx.lineTo(leftBase.x, leftBase.y);
-                
-                this.ctx.stroke();
+        const isSimpson = pair.numericalMethod === 'simpson';
+        
+        // Draw error regions using cached world coords (transform to screen on the fly)
+        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+        for (const path of pair.cachedShapePaths.errorRegions) {
+            if (path.length < 2) continue;
+            this.ctx.beginPath();
+            const first = this.worldToScreen(path[0].x, path[0].y);
+            this.ctx.moveTo(first.x, first.y);
+            for (let i = 1; i < path.length; i++) {
+                const pt = this.worldToScreen(path[i].x, path[i].y);
+                this.ctx.lineTo(pt.x, pt.y);
             }
-            
-            // Draw dashed lines for the intermediate ordinates (x1 in each segment)
-            this.ctx.setLineDash([5, 5]); // 5px dash, 5px gap
-            this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)'; // Slightly transparent gold
+            this.ctx.closePath();
+            this.ctx.fill();
+        }
+        
+        // Draw shape outlines using cached world coords
+        this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)';
+        this.ctx.lineWidth = 2;
+        for (const outline of pair.cachedShapePaths.outlines) {
+            if (outline.length < 2) continue;
+            this.ctx.beginPath();
+            const first = this.worldToScreen(outline[0].x, outline[0].y);
+            this.ctx.moveTo(first.x, first.y);
+            for (let i = 1; i < outline.length; i++) {
+                const pt = this.worldToScreen(outline[i].x, outline[i].y);
+                this.ctx.lineTo(pt.x, pt.y);
+            }
+            this.ctx.closePath();
+            this.ctx.stroke();
+        }
+        
+        // Draw dashed lines for Simpson's rule
+        if (isSimpson && pair.cachedShapePaths.dashedLines) {
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.6)';
             this.ctx.lineWidth = 1.5;
             
-            for (const segment of shapes) {
-                // Draw dashed line at the middle point (x1, y1)
-                const midTop = this.worldToScreen(segment.x1, segment.y1);
-                const midBase = this.worldToScreen(segment.x1, 0);
-                
-                this.ctx.beginPath();
-                this.ctx.moveTo(midBase.x, midBase.y);
-                this.ctx.lineTo(midTop.x, midTop.y);
-                this.ctx.stroke();
+            for (const line of pair.cachedShapePaths.dashedLines) {
+                if (line.length === 2) {
+                    const start = this.worldToScreen(line[0].x, line[0].y);
+                    const end = this.worldToScreen(line[1].x, line[1].y);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(start.x, start.y);
+                    this.ctx.lineTo(end.x, end.y);
+                    this.ctx.stroke();
+                }
             }
             
-            this.ctx.setLineDash([]); // Reset to solid lines
-        } else if (isRiemann) {
-            // Draw each rectangle
-            for (const rect of shapes) {
-                const leftTop = this.worldToScreen(rect.xLeft, rect.yValue);
-                const rightTop = this.worldToScreen(rect.xRight, rect.yValue);
-                const leftBase = this.worldToScreen(rect.xLeft, 0);
-                const rightBase = this.worldToScreen(rect.xRight, 0);
-                
-                // Draw rectangle outline
-                this.ctx.beginPath();
-                this.ctx.moveTo(leftBase.x, leftBase.y);
-                this.ctx.lineTo(leftTop.x, leftTop.y);
-                this.ctx.lineTo(rightTop.x, rightTop.y);
-                this.ctx.lineTo(rightBase.x, rightBase.y);
-                this.ctx.closePath();
-                this.ctx.stroke();
-            }
-        } else {
-            // Draw each trapezoid
-            for (const strip of shapes) {
-                const leftScreen = this.worldToScreen(strip.xLeft, strip.yLeft);
-                const rightScreen = this.worldToScreen(strip.xRight, strip.yRight);
-                const leftBase = this.worldToScreen(strip.xLeft, 0);
-                const rightBase = this.worldToScreen(strip.xRight, 0);
-                
-                // Draw trapezoid outline
-                this.ctx.beginPath();
-                this.ctx.moveTo(leftBase.x, leftBase.y);
-                this.ctx.lineTo(leftScreen.x, leftScreen.y);
-                this.ctx.lineTo(rightScreen.x, rightScreen.y);
-                this.ctx.lineTo(rightBase.x, rightBase.y);
-                this.ctx.closePath();
-                this.ctx.stroke();
-            }
+            this.ctx.setLineDash([]);
         }
         
         this.ctx.restore();
@@ -17242,18 +17240,42 @@ class Graphiti {
         
         // Draw trapezium rule controls if applicable
         if (showTrapControls) {
-            const controlsY = panelY + basePanelHeight; // No gap at all
-            
-            // Calculate numerical approximation based on selected method
-            let numericalResult;
-            if (pair.numericalMethod === 'riemann') {
-                numericalResult = this.calculateRiemannSum(pair.func, pair.start, pair.end, pair.trapeziumStripCount, 'midpoint');
-            } else if (pair.numericalMethod === 'simpson') {
-                numericalResult = this.calculateSimpsonsRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
-            } else {
-                numericalResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+            // During ANY viewport change (pan/zoom), skip this entire section to avoid hundreds of calls per second
+            // The shapes will still draw using the existing pair.numericalResult from before viewport change started
+            if (!this.isViewportChanging) {
+                // Calculate numerical approximation based on selected method
+                // Cache the result on the pair object itself to avoid recalculating during pan/zoom
+                let numericalResult;
+                
+                if (pair.cachedNumericalResult && 
+                    pair.cachedNumericalResult.method === pair.numericalMethod &&
+                    pair.cachedNumericalResult.stripCount === pair.trapeziumStripCount) {
+                    // Use cached result
+                    numericalResult = pair.cachedNumericalResult.result;
+                } else {
+                    // Calculate and cache
+                    if (pair.numericalMethod === 'riemann') {
+                        numericalResult = this.calculateRiemannSum(pair.func, pair.start, pair.end, pair.trapeziumStripCount, 'midpoint');
+                    } else if (pair.numericalMethod === 'simpson') {
+                        numericalResult = this.calculateSimpsonsRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+                    } else {
+                        numericalResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+                    }
+                    pair.cachedNumericalResult = {
+                        method: pair.numericalMethod,
+                        stripCount: pair.trapeziumStripCount,
+                        result: numericalResult
+                    };
+                }
+                
+                // Store numerical result for drawing shapes on graph
+                pair.numericalResult = numericalResult;
             }
-            const approximation = numericalResult.approximation;
+            
+            // If we have a numerical result, display the UI
+            if (pair.numericalResult) {
+                const controlsY = panelY + basePanelHeight; // No gap at all
+                const approximation = pair.numericalResult.approximation;
             
             // Display approximation value
             // Label left-aligned, value right-aligned
@@ -17444,11 +17466,7 @@ class Graphiti {
                 width: buttonWidth,
                 height: buttonHeight
             };
-            
-            // Store numerical result for drawing on graph
-            pair.numericalResult = numericalResult;
-        } else {
-            pair.numericalResult = null;
+            }
         }
         
         // Store panel bounds for potential click detection
