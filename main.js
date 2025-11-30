@@ -9878,9 +9878,15 @@ class Graphiti {
         
         this.changeState(this.states.GRAPHING);
         
-        // Load saved plot mode from localStorage
+        // Try to load saved functions from localStorage first to check if any exist
+        const savedData = this.loadFunctionsFromLocalStorage();
+        
+        // If no saved functions exist, force Cartesian mode regardless of saved mode
+        const hasAnySavedFunctions = savedData.hasSavedCartesian || savedData.hasSavedPolar;
+        
+        // Load saved plot mode from localStorage (but only if there are saved functions)
         const savedMode = localStorage.getItem('graphiti_plot_mode');
-        if (savedMode && (savedMode === 'cartesian' || savedMode === 'polar')) {
+        if (hasAnySavedFunctions && savedMode && (savedMode === 'cartesian' || savedMode === 'polar')) {
             this.plotMode = savedMode;
             
             // Update UI to reflect loaded mode
@@ -9947,8 +9953,10 @@ class Graphiti {
             this.updateVirtualKeyboardsForMode();
         }
         
-        // Try to load saved functions from localStorage
-        const savedData = this.loadFunctionsFromLocalStorage();
+        // savedData was already loaded above to check for saved functions
+        
+        // Track if we added default functions (no saved data)
+        let addedDefaultFunctions = false;
         
         // ALWAYS load both Cartesian and Polar functions from localStorage on startup
         // This ensures both arrays are populated, even if we're only showing one mode
@@ -9972,6 +9980,25 @@ class Graphiti {
                     this.createFunctionUI(func);
                 }
             });
+        } else {
+            // No saved Cartesian functions - add default y=cos(x)
+            addedDefaultFunctions = true;
+            const id = this.nextFunctionId++;
+            const color = this.functionColors[0];
+            
+            const func = {
+                id: id,
+                expression: 'y=\\cos(x)',
+                points: [],
+                color: color,
+                enabled: true,
+                mode: 'cartesian'
+            };
+            
+            this.cartesianFunctions.push(func);
+            if (this.plotMode === 'cartesian') {
+                this.createFunctionUI(func);
+            }
         }
         
         if (savedData.hasSavedPolar) {
@@ -9994,6 +10021,25 @@ class Graphiti {
                     this.createFunctionUI(func);
                 }
             });
+        } else {
+            // No saved Polar functions - add default r=1+cos(θ)
+            addedDefaultFunctions = true;
+            const id = this.nextFunctionId++;
+            const color = this.functionColors[0];
+            
+            const func = {
+                id: id,
+                expression: 'r=1+\\cos(\\theta)',
+                points: [],
+                color: color,
+                enabled: true,
+                mode: 'polar'
+            };
+            
+            this.polarFunctions.push(func);
+            if (this.plotMode === 'polar') {
+                this.createFunctionUI(func);
+            }
         }
         
         // Set startup flag for immediate implicit function rendering
@@ -10012,8 +10058,8 @@ class Graphiti {
         // Try to load saved viewport bounds from localStorage
         const hasSavedBounds = this.loadAndApplyViewportBounds();
         
-        // Only use smart reset viewport if no saved bounds were found
-        if (!hasSavedBounds) {
+        // Reset viewport if no saved bounds OR if we added default functions
+        if (!hasSavedBounds || addedDefaultFunctions) {
             const smartViewport = this.getSmartResetViewport();
             this.viewport.minX = smartViewport.minX;
             this.viewport.maxX = smartViewport.maxX;
