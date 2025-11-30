@@ -5025,6 +5025,7 @@ class Graphiti {
         // Protect function names AND parameter names before processing implicit multiplication
         const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
         const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
+        const constantNames = ['pi', 'e']; // Protect constants from implicit multiplication
         
         // Replace function names with placeholders to protect them
         const functionPlaceholders = {};
@@ -5047,6 +5048,17 @@ class Graphiti {
             }
         });
         
+        // Replace constant names with placeholders
+        const constantPlaceholders = {};
+        constantNames.forEach((constant, index) => {
+            const placeholder = `__CONST${index}__`;
+            const regex = new RegExp(`\\b${constant}\\b`, 'g');
+            if (regex.test(processedExpression)) {
+                processedExpression = processedExpression.replace(regex, placeholder);
+                constantPlaceholders[placeholder] = constant;
+            }
+        });
+        
         // Now do implicit multiplication - function names are protected
         // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
         processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
@@ -5063,6 +5075,11 @@ class Graphiti {
         // Restore parameter names
         Object.keys(paramPlaceholders).forEach(placeholder => {
             processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), paramPlaceholders[placeholder]);
+        });
+        
+        // Restore constant names
+        Object.keys(constantPlaceholders).forEach(placeholder => {
+            processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), constantPlaceholders[placeholder]);
         });
         
         // Basic math.js compatible conversions
@@ -5101,6 +5118,7 @@ class Graphiti {
             // Protect function names AND parameter names before processing implicit multiplication
             const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
             const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
+            const constantNames = ['pi', 'e']; // Protect constants from implicit multiplication
             
             // Replace function names with placeholders to protect them
             const functionPlaceholders = {};
@@ -5123,6 +5141,17 @@ class Graphiti {
                 }
             });
             
+            // Replace constant names with placeholders
+            const constantPlaceholders = {};
+            constantNames.forEach((constant, index) => {
+                const placeholder = `__CONST${index}__`;
+                const regex = new RegExp(`\\b${constant}\\b`, 'g');
+                if (regex.test(processedExpression)) {
+                    processedExpression = processedExpression.replace(regex, placeholder);
+                    constantPlaceholders[placeholder] = constant;
+                }
+            });
+            
             // Now do implicit multiplication - function names are protected
             // xy -> x*y, 2x -> 2*x, x2 -> x*2, etc.
             processedExpression = processedExpression.replace(/([a-z])([a-z])/g, '$1*$2'); // variable*variable
@@ -5139,6 +5168,11 @@ class Graphiti {
             // Restore parameter names
             Object.keys(paramPlaceholders).forEach(placeholder => {
                 processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), paramPlaceholders[placeholder]);
+            });
+            
+            // Restore constant names
+            Object.keys(constantPlaceholders).forEach(placeholder => {
+                processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), constantPlaceholders[placeholder]);
             });
             
             // Basic math.js compatible conversions
