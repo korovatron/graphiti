@@ -109,6 +109,14 @@ class Graphiti {
             dragging: false,
             lastX: 0,
             lastY: 0,
+            // Rectangular zoom (desktop only, Cartesian mode only)
+            zoomRect: {
+                active: false,
+                startX: 0,
+                startY: 0,
+                endX: 0,
+                endY: 0
+            },
             // Tap detection for closing hamburger menu
             tap: {
                 startX: 0,
@@ -7274,14 +7282,45 @@ class Graphiti {
         }
         
         // Mouse Events
-        this.canvas.addEventListener('mousedown', (e) => this.handlePointerStart(e.clientX, e.clientY));
-        this.canvas.addEventListener('mousemove', (e) => this.handlePointerMove(e.clientX, e.clientY));
-        this.canvas.addEventListener('mouseup', () => this.handlePointerEnd());
+        this.canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 2) { // Right-click
+                // Prevent context menu and handle rectangular zoom (desktop only, Cartesian only)
+                e.preventDefault();
+                this.handleRightClickStart(e.clientX, e.clientY);
+            } else {
+                this.handlePointerStart(e.clientX, e.clientY);
+            }
+        });
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (this.input.zoomRect.active) {
+                this.handleRightClickMove(e.clientX, e.clientY);
+            } else {
+                this.handlePointerMove(e.clientX, e.clientY);
+            }
+        });
+        this.canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 2 && this.input.zoomRect.active) {
+                this.handleRightClickEnd();
+            } else {
+                this.handlePointerEnd();
+            }
+        });
+        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent context menu
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
         
         // Global mouse events to handle mouse release outside canvas (fixes sticky panning)
-        document.addEventListener('mouseup', () => this.handlePointerEnd());
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 2 && this.input.zoomRect.active) {
+                this.handleRightClickEnd();
+            } else {
+                this.handlePointerEnd();
+            }
+        });
         document.addEventListener('mousemove', (e) => {
+            // Handle zoom rectangle drag outside canvas
+            if (this.input.zoomRect.active) {
+                this.handleRightClickMove(e.clientX, e.clientY);
+            }
             // Only handle if mouse is down and cursor is outside canvas
             if (this.input.mouse.down) {
                 this.handlePointerMove(e.clientX, e.clientY);
@@ -8512,6 +8551,92 @@ class Graphiti {
         
         this.input.mouse.down = false;
         this.input.dragging = false;
+    }
+    
+    // Right-click rectangular zoom handlers (desktop only, Cartesian mode only)
+    handleRightClickStart(x, y) {
+        // Only allow in Cartesian mode on desktop devices
+        if (this.plotMode !== 'cartesian') {
+            return;
+        }
+        
+        // Convert client coordinates to canvas coordinates
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasX = x - rect.left;
+        const canvasY = y - rect.top;
+        
+        this.input.zoomRect.active = true;
+        this.input.zoomRect.startX = canvasX;
+        this.input.zoomRect.startY = canvasY;
+        this.input.zoomRect.endX = canvasX;
+        this.input.zoomRect.endY = canvasY;
+        
+        this.draw(); // Redraw to show initial rectangle
+    }
+    
+    handleRightClickMove(x, y) {
+        if (!this.input.zoomRect.active) {
+            return;
+        }
+        
+        // Convert client coordinates to canvas coordinates
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasX = x - rect.left;
+        const canvasY = y - rect.top;
+        
+        this.input.zoomRect.endX = canvasX;
+        this.input.zoomRect.endY = canvasY;
+        
+        this.draw(); // Redraw to show updated rectangle
+    }
+    
+    handleRightClickEnd() {
+        if (!this.input.zoomRect.active) {
+            return;
+        }
+        
+        const rect = this.input.zoomRect;
+        
+        // Calculate rectangle dimensions
+        const width = Math.abs(rect.endX - rect.startX);
+        const height = Math.abs(rect.endY - rect.startY);
+        const minSize = 20; // Minimum size in pixels to avoid accidental micro-zooms
+        
+        // Only apply zoom if rectangle is large enough
+        if (width > minSize && height > minSize) {
+            // Get corner points in screen coordinates
+            const x1 = Math.min(rect.startX, rect.endX);
+            const y1 = Math.min(rect.startY, rect.endY);
+            const x2 = Math.max(rect.startX, rect.endX);
+            const y2 = Math.max(rect.startY, rect.endY);
+            
+            // Convert to world coordinates
+            const world1 = this.screenToWorld(x1, y1);
+            const world2 = this.screenToWorld(x2, y2);
+            
+            // Update viewport ranges (allowing aspect ratio change)
+            this.viewport.minX = Math.min(world1.x, world2.x);
+            this.viewport.maxX = Math.max(world1.x, world2.x);
+            this.viewport.minY = Math.min(world1.y, world2.y);
+            this.viewport.maxY = Math.max(world1.y, world2.y);
+            
+            // Update scale and range inputs (same as zoom does)
+            this.updateViewportScale();
+            this.updateRangeInputs();
+            
+            // Redraw and recalculate
+            this.draw();
+            this.handleViewportChange(); // Debounced recalculation
+        }
+        
+        // Reset zoom rectangle state
+        this.input.zoomRect.active = false;
+        this.input.zoomRect.startX = 0;
+        this.input.zoomRect.startY = 0;
+        this.input.zoomRect.endX = 0;
+        this.input.zoomRect.endY = 0;
+        
+        this.draw(); // Redraw to remove rectangle
     }
     
     // Touch handling methods for pinch-to-zoom
@@ -14422,6 +14547,11 @@ class Graphiti {
             this.drawPerformanceOverlay();
         }
         
+        // Draw rectangular zoom preview (desktop only, Cartesian mode only)
+        if (this.input.zoomRect.active) {
+            this.drawZoomRectangle();
+        }
+        
         // Explicitly reset all canvas state to prevent leaking (especially important for mobile)
         this.ctx.shadowBlur = 0;
         this.ctx.shadowColor = 'transparent';
@@ -18840,6 +18970,32 @@ class Graphiti {
                 }
             }
         }
+        
+        // Restore context state
+        this.ctx.restore();
+    }
+
+    drawZoomRectangle() {
+        const rect = this.input.zoomRect;
+        
+        // Calculate rectangle corners
+        const x1 = Math.min(rect.startX, rect.endX);
+        const y1 = Math.min(rect.startY, rect.endY);
+        const width = Math.abs(rect.endX - rect.startX);
+        const height = Math.abs(rect.endY - rect.startY);
+        
+        // Save context state
+        this.ctx.save();
+        
+        // Draw semi-transparent fill
+        this.ctx.fillStyle = 'rgba(74, 144, 226, 0.1)'; // Light blue with low opacity
+        this.ctx.fillRect(x1, y1, width, height);
+        
+        // Draw border
+        this.ctx.strokeStyle = 'rgba(74, 144, 226, 0.8)'; // Accent color with high opacity
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([5, 5]); // Dashed line
+        this.ctx.strokeRect(x1, y1, width, height);
         
         // Restore context state
         this.ctx.restore();
