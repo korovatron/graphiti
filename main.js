@@ -17379,7 +17379,9 @@ class Graphiti {
         this.ctx.fillStyle = '#FFFFFF';
         
         this.ctx.textAlign = 'left';
-        this.ctx.fillText('Actual Integral:', panelX + 18, panelY + 22); // +8 for strip width + 10 padding
+        // In polar mode, show "Area:" since we don't calculate numerical integrals
+        const labelText = this.plotMode === 'polar' ? 'Area:' : 'Actual Integral:';
+        this.ctx.fillText(labelText, panelX + 18, panelY + 22); // +8 for strip width + 10 padding
         
         this.ctx.textAlign = 'right';
         this.ctx.fillText(areaText, panelX + panelWidth - 10, panelY + 22);
