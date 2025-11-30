@@ -8584,6 +8584,9 @@ class Graphiti {
         this.input.zoomRect.endX = canvasX;
         this.input.zoomRect.endY = canvasY;
         
+        // Set viewport changing flag to use cached paths during drag
+        this.isViewportChanging = true;
+        
         this.draw(); // Redraw to show initial rectangle
     }
     
@@ -8648,6 +8651,9 @@ class Graphiti {
         this.input.zoomRect.startX = 0;
         this.input.zoomRect.startY = 0;
         this.input.zoomRect.endX = 0;
+        
+        // Clear viewport changing flag
+        this.isViewportChanging = false;
         this.input.zoomRect.endY = 0;
         
         this.draw(); // Redraw to remove rectangle
