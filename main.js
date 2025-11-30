@@ -19796,6 +19796,20 @@ class Graphiti {
         expression = expression.replace(/\\csc/g, 'csc');
         expression = expression.replace(/\\cot/g, 'cot');
         
+        // Trigonometric functions with \operatorname (from typed keyboard input)
+        expression = expression.replace(/\\operatorname\{\\mathrm\{sin\}\}/g, 'sin');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{cos\}\}/g, 'cos');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{tan\}\}/g, 'tan');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{sec\}\}/g, 'sec');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{csc\}\}/g, 'csc');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{cot\}\}/g, 'cot');
+        expression = expression.replace(/\\operatorname\{sin\}/g, 'sin');
+        expression = expression.replace(/\\operatorname\{cos\}/g, 'cos');
+        expression = expression.replace(/\\operatorname\{tan\}/g, 'tan');
+        expression = expression.replace(/\\operatorname\{sec\}/g, 'sec');
+        expression = expression.replace(/\\operatorname\{csc\}/g, 'csc');
+        expression = expression.replace(/\\operatorname\{cot\}/g, 'cot');
+        
         // Greek letters for parameters
         expression = expression.replace(/\\alpha/g, 'alpha');
         expression = expression.replace(/\\beta/g, 'beta');
@@ -19854,6 +19868,20 @@ class Graphiti {
         expression = expression.replace(/\\operatorname\{arccsc\}/g, 'acsc');
         expression = expression.replace(/\\operatorname\{arccot\}/g, 'acot');
         
+        // Also handle asin/acos/atan/asec/acsc/acot notation (without arc prefix)
+        expression = expression.replace(/\\operatorname\{\\mathrm\{asin\}\}/g, 'asin');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{acos\}\}/g, 'acos');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{atan\}\}/g, 'atan');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{asec\}\}/g, 'asec');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{acsc\}\}/g, 'acsc');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{acot\}\}/g, 'acot');
+        expression = expression.replace(/\\operatorname\{asin\}/g, 'asin');
+        expression = expression.replace(/\\operatorname\{acos\}/g, 'acos');
+        expression = expression.replace(/\\operatorname\{atan\}/g, 'atan');
+        expression = expression.replace(/\\operatorname\{asec\}/g, 'asec');
+        expression = expression.replace(/\\operatorname\{acsc\}/g, 'acsc');
+        expression = expression.replace(/\\operatorname\{acot\}/g, 'acot');
+        
         // Hyperbolic functions
         // Handle both \operatorname{sinh} and \operatorname{\mathrm{sinh}} formats
         expression = expression.replace(/\\sinh/g, 'sinh');
@@ -19899,6 +19927,13 @@ class Graphiti {
         expression = expression.replace(/\\operatorname\{asech\}/g, 'asech');
         expression = expression.replace(/\\operatorname\{acsch\}/g, 'acsch');
         expression = expression.replace(/\\operatorname\{acoth\}/g, 'acoth');
+        
+        // Fix malformed \operatorname patterns where entire function call is wrapped
+        // e.g., \operatorname{\mathrm{(arccos(x))}} -> arccos(x)
+        // This happens when users type certain patterns on physical keyboard
+        expression = expression.replace(/\\operatorname\{\\mathrm\{\(([a-z]+)\(([^)]+)\)\)\}\}/g, '$1($2)');
+        expression = expression.replace(/\\operatorname\{\\mathrm\{([a-z]+)\(([^)]+)\)\}\}/g, '$1($2)');
+        expression = expression.replace(/\\operatorname\{\(([a-z]+)\(([^)]+)\)\)\}/g, '$1($2)');
         
         // Logarithms and exponentials (corrected for math.js)
         expression = expression.replace(/\\ln/g, 'log');     // ln(x) -> log(x) (natural log in math.js)
