@@ -17311,16 +17311,24 @@ class Graphiti {
             const toggleWidth = methodWidth; // Same width as method selector (half row)
             const toggleHeight = 25;
             
+            // Check if this pair is part of an active area-between calculation
+            const isPartOfAreaBetween = this.linkedBadgePairs.some(lp => 
+                (lp.pair1 === pair || lp.pair2 === pair) && lp.showAreaBetween !== false
+            );
+            
+            // Disable toggle visually if part of area-between
+            const toggleEnabled = pair.showTrapeziumRule && !isPartOfAreaBetween;
+            
             // Button background with shadow (matching intersection/turning point toggle style)
             this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
             this.ctx.shadowBlur = 3;
             this.ctx.shadowOffsetX = 0;
             this.ctx.shadowOffsetY = 1;
-            this.ctx.fillStyle = pair.showTrapeziumRule ? '#2A3F5A' : '#1a2a3f';
+            this.ctx.fillStyle = toggleEnabled ? '#2A3F5A' : '#1a2a3f';
             this.ctx.fillRect(toggleX, toggleY, toggleWidth, toggleHeight);
             this.ctx.shadowColor = 'transparent'; // Reset shadow
             this.ctx.shadowBlur = 0;
-            this.ctx.globalAlpha = pair.showTrapeziumRule ? 1 : 0.6;
+            this.ctx.globalAlpha = toggleEnabled ? 1 : 0.6;
             this.ctx.strokeStyle = '#555555';
             this.ctx.lineWidth = 1;
             this.ctx.strokeRect(toggleX, toggleY, toggleWidth, toggleHeight);
@@ -17516,6 +17524,16 @@ class Graphiti {
         }
         
         if (type === 'trapToggle') {
+            // Check if this pair is part of an active area-between calculation
+            const isPartOfAreaBetween = this.linkedBadgePairs.some(lp => 
+                (lp.pair1 === pair || lp.pair2 === pair) && lp.showAreaBetween !== false
+            );
+            
+            // Don't allow toggling if part of area-between
+            if (isPartOfAreaBetween) {
+                return;
+            }
+            
             // Toggle trapezium rule visualization for this specific pair
             pair.showTrapeziumRule = !pair.showTrapeziumRule;
             this.draw();
@@ -17549,6 +17567,12 @@ class Graphiti {
         if (type === 'areaBetweenToggle') {
             // Toggle area-between calculation
             pair.showAreaBetween = !pair.showAreaBetween;
+            
+            // If enabling area-between, turn off individual "show on graph" toggles
+            if (pair.showAreaBetween && pair.pair1 && pair.pair2) {
+                pair.pair1.showTrapeziumRule = false;
+                pair.pair2.showTrapeziumRule = false;
+            }
             
             // If disabling, remove areaBetween value
             if (!pair.showAreaBetween) {
