@@ -12250,6 +12250,7 @@ class Graphiti {
     findXInterceptsForFunction(func) {
         const xIntercepts = [];
         const minDistance = 0.5; // Minimum distance between distinct intercepts (in world coordinates)
+        const maxIntercepts = 20; // Maximum number of intercepts to find (prevent UI freeze on cos/sin over large domains)
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
@@ -12281,6 +12282,9 @@ class Graphiti {
                     let prevX = null;
                     
                     for (let i = 0; i <= sampleCount; i++) {
+                        // Stop if we've found enough intercepts
+                        if (xIntercepts.length >= maxIntercepts) break;
+                        
                         const x = xMin + i * step;
                         scope.x = x;
                         scope.y = 0;
@@ -12361,6 +12365,9 @@ class Graphiti {
             
             // Group candidates and pick the best from each group
             for (const candidate of validCandidates) {
+                // Stop if we've found enough intercepts
+                if (xIntercepts.length >= maxIntercepts) break;
+                
                 const xValue = candidate.x;
                 
                 const isDuplicate = xIntercepts.some(existing => 
@@ -12380,6 +12387,9 @@ class Graphiti {
         } else {
             // For explicit functions (y = f(x)) and explicit inequalities (y > f(x)), find where y crosses zero
             for (let i = 0; i < points.length - 1; i++) {
+                // Stop if we've found enough intercepts
+                if (xIntercepts.length >= maxIntercepts) break;
+                
                 const x1 = points[i].x;
                 const y1 = points[i].y;
                 const x2 = points[i + 1].x;
@@ -12439,6 +12449,7 @@ class Graphiti {
     findYInterceptsForFunction(func) {
         const yIntercepts = [];
         const minDistance = 0.5; // Minimum distance between distinct intercepts (in world coordinates)
+        const maxIntercepts = 20; // Maximum number of intercepts to find (prevent UI freeze)
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
@@ -12468,6 +12479,9 @@ class Graphiti {
                     let prevY = null;
                     
                     for (let i = 0; i <= sampleCount; i++) {
+                        // Stop if we've found enough intercepts
+                        if (yIntercepts.length >= maxIntercepts) break;
+                        
                         const y = yMin + i * step;
                         scope.x = 0;
                         scope.y = y;
@@ -12551,6 +12565,9 @@ class Graphiti {
             
             // Group candidates and pick the best from each group
             for (const candidate of validCandidates) {
+                // Stop if we've found enough intercepts
+                if (yIntercepts.length >= maxIntercepts) break;
+                
                 const yValue = candidate.y;
                 
                 const isDuplicate = yIntercepts.some(existing => 
