@@ -1656,11 +1656,13 @@ class Graphiti {
             // Replot all functions to ensure proper display with new state
             this.replotAllFunctions();
             
-            // Clear intersection arrays before recalculating to prevent stale data
+            // Clear intersection arrays and frozen badges before recalculating to prevent stale data
             this.intersections = [];
             this.explicitIntersections = [];
             this.implicitIntersections = [];
             this.frozenIntersectionBadges = [];
+            this.frozenInterceptBadges = []; // Clear frozen intercepts too
+            this.frozenTurningPointBadges = []; // Clear frozen turning points too
             
             // Recalculate intersections and turning points with the new function state
             if (this.showIntersections) {
@@ -5281,24 +5283,37 @@ class Graphiti {
     
     // Debounced intersection updates for smooth pan/zoom performance
     handleViewportChange() {
+        // Get IDs of currently enabled functions
+        const enabledFunctionIds = new Set(
+            this.getCurrentFunctions()
+                .filter(f => f.enabled)
+                .map(f => f.id)
+        );
+        
         // Capture current intercepts as frozen badges ONLY if viewport wasn't already changing
+        // Filter to only include intercepts from currently enabled functions
         if (!this.isViewportChanging && this.showIntercepts && this.intercepts.length > 0) {
-            this.frozenInterceptBadges = this.intercepts.map(intercept => ({
-                x: intercept.x,
-                y: intercept.y,
-                type: intercept.type,
-                functionColor: '#808080' // Neutral gray color for intercepts
-            }));
+            this.frozenInterceptBadges = this.intercepts
+                .filter(intercept => !intercept.functionId || enabledFunctionIds.has(intercept.functionId))
+                .map(intercept => ({
+                    x: intercept.x,
+                    y: intercept.y,
+                    type: intercept.type,
+                    functionColor: '#808080' // Neutral gray color for intercepts
+                }));
         }
         
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
+        // Filter to only include turning points from currently enabled functions
         if (!this.isViewportChanging && this.showTurningPoints && this.turningPoints.length > 0) {
-            this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
-                x: turningPoint.x,
-                y: turningPoint.y,
-                type: turningPoint.type,
-                func: turningPoint.func
-            }));
+            this.frozenTurningPointBadges = this.turningPoints
+                .filter(tp => !tp.func || enabledFunctionIds.has(tp.func.id))
+                .map(turningPoint => ({
+                    x: turningPoint.x,
+                    y: turningPoint.y,
+                    type: turningPoint.type,
+                    func: turningPoint.func
+                }));
         }
         
         // Create frozen intersection badges for visual continuity during viewport changes
@@ -7644,7 +7659,7 @@ class Graphiti {
             
             // Check if user clicked on an existing badge marker
             const targetBadge = this.findBadgeAtScreenPosition(canvasX, canvasY, 25);
-            if (targetBadge) {
+            if (targetBadge && targetBadge.isDraggable !== false) {
                 // Store badge state for cycling behavior: no tangent → tangent → neon tangent → normal → neon normal → integral → neon integral → remove
                 this.input.badgeInteraction.originalBadgeState = {
                     hasTangent: targetBadge.hasTangent,
@@ -11514,7 +11529,6 @@ class Graphiti {
     clearIntersections() {
         // Remove all intersection badges (including tangent and normal intersections)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
-            badge.functionId !== null && 
             badge.badgeType !== 'intersection' && 
             badge.badgeType !== 'tangent-intersection' && 
             badge.badgeType !== 'tangent-tangent-intersection' &&
@@ -16375,6 +16389,7 @@ class Graphiti {
             functionId: functionId, // Store function ID for matching with recalculated intercepts
             tangentBadgeId: tangentBadgeId, // Link badge to tangent for proper cleanup
             normalBadgeId: normalBadgeId, // Link badge to normal for proper cleanup
+            isDraggable: false, // Intercepts are fixed coordinate displays (not draggable)
             functionColor: '#808080', // Neutral gray color for intercepts
             badgeType: tangentBadgeId ? 'tangent-intercept' : (normalBadgeId ? 'normal-intercept' : interceptType), // 'tangent-intercept', 'normal-intercept', or 'x-intercept', 'y-intercept', or polar axis types
             significantPointType: 'intercept' // Mark for position updates
@@ -16536,6 +16551,7 @@ class Graphiti {
             functionId: null, // Keep null for backward compatibility with existing code
             func1Id: func1.id, // Store first function ID
             func2Id: func2.id, // Store second function ID
+            isDraggable: false, // Intersections are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: intersectionColor,
@@ -16564,6 +16580,7 @@ class Graphiti {
             functionId: null, // Keep null for compatibility
             func1Id: tangentBadgeId, // Tangent badge ID (string starting with "tangent_")
             func2Id: functionId, // Function ID
+            isDraggable: false, // Tangent intersections are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: tangentIntersectionColor,
@@ -16592,6 +16609,7 @@ class Graphiti {
             functionId: null, // Keep null for compatibility
             func1Id: tangentBadgeId1, // First tangent badge ID (string starting with "tangent_")
             func2Id: tangentBadgeId2, // Second tangent badge ID (string starting with "tangent_")
+            isDraggable: false, // Tangent-tangent intersections are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: tangentTangentIntersectionColor,
@@ -16620,6 +16638,7 @@ class Graphiti {
             functionId: null, // Keep null for compatibility
             func1Id: normalBadgeId, // Normal badge ID (string starting with "normal_")
             func2Id: functionId, // Function ID
+            isDraggable: false, // Normal intersections are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: normalIntersectionColor,
@@ -16648,6 +16667,7 @@ class Graphiti {
             functionId: null, // Keep null for compatibility
             func1Id: normalBadgeId1, // First normal badge ID (string starting with "normal_")
             func2Id: normalBadgeId2, // Second normal badge ID (string starting with "normal_")
+            isDraggable: false, // Normal-normal intersections are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: normalNormalIntersectionColor,
@@ -16676,6 +16696,7 @@ class Graphiti {
             functionId: null, // Keep null for compatibility
             func1Id: normalBadgeId, // Normal badge ID (string starting with "normal_")
             func2Id: tangentBadgeId, // Tangent badge ID (string starting with "tangent_")
+            isDraggable: false, // Normal-tangent intersections are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: normalTangentIntersectionColor,
@@ -16726,7 +16747,8 @@ class Graphiti {
         // Create turning point badge as non-draggable (like intersections)
         const badge = {
             id: this.input.badgeIdCounter++,
-            functionId: null, // Null prevents dragging - turning points are fixed coordinate displays
+            functionId: func ? func.id : null, // Store function ID for cleanup when function disabled/deleted
+            isDraggable: false, // Turning points are fixed coordinate displays (not draggable)
             worldX: snappedX,
             worldY: snappedY,
             functionColor: badgeColor,
