@@ -7828,8 +7828,9 @@ class Graphiti {
                             const dy = currentWorldPos.y - snapState.snappedPoint.worldY;
                             const distance = Math.sqrt(dx * dx + dy * dy);
                             
-                            // Break snap if mouse moved beyond threshold
-                            const breakThreshold = 0.1; // World units
+                            // Break snap if mouse moved beyond threshold (2x the snap tolerance)
+                            const worldRange = this.viewport.maxX - this.viewport.minX;
+                            const breakThreshold = worldRange * 0.03; // 3% of viewport width
                             if (distance > breakThreshold) {
                                 snapState.isSnapped = false;
                                 snapState.snappedPoint = null;
@@ -7873,7 +7874,9 @@ class Graphiti {
                             // Skip if we're in cooldown period after breaking a previous snap
                             if (now >= snapState.cooldownUntil) {
                                 // Not in cooldown, check for snaps
-                                const snapTolerance = 0.15; // World units
+                                // Use same tolerance calculation as checkSnapToSignificantPoint
+                                const worldRange = this.viewport.maxX - this.viewport.minX;
+                                const snapTolerance = worldRange * 0.015; // 1.5% of viewport width
                                 let nearestSignificantPoint = null;
                                 let nearestDistance = snapTolerance;
                             
