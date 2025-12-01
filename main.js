@@ -6761,6 +6761,23 @@ class Graphiti {
         if ('visualViewport' in window) {
             window.visualViewport.addEventListener('resize', resizeCanvas);
         }
+        
+        // Pause animation loop when page is hidden (user switches tabs, locks screen, etc.)
+        // This prevents resource consumption and potential canvas issues when app runs for hours in background
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page is hidden - pause animation loop
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                    this.animationId = null;
+                }
+            } else {
+                // Page is visible again - resume animation loop if not already running
+                if (!this.animationId && this.currentState === this.states.GRAPHING) {
+                    this.startAnimationLoop();
+                }
+            }
+        });
     }
     
     setupEventListeners() {
