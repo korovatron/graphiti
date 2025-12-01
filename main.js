@@ -5354,6 +5354,9 @@ class Graphiti {
                     this.intercepts = this.findAxisIntercepts();
                     this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
+                
+                // Update badge positions to match recalculated significant points
+                this.updateBadgesFromSignificantPoints();
             }
         }, 50); // Short delay optimized for fast implicit plotting
     }
@@ -9896,6 +9899,58 @@ class Graphiti {
                         badge.tangentExpression = slopeData.expression;
                         badge.secondDerivative = slopeData.secondDerivative;
                     }
+                }
+            }
+        });
+    }
+    
+    updateBadgesFromSignificantPoints() {
+        // Update badges that were created from significant points (turning points, intercepts, intersections)
+        // to match their new, more accurate positions after viewport changes
+        // Use a reasonable tolerance to account for positions before recalculation
+        const snapTolerance = 0.05; // 5% of a unit - loose enough to find matches
+        
+        this.input.persistentBadges.forEach(badge => {
+            // Skip badges that don't have a significant point type
+            if (!badge.significantPointType) return;
+            
+            if (badge.significantPointType === 'turningPoint') {
+                // Find the matching turning point
+                const match = this.turningPoints.find(tp => {
+                    if (tp.func && tp.func.id !== badge.functionId) return false;
+                    const dx = Math.abs(tp.x - badge.worldX);
+                    const dy = Math.abs(tp.y - badge.worldY);
+                    return dx < snapTolerance && dy < snapTolerance;
+                });
+                
+                if (match) {
+                    badge.worldX = match.x;
+                    badge.worldY = match.y;
+                }
+            } else if (badge.significantPointType === 'intercept') {
+                // Find the matching intercept
+                const match = this.intercepts.find(intercept => {
+                    if (intercept.functionId !== badge.functionId) return false;
+                    const dx = Math.abs(intercept.x - badge.worldX);
+                    const dy = Math.abs(intercept.y - badge.worldY);
+                    return dx < snapTolerance && dy < snapTolerance;
+                });
+                
+                if (match) {
+                    badge.worldX = match.x;
+                    badge.worldY = match.y;
+                }
+            } else if (badge.significantPointType === 'intersection') {
+                // Find the matching intersection
+                const match = this.intersections.find(intersection => {
+                    const dx = Math.abs(intersection.x - badge.worldX);
+                    const dy = Math.abs(intersection.y - badge.worldY);
+                    return dx < snapTolerance && dy < snapTolerance;
+                });
+                
+                if (match) {
+                    badge.worldX = match.x;
+                    badge.worldY = match.y;
                 }
             }
         });
@@ -16234,11 +16289,12 @@ class Graphiti {
             screenX: screenPos.x,
             screenY: screenPos.y,
             label: label,
-            functionId: null, // Null prevents dragging - intercepts are fixed coordinate displays
+            functionId: functionId, // Store function ID for matching with recalculated intercepts
             tangentBadgeId: tangentBadgeId, // Link badge to tangent for proper cleanup
             normalBadgeId: normalBadgeId, // Link badge to normal for proper cleanup
             functionColor: '#808080', // Neutral gray color for intercepts
-            badgeType: tangentBadgeId ? 'tangent-intercept' : (normalBadgeId ? 'normal-intercept' : interceptType) // 'tangent-intercept', 'normal-intercept', or 'x-intercept', 'y-intercept', or polar axis types
+            badgeType: tangentBadgeId ? 'tangent-intercept' : (normalBadgeId ? 'normal-intercept' : interceptType), // 'tangent-intercept', 'normal-intercept', or 'x-intercept', 'y-intercept', or polar axis types
+            significantPointType: 'intercept' // Mark for position updates
         };
         
         this.input.persistentBadges.push(badge);
@@ -16402,6 +16458,7 @@ class Graphiti {
             functionColor: intersectionColor,
             customText: null,
             badgeType: 'intersection',
+            significantPointType: 'intersection', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -16429,6 +16486,7 @@ class Graphiti {
             functionColor: tangentIntersectionColor,
             customText: null,
             badgeType: 'tangent-intersection',
+            significantPointType: 'intersection', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -16456,6 +16514,7 @@ class Graphiti {
             functionColor: tangentTangentIntersectionColor,
             customText: null,
             badgeType: 'tangent-tangent-intersection',
+            significantPointType: 'intersection', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -16483,6 +16542,7 @@ class Graphiti {
             functionColor: normalIntersectionColor,
             customText: null,
             badgeType: 'normal-intersection',
+            significantPointType: 'intersection', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -16510,6 +16570,7 @@ class Graphiti {
             functionColor: normalNormalIntersectionColor,
             customText: null,
             badgeType: 'normal-normal-intersection',
+            significantPointType: 'intersection', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -16537,6 +16598,7 @@ class Graphiti {
             functionColor: normalTangentIntersectionColor,
             customText: null,
             badgeType: 'normal-tangent-intersection',
+            significantPointType: 'intersection', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -16587,6 +16649,7 @@ class Graphiti {
             functionColor: badgeColor,
             customText: null,
             badgeType: type, // 'maximum', 'minimum', etc.
+            significantPointType: 'turningPoint', // Mark for position updates
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
