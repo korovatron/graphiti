@@ -11457,6 +11457,19 @@ class Graphiti {
         // Remove integral pairs for this function
         this.integralPairs = this.integralPairs.filter(pair => pair.functionId !== functionId);
         
+        // Clean up linked badge pairs that reference removed integral pairs
+        this.linkedBadgePairs = this.linkedBadgePairs.filter(linkedPair => {
+            // Check if both pairs still exist in integralPairs
+            const pair1Exists = this.integralPairs.some(p => 
+                p.badge1Id === linkedPair.pair1.badge1Id && p.badge2Id === linkedPair.pair1.badge2Id
+            );
+            const pair2Exists = this.integralPairs.some(p => 
+                p.badge1Id === linkedPair.pair2.badge1Id && p.badge2Id === linkedPair.pair2.badge2Id
+            );
+            // Keep only if both pairs still exist
+            return pair1Exists && pair2Exists;
+        });
+        
         // Then remove the badges themselves
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => badge.functionId !== functionId);
         
