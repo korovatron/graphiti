@@ -7272,6 +7272,14 @@ class Graphiti {
             });
         }
         
+        // Copy/Share Button
+        const copyShareButton = document.getElementById('copy-share-button');
+        if (copyShareButton) {
+            copyShareButton.addEventListener('click', async () => {
+                await this.copyOrShareCanvas();
+            });
+        }
+        
         // Keyboard Shortcuts Overlay
         const shortcutsOverlay = document.getElementById('shortcuts-overlay');
         if (shortcutsOverlay) {
@@ -9063,6 +9071,64 @@ class Graphiti {
             }
         } else {
             overlay.classList.add('show');
+        }
+    }
+    
+    async copyOrShareCanvas() {
+        try {
+            // Convert canvas to blob
+            const blob = await new Promise((resolve, reject) => {
+                this.canvas.toBlob((blob) => {
+                    if (blob) {
+                        resolve(blob);
+                    } else {
+                        reject(new Error('Failed to create image'));
+                    }
+                }, 'image/png');
+            });
+            
+            // Detect if we're on a mobile device (not Windows/Mac/Linux desktop)
+            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            
+            // On mobile: use share sheet. On desktop: use clipboard directly
+            if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'graph.png', { type: 'image/png' })] })) {
+                // Use Web Share API (mobile only)
+                const file = new File([blob], 'graphiti-graph.png', { type: 'image/png' });
+                await navigator.share({
+                    files: [file],
+                    title: 'Graphiti Graph',
+                    text: 'Graph from Graphiti'
+                });
+            } else if (navigator.clipboard && navigator.clipboard.write) {
+                // Use Clipboard API (desktop - more reliable than Windows share sheet)
+                const clipboardItem = new ClipboardItem({ 'image/png': blob });
+                await navigator.clipboard.write([clipboardItem]);
+                
+                // Show brief confirmation
+                const button = document.getElementById('copy-share-button');
+                if (button) {
+                    const originalText = button.innerHTML;
+                    button.innerHTML = 'COPIED!';
+                    button.style.background = '#4A90E2';
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.style.background = '#2A3F5A';
+                    }, 1500);
+                }
+            } else {
+                // Fallback: download the image
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'graphiti-graph.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        } catch (error) {
+            console.error('Failed to copy/share canvas:', error);
+            // Could show an error message to user here if desired
         }
     }
     
