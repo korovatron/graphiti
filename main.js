@@ -15514,8 +15514,9 @@ class Graphiti {
             
             // Check if this is a multiple of π/24 (smallest grid unit in radian mode)
             // This ensures all grid values can be expressed as proper fractions
+            // Use tight tolerance to avoid rounding nearby values to the same fraction when zoomed in
             const twentyFourthsRatio = piRatio * 24;
-            if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.01) {
+            if (Math.abs(twentyFourthsRatio - Math.round(twentyFourthsRatio)) < 0.0001) {
                 const numerator = Math.round(twentyFourthsRatio);
                 const denominator = 24;
                 
@@ -15543,10 +15544,9 @@ class Graphiti {
                 }
             }
             
-            // Fall back to decimal with π (should rarely happen now)
-            if (Math.abs(piRatio) > 0.1) {
-                return piRatio.toFixed(1) + 'π';
-            }
+            // If we can't express as a clean fraction, use decimal formatting
+            // Don't show awkward values like "0.3π" - just use regular numbers
+            return this.formatNumber(num);
         } else {
             // Degrees mode - just show the number with ° symbol for clarity
             if (Math.abs(num) >= 1) {
@@ -19100,13 +19100,10 @@ class Graphiti {
         // Use context-aware precision for all numbers
         const formatted = value.toFixed(precision);
         
-        // If all decimal places are zeros, display as integer
-        // e.g. "2.00" becomes "2", but "2.01" stays "2.01"
+        // Remove trailing zeros and unnecessary decimal point
+        // e.g. "2.000" becomes "2", "2.100" becomes "2.1", "2.010" becomes "2.01"
         if (precision > 0 && formatted.includes('.')) {
-            const [integerPart, decimalPart] = formatted.split('.');
-            if (decimalPart.match(/^0+$/)) {
-                return integerPart;
-            }
+            return formatted.replace(/\.?0+$/, '');
         }
         
         return formatted;
@@ -20024,8 +20021,11 @@ class Graphiti {
             return this.getXLabelSpacing(); // Use normal spacing if no regular trig functions
         }
         
-        // For regular trig functions, use the same spacing as grid lines for alignment
-        return this.getTrigAwareXGridSpacing();
+        // For regular trig functions using π fractions, we need wider spacing
+        // π fractions like "17π/24" are much wider than regular numbers
+        // Use double the normal spacing to prevent overlaps
+        const gridSpacing = this.getTrigAwareXGridSpacing();
+        return gridSpacing * 2;
     }
     
     getXLabelSpacing() {
@@ -20049,8 +20049,11 @@ class Graphiti {
             return this.getYLabelSpacing(); // Use normal spacing if no inverse trig functions
         }
         
-        // For inverse trig functions, use the same spacing as grid lines
-        return this.getTrigAwareYGridSpacing();
+        // For inverse trig functions using π fractions, we need wider spacing
+        // π fractions like "17π/24" are much wider than regular numbers
+        // Use double the normal spacing to prevent overlaps
+        const gridSpacing = this.getTrigAwareYGridSpacing();
+        return gridSpacing * 2;
     }
 
     getYLabelSpacing() {
