@@ -196,7 +196,7 @@ class Graphiti {
         
         // Axis intercepts detection
         this.intercepts = []; // Store detected axis intercept points
-        this.showIntercepts = true; // Toggle for intercept display (on by default)
+        this.showIntercepts = false; // Toggle for intercept display (off by default)
         
         // Intersection detection
         this.intersections = []; // Store detected intersection points
@@ -218,7 +218,7 @@ class Graphiti {
         
         // Legacy manual intersection storage (keeping for compatibility)
         this.manualImplicitIntersections = []; // Store manually calculated implicit intersections
-        this.showIntersections = true; // Toggle for intersection display (on by default)
+        this.showIntersections = false; // Toggle for intersection display (off by default)
         this.tangentIntersections = []; // Store intersections between tangent lines and functions
         this.normalIntersections = []; // Store intersections between normal lines and functions
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
@@ -241,7 +241,7 @@ class Graphiti {
         
         // Turning point detection
         this.turningPoints = []; // Store detected turning points (maxima/minima)
-        this.showTurningPoints = true; // Toggle for turning point display (on by default)
+        this.showTurningPoints = false; // Toggle for turning point display (off by default)
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
