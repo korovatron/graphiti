@@ -11893,8 +11893,8 @@ class Graphiti {
         // During viewport changes, we use frozen cache for visual continuity
         // When implicit intersections are pending, wait for them to complete to avoid premature redraw
         if (!this.isViewportChanging && !this.implicitIntersectionsPending) {
-            // Clear frozen intersection badges now that all intersection calculations are complete
-            this.frozenIntersectionBadges = [];
+            // Don't clear frozen intersection badges here - let the draw function handle the transition
+            // This prevents a blank frame between frozen and new markers
             this.draw();
         }
     }
@@ -14872,8 +14872,14 @@ class Graphiti {
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.frozenIntersectionBadges.length > 0) {
-                // Show frozen intersection badges whenever they exist (for visual continuity)
-                this.drawFrozenIntersectionBadges();
+                // Check if new intersections are ready - if so, clear frozen and draw new ones
+                if (!this.isViewportChanging && this.intersections.length > 0) {
+                    this.frozenIntersectionBadges = [];
+                    this.drawIntersectionMarkers();
+                } else {
+                    // Still waiting for calculations or viewport is changing - show frozen
+                    this.drawFrozenIntersectionBadges();
+                }
             } else if (this.intersections.length > 0) {
                 // When no frozen badges, show actual intersection markers
                 this.drawIntersectionMarkers();
