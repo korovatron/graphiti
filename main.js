@@ -12248,9 +12248,10 @@ class Graphiti {
     }
     
     findXInterceptsForFunction(func) {
-        const xIntercepts = [];
+        const allIntercepts = []; // Collect all intercepts first
         const minDistance = 0.5; // Minimum distance between distinct intercepts (in world coordinates)
-        const maxIntercepts = 20; // Maximum number of intercepts to find (prevent UI freeze on cos/sin over large domains)
+        const maxInterceptsToDisplay = 20; // Maximum number to display (evenly spaced)
+        const maxInterceptsToSearch = 100; // Maximum to search for (prevent infinite loops)
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
@@ -12282,8 +12283,8 @@ class Graphiti {
                     let prevX = null;
                     
                     for (let i = 0; i <= sampleCount; i++) {
-                        // Stop if we've found enough intercepts
-                        if (xIntercepts.length >= maxIntercepts) break;
+                        // Stop if we've searched enough
+                        if (allIntercepts.length >= maxInterceptsToSearch) break;
                         
                         const x = xMin + i * step;
                         scope.x = x;
@@ -12300,12 +12301,12 @@ class Graphiti {
                                 const interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
                                 
                                 if (isFinite(interceptX) && Math.abs(interceptX) > 0.15) {
-                                    const isDuplicate = xIntercepts.some(existing => 
+                                    const isDuplicate = allIntercepts.some(existing => 
                                         Math.abs(existing.x - interceptX) < minDistance
                                     );
                                     
                                     if (!isDuplicate) {
-                                        xIntercepts.push({
+                                        allIntercepts.push({
                                             x: interceptX,
                                             y: 0,
                                             type: 'x-intercept',
@@ -12323,9 +12324,9 @@ class Graphiti {
                         }
                     }
                     
-                    // If we found intercepts analytically, return them
-                    if (xIntercepts.length > 0) {
-                        return xIntercepts;
+                    // If we found intercepts analytically, select evenly spaced ones
+                    if (allIntercepts.length > 0) {
+                        return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
                     }
                 }
             } catch (error) {
@@ -12365,17 +12366,17 @@ class Graphiti {
             
             // Group candidates and pick the best from each group
             for (const candidate of validCandidates) {
-                // Stop if we've found enough intercepts
-                if (xIntercepts.length >= maxIntercepts) break;
+                // Stop if we've searched enough
+                if (allIntercepts.length >= maxInterceptsToSearch) break;
                 
                 const xValue = candidate.x;
                 
-                const isDuplicate = xIntercepts.some(existing => 
+                const isDuplicate = allIntercepts.some(existing => 
                     Math.abs(existing.x - xValue) < minDistance
                 );
                 
                 if (!isDuplicate) {
-                    xIntercepts.push({
+                    allIntercepts.push({
                         x: xValue,
                         y: 0,
                         type: 'x-intercept',
@@ -12387,8 +12388,8 @@ class Graphiti {
         } else {
             // For explicit functions (y = f(x)) and explicit inequalities (y > f(x)), find where y crosses zero
             for (let i = 0; i < points.length - 1; i++) {
-                // Stop if we've found enough intercepts
-                if (xIntercepts.length >= maxIntercepts) break;
+                // Stop if we've searched enough
+                if (allIntercepts.length >= maxInterceptsToSearch) break;
                 
                 const x1 = points[i].x;
                 const y1 = points[i].y;
@@ -12425,12 +12426,12 @@ class Graphiti {
                     
                     if (xIntercept !== null) {
                         // Check if this intercept is far enough from existing ones
-                        const isDuplicate = xIntercepts.some(existing => 
+                        const isDuplicate = allIntercepts.some(existing => 
                             Math.abs(existing.x - xIntercept) < minDistance
                         );
                         
                         if (!isDuplicate) {
-                            xIntercepts.push({
+                            allIntercepts.push({
                                 x: xIntercept,
                                 y: 0,
                                 type: 'x-intercept',
@@ -12443,13 +12444,15 @@ class Graphiti {
             }
         }
         
-        return xIntercepts;
+        // Return evenly spaced selection from all found intercepts
+        return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
     }
     
     findYInterceptsForFunction(func) {
-        const yIntercepts = [];
+        const allIntercepts = []; // Collect all intercepts first
         const minDistance = 0.5; // Minimum distance between distinct intercepts (in world coordinates)
-        const maxIntercepts = 20; // Maximum number of intercepts to find (prevent UI freeze)
+        const maxInterceptsToDisplay = 20; // Maximum number to display (evenly spaced)
+        const maxInterceptsToSearch = 100; // Maximum to search for (prevent infinite loops)
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
@@ -12479,8 +12482,8 @@ class Graphiti {
                     let prevY = null;
                     
                     for (let i = 0; i <= sampleCount; i++) {
-                        // Stop if we've found enough intercepts
-                        if (yIntercepts.length >= maxIntercepts) break;
+                        // Stop if we've searched enough
+                        if (allIntercepts.length >= maxInterceptsToSearch) break;
                         
                         const y = yMin + i * step;
                         scope.x = 0;
@@ -12497,12 +12500,12 @@ class Graphiti {
                                 const interceptY = prevY - prevValue * (y - prevY) / (value - prevValue);
                                 
                                 if (isFinite(interceptY) && Math.abs(interceptY) > 0.15) {
-                                    const isDuplicate = yIntercepts.some(existing => 
+                                    const isDuplicate = allIntercepts.some(existing => 
                                         Math.abs(existing.y - interceptY) < minDistance
                                     );
                                     
                                     if (!isDuplicate) {
-                                        yIntercepts.push({
+                                        allIntercepts.push({
                                             x: 0,
                                             y: interceptY,
                                             type: 'y-intercept',
@@ -12520,9 +12523,9 @@ class Graphiti {
                         }
                     }
                     
-                    // If we found intercepts analytically, return them
-                    if (yIntercepts.length > 0) {
-                        return yIntercepts;
+                    // If we found intercepts analytically, select evenly spaced ones
+                    if (allIntercepts.length > 0) {
+                        return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
                     }
                 }
             } catch (error) {
@@ -12565,17 +12568,17 @@ class Graphiti {
             
             // Group candidates and pick the best from each group
             for (const candidate of validCandidates) {
-                // Stop if we've found enough intercepts
-                if (yIntercepts.length >= maxIntercepts) break;
+                // Stop if we've searched enough
+                if (allIntercepts.length >= maxInterceptsToSearch) break;
                 
                 const yValue = candidate.y;
                 
-                const isDuplicate = yIntercepts.some(existing => 
+                const isDuplicate = allIntercepts.some(existing => 
                     Math.abs(existing.y - yValue) < minDistance
                 );
                 
                 if (!isDuplicate) {
-                    yIntercepts.push({
+                    allIntercepts.push({
                         x: 0,
                         y: yValue,
                         type: 'y-intercept',
@@ -12616,9 +12619,28 @@ class Graphiti {
             }
         }
         
-        return yIntercepts;
+        // Return evenly spaced selection from all found intercepts
+        return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
     }
     
+    selectEvenlySpaced(items, maxCount) {
+        // If we have fewer items than maxCount, return all
+        if (items.length <= maxCount) {
+            return items;
+        }
+        
+        // Select evenly spaced items
+        const result = [];
+        const step = items.length / maxCount;
+        
+        for (let i = 0; i < maxCount; i++) {
+            const index = Math.floor(i * step);
+            result.push(items[index]);
+        }
+        
+        return result;
+    }
+
     bisectionMethod(expression, x1, x2, variable = 'y') {
         // Convert from LaTeX first since expression might be in LaTeX format
         const convertedExpression = this.convertFromLatex(expression);
@@ -13903,6 +13925,8 @@ class Graphiti {
     findRootsInRange(expression, xMin, xMax, steps = 200) {
         // Simple numerical root finding using sign changes
         const roots = [];
+        const maxRootsToDisplay = 20; // Maximum to display (evenly spaced)
+        const maxRootsToSearch = 100; // Maximum to search for (prevent infinite loops)
         const stepSize = (xMax - xMin) / steps;
         
         // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
@@ -13959,6 +13983,9 @@ class Graphiti {
         }
         
         for (let i = 1; i <= steps; i++) {
+            // Stop if we've searched enough
+            if (roots.length >= maxRootsToSearch) break;
+            
             const currentX = xMin + i * stepSize;
             let currentValue;
             
@@ -13983,7 +14010,8 @@ class Graphiti {
             prevValue = currentValue;
         }
         
-        return roots;
+        // Return evenly spaced selection from all found roots
+        return this.selectEvenlySpaced(roots.map(r => ({x: r})), maxRootsToDisplay).map(item => item.x);
     }
     
     bisectionMethodForTurningPoints(expression, a, b, tolerance = 1e-8, maxIterations = 50) {
