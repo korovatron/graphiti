@@ -7723,6 +7723,20 @@ class Graphiti {
                 this.removeTangentIntersectionBadgesForBadge(targetBadge.id);
                 this.removeNormalIntersectionBadgesForBadge(targetBadge.id);
                 
+                // Remove intersections from this.intersections for the tangent/normal being dragged
+                if (targetBadge.hasTangent) {
+                    const tangentId = `tangent_${targetBadge.id}`;
+                    this.intersections = this.intersections.filter(int => 
+                        int.func1Id !== tangentId && int.func2Id !== tangentId
+                    );
+                }
+                if (targetBadge.hasNormal) {
+                    const normalId = `normal_${targetBadge.id}`;
+                    this.intersections = this.intersections.filter(int => 
+                        int.func1Id !== normalId && int.func2Id !== normalId
+                    );
+                }
+                
                 // Note: Don't remove the integral pair here during drag - just remove the single badge
                 // The pair will be automatically re-established by updateIntegralPairs() after the new badge is created
                 // We pass 'true' to indicate this is a reposition, not a deletion
