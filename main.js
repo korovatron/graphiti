@@ -12606,7 +12606,7 @@ class Graphiti {
                 const y = math.evaluate(expr, scope);
                 
                 if (isFinite(y) && Math.abs(y) < 1000) { // Reasonable bounds check
-                    yIntercepts.push({
+                    allIntercepts.push({
                         x: 0,
                         y: y,
                         type: 'y-intercept',
@@ -16409,7 +16409,9 @@ class Graphiti {
         // Check if a badge already exists at this location (within tolerance)
         const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
         if (existingBadge) {
-            // Badge already exists, don't add another
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
             return;
         }
         
@@ -16603,6 +16605,18 @@ class Graphiti {
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
         
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
+        
         // Create intersection badge with both function IDs stored
         const badge = {
             id: this.input.badgeIdCounter++,
@@ -16631,6 +16645,18 @@ class Graphiti {
         // Snap coordinates to zero if they're very close (matches display formatting)
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
         
         // Create tangent intersection badge
         const badge = {
@@ -16661,6 +16687,18 @@ class Graphiti {
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
         
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
+        
         // Create tangent-tangent intersection badge
         const badge = {
             id: this.input.badgeIdCounter++,
@@ -16689,6 +16727,18 @@ class Graphiti {
         // Snap coordinates to zero if they're very close (matches display formatting)
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
         
         // Create normal intersection badge
         const badge = {
@@ -16719,6 +16769,18 @@ class Graphiti {
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
         
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
+        
         // Create normal-normal intersection badge
         const badge = {
             id: this.input.badgeIdCounter++,
@@ -16747,6 +16809,18 @@ class Graphiti {
         // Snap coordinates to zero if they're very close (matches display formatting)
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
         
         // Create normal-tangent intersection badge
         const badge = {
@@ -16801,6 +16875,18 @@ class Graphiti {
         // Snap coordinates to zero if they're very close
         const snappedX = this.snapCoordinateForDisplay(worldX);
         const snappedY = this.snapCoordinateForDisplay(worldY);
+        
+        // Calculate screen position for duplicate check
+        const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Check if a badge already exists at this location (within tolerance)
+        const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
+        if (existingBadge) {
+            // Badge already exists - remove it (toggle behavior)
+            this.removeBadgeById(existingBadge.id);
+            this.draw();
+            return;
+        }
         
         // Create turning point badge as non-draggable (like intersections)
         const badge = {
