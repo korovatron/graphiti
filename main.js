@@ -9102,48 +9102,77 @@ class Graphiti {
                 }, 'image/png');
             });
             
-            // Detect if we're on a mobile device (not Windows/Mac/Linux desktop)
-            const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            // Detect mobile devices - iPad detection is tricky (iPadOS 13+ reports as Mac)
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isIPad = (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+            const isMobile = isIOS || isIPad || /Android/i.test(navigator.userAgent);
             
-            // On mobile: use share sheet. On desktop: use clipboard directly
-            if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'graph.png', { type: 'image/png' })] })) {
-                // Use Web Share API (mobile only)
-                const file = new File([blob], 'graphiti-graph.png', { type: 'image/png' });
-                await navigator.share({
-                    files: [file],
-                    title: 'Graphiti Graph',
-                    text: 'Graph from Graphiti'
-                });
-            } else if (navigator.clipboard && navigator.clipboard.write) {
-                // Use Clipboard API (desktop - more reliable than Windows share sheet)
-                const clipboardItem = new ClipboardItem({ 'image/png': blob });
-                await navigator.clipboard.write([clipboardItem]);
-                
-                // Show brief confirmation
-                const button = document.getElementById('copy-share-button');
-                if (button) {
-                    const originalText = button.innerHTML;
-                    button.innerHTML = 'COPIED!';
-                    button.style.background = '#4A90E2';
-                    setTimeout(() => {
-                        button.innerHTML = originalText;
-                        button.style.background = '#2A3F5A';
-                    }, 1500);
+            console.log('Device detection:', { isIOS, isIPad, isMobile, userAgent: navigator.userAgent });
+            
+            // Try Web Share API first on mobile devices
+            if (isMobile && navigator.share) {
+                try {
+                    const file = new File([blob], 'graphiti-graph.png', { type: 'image/png' });
+                    
+                    // Check if we can share files
+                    const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+                    console.log('Can share files:', canShareFiles);
+                    
+                    if (canShareFiles) {
+                        await navigator.share({
+                            files: [file],
+                            title: 'Graphiti Graph',
+                            text: 'Graph from Graphiti'
+                        });
+                        console.log('Share successful');
+                        return; // Success - exit early
+                    }
+                } catch (shareError) {
+                    console.log('Share API failed, trying clipboard:', shareError);
+                    // Fall through to clipboard attempt
                 }
-            } else {
-                // Fallback: download the image
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'graphiti-graph.png';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
             }
+            
+            // Try Clipboard API (works on desktop and some mobile browsers)
+            if (navigator.clipboard && navigator.clipboard.write) {
+                try {
+                    const clipboardItem = new ClipboardItem({ 'image/png': blob });
+                    await navigator.clipboard.write([clipboardItem]);
+                    
+                    console.log('Clipboard write successful');
+                    
+                    // Show brief confirmation
+                    const button = document.getElementById('copy-share-button');
+                    if (button) {
+                        const originalText = button.innerHTML;
+                        button.innerHTML = 'COPIED!';
+                        button.style.background = '#4A90E2';
+                        setTimeout(() => {
+                            button.innerHTML = originalText;
+                            button.style.background = '#2A3F5A';
+                        }, 1500);
+                    }
+                    return; // Success - exit early
+                } catch (clipboardError) {
+                    console.log('Clipboard API failed, trying download:', clipboardError);
+                    // Fall through to download
+                }
+            }
+            
+            // Fallback: download the image
+            console.log('Using download fallback');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'graphiti-graph.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
         } catch (error) {
             console.error('Failed to copy/share canvas:', error);
-            // Could show an error message to user here if desired
+            alert('Failed to share image. Please try again.');
         }
     }
     
