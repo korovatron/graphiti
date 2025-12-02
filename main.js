@@ -14873,7 +14873,8 @@ class Graphiti {
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.frozenIntersectionBadges.length > 0) {
                 // Check if new intersections are ready - if so, clear frozen and draw new ones
-                if (!this.isViewportChanging && this.intersections.length > 0) {
+                // Also wait for implicit intersections to complete to avoid showing incomplete intersection set
+                if (!this.isViewportChanging && this.intersections.length > 0 && !this.implicitIntersectionsPending) {
                     this.frozenIntersectionBadges = [];
                     this.drawIntersectionMarkers();
                 } else {
