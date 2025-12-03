@@ -11715,6 +11715,19 @@ class Graphiti {
             return this.calculateExplicitIntersections();
         }
 
+        // Check if we have implicit functions that will need calculation
+        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        const hasImplicitFunctions = allFunctions.some(f => {
+            const funcType = this.detectFunctionType(f.expression);
+            return funcType === 'implicit' || funcType === 'implicit-inequality';
+        });
+        
+        // Set pending flag BEFORE calculating explicit intersections
+        // This prevents updateCombinedIntersections from recalculating tangent/normal with stale data
+        if (hasImplicitFunctions) {
+            this.implicitIntersectionsPending = true;
+        }
+
         // Always calculate explicit intersections immediately (fast)
         this.calculateExplicitIntersections();
         
@@ -11783,7 +11796,9 @@ class Graphiti {
             clearTimeout(this.implicitIntersectionTimer);
         }
 
-        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        // Check for implicit functions by TYPE, not by whether they currently have points
+        // During viewport changes, implicit functions may temporarily have empty points arrays
+        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled);
         const hasImplicitFunctions = allFunctions.some(f => {
             const funcType = this.detectFunctionType(f.expression);
             return funcType === 'implicit' || funcType === 'implicit-inequality';
@@ -11882,9 +11897,12 @@ class Graphiti {
     }
 
     updateCombinedIntersections() {
-        // Calculate tangent and normal intersections
-        this.tangentIntersections = this.findTangentIntersections();
-        this.normalIntersections = this.findNormalIntersections();
+        // Only recalculate tangent and normal intersections if implicit intersections are not pending
+        // This prevents recalculating with stale data when explicit intersections finish early
+        if (!this.implicitIntersectionsPending) {
+            this.tangentIntersections = this.findTangentIntersections();
+            this.normalIntersections = this.findNormalIntersections();
+        }
         
         // Combine explicit, implicit, tangent, and normal intersections for display
         this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections, ...this.normalIntersections];
