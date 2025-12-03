@@ -14763,8 +14763,52 @@ class Graphiti {
         // This can happen after long idle periods or on mobile browsers
         if (!this.animationId && this.currentState === this.states.GRAPHING) {
             console.log('Animation loop was stopped - restarting after idle period');
+            this.showAnimationRestartIndicator();
             this.startAnimationLoop();
         }
+    }
+
+    showAnimationRestartIndicator() {
+        // Show a subtle visual indicator that the animation loop was restarted
+        // This is useful for debugging on mobile devices without console access
+        const indicator = document.createElement('div');
+        indicator.textContent = '💤 Waking up!';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            font-size: 14px;
+            background: rgba(74, 144, 226, 0.95);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            animation: fadeInOut 3s ease-in-out;
+        `;
+        
+        // Add fade animation if not already defined
+        if (!document.getElementById('restart-indicator-style')) {
+            const style = document.createElement('style');
+            style.id = 'restart-indicator-style';
+            style.textContent = `
+                @keyframes fadeInOut {
+                    0% { opacity: 0; transform: translateY(-10px); }
+                    20% { opacity: 1; transform: translateY(0); }
+                    80% { opacity: 1; transform: translateY(0); }
+                    100% { opacity: 0; transform: translateY(-10px); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(indicator);
+        
+        // Remove indicator after animation completes
+        setTimeout(() => {
+            indicator.remove();
+        }, 3000);
     }
     
     // ================================
