@@ -7622,6 +7622,9 @@ class Graphiti {
         const canvasX = x - rect.left;
         const canvasY = y - rect.top;
         
+        // Ensure animation loop is running (may have been stopped by browser throttling)
+        this.ensureAnimationLoopRunning();
+        
         this.input.mouse.x = canvasX;
         this.input.mouse.y = canvasY;
         this.input.mouse.down = true;
@@ -14753,6 +14756,15 @@ class Graphiti {
         };
         
         this.animationId = requestAnimationFrame(animate);
+    }
+
+    ensureAnimationLoopRunning() {
+        // Restart animation loop if it was stopped by browser throttling
+        // This can happen after long idle periods or on mobile browsers
+        if (!this.animationId && this.currentState === this.states.GRAPHING) {
+            console.log('Animation loop was stopped - restarting after idle period');
+            this.startAnimationLoop();
+        }
     }
     
     // ================================
