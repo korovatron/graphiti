@@ -8303,12 +8303,13 @@ class Graphiti {
                     if (this.input.badgeInteraction.originalBadgeState && 
                         (this.input.badgeInteraction.originalBadgeState.hasTangent || 
                          this.input.badgeInteraction.originalBadgeState.hasNormal)) {
-                        // Pass both x and y for implicit functions, theta for polar functions
+                        // Pass both x and y for implicit functions, theta for polar functions, tValue for parametric
                         const slopeData = this.calculateSlopeAtPoint(
                             tracingFunction, 
                             this.input.tracing.worldX, 
                             this.input.tracing.worldY, 
-                            this.input.tracing.theta
+                            this.input.tracing.theta,
+                            this.input.tracing.tValue
                         );
                         if (slopeData) {
                             this.input.tracing.currentSlope = slopeData;
@@ -8632,7 +8633,7 @@ class Graphiti {
                         // TAP: Cycle to next state
                         if (!originalState.hasTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 1: No line → tangent
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta, newBadge.tValue);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData;
@@ -8650,7 +8651,7 @@ class Graphiti {
                             }
                         } else if (originalState.hasTangent && !originalState.neonTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 2: Tangent → neon tangent
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta, newBadge.tValue);
                             if (slopeData) {
                                 newBadge.hasTangent = true;
                                 newBadge.tangentSlope = slopeData;
@@ -8668,7 +8669,7 @@ class Graphiti {
                             }
                         } else if (originalState.hasTangent && originalState.neonTangent && !originalState.hasNormal && !originalState.hasIntegral) {
                             // State 3: Neon tangent → normal
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta, newBadge.tValue);
                             if (slopeData) {
                                 newBadge.hasTangent = false;
                                 newBadge.neonTangent = false;
@@ -8686,7 +8687,7 @@ class Graphiti {
                             }
                         } else if (originalState.hasNormal && !originalState.neonNormal && !originalState.hasIntegral) {
                             // State 4: Normal → neon normal
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta, newBadge.tValue);
                             if (slopeData) {
                                 newBadge.hasTangent = false;
                                 newBadge.neonTangent = false;
@@ -8769,7 +8770,7 @@ class Graphiti {
                     } else {
                         // DRAG: Keep same state, just recalculate at new position
                         if (originalState.hasTangent || originalState.hasNormal) {
-                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta);
+                            const slopeData = this.calculateSlopeAtPoint(tracingFunction, newBadge.worldX, newBadge.worldY, newBadge.theta, newBadge.tValue);
                             if (slopeData) {
                                 newBadge.hasTangent = originalState.hasTangent;
                                 newBadge.hasNormal = originalState.hasNormal;
@@ -14179,7 +14180,7 @@ class Graphiti {
     
     // Calculate the slope (derivative) at a specific point for a function
     // Uses both symbolic and numerical methods for robustness
-    calculateSlopeAtPoint(func, worldX, worldY = null, theta = null) {
+    calculateSlopeAtPoint(func, worldX, worldY = null, theta = null, tValue = null) {
         if (!func || !func.expression) {
             return null;
         }
@@ -14189,8 +14190,13 @@ class Graphiti {
             return this.calculatePolarSlope(func, theta, worldX, worldY);
         }
         
-        // Check if this is an implicit function or implicit inequality
+        // Check if this is a parametric function
         const functionType = this.detectFunctionType(func.expression);
+        if (functionType === 'parametric' && tValue !== null && tValue !== undefined) {
+            return this.calculateParametricSlope(func, tValue, worldX, worldY);
+        }
+        
+        // Check if this is an implicit function or implicit inequality
         if (functionType === 'implicit' || functionType === 'implicit-inequality') {
             // For implicit functions/inequalities, we need both x and y coordinates
             if (worldY === null) {
@@ -14439,6 +14445,102 @@ class Graphiti {
             
         } catch (error) {
             console.warn('Could not calculate polar slope:', error);
+        }
+        
+        return null;
+    }
+    
+    calculateParametricSlope(func, tValue, worldX, worldY) {
+        // Calculate slope for parametric function (x(t), y(t))
+        // dy/dx = (dy/dt) / (dx/dt)
+        if (!func || !func.expression || tValue === null || tValue === undefined) {
+            return null;
+        }
+        
+        try {
+            // Parse parametric equation
+            const parsed = this.parseParametricEquation(func.expression);
+            if (!parsed) return null;
+            
+            let xExpr = parsed.xExpr.toLowerCase();
+            let yExpr = parsed.yExpr.toLowerCase();
+            
+            // Add implicit multiplication
+            xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
+            
+            // Use numerical derivatives for robustness
+            const h = 0.0001;
+            const compiledX = this.getCompiledExpression(xExpr);
+            const compiledY = this.getCompiledExpression(yExpr);
+            
+            // Convert t to radians if in degree mode (like in plotParametricFunction)
+            const tForEval = this.angleMode === 'degrees' ? tValue * Math.PI / 180 : tValue;
+            const hForEval = h; // h is already small, no need to convert
+            
+            const scope0 = this.getEvaluationScope({ 
+                t: tForEval,
+                pi: Math.PI,
+                e: Math.E
+            });
+            const scopePlus = this.getEvaluationScope({ 
+                t: tForEval + hForEval,
+                pi: Math.PI,
+                e: Math.E
+            });
+            const scopeMinus = this.getEvaluationScope({ 
+                t: tForEval - hForEval,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
+            // Evaluate x(t) and y(t) at t, t+h, t-h
+            const x0 = compiledX.evaluate(scope0);
+            const y0 = compiledY.evaluate(scope0);
+            const xPlus = compiledX.evaluate(scopePlus);
+            const yPlus = compiledY.evaluate(scopePlus);
+            const xMinus = compiledX.evaluate(scopeMinus);
+            const yMinus = compiledY.evaluate(scopeMinus);
+            
+            if (!isFinite(x0) || !isFinite(y0) || !isFinite(xPlus) || !isFinite(yPlus) || 
+                !isFinite(xMinus) || !isFinite(yMinus)) {
+                return null;
+            }
+            
+            // Calculate dx/dt and dy/dt using central difference
+            const dxdt = (xPlus - xMinus) / (2 * hForEval);
+            const dydt = (yPlus - yMinus) / (2 * hForEval);
+            
+            if (!isFinite(dxdt) || !isFinite(dydt)) {
+                return null;
+            }
+            
+            // Check for division by zero (vertical tangent)
+            if (Math.abs(dxdt) < 1e-10) {
+                return {
+                    slope: dxdt >= 0 ? 1e10 : -1e10,
+                    expression: "dy/dx",
+                    secondDerivative: 0,
+                    method: 'parametric'
+                };
+            }
+            
+            // Calculate dy/dx = (dy/dt) / (dx/dt)
+            const slope = dydt / dxdt;
+            
+            if (isFinite(slope)) {
+                return {
+                    slope: slope,
+                    expression: "dy/dx",
+                    secondDerivative: 0, // Could calculate d²y/dx² if needed
+                    method: 'parametric'
+                };
+            }
+            
+        } catch (error) {
+            console.warn('Could not calculate parametric slope:', error);
         }
         
         return null;
@@ -15087,7 +15189,7 @@ class Graphiti {
             
             // Recalculate tangent/normal slopes if badge has them
             if (badge.hasTangent || badge.hasNormal) {
-                const slopeData = this.calculateSlopeAtPoint(func, badge.worldX, badge.worldY, badge.theta);
+                const slopeData = this.calculateSlopeAtPoint(func, badge.worldX, badge.worldY, badge.theta, badge.tValue);
                 if (slopeData) {
                     badge.tangentSlope = slopeData;
                     badge.tangentExpression = slopeData.expression;
