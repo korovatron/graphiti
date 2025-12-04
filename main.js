@@ -7966,6 +7966,10 @@ class Graphiti {
                     if (targetBadge.theta !== null && targetBadge.theta !== undefined) {
                         this.input.tracing.theta = targetBadge.theta;
                     }
+                    // Preserve tValue for parametric functions
+                    if (targetBadge.tValue !== null && targetBadge.tValue !== undefined) {
+                        this.input.tracing.tValue = targetBadge.tValue;
+                    }
                 }
                 return; // Exit early - don't process other input logic
             }
@@ -8035,6 +8039,7 @@ class Graphiti {
                 this.input.tracing.worldX = curvePoint.worldX;
                 this.input.tracing.worldY = curvePoint.worldY;
                 this.input.tracing.theta = curvePoint.theta; // Store theta for polar parametric tracing
+                this.input.tracing.tValue = curvePoint.tValue; // Store tValue for parametric tracing
                 this.input.tracing.addIntegralNext = shouldAddIntegral; // Flag to add integral directly
                 
                 // Set dragging flag to use cached numerical integration during drag
@@ -8119,6 +8124,7 @@ class Graphiti {
                             currentWorldPos.x, 
                             currentWorldPos.y,
                             this.input.tracing.theta,
+                            this.input.tracing.tValue,
                             deltaX
                         );
                         
@@ -8129,6 +8135,11 @@ class Graphiti {
                             // Update theta if returned (for polar functions)
                             if (tracePoint.theta !== undefined) {
                                 this.input.tracing.theta = tracePoint.theta;
+                            }
+                            
+                            // Update tValue if returned (for parametric functions)
+                            if (tracePoint.tValue !== undefined) {
+                                this.input.tracing.tValue = tracePoint.tValue;
                             }
                             
                             // Check if we should snap to a significant point
@@ -8560,6 +8571,14 @@ class Graphiti {
                 const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
                 if (newBadge) {
                     newBadge.theta = this.input.tracing.theta;
+                }
+            }
+            
+            // Store tValue for parametric functions
+            if (this.input.tracing.tValue !== null && this.input.tracing.tValue !== undefined) {
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                if (newBadge) {
+                    newBadge.tValue = this.input.tracing.tValue;
                 }
             }
             
@@ -11724,6 +11743,7 @@ class Graphiti {
         let closestWorldX = worldPos.x;
         let closestWorldY = worldPos.y;
         let closestTheta = null; // For polar functions
+        let closestT = null; // For parametric functions
         
         // Check each active function in current mode
         for (const func of this.getCurrentFunctions()) {
@@ -11739,6 +11759,19 @@ class Graphiti {
                     closestFunction = func;
                     closestWorldX = result.worldX;
                     closestWorldY = result.worldY;
+                }
+                continue;
+            }
+            
+            // Handle parametric functions with segment-based detection
+            if (functionType === 'parametric') {
+                const result = this.findClosestParametricPoint(func, screenX, screenY, tolerance);
+                if (result && result.distance < closestDistance) {
+                    closestDistance = result.distance;
+                    closestFunction = func;
+                    closestWorldX = result.worldX;
+                    closestWorldY = result.worldY;
+                    closestT = result.tValue; // Store t for parametric tracing
                 }
                 continue;
             }
@@ -11803,7 +11836,8 @@ class Graphiti {
                 worldX: closestWorldX,
                 worldY: closestWorldY,
                 distance: closestDistance,
-                theta: closestTheta // Include theta for polar functions
+                theta: closestTheta, // Include theta for polar functions
+                tValue: closestT // Include tValue for parametric functions
             };
         }
         
@@ -11833,6 +11867,7 @@ class Graphiti {
             screenX: 0, // Will be updated during rendering
             screenY: 0, // Will be updated during rendering
             theta: null, // For polar functions - parametric position on curve
+            tValue: null, // For parametric functions - parameter position on curve
             // Tangent line properties
             hasTangent: false, // Whether to show tangent line at this point
             tangentSlope: null, // Slope of tangent line (dy/dx)
@@ -15027,6 +15062,14 @@ class Graphiti {
                     badge.worldY = tracedPoint.y;
                     // theta stays the same
                 }
+            } else if (functionType === 'parametric' && badge.tValue !== null && badge.tValue !== undefined) {
+                // Parametric functions: keep tValue, recalculate x,y
+                const tracedPoint = this.traceParametricFunction(func, badge.worldX, badge.worldY, badge.tValue, 0);
+                if (tracedPoint) {
+                    badge.worldX = tracedPoint.x;
+                    badge.worldY = tracedPoint.y;
+                    // tValue stays the same
+                }
             } else if (functionType === 'implicit') {
                 // Implicit functions: snap to nearest point on new curve
                 const tracedPoint = this.traceImplicitFunction(func, badge.worldX, badge.worldY);
@@ -15155,6 +15198,87 @@ class Graphiti {
         }
     }
     
+    findClosestParametricPoint(func, screenX, screenY, tolerance) {
+        try {
+            let closestDistance = Infinity;
+            let closestWorldX = 0;
+            let closestWorldY = 0;
+            let closestT = 0;
+            
+            // Parse parametric equation
+            const parsed = this.parseParametricEquation(func.expression);
+            if (!parsed) return null;
+            
+            let xExpr = parsed.xExpr.toLowerCase();
+            let yExpr = parsed.yExpr.toLowerCase();
+            
+            // Add implicit multiplication
+            xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
+            
+            const compiledX = this.getCompiledExpression(xExpr);
+            const compiledY = this.getCompiledExpression(yExpr);
+            
+            const tMin = this.cartesianViewport.tMin;
+            const tMax = this.cartesianViewport.tMax;
+            const tRange = tMax - tMin;
+            
+            // Use higher resolution for detection (similar to polar)
+            const numSamples = Math.min(1000, Math.max(200, Math.ceil(tRange * 50)));
+            const tStep = tRange / numSamples;
+            
+            const scope = this.getEvaluationScope({
+                t: 0,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
+            for (let i = 0; i <= numSamples; i++) {
+                const tParam = tMin + i * tStep;
+                // Convert t to radians if in degree mode
+                scope.t = this.angleMode === 'degrees' ? (tParam * Math.PI / 180) : tParam;
+                
+                try {
+                    const worldX = compiledX.evaluate(scope);
+                    const worldY = compiledY.evaluate(scope);
+                    
+                    if (!isFinite(worldX) || !isFinite(worldY)) continue;
+                    
+                    // Convert to screen coordinates and check distance
+                    const screenPos = this.worldToScreen(worldX, worldY);
+                    const distance = Math.sqrt(
+                        Math.pow(screenPos.x - screenX, 2) + 
+                        Math.pow(screenPos.y - screenY, 2)
+                    );
+                    
+                    if (distance < tolerance && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestWorldX = worldX;
+                        closestWorldY = worldY;
+                        closestT = tParam; // Store t parameter value
+                    }
+                } catch (e) {
+                    // Skip invalid points
+                }
+            }
+            
+            if (closestDistance < tolerance) {
+                return {
+                    distance: closestDistance,
+                    worldX: closestWorldX,
+                    worldY: closestWorldY,
+                    tValue: closestT
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+    
     traceImplicitFunction(func, worldX, worldY) {
         // For implicit functions, find the closest point on the curve to the mouse position
         // This provides smooth following behavior similar to explicit functions
@@ -15212,7 +15336,7 @@ class Graphiti {
         return closestPoint || { x: worldX, y: worldY };
     }
     
-    traceFunction(func, worldX, worldY = null, theta = null, screenDeltaX = 0) {
+    traceFunction(func, worldX, worldY = null, theta = null, tValue = null, screenDeltaX = 0) {
         try {
             // Check if this is an implicit function
             const functionType = this.detectFunctionType(func.expression);
@@ -15225,6 +15349,11 @@ class Graphiti {
                     return null;
                 }
                 return this.traceImplicitFunction(func, worldX, worldY);
+            }
+            
+            // Handle parametric functions with parametric tracing
+            if (functionType === 'parametric') {
+                return this.traceParametricFunction(func, worldX, worldY || 0, tValue, screenDeltaX);
             }
             
             // Handle polar functions with parametric tracing
@@ -15368,6 +15497,113 @@ class Graphiti {
             
             if (closestPoint) {
                 return { ...closestPoint, theta: closestTheta };
+            }
+            
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+    
+    traceParametricFunction(func, mouseWorldX, mouseWorldY, currentT = null, screenDeltaX = 0) {
+        // For parametric functions, use parametric tracing along t parameter
+        // This prevents jumping between branches and provides smooth curve following
+        try {
+            // Parse parametric equation
+            const parsed = this.parseParametricEquation(func.expression);
+            if (!parsed) return null;
+            
+            let xExpr = parsed.xExpr.toLowerCase();
+            let yExpr = parsed.yExpr.toLowerCase();
+            
+            // Add implicit multiplication
+            xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
+            
+            const compiledX = this.getCompiledExpression(xExpr);
+            const compiledY = this.getCompiledExpression(yExpr);
+            
+            const tMin = this.cartesianViewport.tMin;
+            const tMax = this.cartesianViewport.tMax;
+            
+            // If we have a current t (from ongoing drag), adjust it based on mouse movement
+            if (currentT !== null && currentT !== undefined) {
+                // Convert screen movement to t change
+                // Use a sensitivity factor to control how much t changes per pixel
+                const tRange = tMax - tMin;
+                const viewportWidth = this.viewport.maxX - this.viewport.minX;
+                const screenWidth = this.canvas.width;
+                const pixelsPerWorldUnit = screenWidth / viewportWidth;
+                
+                // Sensitivity: how much t changes per world unit of movement
+                // Lower values = more sensitive (faster movement along curve)
+                const sensitivityFactor = tRange / (viewportWidth * 2); // Move through full range across half viewport
+                const tDelta = (screenDeltaX / pixelsPerWorldUnit) * sensitivityFactor;
+                
+                let newT = currentT + tDelta;
+                
+                // Clamp to valid range (don't wrap like polar - parametric curves don't close)
+                newT = Math.max(tMin, Math.min(tMax, newT));
+                
+                // Evaluate at new t
+                const scope = this.getEvaluationScope({
+                    t: this.angleMode === 'degrees' ? (newT * Math.PI / 180) : newT,
+                    pi: Math.PI,
+                    e: Math.E
+                });
+                
+                const x = compiledX.evaluate(scope);
+                const y = compiledY.evaluate(scope);
+                
+                if (isFinite(x) && isFinite(y)) {
+                    return { x, y, tValue: newT };
+                }
+            }
+            
+            // Fallback: find closest point if no t provided
+            let closestPoint = null;
+            let closestDistance = Infinity;
+            let closestT = 0;
+            
+            const tRange = tMax - tMin;
+            const numSamples = Math.min(500, Math.max(100, Math.ceil(tRange * 20)));
+            const tStep = tRange / numSamples;
+            
+            const scope = this.getEvaluationScope({
+                t: 0,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
+            for (let i = 0; i <= numSamples; i++) {
+                const tParam = tMin + i * tStep;
+                scope.t = this.angleMode === 'degrees' ? (tParam * Math.PI / 180) : tParam;
+                
+                try {
+                    const x = compiledX.evaluate(scope);
+                    const y = compiledY.evaluate(scope);
+                    
+                    if (!isFinite(x) || !isFinite(y)) continue;
+                    
+                    const distance = Math.sqrt(
+                        Math.pow(x - mouseWorldX, 2) + 
+                        Math.pow(y - mouseWorldY, 2)
+                    );
+                    
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestPoint = { x, y };
+                        closestT = tParam;
+                    }
+                } catch (e) {
+                    // Skip invalid points
+                }
+            }
+            
+            if (closestPoint) {
+                return { ...closestPoint, tValue: closestT };
             }
             
             return null;
@@ -17729,13 +17965,17 @@ class Graphiti {
         }
         
         // For polar functions, pass theta as separate parameter for proper polar coordinate display
+        // For parametric functions, pass tValue as separate parameter for proper parametric display
         const thetaValue = (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) 
             ? this.input.tracing.theta 
+            : null;
+        const tValueParam = (this.input.tracing.tValue !== null && this.input.tracing.tValue !== undefined) 
+            ? this.input.tracing.tValue 
             : null;
         
         this.drawTracingBadge(screenPos.x, screenPos.y, tracingFunction.color, 
             this.input.tracing.worldX, this.input.tracing.worldY, true, false, null, null, 
-            hasTangent, hasNormal, hasIntegral, neonIntegral, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction, null, integralLimitType, thetaValue);
+            hasTangent, hasNormal, hasIntegral, neonIntegral, this.input.tracing.currentSlope, this.input.tracing.currentSecondDerivative, tracingFunction, null, integralLimitType, thetaValue, tValueParam);
         
         // Draw theta hint for polar functions
         if (tracingFunction.mode === 'polar' && this.input.tracing.theta !== null && this.input.tracing.theta !== undefined) {
@@ -19192,9 +19432,13 @@ class Graphiti {
             
             // Draw the persistent badge with hold indication
             // For polar functions, pass theta as separate parameter for proper polar coordinate display
+            // For parametric functions, pass tValue as separate parameter for proper parametric display
             const displayX = badge.worldX; // Always use Cartesian worldX for position
             const thetaValue = (this.plotMode === 'polar' && badge.theta !== null && badge.theta !== undefined) 
                 ? badge.theta 
+                : null;
+            const tValueParam = (badge.tValue !== null && badge.tValue !== undefined) 
+                ? badge.tValue 
                 : null;
             
             // Debug: log if we're missing theta
@@ -19202,7 +19446,7 @@ class Graphiti {
                 console.log('Badge missing theta:', badge.id, 'theta:', badge.theta);
             }
             
-            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue);
+            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue, tValueParam);
             
             // Store close button bounds for click detection
             if (badgeInfo && badgeInfo.closeButton) {
@@ -19492,7 +19736,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null, tValue = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -19578,7 +19822,7 @@ class Graphiti {
             labelText = `∫ | Add 2nd marker`;
         } else if (badgeType) {
             // Badge with type-specific label
-            const coords = this.formatCoordinates(worldX, worldY, func, func2, thetaValue);
+            const coords = this.formatCoordinates(worldX, worldY, func, func2, thetaValue, tValue);
             switch (badgeType) {
                 case 'maximum':
                     labelText = `Local Maximum: ${coords}`;
@@ -19596,10 +19840,10 @@ class Graphiti {
             }
         } else if (isActive) {
             // Active tracing badge
-            labelText = this.formatCoordinates(worldX, worldY, func, null, thetaValue);
+            labelText = this.formatCoordinates(worldX, worldY, func, null, thetaValue, tValue);
         } else {
             // Regular badge (intersections, etc.)
-            labelText = this.formatCoordinates(worldX, worldY, func, null, thetaValue);
+            labelText = this.formatCoordinates(worldX, worldY, func, null, thetaValue, tValue);
         }
         
         // Add derivative information if tangent is present
@@ -19846,13 +20090,25 @@ class Graphiti {
     }
     
     
-    formatCoordinates(worldX, worldY, func = null, func2 = null, thetaValue = null) {
+    formatCoordinates(worldX, worldY, func = null, func2 = null, thetaValue = null, tValue = null) {
         // If specific function(s) are provided, check if THEY contain trig functions
         // For intersections, check if EITHER function has trig
         // In polar mode, always use pi fractions for theta (angles are inherently related to pi)
         // thetaValue: if provided (polar mode), use this theta instead of calculating from worldX/worldY
+        // tValue: if provided (parametric mode), display parameter t alongside coordinates
         // Otherwise fall back to global check (for grid labels, etc.)
         let shouldUsePiFractions, shouldUseCommonValues;
+        
+        // Check if this is a parametric function
+        const isParametric = func && this.detectFunctionType(func.expression) === 'parametric';
+        
+        if (isParametric && tValue !== null && tValue !== undefined) {
+            // For parametric functions, show (x, y) | t = value
+            const xStr = this.formatCoordinate(worldX);
+            const yStr = this.formatCoordinate(worldY);
+            const tStr = this.formatCoordinate(tValue);
+            return `(${xStr}, ${yStr}) | t = ${tStr}`;
+        }
         
         if (this.plotMode === 'polar') {
             // In polar mode, always show pi fractions for theta (if in radians)
