@@ -2898,21 +2898,15 @@ class Graphiti {
             // The t parameter is directly controlled and the t-range is already adjusted for angle mode.
             // Instead, when in degree mode, we'll convert t to radians during evaluation.
             
-            // NOTE: Parametric functions in degree mode require special handling.
-            // We need to apply degree mode conversion to the EXPRESSIONS, not to the t parameter.
-            // This is because t may appear in non-trig contexts (e.g., e^cos(t), t/12).
+            // NOTE: For parametric functions in degree mode, convert t to radians before evaluation.
+            // This ensures that non-trig uses of t (like t/12, e^t, etc.) maintain the same
+            // mathematical relationships as in radian mode. Unlike explicit functions where x is
+            // a coordinate that gets relabeled, t is a parameter that should maintain consistent
+            // numerical progressions regardless of the user's angle unit preference.
             
-            let finalXExpr = xExpr;
-            let finalYExpr = yExpr;
-            
-            if (this.angleMode === 'degrees') {
-                finalXExpr = this.convertTrigToDegreeMode(xExpr);
-                finalYExpr = this.convertTrigToDegreeMode(yExpr);
-            }
-            
-            // Compile expressions
-            const compiledX = this.getCompiledExpression(finalXExpr);
-            const compiledY = this.getCompiledExpression(finalYExpr);
+            // Compile expressions without degree mode conversion
+            const compiledX = this.getCompiledExpression(xExpr);
+            const compiledY = this.getCompiledExpression(yExpr);
             
             // Get t range from cartesian viewport
             const tMin = this.cartesianViewport.tMin;
@@ -2933,7 +2927,8 @@ class Graphiti {
             const points = [];
             for (let i = 0; i <= numPoints; i++) {
                 const tParam = tMin + i * tStep;
-                scope.t = tParam;
+                // Convert t to radians if in degree mode (similar to polar mode)
+                scope.t = this.angleMode === 'degrees' ? (tParam * Math.PI / 180) : tParam;
                 
                 try {
                     const x = compiledX.evaluate(scope);
