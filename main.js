@@ -12715,6 +12715,7 @@ class Graphiti {
         // Check if it's an implicit function or implicit inequality
         const funcType = this.detectFunctionType(func.expression);
         const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
+        const isParametric = funcType === 'parametric';
         
         if (isImplicit) {
             // For implicit functions, try to solve the equation at y=0 for accurate x-intercepts
@@ -12841,6 +12842,55 @@ class Graphiti {
                     });
                 }
             }
+        } else if (isParametric) {
+            // For parametric functions (x(t), y(t)), find where y(t) crosses zero
+            // Use the plotted points and look for sign changes in y values
+            for (let i = 0; i < points.length - 1; i++) {
+                if (allIntercepts.length >= maxInterceptsToSearch) break;
+                
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                
+                if (!p1 || !p2 || !isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) {
+                    continue;
+                }
+                
+                // Check for sign change in y (crossing x-axis)
+                if (p1.y * p2.y < 0) {
+                    // Linear interpolation to find more accurate x coordinate
+                    const t = -p1.y / (p2.y - p1.y);
+                    const xIntercept = p1.x + t * (p2.x - p1.x);
+                    
+                    const isDuplicate = allIntercepts.some(existing => 
+                        Math.abs(existing.x - xIntercept) < minDistance
+                    );
+                    
+                    if (!isDuplicate) {
+                        allIntercepts.push({
+                            x: xIntercept,
+                            y: 0,
+                            type: 'x-intercept',
+                            functionId: func.id,
+                            color: func.color
+                        });
+                    }
+                } else if (Math.abs(p1.y) < 0.01) {
+                    // Point is very close to x-axis
+                    const isDuplicate = allIntercepts.some(existing => 
+                        Math.abs(existing.x - p1.x) < minDistance
+                    );
+                    
+                    if (!isDuplicate) {
+                        allIntercepts.push({
+                            x: p1.x,
+                            y: 0,
+                            type: 'x-intercept',
+                            functionId: func.id,
+                            color: func.color
+                        });
+                    }
+                }
+            }
         } else {
             // For explicit functions (y = f(x)) and explicit inequalities (y > f(x)), find where y crosses zero
             for (let i = 0; i < points.length - 1; i++) {
@@ -12914,6 +12964,7 @@ class Graphiti {
         const points = func.displayPoints || func.points;
         const funcType = this.detectFunctionType(func.expression);
         const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
+        const isParametric = funcType === 'parametric';
         
         if (isImplicit) {
             // For implicit functions, try to solve the equation at x=0 for accurate y-intercepts
@@ -13041,6 +13092,55 @@ class Graphiti {
                         functionId: func.id,
                         color: func.color
                     });
+                }
+            }
+        } else if (isParametric) {
+            // For parametric functions (x(t), y(t)), find where x(t) crosses zero
+            // Use the plotted points and look for sign changes in x values
+            for (let i = 0; i < points.length - 1; i++) {
+                if (allIntercepts.length >= maxInterceptsToSearch) break;
+                
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                
+                if (!p1 || !p2 || !isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) {
+                    continue;
+                }
+                
+                // Check for sign change in x (crossing y-axis)
+                if (p1.x * p2.x < 0) {
+                    // Linear interpolation to find more accurate y coordinate
+                    const t = -p1.x / (p2.x - p1.x);
+                    const yIntercept = p1.y + t * (p2.y - p1.y);
+                    
+                    const isDuplicate = allIntercepts.some(existing => 
+                        Math.abs(existing.y - yIntercept) < minDistance
+                    );
+                    
+                    if (!isDuplicate) {
+                        allIntercepts.push({
+                            x: 0,
+                            y: yIntercept,
+                            type: 'y-intercept',
+                            functionId: func.id,
+                            color: func.color
+                        });
+                    }
+                } else if (Math.abs(p1.x) < 0.01) {
+                    // Point is very close to y-axis
+                    const isDuplicate = allIntercepts.some(existing => 
+                        Math.abs(existing.y - p1.y) < minDistance
+                    );
+                    
+                    if (!isDuplicate) {
+                        allIntercepts.push({
+                            x: 0,
+                            y: p1.y,
+                            type: 'y-intercept',
+                            functionId: func.id,
+                            color: func.color
+                        });
+                    }
                 }
             }
         } else {
