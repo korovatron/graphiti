@@ -18304,8 +18304,26 @@ class Graphiti {
             // Draw shaded region or highlighted arc
             if (pair.isParametric) {
                 // For parametric curves: highlight the arc segment instead of shading area
-                this.ctx.lineWidth = pair.neon ? 4 : 3;
-                this.drawParametricArcSegment(pair);
+                if (pair.neon) {
+                    this.ctx.lineWidth = 4;
+                    this.drawParametricArcSegment(pair);
+                } else {
+                    // Draw a double-line effect: darker outline + colored center
+                    // First draw a thicker dark outline
+                    this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+                    this.ctx.lineWidth = 7;
+                    this.ctx.lineCap = 'round';
+                    this.ctx.lineJoin = 'round';
+                    this.drawParametricArcSegment(pair);
+                    
+                    // Then draw the colored arc on top
+                    this.ctx.strokeStyle = pair.color;
+                    this.ctx.lineWidth = 4;
+                    this.ctx.shadowBlur = 3;
+                    this.ctx.shadowColor = pair.color;
+                    this.drawParametricArcSegment(pair);
+                    this.ctx.shadowBlur = 0; // Reset shadow
+                }
             } else {
                 // For other functions: draw shaded area
                 this.ctx.beginPath();
@@ -19005,33 +19023,64 @@ class Graphiti {
         
         if (points.length < 2) return;
         
+        // Parse and compile the parametric equations to evaluate exact endpoints
+        const parsed = this.parseParametricEquation(func.expression);
+        if (!parsed) return;
+        
+        let xExpr = parsed.xExpr.toLowerCase();
+        let yExpr = parsed.yExpr.toLowerCase();
+        xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2').replace(/(\))([a-z])/g, '$1*$2');
+        yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2').replace(/(\))([a-z])/g, '$1*$2');
+        
+        const compiledX = this.getCompiledExpression(xExpr);
+        const compiledY = this.getCompiledExpression(yExpr);
+        
         // Get t range
         const tMin = this.cartesianViewport.tMin;
         const tMax = this.cartesianViewport.tMax;
         const tRange = tMax - tMin;
         const tStep = tRange / (points.length - 1);
         
-        // Find points within the arc segment
-        this.ctx.beginPath();
-        let firstPoint = true;
+        // Helper to evaluate parametric function at specific t
+        const evaluateAt = (t) => {
+            const scope = { t: t };
+            try {
+                const x = compiledX.evaluate(scope);
+                const y = compiledY.evaluate(scope);
+                if (isFinite(x) && isFinite(y)) {
+                    return this.worldToScreen(x, y);
+                }
+            } catch (e) {}
+            return null;
+        };
         
+        // Start path
+        this.ctx.beginPath();
+        
+        // Draw point at exact start t-value
+        const startPoint = evaluateAt(pair.start);
+        if (startPoint) {
+            this.ctx.moveTo(startPoint.x, startPoint.y);
+        }
+        
+        // Draw intermediate points within the range
         for (let i = 0; i < points.length; i++) {
             const tCurrent = tMin + i * tStep;
             
-            // Check if this point is within the arc range
-            if (tCurrent < pair.start || tCurrent > pair.end) continue;
+            // Check if this point is within the arc range (use small epsilon for floating point)
+            if (tCurrent < pair.start - 1e-10 || tCurrent > pair.end + 1e-10) continue;
             
             const p = points[i];
             if (!p.connected || !isFinite(p.x) || !isFinite(p.y)) continue;
             
             const screenPos = this.worldToScreen(p.x, p.y);
-            
-            if (firstPoint) {
-                this.ctx.moveTo(screenPos.x, screenPos.y);
-                firstPoint = false;
-            } else {
-                this.ctx.lineTo(screenPos.x, screenPos.y);
-            }
+            this.ctx.lineTo(screenPos.x, screenPos.y);
+        }
+        
+        // Draw point at exact end t-value
+        const endPoint = evaluateAt(pair.end);
+        if (endPoint) {
+            this.ctx.lineTo(endPoint.x, endPoint.y);
         }
         
         this.ctx.stroke();
