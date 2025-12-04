@@ -702,9 +702,13 @@ class Graphiti {
                                     { latex: '\\cdot', label: '×' }
                                 ],
                                 [
-                                    // Constants
-                                    { latex: '\\pi', label: 'π', variants: ['e'] },
-                                    { latex: 'e', label: 'e' },
+                                    // Constants - t for parametric, π with e shift variant
+                                    { latex: 't', label: 't', class: 'variable-key' },
+                                    { 
+                                        latex: '\\pi', 
+                                        label: 'π',
+                                        shift: { latex: 'e', label: 'e' }
+                                    },
                                     { latex: '(', label: '(' },
                                     { latex: ')', label: ')' },
                                     '[separator]',
