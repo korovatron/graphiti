@@ -14517,12 +14517,18 @@ class Graphiti {
                 return null;
             }
             
+            // Calculate second derivatives d²x/dt² and d²y/dt² for d²y/dx²
+            // d²x/dt² ≈ (x(t+h) - 2x(t) + x(t-h)) / h²
+            // d²y/dt² ≈ (y(t+h) - 2y(t) + y(t-h)) / h²
+            const d2xdt2 = (xPlus - 2 * x0 + xMinus) / (hForEval * hForEval);
+            const d2ydt2 = (yPlus - 2 * y0 + yMinus) / (hForEval * hForEval);
+            
             // Check for division by zero (vertical tangent)
             if (Math.abs(dxdt) < 1e-10) {
                 return {
                     slope: dxdt >= 0 ? 1e10 : -1e10,
                     expression: "dy/dx",
-                    secondDerivative: 0,
+                    secondDerivative: null,
                     method: 'parametric'
                 };
             }
@@ -14530,11 +14536,23 @@ class Graphiti {
             // Calculate dy/dx = (dy/dt) / (dx/dt)
             const slope = dydt / dxdt;
             
+            // Calculate d²y/dx² = (d²y/dt² · dx/dt - dy/dt · d²x/dt²) / (dx/dt)³
+            let secondDerivative = null;
+            if (isFinite(d2xdt2) && isFinite(d2ydt2) && Math.abs(dxdt) > 1e-10) {
+                const numerator = d2ydt2 * dxdt - dydt * d2xdt2;
+                const denominator = Math.pow(dxdt, 3);
+                secondDerivative = numerator / denominator;
+                
+                if (!isFinite(secondDerivative)) {
+                    secondDerivative = null;
+                }
+            }
+            
             if (isFinite(slope)) {
                 return {
                     slope: slope,
                     expression: "dy/dx",
-                    secondDerivative: 0, // Could calculate d²y/dx² if needed
+                    secondDerivative: secondDerivative,
                     method: 'parametric'
                 };
             }
