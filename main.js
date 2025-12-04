@@ -20102,8 +20102,8 @@ class Graphiti {
             const isParametric = func && this.detectFunctionType(func.expression) === 'parametric';
             
             if (isParametric && tValue !== null && tValue !== undefined) {
-                // For parametric curves, show t value
-                const tValueStr = this.formatCoordinate(tValue);
+                // For parametric curves, show t value with 3 significant figures
+                const tValueStr = parseFloat(tValue.toPrecision(3)).toString();
                 const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
                 labelText = `∫ | t=${tValueStr} | ${limitLabel}`;
             } else if (this.plotMode === 'polar') {
@@ -20427,10 +20427,10 @@ class Graphiti {
         const isParametric = func && this.detectFunctionType(func.expression) === 'parametric';
         
         if (isParametric && tValue !== null && tValue !== undefined) {
-            // For parametric functions, show (x, y) | t = value
+            // For parametric functions, show (x, y) | t = value with 3 sig figs for t
             const xStr = this.formatCoordinate(worldX);
             const yStr = this.formatCoordinate(worldY);
-            const tStr = this.formatCoordinate(tValue);
+            const tStr = parseFloat(tValue.toPrecision(3)).toString();
             return `(${xStr}, ${yStr}) | t = ${tStr}`;
         }
         
