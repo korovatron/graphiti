@@ -8440,6 +8440,15 @@ class Graphiti {
                                 if (tracingFunction.mode === 'polar' && nearestSignificantPoint.theta !== undefined) {
                                     this.input.tracing.theta = nearestSignificantPoint.theta;
                                 }
+                                
+                                // For parametric functions, recalculate tValue at the snapped position
+                                if (this.detectFunctionType(tracingFunction.expression) === 'parametric') {
+                                    const screenPos = this.worldToScreen(nearestSignificantPoint.worldX, nearestSignificantPoint.worldY);
+                                    const result = this.findClosestParametricPoint(tracingFunction, screenPos.x, screenPos.y, 20);
+                                    if (result && result.tValue !== undefined) {
+                                        this.input.tracing.tValue = result.tValue;
+                                    }
+                                }
                             }
                             }
                         }
@@ -10501,6 +10510,9 @@ class Graphiti {
                 if (match) {
                     badge.worldX = match.x;
                     badge.worldY = match.y;
+                    
+                    // Update tValue for parametric functions
+                    this.updateBadgeTValueIfParametric(badge);
                 }
             } else if (badge.significantPointType === 'intercept') {
                 // Find the matching intercept
@@ -10514,6 +10526,9 @@ class Graphiti {
                 if (match) {
                     badge.worldX = match.x;
                     badge.worldY = match.y;
+                    
+                    // Update tValue for parametric functions
+                    this.updateBadgeTValueIfParametric(badge);
                 }
             } else if (badge.significantPointType === 'intersection') {
                 // Find the matching intersection
@@ -10526,9 +10541,26 @@ class Graphiti {
                 if (match) {
                     badge.worldX = match.x;
                     badge.worldY = match.y;
+                    
+                    // Update tValue for parametric functions
+                    this.updateBadgeTValueIfParametric(badge);
                 }
             }
         });
+    }
+    
+    updateBadgeTValueIfParametric(badge) {
+        // For parametric functions, recalculate tValue when worldX/worldY are updated
+        const func = this.getCurrentFunctions().find(f => f.id === badge.functionId);
+        if (!func || this.detectFunctionType(func.expression) !== 'parametric') return;
+        
+        // Find the t-value that corresponds to this (x, y) coordinate
+        const screenPos = this.worldToScreen(badge.worldX, badge.worldY);
+        const result = this.findClosestParametricPoint(func, screenPos.x, screenPos.y, 20);
+        
+        if (result && result.tValue !== undefined) {
+            badge.tValue = result.tValue;
+        }
     }
     
     // Cancel all ongoing implicit function calculations
