@@ -12114,7 +12114,7 @@ class Graphiti {
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
         const hasImplicitFunctions = allFunctions.some(f => {
             const funcType = this.detectFunctionType(f.expression);
-            return funcType === 'implicit' || funcType === 'implicit-inequality';
+            return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
         });
         
         // Set pending flag BEFORE calculating explicit intersections
@@ -12196,7 +12196,7 @@ class Graphiti {
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled);
         const hasImplicitFunctions = allFunctions.some(f => {
             const funcType = this.detectFunctionType(f.expression);
-            return funcType === 'implicit' || funcType === 'implicit-inequality';
+            return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
         });
         
         if (!hasImplicitFunctions) {
@@ -12226,7 +12226,7 @@ class Graphiti {
         
         const implicitFunctions = allFunctions.filter(f => {
             const funcType = this.detectFunctionType(f.expression);
-            return funcType === 'implicit' || funcType === 'implicit-inequality';
+            return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
         });
         
         // Need at least one implicit function and another function
@@ -12250,7 +12250,7 @@ class Graphiti {
                 await this.plotImplicitFunction(highResFunc, true, false); // true = high resolution, false = not startup
                 highResFunctions.push(highResFunc);
             } else {
-                // Use existing points for explicit functions (cached if viewport changing)
+                // Use existing points for explicit and parametric functions (cached if viewport changing)
                 const funcPoints = this.isViewportChanging ? (func.cachedPoints || func.points || []) : (func.points || []);
                 highResFunctions.push({
                     ...func,
@@ -12269,7 +12269,7 @@ class Graphiti {
                     points: func.points,
                     color: func.color,
                     enabled: func.enabled,
-                    isImplicit: funcType === 'implicit' || funcType === 'implicit-inequality'
+                    isImplicit: funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric'
                 };
             }),
             viewport: {
@@ -17067,15 +17067,15 @@ class Graphiti {
             return { x: intersection.x, y: intersection.y };
         }
         
-        // Check if either function is implicit (including implicit inequalities)
+        // Check if either function is implicit (including implicit inequalities) or parametric
         const func1 = intersection.func1;
         const func2 = intersection.func2;
         const func1Type = func1.expression ? this.detectFunctionType(func1.expression) : 'unknown';
         const func2Type = func2.expression ? this.detectFunctionType(func2.expression) : 'unknown';
-        const func1IsImplicit = !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality';
-        const func2IsImplicit = !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality';
+        const func1IsImplicit = !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality' || func1Type === 'parametric';
+        const func2IsImplicit = !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality' || func2Type === 'parametric';
         
-        // If either function is implicit, don't refine - the line segment intersection is already accurate
+        // If either function is implicit or parametric, don't refine - the line segment intersection is already accurate
         if (func1IsImplicit || func2IsImplicit) {
             return { x: intersection.x, y: intersection.y };
         }
