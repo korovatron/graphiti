@@ -6082,6 +6082,7 @@ class Graphiti {
                 worldX: this.input.tracing.worldX,
                 worldY: this.input.tracing.worldY,
                 theta: this.input.tracing.theta,
+                tValue: this.input.tracing.tValue,
                 hasIntegral: true,
                 neonIntegral: this.input.badgeInteraction.originalBadgeState.neonIntegral
             };
@@ -6099,9 +6100,15 @@ class Graphiti {
         // Create pairs for each function (max 2 badges per function)
         for (const [functionId, badges] of integralBadgesByFunction) {
             if (badges.length >= 2) {
-                // Sort badges by x-coordinate (or theta for polar)
+                // Get the function to check type for sorting
+                const sortFunc = this.findFunctionById(functionId);
+                const sortFunctionType = sortFunc ? this.detectFunctionType(sortFunc.expression) : null;
+                
+                // Sort badges by appropriate parameter
                 badges.sort((a, b) => {
-                    if (this.plotMode === 'polar' && a.theta !== null && b.theta !== null) {
+                    if (sortFunctionType === 'parametric' && a.tValue !== null && b.tValue !== null) {
+                        return a.tValue - b.tValue;
+                    } else if (this.plotMode === 'polar' && a.theta !== null && b.theta !== null) {
                         return a.theta - b.theta;
                     }
                     return a.worldX - b.worldX;
@@ -6122,9 +6129,34 @@ class Graphiti {
                     p.badge1Id === badge1.id && p.badge2Id === badge2.id
                 );
                 
-                // Calculate the integral
+                // Check if this is a parametric function
+                const functionType = this.detectFunctionType(func.expression);
+                const isParametric = (functionType === 'parametric');
+                
+                // Calculate the integral or arc length
                 let area, start, end;
-                if (this.plotMode === 'polar') {
+                if (isParametric) {
+                    // For parametric functions, calculate arc length instead of area
+                    start = badge1.tValue;
+                    end = badge2.tValue;
+                    
+                    // Use fast method during dragging for performance
+                    const isDragging = this.input.tracing.active && this.input.badgeInteraction.targetBadge;
+                    if (isDragging) {
+                        area = this.calculateParametricArcLengthFromPoints(func, start, end);
+                    } else {
+                        // Check if we have a cached high-precision value with matching bounds
+                        if (oldPair && oldPair.cachedArea !== undefined && 
+                            Math.abs(oldPair.start - start) < 0.0001 && 
+                            Math.abs(oldPair.end - end) < 0.0001) {
+                            // Use cached high-precision value
+                            area = oldPair.cachedArea;
+                        } else {
+                            // Calculate new high-precision value
+                            area = this.calculateParametricArcLength(func, start, end);
+                        }
+                    }
+                } else if (this.plotMode === 'polar') {
                     start = badge1.theta;
                     end = badge2.theta;
                     area = this.calculatePolarIntegral(func, start, end);
@@ -6161,13 +6193,14 @@ class Graphiti {
                     area: area,
                     color: func.color,
                     neon: badge1.neonIntegral || badge2.neonIntegral,
+                    isParametric: isParametric, // Flag for parametric arc length
                     showTrapeziumRule: oldPair ? oldPair.showTrapeziumRule : false, // Preserve or default to false (controls drawing on graph)
                     trapeziumStripCount: oldPair ? oldPair.trapeziumStripCount : 4, // Preserve or default to 4
                     numericalMethod: oldPair ? oldPair.numericalMethod : 'trapezium' // Preserve or default to trapezium
                 };
                 
-                // Store high-precision area in cache (only for calculations using the high-precision method)
-                if (this.plotMode === 'cartesian') {
+                // Store high-precision area/arc length in cache
+                if (isParametric || this.plotMode === 'cartesian') {
                     const isDragging = this.input.tracing.active && this.input.badgeInteraction.targetBadge;
                     if (!isDragging) {
                         // We just calculated with high precision, cache it
@@ -6437,6 +6470,116 @@ class Graphiti {
         }
         
         return area;
+    }
+    
+    calculateParametricArcLength(func, t1, t2) {
+        // Arc length for parametric function: ∫√[(dx/dt)² + (dy/dt)²] dt from t1 to t2
+        // Use high-accuracy numerical integration
+        
+        // Ensure t1 < t2
+        if (t1 > t2) [t1, t2] = [t2, t1];
+        
+        // Parse parametric equation
+        const parsed = this.parseParametricEquation(func.expression);
+        if (!parsed) return 0;
+        
+        let xExpr = parsed.xExpr.toLowerCase();
+        let yExpr = parsed.yExpr.toLowerCase();
+        
+        // Add implicit multiplication
+        xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
+        xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
+        yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
+        yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
+        
+        const compiledX = this.getCompiledExpression(xExpr);
+        const compiledY = this.getCompiledExpression(yExpr);
+        
+        // Use high accuracy: n=1000 subintervals
+        const n = 1000;
+        const h = (t2 - t1) / n;
+        let arcLength = 0;
+        
+        const scope = this.getEvaluationScope({
+            t: 0,
+            pi: Math.PI,
+            e: Math.E
+        });
+        
+        for (let i = 0; i < n; i++) {
+            const t = t1 + i * h;
+            const tNext = t1 + (i + 1) * h;
+            const tMid = (t + tNext) / 2;
+            
+            // Convert t to radians if in degree mode
+            const tMidForEval = this.angleMode === 'degrees' ? (tMid * Math.PI / 180) : tMid;
+            const hForEval = this.angleMode === 'degrees' ? (h * Math.PI / 180) : h;
+            
+            // Calculate dx/dt and dy/dt at midpoint using central difference
+            scope.t = tMidForEval - hForEval / 2;
+            const xMinus = compiledX.evaluate(scope);
+            const yMinus = compiledY.evaluate(scope);
+            
+            scope.t = tMidForEval + hForEval / 2;
+            const xPlus = compiledX.evaluate(scope);
+            const yPlus = compiledY.evaluate(scope);
+            
+            if (!isFinite(xMinus) || !isFinite(yMinus) || !isFinite(xPlus) || !isFinite(yPlus)) {
+                continue;
+            }
+            
+            const dxdt = (xPlus - xMinus) / hForEval;
+            const dydt = (yPlus - yMinus) / hForEval;
+            
+            // Arc length element: √[(dx/dt)² + (dy/dt)²] · Δt
+            const speedSquared = dxdt * dxdt + dydt * dydt;
+            arcLength += Math.sqrt(speedSquared) * h;
+        }
+        
+        return arcLength;
+    }
+    
+    calculateParametricArcLengthFromPoints(func, t1, t2) {
+        // Fast arc length calculation from pre-plotted points (for dragging)
+        // Approximate by summing straight-line distances between consecutive points
+        
+        const points = func.points;
+        if (points.length === 0) return 0;
+        
+        // Ensure t1 < t2
+        if (t1 > t2) [t1, t2] = [t2, t1];
+        
+        // Get t range
+        const tMin = this.cartesianViewport.tMin;
+        const tMax = this.cartesianViewport.tMax;
+        const tRange = tMax - tMin;
+        
+        // Calculate approximate t value for each point based on index
+        const tStep = tRange / (points.length - 1);
+        
+        let arcLength = 0;
+        for (let i = 0; i < points.length - 1; i++) {
+            const tCurrent = tMin + i * tStep;
+            const tNext = tMin + (i + 1) * tStep;
+            
+            // Check if this segment is within integration range
+            if (tNext < t1 || tCurrent > t2) continue;
+            
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            
+            if (!p1.connected || !isFinite(p1.x) || !isFinite(p1.y) || 
+                !isFinite(p2.x) || !isFinite(p2.y)) {
+                continue;
+            }
+            
+            // Add straight-line distance between points
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            arcLength += Math.sqrt(dx * dx + dy * dy);
+        }
+        
+        return arcLength;
     }
     
     calculateTrapeziumRule(func, x1, x2, n) {
@@ -18158,21 +18301,28 @@ class Graphiti {
                 this.ctx.lineWidth = 1;
             }
             
-            // Draw shaded region
-            this.ctx.beginPath();
-            
-            if (this.plotMode === 'polar') {
-                // Polar mode: draw sector
-                this.drawPolarIntegrationRegion(pair);
+            // Draw shaded region or highlighted arc
+            if (pair.isParametric) {
+                // For parametric curves: highlight the arc segment instead of shading area
+                this.ctx.lineWidth = pair.neon ? 4 : 3;
+                this.drawParametricArcSegment(pair);
             } else {
-                // Cartesian mode: draw area under curve
-                this.drawCartesianIntegrationRegion(pair);
+                // For other functions: draw shaded area
+                this.ctx.beginPath();
+                
+                if (this.plotMode === 'polar') {
+                    // Polar mode: draw sector
+                    this.drawPolarIntegrationRegion(pair);
+                } else {
+                    // Cartesian mode: draw area under curve
+                    this.drawCartesianIntegrationRegion(pair);
+                }
+                
+                this.ctx.fill();
             }
             
-            this.ctx.fill();
-            
-            // Draw boundary lines
-            if (this.plotMode === 'cartesian') {
+            // Draw boundary lines (not for parametric curves)
+            if (this.plotMode === 'cartesian' && !pair.isParametric) {
                 // Vertical lines at integration limits
                 const start = this.worldToScreen(pair.start, 0);
                 const end = this.worldToScreen(pair.end, 0);
@@ -18842,6 +18992,45 @@ class Graphiti {
         return before.y + t * (after.y - before.y);
     }
     
+    drawParametricArcSegment(pair) {
+        // Highlight a segment of a parametric curve between two t values
+        const func = pair.func;
+        const points = func.points;
+        
+        if (points.length < 2) return;
+        
+        // Get t range
+        const tMin = this.cartesianViewport.tMin;
+        const tMax = this.cartesianViewport.tMax;
+        const tRange = tMax - tMin;
+        const tStep = tRange / (points.length - 1);
+        
+        // Find points within the arc segment
+        this.ctx.beginPath();
+        let firstPoint = true;
+        
+        for (let i = 0; i < points.length; i++) {
+            const tCurrent = tMin + i * tStep;
+            
+            // Check if this point is within the arc range
+            if (tCurrent < pair.start || tCurrent > pair.end) continue;
+            
+            const p = points[i];
+            if (!p.connected || !isFinite(p.x) || !isFinite(p.y)) continue;
+            
+            const screenPos = this.worldToScreen(p.x, p.y);
+            
+            if (firstPoint) {
+                this.ctx.moveTo(screenPos.x, screenPos.y);
+                firstPoint = false;
+            } else {
+                this.ctx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        this.ctx.stroke();
+    }
+    
     drawCartesianIntegrationRegion(pair) {
         const func = pair.func;
         const points = func.points.filter(p => !isNaN(p.x) && !isNaN(p.y) && p.x >= pair.start && p.x <= pair.end);
@@ -19088,8 +19277,15 @@ class Graphiti {
         this.ctx.fillStyle = '#FFFFFF';
         
         this.ctx.textAlign = 'left';
-        // In polar mode, show "Area:" since we don't calculate numerical integrals
-        const labelText = this.plotMode === 'polar' ? 'Area:' : 'Actual Integral:';
+        // Display appropriate label based on function type
+        let labelText;
+        if (pair.isParametric) {
+            labelText = 'Arc Length:';
+        } else if (this.plotMode === 'polar') {
+            labelText = 'Area:';
+        } else {
+            labelText = 'Actual Integral:';
+        }
         this.ctx.fillText(labelText, panelX + 18, panelY + 22); // +8 for strip width + 10 padding
         
         this.ctx.textAlign = 'right';
@@ -19902,7 +20098,15 @@ class Graphiti {
             labelText = customText;
         } else if (hasIntegral && integralLimitType) {
             // Integral badge with a pair - show integral symbol, coordinate, and limit type
-            if (this.plotMode === 'polar') {
+            // Check if this is a parametric function
+            const isParametric = func && this.detectFunctionType(func.expression) === 'parametric';
+            
+            if (isParametric && tValue !== null && tValue !== undefined) {
+                // For parametric curves, show t value
+                const tValueStr = this.formatCoordinate(tValue);
+                const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
+                labelText = `∫ | t=${tValueStr} | ${limitLabel}`;
+            } else if (this.plotMode === 'polar') {
                 // For polar mode, show theta value
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
                 let thetaValueStr;
