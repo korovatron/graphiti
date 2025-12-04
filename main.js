@@ -78,7 +78,10 @@ class Graphiti {
             minX: -10,
             maxX: 10,
             minY: -10,
-            maxY: 10
+            maxY: 10,
+            // Parametric function parameter range
+            tMin: 0,
+            tMax: 2 * Math.PI
         };
 
         this.polarViewport = {
@@ -974,6 +977,8 @@ class Graphiti {
         const xMax = document.getElementById('x-max');
         const yMin = document.getElementById('y-min');
         const yMax = document.getElementById('y-max');
+        const tMin = document.getElementById('t-min');
+        const tMax = document.getElementById('t-max');
         
         if (xMin && xMax && yMin && yMax) {
             // Get computed CSS variable values to match exactly
@@ -985,6 +990,11 @@ class Graphiti {
             
             // Force style properties directly on the element
             const fields = [xMin, xMax, yMin, yMax];
+            // Add t fields if they exist
+            if (tMin && tMax) {
+                fields.push(tMin, tMax);
+            }
+            
             fields.forEach(field => {
                 // Set via style attribute for direct properties
                 field.style.setProperty('background', inputBg, 'important');
@@ -1062,10 +1072,18 @@ class Graphiti {
                         this.viewport.yMinLatex = field.getValue();
                     } else if (field.id === 'y-max') {
                         this.viewport.yMaxLatex = field.getValue();
+                    } else if (field.id === 't-min') {
+                        this.cartesianViewport.tMinLatex = field.getValue();
+                    } else if (field.id === 't-max') {
+                        this.cartesianViewport.tMaxLatex = field.getValue();
                     }
                     
                     // Validate and update viewport
-                    this.validateAndSetRange();
+                    if (field.id === 't-min' || field.id === 't-max') {
+                        this.validateAndSetParametricRange();
+                    } else {
+                        this.validateAndSetRange();
+                    }
                 });
             });
         }
@@ -1278,6 +1296,10 @@ class Graphiti {
             
             // Plot the function and wait for it to complete
             await this.plotFunction(emptyFunc);
+            
+            // Update parameter sliders and parametric range visibility
+            this.updateParameterSliders();
+            this.updateParametricRangeVisibility();
             
             // Skip badge calculations during polar animation or pause
             if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
@@ -1591,6 +1613,7 @@ class Graphiti {
                 
                 // Update parameter sliders when function expression changes
                 this.updateParameterSliders();
+                this.updateParametricRangeVisibility();
                 
                 // Stop animation when editing a function in polar mode
                 if (this.plotMode === 'polar' && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused)) {
@@ -1859,7 +1882,16 @@ class Graphiti {
                     // For cartesian mode, check function type first
                     const functionType = this.detectFunctionType(func.expression);
                     
-                    if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                    if (functionType === 'parametric') {
+                        // For parametric functions, validate both x(t) and y(t) expressions
+                        const parametric = this.parseParametricEquation(func.expression);
+                        if (!parametric) {
+                            throw new Error('Invalid parametric equation format - must be (x(t), y(t))');
+                        }
+                        // Test evaluation of both expressions at t=0
+                        math.evaluate(parametric.xExpr, this.getEvaluationScope({ t: 0 }));
+                        math.evaluate(parametric.yExpr, this.getEvaluationScope({ t: 0 }));
+                    } else if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                         // Test implicit function/inequality with x,y variables
                         let equation;
                         if (functionType === 'implicit-inequality') {
@@ -2020,6 +2052,7 @@ class Graphiti {
         
         // Update parameter sliders when function is removed
         this.updateParameterSliders();
+        this.updateParametricRangeVisibility();
         
         // Redraw to update the display immediately
         this.draw();
@@ -2357,6 +2390,15 @@ class Graphiti {
         
         // Detect function type for cartesian mode
         const functionType = this.detectFunctionType(func.expression);
+        
+        if (functionType === 'parametric') {
+            this.plotParametricFunction(func);
+            if (this.performance.enabled) {
+                const elapsed = performance.now() - startTime;
+                this.performance.plotTimes.set(func.id, elapsed);
+            }
+            return;
+        }
         
         if (functionType === 'implicit' || functionType === 'implicit-inequality') {
             await this.plotImplicitFunction(func, false, this.isStartup);
@@ -2834,6 +2876,88 @@ class Graphiti {
         }
     }
 
+    plotParametricFunction(func) {
+        try {
+            // Parse the parametric equation (x(t), y(t))
+            const parsed = this.parseParametricEquation(func.expression);
+            if (!parsed) {
+                func.points = [];
+                return;
+            }
+            
+            let xExpr = parsed.xExpr.toLowerCase();
+            let yExpr = parsed.yExpr.toLowerCase();
+            
+            // Add implicit multiplication for both expressions
+            xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
+            yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
+            
+            // NOTE: Don't apply degree mode conversion for parametric functions!
+            // The t parameter is directly controlled and the t-range is already adjusted for angle mode.
+            // Instead, when in degree mode, we'll convert t to radians during evaluation.
+            
+            // NOTE: Parametric functions in degree mode require special handling.
+            // We need to apply degree mode conversion to the EXPRESSIONS, not to the t parameter.
+            // This is because t may appear in non-trig contexts (e.g., e^cos(t), t/12).
+            
+            let finalXExpr = xExpr;
+            let finalYExpr = yExpr;
+            
+            if (this.angleMode === 'degrees') {
+                finalXExpr = this.convertTrigToDegreeMode(xExpr);
+                finalYExpr = this.convertTrigToDegreeMode(yExpr);
+            }
+            
+            // Compile expressions
+            const compiledX = this.getCompiledExpression(finalXExpr);
+            const compiledY = this.getCompiledExpression(finalYExpr);
+            
+            // Get t range from cartesian viewport
+            const tMin = this.cartesianViewport.tMin;
+            const tMax = this.cartesianViewport.tMax;
+            const tRange = tMax - tMin;
+            
+            // Use adaptive sampling based on range
+            const numPoints = Math.min(2000, Math.max(200, Math.ceil(tRange * 50)));
+            const tStep = tRange / numPoints;
+            
+            // Create scope once and reuse
+            const scope = this.getEvaluationScope({
+                t: 0,
+                pi: Math.PI,
+                e: Math.E
+            });
+            
+            const points = [];
+            for (let i = 0; i <= numPoints; i++) {
+                const tParam = tMin + i * tStep;
+                scope.t = tParam;
+                
+                try {
+                    const x = compiledX.evaluate(scope);
+                    const y = compiledY.evaluate(scope);
+                    
+                    if (isFinite(x) && isFinite(y)) {
+                        points.push({ x, y, connected: true });
+                    } else {
+                        // Discontinuity
+                        points.push({ x: NaN, y: NaN, connected: false });
+                    }
+                } catch (e) {
+                    // Evaluation error at this t value
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+            }
+            
+            func.points = points;
+        } catch (error) {
+            console.error('Error plotting parametric function:', error);
+            func.points = [];
+        }
+    }
+
     // ================================
     // POLAR ANIMATION METHODS
     // ================================
@@ -3195,6 +3319,35 @@ class Graphiti {
         // Convert from LaTeX first since we now store LaTeX format
         const clean = this.convertFromLatex(expression).trim();
         
+        // Check for parametric format: (x_expr, y_expr) where x and y are functions of t
+        // Use the same parsing logic as parseParametricEquation to handle nested parentheses
+        if (clean.startsWith('(') && clean.endsWith(')')) {
+            const inner = clean.slice(1, -1);
+            let depth = 0;
+            let commaIndex = -1;
+            
+            for (let i = 0; i < inner.length; i++) {
+                const char = inner[i];
+                if (char === '(') {
+                    depth++;
+                } else if (char === ')') {
+                    depth--;
+                } else if (char === ',' && depth === 0) {
+                    commaIndex = i;
+                    break;
+                }
+            }
+            
+            if (commaIndex !== -1) {
+                const xExpr = inner.slice(0, commaIndex).trim();
+                const yExpr = inner.slice(commaIndex + 1).trim();
+                // Check if 't' appears in either expression (not as part of other words)
+                if (xExpr && yExpr && (/\bt\b/.test(xExpr) || /\bt\b/.test(yExpr))) {
+                    return 'parametric';
+                }
+            }
+        }
+        
         // Check for inequality operators first (≥, ≤, >, <)
         const hasInequality = /[><≥≤]|\\geq|\\leq|\\ge|\\le/.test(clean);
         if (hasInequality) {
@@ -3262,6 +3415,53 @@ class Graphiti {
         }
         
         return 'explicit'; // Default fallback (could be parametric or other)
+    }
+
+    parseParametricEquation(expression) {
+        // Parse parametric format: (x_expr, y_expr)
+        // Returns: { xExpr: string, yExpr: string } or null if invalid
+        const clean = this.convertFromLatex(expression).trim();
+        
+        // Check if it starts and ends with parentheses
+        if (!clean.startsWith('(') || !clean.endsWith(')')) {
+            return null;
+        }
+        
+        // Remove outer parentheses
+        const inner = clean.slice(1, -1);
+        
+        // Find the comma that separates x and y expressions
+        // Need to handle nested parentheses correctly
+        let depth = 0;
+        let commaIndex = -1;
+        
+        for (let i = 0; i < inner.length; i++) {
+            const char = inner[i];
+            if (char === '(') {
+                depth++;
+            } else if (char === ')') {
+                depth--;
+            } else if (char === ',' && depth === 0) {
+                commaIndex = i;
+                break;
+            }
+        }
+        
+        if (commaIndex === -1) {
+            return null; // No comma found at depth 0
+        }
+        
+        const xExpr = inner.slice(0, commaIndex).trim();
+        const yExpr = inner.slice(commaIndex + 1).trim();
+        
+        if (!xExpr || !yExpr) {
+            return null; // Empty expressions
+        }
+        
+        return {
+            xExpr: xExpr,
+            yExpr: yExpr
+        };
     }
 
     // ================================
@@ -9466,6 +9666,51 @@ class Graphiti {
         this.validateAndSetRange();
     }
     
+    validateAndSetParametricRange() {
+        const tMinInput = document.getElementById('t-min');
+        const tMaxInput = document.getElementById('t-max');
+        
+        if (!tMinInput || !tMaxInput) return;
+        
+        // Parse values
+        const tMin = this.getRangeValue(tMinInput);
+        const tMax = this.getRangeValue(tMaxInput);
+        
+        // Validate inputs
+        let allValid = true;
+        
+        // Check for NaN values
+        if (isNaN(tMin)) {
+            this.setInputError(tMinInput, true);
+            allValid = false;
+        } else {
+            this.setInputError(tMinInput, false);
+        }
+        
+        if (isNaN(tMax)) {
+            this.setInputError(tMaxInput, true);
+            allValid = false;
+        } else {
+            this.setInputError(tMaxInput, false);
+        }
+        
+        // Check logical constraint if both numbers are valid
+        if (allValid && tMin >= tMax) {
+            this.setInputError(tMinInput, true);
+            this.setInputError(tMaxInput, true);
+            allValid = false;
+        }
+        
+        // If all valid, apply the range
+        if (allValid) {
+            this.cartesianViewport.tMin = tMin;
+            this.cartesianViewport.tMax = tMax;
+            
+            // Re-plot parametric functions with new range
+            this.replotAllFunctions();
+        }
+    }
+    
     updateRangeInputs(skipSave = false) {
         const xMinInput = document.getElementById('x-min');
         const xMaxInput = document.getElementById('x-max');
@@ -9515,6 +9760,23 @@ class Graphiti {
             this.setRangeValue(yMaxInput, yMaxValue);
             this.viewport.yMaxLatex = yMaxValue;
             this.setInputError(yMaxInput, false);
+        }
+        
+        // Update parametric t range inputs if they exist
+        const tMinInput = document.getElementById('t-min');
+        const tMaxInput = document.getElementById('t-max');
+        
+        if (tMinInput && this.cartesianViewport.tMin !== undefined) {
+            const tMinValue = toSymbolicOrNumeric(this.cartesianViewport.tMin);
+            this.setRangeValue(tMinInput, tMinValue);
+            this.cartesianViewport.tMinLatex = tMinValue;
+            this.setInputError(tMinInput, false);
+        }
+        if (tMaxInput && this.cartesianViewport.tMax !== undefined) {
+            const tMaxValue = toSymbolicOrNumeric(this.cartesianViewport.tMax);
+            this.setRangeValue(tMaxInput, tMaxValue);
+            this.cartesianViewport.tMaxLatex = tMaxValue;
+            this.setInputError(tMaxInput, false);
         }
         
         // Save the updated bounds to localStorage (unless we're loading initial state)
@@ -9759,6 +10021,7 @@ class Graphiti {
             
             // Update parameter sliders after loading functions
             this.updateParameterSliders();
+            this.updateParametricRangeVisibility();
         }
         
         // Always ensure there's at least one blank function at the end
@@ -10311,6 +10574,7 @@ class Graphiti {
         
         // Update parameter sliders after loading functions from localStorage
         this.updateParameterSliders();
+        this.updateParametricRangeVisibility();
         
         // Always ensure there's at least one blank function at the end
         const currentFunctions = this.getCurrentFunctions();
@@ -10856,6 +11120,83 @@ class Graphiti {
         if (gammaContainer) gammaContainer.style.display = usedParams.gamma ? 'flex' : 'none';
         if (deltaContainer) deltaContainer.style.display = usedParams.delta ? 'flex' : 'none';
     }
+
+    updateParametricRangeVisibility() {
+        // Show parametric t range controls only in Cartesian mode when parametric functions exist
+        const parametricRangesDiv = document.getElementById('parametric-ranges');
+        if (!parametricRangesDiv) return;
+        
+        // Only relevant in Cartesian mode
+        if (this.plotMode !== 'cartesian') {
+            parametricRangesDiv.style.display = 'none';
+            return;
+        }
+        
+        // Check if any function is parametric and detect if any contain trig functions
+        const allFunctions = this.getCurrentFunctions();
+        const parametricFunctions = allFunctions.filter(func => {
+            if (!func.expression || !func.enabled) return false;
+            return this.detectFunctionType(func.expression) === 'parametric';
+        });
+        
+        const hasParametric = parametricFunctions.length > 0;
+        
+        if (hasParametric) {
+            parametricRangesDiv.style.display = 'flex';
+            
+            // Check if any parametric function contains trig functions
+            const hasTrig = parametricFunctions.some(func => {
+                const clean = this.convertFromLatex(func.expression).toLowerCase();
+                // Check for sin, cos, tan, sec, csc, cot anywhere in the expression
+                // If trig exists and 't' exists anywhere, it's likely trig of t
+                const hasTrigFunc = /\b(sin|cos|tan|sec|csc|cot)\s*\(/i.test(clean);
+                const hasT = /\bt\b/.test(clean);
+                return hasTrigFunc && hasT;
+            });
+            
+            // Get current t-range values
+            const currentTMin = this.cartesianViewport.tMin;
+            const currentTMax = this.cartesianViewport.tMax;
+            
+            // Determine if current range is at one of the defaults
+            const tolerance = 0.01;
+            const isAtTrigDefaultRadian = Math.abs(currentTMin - 0) < tolerance && Math.abs(currentTMax - 2 * Math.PI) < tolerance;
+            const isAtTrigDefaultDegree = Math.abs(currentTMin - 0) < tolerance && Math.abs(currentTMax - 360) < tolerance;
+            const isAtAlgebraicDefault = Math.abs(currentTMin - (-10)) < tolerance && Math.abs(currentTMax - 10) < tolerance;
+            
+            // Only change range if currently at a default (don't override user customization)
+            if (isAtTrigDefaultRadian || isAtTrigDefaultDegree || isAtAlgebraicDefault) {
+                const tMinInput = document.getElementById('t-min');
+                const tMaxInput = document.getElementById('t-max');
+                
+                if (hasTrig) {
+                    // Trigonometric parametrics: use [0, 2π] in radian mode or [0, 360] in degree mode
+                    if (this.angleMode === 'degrees') {
+                        this.cartesianViewport.tMin = 0;
+                        this.cartesianViewport.tMax = 360;
+                        if (tMinInput) this.setRangeValue(tMinInput, '0');
+                        if (tMaxInput) this.setRangeValue(tMaxInput, '360');
+                    } else {
+                        this.cartesianViewport.tMin = 0;
+                        this.cartesianViewport.tMax = 2 * Math.PI;
+                        if (tMinInput) this.setRangeValue(tMinInput, '0');
+                        if (tMaxInput) this.setRangeValue(tMaxInput, '2\\pi');
+                    }
+                } else {
+                    // Algebraic parametrics: use [-10, 10]
+                    this.cartesianViewport.tMin = -10;
+                    this.cartesianViewport.tMax = 10;
+                    if (tMinInput) this.setRangeValue(tMinInput, '-10');
+                    if (tMaxInput) this.setRangeValue(tMaxInput, '10');
+                }
+                
+                // Replot parametric functions with new range
+                this.replotAllFunctions();
+            }
+        } else {
+            parametricRangesDiv.style.display = 'none';
+        }
+    }
     
     toggleAngleMode() {
         // Don't allow toggling in polar mode (radians only)
@@ -11091,6 +11432,56 @@ class Graphiti {
             
             // Update range inputs to reflect the new ranges
             this.updateRangeInputs();
+        }
+        
+        // Convert parametric t-range when switching angle modes
+        if (this.plotMode === 'cartesian') {
+            const tMinInput = document.getElementById('t-min');
+            const tMaxInput = document.getElementById('t-max');
+            
+            if (oldMode === 'radians' && this.angleMode === 'degrees') {
+                // Convert radians to degrees: multiply by 180/π
+                const oldTMin = this.cartesianViewport.tMin;
+                const oldTMax = this.cartesianViewport.tMax;
+                this.cartesianViewport.tMin = oldTMin * 180 / Math.PI;
+                this.cartesianViewport.tMax = oldTMax * 180 / Math.PI;
+                
+                if (tMinInput && tMaxInput) {
+                    // Update the input fields with converted values
+                    this.setRangeValue(tMinInput, this.cartesianViewport.tMin.toFixed(2));
+                    this.setRangeValue(tMaxInput, this.cartesianViewport.tMax.toFixed(2));
+                    this.cartesianViewport.tMinLatex = this.cartesianViewport.tMin.toFixed(2);
+                    this.cartesianViewport.tMaxLatex = this.cartesianViewport.tMax.toFixed(2);
+                }
+            } else if (oldMode === 'degrees' && this.angleMode === 'radians') {
+                // Convert degrees to radians: multiply by π/180
+                const oldTMin = this.cartesianViewport.tMin;
+                const oldTMax = this.cartesianViewport.tMax;
+                this.cartesianViewport.tMin = oldTMin * Math.PI / 180;
+                this.cartesianViewport.tMax = oldTMax * Math.PI / 180;
+                
+                if (tMinInput && tMaxInput) {
+                    // Use symbolic form for common values
+                    let minValue, maxValue;
+                    
+                    // Common t-min values
+                    if (Math.abs(oldTMin - 0) < 0.01) minValue = '0';
+                    else if (Math.abs(oldTMin - (-360)) < 0.01) minValue = '-2\\pi';
+                    else if (Math.abs(oldTMin - (-180)) < 0.01) minValue = '-\\pi';
+                    else minValue = this.cartesianViewport.tMin.toFixed(6);
+                    
+                    // Common t-max values
+                    if (Math.abs(oldTMax - 360) < 0.01) maxValue = '2\\pi';
+                    else if (Math.abs(oldTMax - 720) < 0.01) maxValue = '4\\pi';
+                    else if (Math.abs(oldTMax - 180) < 0.01) maxValue = '\\pi';
+                    else maxValue = this.cartesianViewport.tMax.toFixed(6);
+                    
+                    this.setRangeValue(tMinInput, minValue);
+                    this.setRangeValue(tMaxInput, maxValue);
+                    this.cartesianViewport.tMinLatex = minValue;
+                    this.cartesianViewport.tMaxLatex = maxValue;
+                }
+            }
         }
         
         // Always replot functions since angle mode affects trig function evaluation

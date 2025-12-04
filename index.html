@@ -881,6 +881,56 @@
             }
         }
         
+        /* Parametric t range styling - match Cartesian range fields exactly */
+        #parametric-ranges math-field {
+            width: 100%;
+            max-width: 100%;
+            font-size: 16px !important;
+            padding: 2px 4px !important;
+            line-height: 1.2 !important;
+            min-height: auto;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+            --border-radius: 4px;
+            --border: 1px solid var(--border-color);
+            --background: var(--input-bg) !important;
+            --text-color: var(--text-primary);
+            --caret-color: white;
+            --selection-background-color: var(--accent-color);
+            --selection-color: white;
+            --contains-highlight-background-color: rgba(74, 144, 226, 0.3);
+            --keyboard-zindex: 9999;
+        }
+        
+        #parametric-ranges math-field::-webkit-scrollbar {
+            display: none;
+        }
+        
+        #parametric-ranges math-field::part(content) {
+            font-size: 16px !important;
+            line-height: 1.2 !important;
+        }
+        
+        #parametric-ranges math-field:focus-within {
+            --border: 1px solid var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+        }
+        
+        /* Hide menu toggle button for parametric range fields */
+        #parametric-ranges math-field::part(menu-toggle) {
+            display: none;
+        }
+        
+        /* Hide virtual keyboard toggle on mobile for parametric range fields */
+        @media (hover: none) and (pointer: coarse) {
+            #parametric-ranges math-field::part(virtual-keyboard-toggle),
+            #parametric-ranges math-field::part(keyboard-toggle) {
+                display: none !important;
+            }
+        }
+        
         /* Polar range MathLive field styling - match function input styling */
         #polar-ranges math-field {
             width: 100%;
@@ -1701,6 +1751,24 @@
                                     </div>
                                     <div class="example-description">Implicit: Complex curve</div>
                                 </div>
+                                <div class="example-item" data-expression="\left(\cos\left(t\right),\sin\left(t\right)\right)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">\left(\cos\left(t\right),\sin\left(t\right)\right)</math-field>
+                                    </div>
+                                    <div class="example-description">Parametric: Circle</div>
+                                </div>
+                                <div class="example-item" data-expression="\left(t-\sin\left(t\right),1-\cos\left(t\right)\right)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 16px;">\left(t-\sin\left(t\right),1-\cos\left(t\right)\right)</math-field>
+                                    </div>
+                                    <div class="example-description">Parametric: Cycloid</div>
+                                </div>
+                                <div class="example-item" data-expression="\left(\sin\left(t\right)\left(e^{\cos\left(t\right)}-2\cos\left(4t\right)-\sin\left(\frac{t}{12}\right)^5\right),\cos\left(t\right)\left(e^{\cos\left(t\right)}-2\cos\left(4t\right)-\sin\left(\frac{t}{12}\right)^5\right)\right)">
+                                    <div class="example-formula">
+                                        <math-field read-only style="font-size: 14px;">\left(\sin\left(t\right)\left(e^{\cos\left(t\right)}-2\cos\left(4t\right)-\sin\left(\frac{t}{12}\right)^5\right),\cos\left(t\right)\left(e^{\cos\left(t\right)}-2\cos\left(4t\right)-\sin\left(\frac{t}{12}\right)^5\right)\right)</math-field>
+                                    </div>
+                                    <div class="example-description">Parametric: Butterfly</div>
+                                </div>
                             </div>
                             
                             <!-- Polar examples (hidden by default) -->
@@ -1911,6 +1979,18 @@
                     <div style="flex: 1; min-width: 0;">
                         <label for="y-max" style="font-size: 14px; display: block; margin-bottom: 2px;">Y max:</label>
                         <math-field id="y-max">10</math-field>
+                    </div>
+                </div>
+                
+                <!-- Parametric t Range Controls (shown only when parametric functions exist) -->
+                <div id="parametric-ranges" style="display: none; flex-direction: row; gap: 10px; margin-bottom: 10px;">
+                    <div style="flex: 1; min-width: 0;">
+                        <label for="t-min" style="font-size: 14px; display: block; margin-bottom: 2px;">t min:</label>
+                        <math-field id="t-min">0</math-field>
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                        <label for="t-max" style="font-size: 14px; display: block; margin-bottom: 2px;">t max:</label>
+                        <math-field id="t-max">2\pi</math-field>
                     </div>
                 </div>
                 
