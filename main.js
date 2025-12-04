@@ -19339,7 +19339,7 @@ class Graphiti {
         } else if (this.plotMode === 'polar') {
             labelText = 'Area:';
         } else {
-            labelText = 'Actual Integral:';
+            labelText = 'Actual Area:';
         }
         this.ctx.fillText(labelText, panelX + 18, panelY + 22); // +8 for strip width + 10 padding
         
@@ -19398,7 +19398,7 @@ class Graphiti {
             this.ctx.fillStyle = '#FFFFFF';
             
             this.ctx.textAlign = 'left';
-            this.ctx.fillText('Numerical Integral:', panelX + 18, controlsY + 2); // +8 for strip width + 10 padding
+            this.ctx.fillText('Numerical Approx:', panelX + 18, controlsY + 2); // +8 for strip width + 10 padding
             
             this.ctx.textAlign = 'right';
             this.ctx.fillText(approximation.toFixed(4), panelX + panelWidth - 10, controlsY + 2);
