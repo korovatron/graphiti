@@ -13610,6 +13610,13 @@ class Graphiti {
                     continue;
                 }
                 
+                // Handle parametric functions separately
+                if (functionType === 'parametric') {
+                    const parametricTurningPoints = this.findParametricTurningPointsForFunction(func);
+                    turningPoints.push(...parametricTurningPoints);
+                    continue;
+                }
+                
                 // Convert from LaTeX first since we now store LaTeX format
                 const convertedExpression = this.convertFromLatex(func.expression);
                 
@@ -13982,6 +13989,154 @@ class Graphiti {
             }
         } catch (error) {
             console.error('Error finding implicit turning points:', error);
+        }
+        
+        return turningPoints;
+    }
+    
+    findParametricTurningPointsForFunction(func) {
+        const turningPoints = [];
+        
+        if (!func.points || func.points.length < 2) {
+            return turningPoints;
+        }
+        
+        try {
+            // Parse the parametric equation to get x(t) and y(t)
+            const parametric = this.parseParametricEquation(func.expression);
+            if (!parametric) {
+                return turningPoints;
+            }
+            
+            const { xExpr, yExpr } = parametric;
+            
+            // Get symbolic derivatives dy/dt and dx/dt using math.js
+            let dydt, dxdt, d2ydt2, d2xdt2;
+            try {
+                const yParsed = math.parse(yExpr.toLowerCase());
+                const xParsed = math.parse(xExpr.toLowerCase());
+                dydt = math.derivative(yParsed, 't');
+                dxdt = math.derivative(xParsed, 't');
+                // Get second derivatives for classification
+                d2ydt2 = math.derivative(dydt, 't');
+                d2xdt2 = math.derivative(dxdt, 't');
+            } catch (error) {
+                console.warn('Could not compute derivatives for parametric function:', error);
+                return turningPoints;
+            }
+            
+            // Compile expressions for evaluation
+            const dydtStr = dydt.toString();
+            const dxdtStr = dxdt.toString();
+            const d2ydt2Str = d2ydt2.toString();
+            const d2xdt2Str = d2xdt2.toString();
+            const dydtCompiled = this.getCompiledExpression(dydtStr);
+            const dxdtCompiled = this.getCompiledExpression(dxdtStr);
+            const d2ydt2Compiled = this.getCompiledExpression(d2ydt2Str);
+            const d2xdt2Compiled = this.getCompiledExpression(d2xdt2Str);
+            const xCompiled = this.getCompiledExpression(xExpr);
+            const yCompiled = this.getCompiledExpression(yExpr);
+            
+            // Get t-range
+            const tMin = this.cartesianViewport.tMin;
+            const tMax = this.cartesianViewport.tMax;
+            const tRange = tMax - tMin;
+            const numSamples = Math.min(500, Math.max(100, Math.ceil(tRange * 20)));
+            const tStep = tRange / numSamples;
+            
+            const scope = this.getEvaluationScope({ t: 0, pi: Math.PI, e: Math.E });
+            const threshold = 0.01; // Threshold for considering derivative near zero
+            
+            // Sample and look for sign changes in dy/dt (horizontal tangent) and dx/dt (vertical tangent)
+            let prevDydt = null;
+            let prevDxdt = null;
+            let prevT = null;
+            
+            for (let i = 0; i <= numSamples; i++) {
+                const tParam = tMin + i * tStep;
+                // Convert t to radians if in degree mode (same as plotParametricFunction)
+                const t = this.angleMode === 'degrees' ? (tParam * Math.PI / 180) : tParam;
+                scope.t = t;
+                
+                try {
+                    const dydtVal = dydtCompiled.evaluate(scope);
+                    const dxdtVal = dxdtCompiled.evaluate(scope);
+                    
+                    if (prevDydt !== null && prevT !== null) {
+                        // Check for horizontal tangent: dy/dt crosses zero and dx/dt ≠ 0
+                        if (prevDydt * dydtVal < 0 && Math.abs(dxdtVal) > threshold && Math.abs(prevDxdt) > threshold) {
+                            // Refine using bisection to find where dy/dt = 0
+                            let t1 = prevT;
+                            let t2 = t;
+                            
+                            for (let iter = 0; iter < 10; iter++) {
+                                const tMid = (t1 + t2) / 2;
+                                scope.t = tMid;
+                                const dydtMid = dydtCompiled.evaluate(scope);
+                                
+                                if (Math.abs(dydtMid) < 1e-10) break;
+                                
+                                if (prevDydt * dydtMid < 0) {
+                                    t2 = tMid;
+                                } else {
+                                    t1 = tMid;
+                                }
+                            }
+                            
+                            const tTurn = (t1 + t2) / 2;
+                            scope.t = tTurn;
+                            const xTurn = xCompiled.evaluate(scope);
+                            const yTurn = yCompiled.evaluate(scope);
+                            
+                            if (isFinite(xTurn) && isFinite(yTurn)) {
+                                // Classify as max or min using second derivative
+                                // d²y/dx² = (d²y/dt² * dx/dt - dy/dt * d²x/dt²) / (dx/dt)³
+                                const d2ydt2Val = d2ydt2Compiled.evaluate(scope);
+                                const d2xdt2Val = d2xdt2Compiled.evaluate(scope);
+                                const dxdtAtTurn = dxdtCompiled.evaluate(scope);
+                                
+                                const numerator = d2ydt2Val * dxdtAtTurn - 0 * d2xdt2Val; // dy/dt = 0 at turning point
+                                const denominator = Math.pow(dxdtAtTurn, 3);
+                                const d2ydx2 = numerator / denominator;
+                                
+                                let pointType = 'horizontal-tangent';
+                                if (d2ydx2 < -0.01) {
+                                    pointType = 'maximum'; // Concave down
+                                } else if (d2ydx2 > 0.01) {
+                                    pointType = 'minimum'; // Concave up
+                                }
+                                
+                                turningPoints.push({
+                                    x: xTurn,
+                                    y: yTurn,
+                                    func: func,
+                                    type: pointType,
+                                    derivative: 0,
+                                    secondDerivative: d2ydx2
+                                });
+                            }
+                        }
+                        
+                        // Check for vertical tangent: dx/dt crosses zero and dy/dt ≠ 0
+                        // Don't add these to turning points - they're not local extrema
+                        // Just skip them (or could add with different type if needed later)
+                        /*
+                        if (prevDxdt * dxdtVal < 0 && Math.abs(dydtVal) > threshold && Math.abs(prevDydt) > threshold) {
+                            // Vertical tangents could be added here if needed
+                        }
+                        */
+                    }
+                    
+                    prevDydt = dydtVal;
+                    prevDxdt = dxdtVal;
+                    prevT = t;
+                } catch (error) {
+                    // Skip this sample point if evaluation fails
+                    continue;
+                }
+            }
+        } catch (error) {
+            console.error('Error finding parametric turning points:', error);
         }
         
         return turningPoints;
