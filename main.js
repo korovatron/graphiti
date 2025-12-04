@@ -18588,7 +18588,13 @@ class Graphiti {
             );
             
             if (linkedPair) {
-                this.drawAreaBetweenPanelLabel(linkedPair, this.integralPairs.length);
+                // Don't show area between for parametric curves (not meaningful)
+                const isParametric1 = linkedPair.pair1.func && this.detectFunctionType(linkedPair.pair1.func.expression) === 'parametric';
+                const isParametric2 = linkedPair.pair2.func && this.detectFunctionType(linkedPair.pair2.func.expression) === 'parametric';
+                
+                if (!isParametric1 && !isParametric2) {
+                    this.drawAreaBetweenPanelLabel(linkedPair, this.integralPairs.length);
+                }
             }
         }
     }
