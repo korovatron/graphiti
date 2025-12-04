@@ -2009,6 +2009,12 @@ class Graphiti {
         this.intercepts = [];
         this.frozenInterceptBadges = [];
         
+        // Clear intersection arrays and frozen badges before recalculating to prevent stale data
+        this.intersections = [];
+        this.explicitIntersections = [];
+        this.implicitIntersections = [];
+        this.frozenIntersectionBadges = [];
+        
         // Recalculate intersections and turning points for remaining functions
         this.handleViewportChange();
         
