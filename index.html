@@ -1068,7 +1068,7 @@
             top: 0 !important; /* Full height for all devices */
             left: -100% !important;
             width: 100% !important;
-            max-width: 330px !important; /* Base width for mobile/tablet */
+            max-width: 330px !important; /* Simplified for iOS compatibility */
             height: 100vh !important; /* Fixed viewport height to prevent extension */
             z-index: 15;
             transition: left 0.3s ease;
@@ -1077,13 +1077,6 @@
             padding: 20px !important; /* Normal padding for desktop/browser */
             backdrop-filter: blur(10px);
             background: rgba(26, 47, 66, 0.95) !important;
-        }
-        
-        /* Wider function panel for desktop screens */
-        @media (min-width: 1024px) {
-            #function-panel {
-                max-width: 420px !important; /* Wider on desktop for better function visibility */
-            }
         }
         
         /* NOTE: The following media query was used to add extra top padding in PWA mode
