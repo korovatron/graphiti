@@ -18712,9 +18712,10 @@ class Graphiti {
     }
     
     drawAreaBetweenPanelLabel(linkedPair, index) {
-        const panelX = this.viewport.width - 270; // Match integral panel position
-        const panelWidth = 260; // Match integral panel width
-        const panelHeight = 45;
+        const scale = this.getPanelScale();
+        const panelX = this.viewport.width - (270 * scale); // Match integral panel position
+        const panelWidth = 260 * scale; // Match integral panel width
+        const panelHeight = 45 * scale;
         
         // Calculate total height of all integral panels below this one
         let totalHeightAbove = 0;
@@ -18722,20 +18723,20 @@ class Graphiti {
             const prevPair = this.integralPairs[i];
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
-            const prevHeight = 45 + (prevShowTrap ? 85 : 0);
+            const prevHeight = (45 + (prevShowTrap ? 85 : 0)) * scale;
             totalHeightAbove += prevHeight;
             if (i < index - 1) {
-                totalHeightAbove += 5; // Add spacing between panels, but not after the last one
+                totalHeightAbove += 5 * scale; // Add spacing between panels, but not after the last one
             }
         }
         
         // Position above all integral panels with standard 5px spacing
-        const panelY = this.viewport.height - 10 - totalHeightAbove - 5 - panelHeight;
+        const panelY = this.viewport.height - (10 * scale) - totalHeightAbove - (5 * scale) - panelHeight;
         
         this.ctx.save();
         
         // Background with rounded corners matching integral panel style
-        const cornerRadius = 4;
+        const cornerRadius = 4 * scale;
         this.ctx.fillStyle = 'rgba(58, 79, 106, 0.95)';
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius);
@@ -18743,21 +18744,21 @@ class Graphiti {
         
         // Border with rounded corners
         this.ctx.strokeStyle = '#555555'; // Match integral panel border
-        this.ctx.lineWidth = 1;
+        this.ctx.lineWidth = 1 * scale;
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius);
         this.ctx.stroke();
         
         // Draw toggle checkbox for enabling area-between calculation
-        const toggleX = panelX + 10;
-        const toggleY = panelY + 12;
-        const toggleSize = 20;
+        const toggleX = panelX + (10 * scale);
+        const toggleY = panelY + (12 * scale);
+        const toggleSize = 20 * scale;
         
         // Checkbox background
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.fillRect(toggleX, toggleY, toggleSize, toggleSize);
         this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 2 * scale;
         this.ctx.strokeRect(toggleX, toggleY, toggleSize, toggleSize);
         
         // Check if area-between calculation is enabled
@@ -18765,11 +18766,11 @@ class Graphiti {
         if (isEnabled) {
             // Draw checkmark
             this.ctx.strokeStyle = '#00AA00';
-            this.ctx.lineWidth = 3;
+            this.ctx.lineWidth = 3 * scale;
             this.ctx.beginPath();
-            this.ctx.moveTo(toggleX + 4, toggleY + 10);
-            this.ctx.lineTo(toggleX + 8, toggleY + 15);
-            this.ctx.lineTo(toggleX + 16, toggleY + 5);
+            this.ctx.moveTo(toggleX + (4 * scale), toggleY + (10 * scale));
+            this.ctx.lineTo(toggleX + (8 * scale), toggleY + (15 * scale));
+            this.ctx.lineTo(toggleX + (16 * scale), toggleY + (5 * scale));
             this.ctx.stroke();
         }
         
@@ -18781,39 +18782,41 @@ class Graphiti {
             height: toggleSize
         };
         
+        const fontSize = 14 * scale;
         // Display area value or "disabled" message
         if (isEnabled && linkedPair.areaBetween !== undefined) {
             // Format area value with 4 decimal places (matching integral display)
             const areaValue = linkedPair.areaBetween.toFixed(4);
             
             // Label and value split like "Actual Integral:"
-            this.ctx.font = 'bold 14px Arial';
+            this.ctx.font = `bold ${fontSize}px Arial`;
             this.ctx.textBaseline = 'middle';
             this.ctx.fillStyle = '#FFFFFF';
             
             // Label left-aligned
             this.ctx.textAlign = 'left';
-            this.ctx.fillText('Area Between:', panelX + 40, panelY + 22);
+            this.ctx.fillText('Area Between:', panelX + (40 * scale), panelY + (22 * scale));
             
             // Value right-aligned
             this.ctx.textAlign = 'right';
-            this.ctx.fillText(areaValue, panelX + panelWidth - 10, panelY + 22);
+            this.ctx.fillText(areaValue, panelX + panelWidth - (10 * scale), panelY + (22 * scale));
         } else {
             // Hint text when disabled (just show label with no value)
-            this.ctx.font = 'bold 14px Arial';
+            this.ctx.font = `bold ${fontSize}px Arial`;
             this.ctx.textAlign = 'left';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText('Area Between:', panelX + 40, panelY + 22);
+            this.ctx.fillText('Area Between:', panelX + (40 * scale), panelY + (22 * scale));
         }
         
         this.ctx.restore();
     }
     
     drawAreaBetweenHintLabel(index) {
-        const panelX = this.viewport.width - 270; // Match integral panel position
-        const panelWidth = 260; // Match integral panel width
-        const panelHeight = 45;
+        const scale = this.getPanelScale();
+        const panelX = this.viewport.width - (270 * scale); // Match integral panel position
+        const panelWidth = 260 * scale; // Match integral panel width
+        const panelHeight = 45 * scale;
         
         // Calculate total height of all integral panels below this one
         let totalHeightAbove = 0;
@@ -18821,20 +18824,20 @@ class Graphiti {
             const prevPair = this.integralPairs[i];
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
-            const prevHeight = 45 + (prevShowTrap ? 85 : 0);
+            const prevHeight = (45 + (prevShowTrap ? 85 : 0)) * scale;
             totalHeightAbove += prevHeight;
             if (i < index - 1) {
-                totalHeightAbove += 5; // Add spacing between panels, but not after the last one
+                totalHeightAbove += 5 * scale; // Add spacing between panels, but not after the last one
             }
         }
         
         // Position above all integral panels with standard 5px spacing
-        const panelY = this.viewport.height - 10 - totalHeightAbove - 5 - panelHeight;
+        const panelY = this.viewport.height - (10 * scale) - totalHeightAbove - (5 * scale) - panelHeight;
         
         this.ctx.save();
         
         // Background with rounded corners and slight transparency to indicate it's a hint
-        const cornerRadius = 4;
+        const cornerRadius = 4 * scale;
         this.ctx.fillStyle = 'rgba(58, 79, 106, 0.85)'; // Slightly more transparent for hint
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius);
@@ -18842,18 +18845,19 @@ class Graphiti {
         
         // Border with rounded corners
         this.ctx.strokeStyle = '#555555'; // Match integral panel border
-        this.ctx.lineWidth = 1;
+        this.ctx.lineWidth = 1 * scale;
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius);
         this.ctx.stroke();
         
+        const fontSize = 13 * scale;
         // Hint text on two lines
-        this.ctx.font = 'bold 13px Arial';
+        this.ctx.font = `bold ${fontSize}px Arial`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#FFFFFF'; // White text for dark background
-        this.ctx.fillText('Select two functions', panelX + panelWidth / 2, panelY + panelHeight / 2 - 8);
-        this.ctx.fillText('for area between', panelX + panelWidth / 2, panelY + panelHeight / 2 + 8);
+        this.ctx.fillText('Select two functions', panelX + panelWidth / 2, panelY + panelHeight / 2 - (8 * scale));
+        this.ctx.fillText('for area between', panelX + panelWidth / 2, panelY + panelHeight / 2 + (8 * scale));
         
         this.ctx.restore();
     }
@@ -19352,10 +19356,13 @@ class Graphiti {
         const showTrapControls = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(pair.func.expression) === 'explicit';
         
+        // Get scale factor for panel sizing
+        const scale = this.getPanelScale();
+        
         // Draw in bottom-right panel instead of on graph
-        const panelX = this.viewport.width - 270; // Adjusted for 260px width + 10px margin
-        const basePanelHeight = 45;
-        const trapControlsHeight = showTrapControls ? 85 : 0; // Increased from 75 to 85
+        const panelX = this.viewport.width - (270 * scale); // Scale panel width + margin
+        const basePanelHeight = 45 * scale;
+        const trapControlsHeight = showTrapControls ? (85 * scale) : 0;
         const panelHeight = basePanelHeight + trapControlsHeight;
         
         // Calculate total height needed for all panels up to this one
@@ -19364,24 +19371,24 @@ class Graphiti {
             const prevPair = this.integralPairs[i];
             const prevShowTrap = this.plotMode === 'cartesian' && 
                                  this.detectFunctionType(prevPair.func.expression) === 'explicit';
-            const prevHeight = 45 + (prevShowTrap ? 85 : 0);
-            totalHeightAbove += prevHeight + 5; // +5 for spacing
+            const prevHeight = (45 * scale) + (prevShowTrap ? (85 * scale) : 0);
+            totalHeightAbove += prevHeight + (5 * scale); // Scale spacing too
         }
         
-        const panelY = this.viewport.height - 10 - totalHeightAbove - panelHeight;
-        const panelWidth = 260; // Increased from 240
+        const panelY = this.viewport.height - (10 * scale) - totalHeightAbove - panelHeight;
+        const panelWidth = 260 * scale;
         
         this.ctx.save();
         
         // Main background (light gray/dark theme color)
-        const cornerRadius = 4;
+        const cornerRadius = 4 * scale;
         this.ctx.fillStyle = 'rgba(58, 79, 106, 0.95)'; // Similar to function panel background
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius);
         this.ctx.fill();
         
         // Colored strip on left edge (like function panel color indicator)
-        const stripWidth = 8; // Back to original width
+        const stripWidth = 8 * scale;
         this.ctx.fillStyle = pair.color;
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, stripWidth, panelHeight, [cornerRadius, 0, 0, cornerRadius]); // Only round left corners
@@ -19389,7 +19396,7 @@ class Graphiti {
         
         // Border
         this.ctx.strokeStyle = '#555555'; // Neutral border instead of function color
-        this.ctx.lineWidth = 1;
+        this.ctx.lineWidth = 1 * scale;
         this.ctx.beginPath();
         this.ctx.roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius);
         this.ctx.stroke();
@@ -19421,7 +19428,8 @@ class Graphiti {
         
         // Display actual integral value (without checkbox)
         // Label left-aligned, value right-aligned
-        this.ctx.font = 'bold 14px Arial';
+        const fontSize = 14 * scale;
+        this.ctx.font = `bold ${fontSize}px Arial`;
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#FFFFFF';
         
@@ -19435,10 +19443,10 @@ class Graphiti {
         } else {
             labelText = 'Actual Area:';
         }
-        this.ctx.fillText(labelText, panelX + 18, panelY + 22); // +8 for strip width + 10 padding
+        this.ctx.fillText(labelText, panelX + (18 * scale), panelY + (22 * scale)); // Scale padding
         
         this.ctx.textAlign = 'right';
-        this.ctx.fillText(areaText, panelX + panelWidth - 10, panelY + 22);
+        this.ctx.fillText(areaText, panelX + panelWidth - (10 * scale), panelY + (22 * scale));
         
         // Draw trapezium rule controls if applicable
         if (showTrapControls) {
@@ -19495,32 +19503,32 @@ class Graphiti {
             this.ctx.fillText('Numerical Approx:', panelX + 18, controlsY + 2); // +8 for strip width + 10 padding
             
             this.ctx.textAlign = 'right';
-            this.ctx.fillText(approximation.toFixed(4), panelX + panelWidth - 10, controlsY + 2);
+            this.ctx.fillText(approximation.toFixed(4), panelX + panelWidth - (10 * scale), controlsY + (2 * scale));
             
             this.ctx.globalAlpha = 1; // Reset alpha
             
             // Method selector dropdown
-            const methodX = panelX + 18; // +8 for strip width + 10 padding
-            const methodY = controlsY + 16; // Reduced from +18 to +16
-            const spacing = 10; // Spacing between controls
-            const totalRowWidth = panelWidth - 18 - 10; // Total available width (from left padding to right edge)
-            const methodWidth = (totalRowWidth - spacing) / 2; // Half width minus spacing, then split
-            const methodHeight = 25;
+            const methodX = panelX + (18 * scale);
+            const methodY = controlsY + (16 * scale);
+            const spacing = 10 * scale;
+            const totalRowWidth = panelWidth - (18 * scale) - (10 * scale);
+            const methodWidth = (totalRowWidth - spacing) / 2;
+            const methodHeight = 25 * scale;
             
             // Button background with shadow
             this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            this.ctx.shadowBlur = 3;
+            this.ctx.shadowBlur = 3 * scale;
             this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 1;
+            this.ctx.shadowOffsetY = 1 * scale;
             this.ctx.fillStyle = '#2A3F5A';
             this.ctx.fillRect(methodX, methodY, methodWidth, methodHeight);
             this.ctx.shadowColor = 'transparent'; // Reset shadow
             this.ctx.shadowBlur = 0;
             this.ctx.strokeStyle = '#555555';
-            this.ctx.lineWidth = 1;
+            this.ctx.lineWidth = 1 * scale;
             this.ctx.strokeRect(methodX, methodY, methodWidth, methodHeight);
             
-            this.ctx.font = 'bold 11px Arial';
+            this.ctx.font = `bold ${11 * scale}px Arial`;
             this.ctx.textAlign = 'center';
             this.ctx.fillStyle = '#FFFFFF';
             let methodName;
@@ -19545,32 +19553,32 @@ class Graphiti {
             const stripsY = methodY;
             const stripsX = methodX + methodWidth + spacing;
             const stripsWidth = methodWidth; // Same width as method selector
-            const stripsHeight = 25;
+            const stripsHeight = 25 * scale;
             
             // Button background with shadow (matching function panel buttons)
             this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            this.ctx.shadowBlur = 3;
+            this.ctx.shadowBlur = 3 * scale;
             this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 1;
+            this.ctx.shadowOffsetY = 1 * scale;
             this.ctx.fillStyle = '#2A3F5A';
             this.ctx.fillRect(stripsX, stripsY, stripsWidth, stripsHeight);
             this.ctx.shadowColor = 'transparent'; // Reset shadow
             this.ctx.shadowBlur = 0;
             this.ctx.strokeStyle = '#555555';
-            this.ctx.lineWidth = 1;
+            this.ctx.lineWidth = 1 * scale;
             this.ctx.strokeRect(stripsX, stripsY, stripsWidth, stripsHeight);
             
-            this.ctx.font = 'bold 12px Arial';
+            this.ctx.font = `bold ${12 * scale}px Arial`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillStyle = '#FFFFFF';
             this.ctx.fillText(`Strips = ${pair.trapeziumStripCount}`, stripsX + stripsWidth / 2, stripsY + stripsHeight / 2);
             
             // Toggle button for showing trapeziums on graph (row 2, left side)
-            const toggleX = panelX + 18; // +8 for strip width + 10 padding
-            const toggleY = methodY + methodHeight + 5;
+            const toggleX = panelX + (18 * scale);
+            const toggleY = methodY + methodHeight + (5 * scale);
             const toggleWidth = methodWidth; // Same width as method selector (half row)
-            const toggleHeight = 25;
+            const toggleHeight = 25 * scale;
             
             // Check if this pair is part of an active area-between calculation
             const isPartOfAreaBetween = this.linkedBadgePairs.some(lp => 
@@ -19582,20 +19590,20 @@ class Graphiti {
             
             // Button background with shadow (matching intersection/turning point toggle style)
             this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            this.ctx.shadowBlur = 3;
+            this.ctx.shadowBlur = 3 * scale;
             this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 1;
+            this.ctx.shadowOffsetY = 1 * scale;
             this.ctx.fillStyle = toggleEnabled ? '#2A3F5A' : '#1a2a3f';
             this.ctx.fillRect(toggleX, toggleY, toggleWidth, toggleHeight);
             this.ctx.shadowColor = 'transparent'; // Reset shadow
             this.ctx.shadowBlur = 0;
             this.ctx.globalAlpha = toggleEnabled ? 1 : 0.6;
             this.ctx.strokeStyle = '#555555';
-            this.ctx.lineWidth = 1;
+            this.ctx.lineWidth = 1 * scale;
             this.ctx.strokeRect(toggleX, toggleY, toggleWidth, toggleHeight);
             
             // Keep alpha for text (dim text when disabled)
-            this.ctx.font = 'bold 11px Arial';
+            this.ctx.font = `bold ${11 * scale}px Arial`;
             this.ctx.textAlign = 'center';
             this.ctx.fillStyle = '#FFFFFF';
             this.ctx.fillText('Show on graph', toggleX + toggleWidth / 2, toggleY + toggleHeight / 2);
@@ -19610,8 +19618,8 @@ class Graphiti {
             
             // Plus/minus buttons (row 2, aligned with toggle)
             const buttonY = toggleY;
-            const buttonHeight = 25;
-            const buttonSpacing = 5;
+            const buttonHeight = 25 * scale;
+            const buttonSpacing = 5 * scale;
             const buttonStartX = toggleX + toggleWidth + spacing;
             
             // Calculate button width to match strips width (other half of row)
@@ -19622,18 +19630,18 @@ class Graphiti {
             const minusX = buttonStartX;
             // Button background with shadow
             this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            this.ctx.shadowBlur = 3;
+            this.ctx.shadowBlur = 3 * scale;
             this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 1;
+            this.ctx.shadowOffsetY = 1 * scale;
             this.ctx.fillStyle = '#2A3F5A';
             this.ctx.fillRect(minusX, buttonY, buttonWidth, buttonHeight);
             this.ctx.shadowColor = 'transparent'; // Reset shadow
             this.ctx.shadowBlur = 0;
             this.ctx.strokeStyle = '#555555';
-            this.ctx.lineWidth = 1;
+            this.ctx.lineWidth = 1 * scale;
             this.ctx.strokeRect(minusX, buttonY, buttonWidth, buttonHeight);
             
-            this.ctx.font = 'bold 18px Arial';
+            this.ctx.font = `bold ${18 * scale}px Arial`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillStyle = '#FFFFFF';
@@ -19650,18 +19658,18 @@ class Graphiti {
             const plusX = minusX + buttonWidth + buttonSpacing;
             // Button background with shadow
             this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            this.ctx.shadowBlur = 3;
+            this.ctx.shadowBlur = 3 * scale;
             this.ctx.shadowOffsetX = 0;
-            this.ctx.shadowOffsetY = 1;
+            this.ctx.shadowOffsetY = 1 * scale;
             this.ctx.fillStyle = '#2A3F5A';
             this.ctx.fillRect(plusX, buttonY, buttonWidth, buttonHeight);
             this.ctx.shadowColor = 'transparent'; // Reset shadow
             this.ctx.shadowBlur = 0;
             this.ctx.strokeStyle = '#555555';
-            this.ctx.lineWidth = 1;
+            this.ctx.lineWidth = 1 * scale;
             this.ctx.strokeRect(plusX, buttonY, buttonWidth, buttonHeight);
             
-            this.ctx.font = 'bold 18px Arial';
+            this.ctx.font = `bold ${18 * scale}px Arial`;
             this.ctx.fillStyle = '#FFFFFF';
             this.ctx.fillText('+', plusX + buttonWidth / 2, buttonY + buttonHeight / 2);
             
@@ -19733,6 +19741,14 @@ class Graphiti {
             return baseWidth * 1.5;
         }
         return baseWidth;
+    }
+    
+    getPanelScale() {
+        // Return scale factor for UI panels based on size mode
+        if (this.sizeMode === 'large') {
+            return 1.3;
+        }
+        return 1.0;
     }
     
     findIntegralLabelAtPoint(x, y) {
