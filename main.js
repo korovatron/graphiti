@@ -18502,7 +18502,7 @@ class Graphiti {
                 
                 this.ctx.fillStyle = neonColor;
                 this.ctx.strokeStyle = neonColor;
-                this.ctx.lineWidth = 2;
+                this.ctx.lineWidth = this.getLineWidth(2);
                 this.ctx.shadowBlur = 15;
                 this.ctx.shadowColor = neonColor;
             } else {
@@ -18510,14 +18510,14 @@ class Graphiti {
                 const alpha = 0.25;
                 this.ctx.fillStyle = this.hexToRGBA(pair.color, alpha);
                 this.ctx.strokeStyle = pair.color;
-                this.ctx.lineWidth = 1;
+                this.ctx.lineWidth = this.getLineWidth(1);
             }
             
             // Draw shaded region or highlighted arc
             if (pair.isParametric) {
                 // For parametric curves: highlight the arc segment instead of shading area
                 if (pair.neon) {
-                    this.ctx.lineWidth = 4;
+                    this.ctx.lineWidth = this.getLineWidth(4);
                     this.drawParametricArcSegment(pair);
                 } else {
                     // Get contrasting color for better visibility
@@ -18526,14 +18526,14 @@ class Graphiti {
                     // Draw a double-line effect: darker outline + contrasting colored center
                     // First draw a thicker dark outline
                     this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-                    this.ctx.lineWidth = 7;
+                    this.ctx.lineWidth = this.getLineWidth(7);
                     this.ctx.lineCap = 'round';
                     this.ctx.lineJoin = 'round';
                     this.drawParametricArcSegment(pair);
                     
                     // Then draw the contrasting arc on top
                     this.ctx.strokeStyle = contrastColor;
-                    this.ctx.lineWidth = 4;
+                    this.ctx.lineWidth = this.getLineWidth(4);
                     this.ctx.shadowBlur = 3;
                     this.ctx.shadowColor = contrastColor;
                     this.drawParametricArcSegment(pair);
@@ -19031,7 +19031,7 @@ class Graphiti {
         const isDarkMode = document.documentElement.getAttribute('data-theme') !== 'light';
         this.ctx.fillStyle = isDarkMode ? 'rgba(255, 215, 0, 0.3)' : 'rgba(204, 102, 0, 0.3)'; // Gold in dark mode, dark orange in light mode
         this.ctx.strokeStyle = isDarkMode ? '#FFD700' : '#CC6600'; // Gold in dark mode, dark orange in light mode
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = this.getLineWidth(2);
         
         // Draw the region between curves
         this.ctx.beginPath();
@@ -20187,13 +20187,13 @@ class Graphiti {
             }
             
             this.ctx.strokeStyle = neonColor;
-            this.ctx.lineWidth = 3; // Thicker for neon effect
+            this.ctx.lineWidth = this.getLineWidth(3); // Thicker for neon effect, scaled for size mode
             this.ctx.shadowBlur = 15;
             this.ctx.shadowColor = neonColor;
         } else {
             // Use function color with transparency
             this.ctx.strokeStyle = badge.functionColor;
-            this.ctx.lineWidth = 2;
+            this.ctx.lineWidth = this.getLineWidth(2);
             this.ctx.globalAlpha = 0.8;
         }
         
@@ -20295,13 +20295,13 @@ class Graphiti {
             }
             
             this.ctx.strokeStyle = neonColor;
-            this.ctx.lineWidth = 3;
+            this.ctx.lineWidth = this.getLineWidth(3);
             this.ctx.shadowBlur = 15;
             this.ctx.shadowColor = neonColor;
         } else {
             // Use function color with transparency
             this.ctx.strokeStyle = badge.functionColor;
-            this.ctx.lineWidth = 2;
+            this.ctx.lineWidth = this.getLineWidth(2);
             this.ctx.globalAlpha = 0.8;
         }
         
