@@ -17014,10 +17014,10 @@ class Graphiti {
                     // Set line style based on strict vs non-strict
                     if (inequality.operator === '>' || inequality.operator === '<') {
                         this.ctx.setLineDash([]); // Solid line for strict (matching Cartesian behavior)
-                        this.ctx.lineWidth = 1; // Thin line for strict inequalities
+                        this.ctx.lineWidth = this.getLineWidth(1); // Thin line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = 3; // Standard line width (same as equations)
+                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width (same as equations)
                     }
                 }
             } else {
@@ -17034,10 +17034,10 @@ class Graphiti {
                     // Set line style based on strict vs non-strict
                     if (inequality.operator === '>' || inequality.operator === '<') {
                         this.ctx.setLineDash([]); // Solid line for strict
-                        this.ctx.lineWidth = 1; // Thin line for strict inequalities
+                        this.ctx.lineWidth = this.getLineWidth(1); // Thin line for strict inequalities
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = 3; // Standard line width (same as equations)
+                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width (same as equations)
                     }
                 }
             }
@@ -17045,7 +17045,7 @@ class Graphiti {
         
         this.ctx.strokeStyle = func.color;
         if (!func.expression.match(/[<>]/)) {
-            this.ctx.lineWidth = 3; // Default for equations without inequalities
+            this.ctx.lineWidth = this.getLineWidth(3); // Default for equations without inequalities
         }
         
         let pathStarted = false;
@@ -17119,7 +17119,7 @@ class Graphiti {
             // For marching squares output, draw as individual line segments
             // Check if this is a strict inequality (< or >) vs non-strict (≤ or ≥)
             // Use line thickness to distinguish: 1px for strict, 3px for non-strict/equations
-            let lineWidth = 3; // Default for equations (consistent with explicit)
+            let lineWidth = this.getLineWidth(3); // Default for equations (consistent with explicit)
             if (isInequality) {
                 const clean = this.convertFromLatex(func.expression).trim();
                 const isStrict = clean.includes('>') && !clean.includes('>=') || 
@@ -17127,9 +17127,9 @@ class Graphiti {
                 
                 // Consistent with explicit inequalities: 1px for strict, 3px for non-strict
                 if (isStrict) {
-                    lineWidth = 1;
+                    lineWidth = this.getLineWidth(1);
                 } else {
-                    lineWidth = 3;
+                    lineWidth = this.getLineWidth(3);
                 }
             }
             
@@ -19724,6 +19724,15 @@ class Graphiti {
             const compB = 255 - b;
             return `rgb(${compR}, ${compG}, ${compB})`;
         }
+    }
+    
+    getLineWidth(baseWidth) {
+        // Return adjusted line width based on size mode
+        // In large mode, multiply by 1.5 for better visibility
+        if (this.sizeMode === 'large') {
+            return baseWidth * 1.5;
+        }
+        return baseWidth;
     }
     
     findIntegralLabelAtPoint(x, y) {
