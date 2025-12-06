@@ -18344,7 +18344,10 @@ class Graphiti {
                     this.ctx.lineWidth = 4;
                     this.drawParametricArcSegment(pair);
                 } else {
-                    // Draw a double-line effect: darker outline + colored center
+                    // Get contrasting color for better visibility
+                    const contrastColor = this.getContrastingColor(pair.color);
+                    
+                    // Draw a double-line effect: darker outline + contrasting colored center
                     // First draw a thicker dark outline
                     this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
                     this.ctx.lineWidth = 7;
@@ -18352,11 +18355,11 @@ class Graphiti {
                     this.ctx.lineJoin = 'round';
                     this.drawParametricArcSegment(pair);
                     
-                    // Then draw the colored arc on top
-                    this.ctx.strokeStyle = pair.color;
+                    // Then draw the contrasting arc on top
+                    this.ctx.strokeStyle = contrastColor;
                     this.ctx.lineWidth = 4;
                     this.ctx.shadowBlur = 3;
-                    this.ctx.shadowColor = pair.color;
+                    this.ctx.shadowColor = contrastColor;
                     this.drawParametricArcSegment(pair);
                     this.ctx.shadowBlur = 0; // Reset shadow
                 }
@@ -19632,6 +19635,40 @@ class Graphiti {
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    
+    getContrastingColor(hex) {
+        // Convert hex to RGB
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        
+        // Calculate relative luminance (perceived brightness)
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        
+        // For very bright colors, return a dark contrasting color
+        // For very dark colors, return a bright contrasting color
+        // For medium colors, return the complementary color
+        
+        if (luminance > 0.7) {
+            // Bright color - return dark complementary
+            const compR = Math.floor((255 - r) * 0.5);
+            const compG = Math.floor((255 - g) * 0.5);
+            const compB = Math.floor((255 - b) * 0.5);
+            return `rgb(${compR}, ${compG}, ${compB})`;
+        } else if (luminance < 0.3) {
+            // Dark color - return bright complementary
+            const compR = Math.floor(128 + (255 - r) * 0.5);
+            const compG = Math.floor(128 + (255 - g) * 0.5);
+            const compB = Math.floor(128 + (255 - b) * 0.5);
+            return `rgb(${compR}, ${compG}, ${compB})`;
+        } else {
+            // Medium luminance - return complementary color
+            const compR = 255 - r;
+            const compG = 255 - g;
+            const compB = 255 - b;
+            return `rgb(${compR}, ${compG}, ${compB})`;
+        }
     }
     
     findIntegralLabelAtPoint(x, y) {
