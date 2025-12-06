@@ -9916,8 +9916,8 @@ class Graphiti {
             if (Math.abs(piRatio - 1.5) < tolerance) return '\\frac{3\\pi}{2}';
             if (Math.abs(piRatio - (-1.5)) < tolerance) return '-\\frac{3\\pi}{2}';
             
-            // Otherwise return numeric value
-            return value.toFixed(2);
+            // Otherwise return numeric value with 4 significant figures, removing trailing zeros
+            return parseFloat(value.toPrecision(4)).toString();
         };
         
         if (xMinInput) {
