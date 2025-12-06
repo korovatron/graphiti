@@ -16771,7 +16771,14 @@ class Graphiti {
             .getPropertyValue('--label-color').trim();
             
         this.ctx.fillStyle = labelColor;
-        this.ctx.font = '12px Arial';
+        
+        // Adjust font size and weight based on size mode
+        if (this.sizeMode === 'large') {
+            this.ctx.font = 'bold 16px Arial';
+        } else {
+            this.ctx.font = '12px Arial';
+        }
+        
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         
