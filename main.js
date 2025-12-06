@@ -20293,9 +20293,11 @@ class Graphiti {
         this.ctx.save();
         
         // Circle - use function color, slightly larger for active tracing or being held
-        let radius = 8;
-        if (isActive) radius = 10;
-        if (isBeingHeld) radius = 9;
+        // Base sizes scale with size mode
+        const baseRadius = this.getMarkerRadius(8);
+        let radius = baseRadius;
+        if (isActive) radius = this.getMarkerRadius(10);
+        if (isBeingHeld) radius = this.getMarkerRadius(9);
         
         this.ctx.strokeStyle = isBeingHeld ? '#FFD700' : '#FFFFFF'; // Gold border when being held
         this.ctx.fillStyle = color;
@@ -20306,9 +20308,10 @@ class Graphiti {
         this.ctx.stroke();
         
         // Inner dot - slightly larger when being held
+        const innerDotRadius = this.getMarkerRadius(isBeingHeld ? 3 : 2);
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, isBeingHeld ? 3 : 2, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, innerDotRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         // Draw integral symbol if badge has integral
