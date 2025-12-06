@@ -16442,18 +16442,17 @@ class Graphiti {
     }
     
     findUniformLabelRadius(center, thetaSpacing) {
-        // Find the minimum safe radius across all angles
-        let minSafeRadius = Infinity;
+        // Calculate distance to each viewport edge
+        const distanceToRight = this.viewport.width - center.x;
+        const distanceToLeft = center.x;
+        const distanceToBottom = this.viewport.height - center.y;
+        const distanceToTop = center.y;
         
-        for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
-            // Skip 0° since we don't draw that label anyway
-            if (Math.abs(theta) < 0.001) continue;
-            
-            const maxRadiusForThisAngle = this.findMaxVisibleRadius(center, theta);
-            minSafeRadius = Math.min(minSafeRadius, maxRadiusForThisAngle);
-        }
+        // Find the largest distance
+        const maxDistance = Math.max(distanceToRight, distanceToLeft, distanceToBottom, distanceToTop);
         
-        return minSafeRadius === Infinity ? 0 : minSafeRadius;
+        // Use half of that as the radius
+        return maxDistance * 0.5;
     }
     
     findMaxVisibleRadius(center, theta) {
