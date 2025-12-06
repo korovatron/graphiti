@@ -16399,7 +16399,15 @@ class Graphiti {
         const angleColor = isDarkMode ? '#FFD700' : '#FF8C00'; // Gold in dark mode, vibrant orange in light mode
 
         this.ctx.fillStyle = angleColor;
-        this.ctx.font = '12px Arial';
+        this.ctx.strokeStyle = angleColor; // For fraction lines
+        
+        // Adjust font size based on size mode
+        if (this.sizeMode === 'large') {
+            this.ctx.font = 'bold 16px Arial';
+        } else {
+            this.ctx.font = '12px Arial';
+        }
+        
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
@@ -16422,7 +16430,13 @@ class Graphiti {
                 const adjustedX = labelX + this.getPolarLabelOffset(theta).x;
                 const adjustedY = labelY + this.getPolarLabelOffset(theta).y;
                 
-                this.ctx.fillText(label, adjustedX, adjustedY);
+                // Try to draw as stacked pi fraction if applicable
+                const piFraction = this.parsePiFraction(label);
+                if (piFraction && piFraction.denominator) {
+                    this.drawPiFraction(adjustedX, adjustedY, label, 'center', 'middle');
+                } else {
+                    this.ctx.fillText(label, adjustedX, adjustedY);
+                }
             }
         }
     }
