@@ -16532,6 +16532,97 @@ class Graphiti {
         }
     }
 
+    // Parse a pi fraction string into components for rendering
+    // Returns null if not a pi fraction, or {sign, coefficient, denominator} if it is
+    parsePiFraction(piFractionString) {
+        if (!piFractionString || typeof piFractionString !== 'string') return null;
+        
+        // Match patterns like: "π", "-π", "2π", "-2π", "π/4", "-π/4", "3π/2", "-3π/2"
+        const match = piFractionString.match(/^(-?)(\d*)π(?:\/(\d+))?$/);
+        if (!match) return null;
+        
+        const sign = match[1] || '';
+        const coefficient = match[2] ? parseInt(match[2]) : 1;
+        const denominator = match[3] ? parseInt(match[3]) : null;
+        
+        return { sign, coefficient, denominator };
+    }
+    
+    // Draw a pi fraction as a stacked fraction (numerator over denominator)
+    // Returns the width of the rendered fraction for positioning purposes
+    drawPiFraction(x, y, piFractionString, textAlign = 'center', textBaseline = 'middle') {
+        const parsed = this.parsePiFraction(piFractionString);
+        if (!parsed) {
+            // Not a pi fraction, draw as regular text
+            this.ctx.fillText(piFractionString, x, y);
+            return this.ctx.measureText(piFractionString).width;
+        }
+        
+        const { sign, coefficient, denominator } = parsed;
+        
+        // If no denominator, it's just a whole multiple of π
+        if (!denominator) {
+            const text = sign + (coefficient === 1 ? '' : coefficient) + 'π';
+            this.ctx.fillText(text, x, y);
+            return this.ctx.measureText(text).width;
+        }
+        
+        // Build numerator text (include the sign)
+        const numeratorText = sign + (coefficient === 1 ? '' : coefficient) + 'π';
+        const denominatorText = denominator.toString();
+        
+        // Measure text dimensions
+        const numWidth = this.ctx.measureText(numeratorText).width;
+        const denWidth = this.ctx.measureText(denominatorText).width;
+        const maxWidth = Math.max(numWidth, denWidth);
+        
+        // Calculate spacing based on current font size
+        // Extract font size from font string (handles "12px Arial" or "bold 16px Arial")
+        const fontSizeMatch = this.ctx.font.match(/(\d+)px/);
+        const fontSize = fontSizeMatch ? parseInt(fontSizeMatch[1]) : 12;
+        const lineSpacing = fontSize * 0.25; // Reduced from 0.4 to 0.25 for tighter spacing
+        const fractionLineThickness = Math.max(1, fontSize * 0.08);
+        
+        // Adjust x position based on text alignment
+        let centerX = x;
+        if (textAlign === 'right') {
+            centerX = x - maxWidth / 2;
+        } else if (textAlign === 'left') {
+            centerX = x + maxWidth / 2;
+        }
+        
+        // Adjust y position based on text baseline
+        // Add extra offset when baseline is 'top' to move fraction down from axis
+        let centerY = y;
+        if (textBaseline === 'top') {
+            centerY = y + lineSpacing + fontSize * 0.9; // Increased from 0.6 to 0.9
+        } else if (textBaseline === 'bottom') {
+            centerY = y - lineSpacing - fontSize * 0.6;
+        }
+        
+        this.ctx.save();
+        
+        // Draw numerator (centered above baseline)
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'bottom';
+        this.ctx.fillText(numeratorText, centerX, centerY - lineSpacing);
+        
+        // Draw fraction line
+        this.ctx.beginPath();
+        this.ctx.moveTo(centerX - maxWidth / 2 - 1, centerY);
+        this.ctx.lineTo(centerX + maxWidth / 2 + 1, centerY);
+        this.ctx.lineWidth = fractionLineThickness;
+        this.ctx.stroke();
+        
+        // Draw denominator (centered below baseline)
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(denominatorText, centerX, centerY + lineSpacing);
+        
+        this.ctx.restore();
+        
+        return maxWidth;
+    }
+    
     // Format a coordinate value as a pi fraction if it's close to a common multiple of π/12
     // Used for badge coordinates in radian mode with trig functions
     formatAsPiFraction(value) {
@@ -16820,7 +16911,13 @@ class Graphiti {
                     
                     // Don't draw labels too close to the bottom
                     if (labelY < this.viewport.height - 15) {
-                        this.ctx.fillText(label, screenPos.x, labelY);
+                        // Try to draw as stacked pi fraction
+                        const piFraction = this.parsePiFraction(label);
+                        if (piFraction && piFraction.denominator) {
+                            this.drawPiFraction(screenPos.x, labelY, label, 'center', 'top');
+                        } else {
+                            this.ctx.fillText(label, screenPos.x, labelY);
+                        }
                     }
                 }
             }
@@ -16855,7 +16952,13 @@ class Graphiti {
                     
                     // Don't draw labels too close to the left edge
                     if (labelX > 15) {
-                        this.ctx.fillText(label, labelX, screenPos.y);
+                        // Try to draw as stacked pi fraction
+                        const piFraction = this.parsePiFraction(label);
+                        if (piFraction && piFraction.denominator) {
+                            this.drawPiFraction(labelX, screenPos.y, label, 'right', 'middle');
+                        } else {
+                            this.ctx.fillText(label, labelX, screenPos.y);
+                        }
                     }
                 }
             }
