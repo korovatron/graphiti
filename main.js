@@ -20444,10 +20444,13 @@ class Graphiti {
             }
         }
         
-        this.ctx.font = '16px Arial, sans-serif'; // Larger font for classroom visibility
+        // Adjust font size based on size mode
+        const fontSize = this.sizeMode === 'large' ? 20 : 16;
+        const fontWeight = this.sizeMode === 'large' ? 'bold' : 'normal';
+        this.ctx.font = `${fontWeight} ${fontSize}px Arial, sans-serif`;
         const textMetrics = this.ctx.measureText(labelText);
         const textWidth = textMetrics.width;
-        const textHeight = 16; // Updated to match font size
+        const textHeight = fontSize;
         
         // Position label to avoid overlapping with the circle
         const labelX = screenX + 15;
