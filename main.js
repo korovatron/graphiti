@@ -14375,7 +14375,8 @@ class Graphiti {
                                     func: func,
                                     type: pointType,
                                     derivative: 0,
-                                    secondDerivative: d2ydx2
+                                    secondDerivative: d2ydx2,
+                                    tValue: tTurn // Store t parameter for parametric badge display
                                 });
                             }
                         }
@@ -16690,7 +16691,7 @@ class Graphiti {
     // Format a coordinate value as a common radical/fraction if it matches a known trig value
     // Used for y-coordinates in Cartesian mode and r-coordinates in polar mode
     formatAsCommonValue(value) {
-        const tolerance = 0.001;
+        const tolerance = 0.005; // Slightly relaxed tolerance for numerical precision
         
         // Check for zero and one first (most common)
         if (Math.abs(value) < tolerance) return null; // Let formatCoordinate handle zero
@@ -18462,11 +18463,12 @@ class Graphiti {
             turningPoint.x,
             turningPoint.y,
             turningPoint.func,
-            turningPoint.type
+            turningPoint.type,
+            turningPoint.tValue // Pass tValue for parametric functions
         );
     }
     
-    addTurningPointBadge(worldX, worldY, func, type) {
+    addTurningPointBadge(worldX, worldY, func, type, tValue = null) {
         // Use color coding for turning point badges
         let badgeColor;
         
@@ -18508,6 +18510,7 @@ class Graphiti {
             customText: null,
             badgeType: type, // 'maximum', 'minimum', etc.
             significantPointType: 'turningPoint', // Mark for position updates
+            tValue: tValue, // Store t parameter for parametric functions
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
         };
@@ -20900,8 +20903,22 @@ class Graphiti {
         
         if (isParametric && tValue !== null && tValue !== undefined) {
             // For parametric functions, show (x, y) | t = value with 3 sig figs for t
-            const xStr = this.formatCoordinate(worldX);
-            const yStr = this.formatCoordinate(worldY);
+            // But still check for common trig values if the function contains trig
+            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+            const hasTrig = func.expression && trigRegex.test(func.expression);
+            
+            let xStr, yStr;
+            if (hasTrig) {
+                // Check for common values (like √2/2) before falling back to formatCoordinate
+                const xCommon = this.formatAsCommonValue(worldX);
+                const yCommon = this.formatAsCommonValue(worldY);
+                xStr = xCommon || this.formatCoordinate(worldX);
+                yStr = yCommon || this.formatCoordinate(worldY);
+            } else {
+                xStr = this.formatCoordinate(worldX);
+                yStr = this.formatCoordinate(worldY);
+            }
+            
             const tStr = parseFloat(tValue.toPrecision(3)).toString();
             return `(${xStr}, ${yStr}) | t = ${tStr}`;
         }
@@ -20981,22 +20998,19 @@ class Graphiti {
                 return `(${rStr}, ${thetaStr})`;
             }
         } else {
-            // Cartesian mode - try to format x as pi fraction if appropriate
+            // Cartesian mode - try to format x as pi fraction if appropriate, and always check for common values
             let xStr;
             if (shouldUsePiFractions) {
                 const piFraction = this.formatAsPiFraction(worldX);
                 xStr = piFraction || this.formatCoordinate(worldX);
             } else {
-                xStr = this.formatCoordinate(worldX);
+                // Always check for common values (like √2/2) even when no trig present
+                const xCommon = this.formatAsCommonValue(worldX);
+                xStr = xCommon || this.formatCoordinate(worldX);
             }
-            // Try to format y as common value
-            let yStr;
-            if (shouldUseCommonValues) {
-                const commonValue = this.formatAsCommonValue(worldY);
-                yStr = commonValue || this.formatCoordinate(worldY);
-            } else {
-                yStr = this.formatCoordinate(worldY);
-            }
+            // Always check y for common values (like √3/2)
+            const yCommon = this.formatAsCommonValue(worldY);
+            const yStr = yCommon || this.formatCoordinate(worldY);
             return `(${xStr}, ${yStr})`;
         }
     }
