@@ -17395,16 +17395,19 @@ class Graphiti {
         // Draw a small, unobtrusive marker
         this.ctx.save();
         
+        const outerRadius = this.getMarkerRadius(6);
+        const innerRadius = this.getMarkerRadius(3);
+        
         // Outer circle (white/light background for contrast)
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         // Inner circle (darker color to indicate intersection)
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         this.ctx.restore();
@@ -17488,16 +17491,19 @@ class Graphiti {
         // Draw a marker with same neutral color as intersections
         this.ctx.save();
         
+        const outerRadius = this.getMarkerRadius(6);
+        const innerRadius = this.getMarkerRadius(3);
+        
         // Outer circle (white/light background for contrast)
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         // Inner circle (same neutral color as intersections)
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         this.ctx.restore();
@@ -17514,16 +17520,19 @@ class Graphiti {
                 // Draw as simple markers (same neutral color as intersections)
                 this.ctx.save();
                 
+                const outerRadius = this.getMarkerRadius(6);
+                const innerRadius = this.getMarkerRadius(3);
+                
                 // Outer circle (white/light background for contrast)
                 this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.arc(screenPos.x, screenPos.y, outerRadius, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
                 // Inner circle (same neutral color as intersections)
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.arc(screenPos.x, screenPos.y, innerRadius, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
                 this.ctx.restore();
@@ -17597,16 +17606,19 @@ class Graphiti {
         // Draw a marker with same style as turning points/intersections
         this.ctx.save();
         
+        const outerRadius = this.getMarkerRadius(6);
+        const innerRadius = this.getMarkerRadius(3);
+        
         // Outer circle (white/light background for contrast)
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 6, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         // Inner circle (same neutral color as intersections)
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, 3, 0, 2 * Math.PI);
+        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
         this.ctx.fill();
         
         this.ctx.restore();
@@ -17625,16 +17637,19 @@ class Graphiti {
                 // Draw as simple markers
                 this.ctx.save();
                 
+                const outerRadius = this.getMarkerRadius(6);
+                const innerRadius = this.getMarkerRadius(3);
+                
                 // Outer circle (white/light background for contrast)
                 this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.arc(screenPos.x, screenPos.y, outerRadius, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
                 // Inner circle (same neutral color as intersections)
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.arc(screenPos.x, screenPos.y, innerRadius, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
                 this.ctx.restore();
@@ -17653,16 +17668,19 @@ class Graphiti {
                 // Draw intersection marker (same style as normal intersections)
                 this.ctx.save();
                 
+                const outerRadius = this.getMarkerRadius(6);
+                const innerRadius = this.getMarkerRadius(3);
+                
                 // Outer circle (white/light background for contrast)
                 this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 6, 0, 2 * Math.PI);
+                this.ctx.arc(screenPos.x, screenPos.y, outerRadius, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
                 // Inner circle (darker color to indicate intersection)
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, 3, 0, 2 * Math.PI);
+                this.ctx.arc(screenPos.x, screenPos.y, innerRadius, 0, 2 * Math.PI);
                 this.ctx.fill();
                 
                 this.ctx.restore();
@@ -19741,6 +19759,16 @@ class Graphiti {
             return baseWidth * 1.5;
         }
         return baseWidth;
+    }
+    
+    getMarkerRadius(baseRadius) {
+        // Return adjusted marker radius based on size mode
+        // Current size (6 outer, 3 inner) becomes large mode size
+        // Normal mode is slightly smaller
+        if (this.sizeMode === 'large') {
+            return baseRadius;
+        }
+        return baseRadius * 0.75; // 25% smaller in normal mode
     }
     
     getPanelScale() {
