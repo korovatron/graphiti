@@ -247,7 +247,7 @@ class Graphiti {
         
         // Turning point detection
         this.turningPoints = []; // Store detected turning points (maxima/minima)
-        this.showTurningPoints = false; // Toggle for turning point display (off by default)
+        this.showTurningPoints = true; // Toggle for turning point display (on by default)
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
