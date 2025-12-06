@@ -17626,33 +17626,71 @@ class Graphiti {
     }
     
     drawFrozenTurningPointBadges() {
+        // Convert to screen coordinates and filter by viewport
+        const markersInViewport = [];
+        
         for (const frozenBadge of this.frozenTurningPointBadges) {
             const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
             
-            // Only draw if within viewport
+            // Only consider markers within viewport
             if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
                 screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
                 
-                // Draw as simple markers (same neutral color as intersections)
-                this.ctx.save();
-                
-                const outerRadius = this.getMarkerRadius(6);
-                const innerRadius = this.getMarkerRadius(3);
-                
-                // Outer circle (white/light background for contrast)
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, outerRadius, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                // Inner circle (same neutral color as intersections)
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, innerRadius, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                this.ctx.restore();
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    badge: frozenBadge
+                });
             }
+        }
+        
+        // Apply density-based culling: skip markers too close to each other
+        const minDistance = 20; // Minimum pixel distance between markers
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Check if this marker is too close to any already accepted marker
+            for (const accepted of culledMarkers) {
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            // Draw as simple markers (same neutral color as intersections)
+            this.ctx.save();
+            
+            const outerRadius = this.getMarkerRadius(6);
+            const innerRadius = this.getMarkerRadius(3);
+            
+            // Outer circle (white/light background for contrast)
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            this.ctx.beginPath();
+            this.ctx.arc(marker.screenX, marker.screenY, outerRadius, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Inner circle (same neutral color as intersections)
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.beginPath();
+            this.ctx.arc(marker.screenX, marker.screenY, innerRadius, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            this.ctx.restore();
         }
     }
     
@@ -17743,64 +17781,140 @@ class Graphiti {
     drawFrozenInterceptBadges() {
         if (!this.frozenInterceptBadges) return;
         
+        // Convert to screen coordinates and filter by viewport
+        const markersInViewport = [];
+        
         for (const frozenBadge of this.frozenInterceptBadges) {
             const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
             
-            // Only draw if within viewport
+            // Only consider markers within viewport
             if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
                 screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
                 
-                // Draw as simple markers
-                this.ctx.save();
-                
-                const outerRadius = this.getMarkerRadius(6);
-                const innerRadius = this.getMarkerRadius(3);
-                
-                // Outer circle (white/light background for contrast)
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, outerRadius, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                // Inner circle (same neutral color as intersections)
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, innerRadius, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                this.ctx.restore();
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    badge: frozenBadge
+                });
             }
+        }
+        
+        // Apply density-based culling: skip markers too close to each other
+        const minDistance = 20; // Minimum pixel distance between markers
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Check if this marker is too close to any already accepted marker
+            for (const accepted of culledMarkers) {
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            // Draw as simple markers
+            this.ctx.save();
+            
+            const outerRadius = this.getMarkerRadius(6);
+            const innerRadius = this.getMarkerRadius(3);
+            
+            // Outer circle (white/light background for contrast)
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            this.ctx.beginPath();
+            this.ctx.arc(marker.screenX, marker.screenY, outerRadius, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Inner circle (same neutral color as intersections)
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.beginPath();
+            this.ctx.arc(marker.screenX, marker.screenY, innerRadius, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            this.ctx.restore();
         }
     }
     
     drawFrozenIntersectionBadges() {
+        // Convert to screen coordinates and filter by viewport
+        const markersInViewport = [];
+        
         for (const frozenBadge of this.frozenIntersectionBadges) {
             const screenPos = this.worldToScreen(frozenBadge.x, frozenBadge.y);
             
-            // Only draw if within viewport
+            // Only consider markers within viewport
             if (screenPos.x >= -20 && screenPos.x <= this.viewport.width + 20 &&
                 screenPos.y >= -20 && screenPos.y <= this.viewport.height + 20) {
                 
-                // Draw intersection marker (same style as normal intersections)
-                this.ctx.save();
-                
-                const outerRadius = this.getMarkerRadius(6);
-                const innerRadius = this.getMarkerRadius(3);
-                
-                // Outer circle (white/light background for contrast)
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, outerRadius, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                // Inner circle (darker color to indicate intersection)
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, innerRadius, 0, 2 * Math.PI);
-                this.ctx.fill();
-                
-                this.ctx.restore();
+                markersInViewport.push({
+                    screenX: screenPos.x,
+                    screenY: screenPos.y,
+                    badge: frozenBadge
+                });
             }
+        }
+        
+        // Apply density-based culling: skip markers too close to each other
+        const minDistance = 20; // Minimum pixel distance between markers
+        const culledMarkers = [];
+        
+        for (const marker of markersInViewport) {
+            let tooClose = false;
+            
+            // Check if this marker is too close to any already accepted marker
+            for (const accepted of culledMarkers) {
+                const distance = Math.sqrt(
+                    Math.pow(marker.screenX - accepted.screenX, 2) + 
+                    Math.pow(marker.screenY - accepted.screenY, 2)
+                );
+                
+                if (distance < minDistance) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            // Only add marker if it's not too close to existing ones
+            if (!tooClose) {
+                culledMarkers.push(marker);
+            }
+        }
+        
+        // Draw the culled set of markers
+        for (const marker of culledMarkers) {
+            // Draw intersection marker (same style as normal intersections)
+            this.ctx.save();
+            
+            const outerRadius = this.getMarkerRadius(6);
+            const innerRadius = this.getMarkerRadius(3);
+            
+            // Outer circle (white/light background for contrast)
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            this.ctx.beginPath();
+            this.ctx.arc(marker.screenX, marker.screenY, outerRadius, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Inner circle (darker color to indicate intersection)
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.beginPath();
+            this.ctx.arc(marker.screenX, marker.screenY, innerRadius, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            this.ctx.restore();
         }
     }
     
