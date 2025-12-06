@@ -20519,7 +20519,7 @@ class Graphiti {
                 // Display polar derivative dr/dθ
                 const polarDerivStr = this.formatDerivative(tangentSlope.polarDerivative);
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
-                labelText += ` | dr/d${thetaSymbol} = ${polarDerivStr}`;
+                labelText += ` | dr / d${thetaSymbol} = ${polarDerivStr}`;
             } else {
                 // Display Cartesian slope dy/dx
                 const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
@@ -20537,7 +20537,7 @@ class Graphiti {
                 } else {
                     slopeStr = this.formatDerivative(displaySlope);
                 }
-                labelText += ` | dy/dx = ${slopeStr}`;
+                labelText += ` | dy / dx = ${slopeStr}`;
                 
                 // Add second derivative if available
                 const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
@@ -20548,7 +20548,7 @@ class Graphiti {
                         displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
                     }
                     const secondDerivStr = this.formatDerivative(displaySecondDeriv);
-                    labelText += ` | d²y/dx² = ${secondDerivStr}`;
+                    labelText += ` | d²y / dx² = ${secondDerivStr}`;
                 }
             }
         }
@@ -20560,7 +20560,7 @@ class Graphiti {
                 // Display polar derivative dr/dθ
                 const polarDerivStr = this.formatDerivative(tangentSlope.polarDerivative);
                 const thetaSymbol = this.angleMode === 'degrees' ? 'θ' : 'θ';
-                labelText += ` | dr/d${thetaSymbol} = ${polarDerivStr}`;
+                labelText += ` | dr / d${thetaSymbol} = ${polarDerivStr}`;
             } else {
                 // Display Cartesian slope dy/dx
                 const slopeValue = tangentSlope.slope !== undefined ? tangentSlope.slope : tangentSlope;
@@ -20578,7 +20578,7 @@ class Graphiti {
                 } else {
                     slopeStr = this.formatDerivative(displaySlope);
                 }
-                labelText += ` | dy/dx = ${slopeStr}`;
+                labelText += ` | dy / dx = ${slopeStr}`;
                 
                 // Add second derivative if available
                 const secondDeriv = tangentSlope.secondDerivative !== undefined ? tangentSlope.secondDerivative : secondDerivative;
@@ -20589,7 +20589,7 @@ class Graphiti {
                         displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
                     }
                     const secondDerivStr = this.formatDerivative(displaySecondDeriv);
-                    labelText += ` | d²y/dx² = ${secondDerivStr}`;
+                    labelText += ` | d²y / dx² = ${secondDerivStr}`;
                 }
             }
         }
