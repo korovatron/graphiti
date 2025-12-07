@@ -8681,8 +8681,8 @@ class Graphiti {
                 // Force recalculation of scale based on current viewport dimensions
                 this.updateViewportScale();
                 
-                // For polar mode, enforce 1:1 aspect ratio for proper circular display
-                this.enforcePolarAspectRatio();
+                // Enforce 1:1 aspect ratio for both modes to keep circles circular
+                this.enforceSquareAspectRatio();
                 
                 // Update range inputs to reflect the reset
                 this.updateRangeInputs();
@@ -10835,6 +10835,28 @@ class Graphiti {
             this.viewport.maxY = centerY + halfRangeY;
             this.viewport.scale = targetScale;
         }
+    }
+    
+    enforceSquareAspectRatio() {
+        // Force 1:1 aspect ratio to keep circles circular (works for both modes)
+        const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+        const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+        
+        // Calculate what the ranges should be for 1:1 aspect ratio
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        const xScale = this.viewport.width / xRange;
+        const yScale = this.viewport.height / yRange;
+        const targetScale = Math.min(xScale, yScale);
+        
+        const halfRangeX = this.viewport.width / (2 * targetScale);
+        const halfRangeY = this.viewport.height / (2 * targetScale);
+        
+        this.viewport.minX = centerX - halfRangeX;
+        this.viewport.maxX = centerX + halfRangeX;
+        this.viewport.minY = centerY - halfRangeY;
+        this.viewport.maxY = centerY + halfRangeY;
+        this.viewport.scale = targetScale;
     }
     
     zoomIn() {
