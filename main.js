@@ -4270,7 +4270,7 @@ class Graphiti {
         const colorCtx = colorCanvas.getContext('2d', { alpha: true });
         
         // Fill with the desired color
-        colorCtx.fillStyle = '#6B9BD1'; // Light blue-gray color
+        colorCtx.fillStyle = '#B400FF'; // Neon purple - distinct from function colors
         colorCtx.fillRect(0, 0, this.viewport.width, this.viewport.height);
         
         // Mask with the intersection using destination-in
@@ -17766,16 +17766,8 @@ class Graphiti {
                         }
                     }
                     
-                    // Set line style based on strict vs non-strict
-                    // <= and >=: solid line with standard thickness (like equations)
-                    // < and >: dashed line with standard thickness
-                    if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
-                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
-                    } else {
-                        this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
-                    }
+                    // Store inequality type for later rendering
+                    func._inequalityIsStrict = (inequality.operator === '>' || inequality.operator === '<');
                 }
             } else {
                 // Handle Cartesian inequality shading
@@ -17791,21 +17783,47 @@ class Graphiti {
                         }
                     }
                     
-                    // Set line style based on strict vs non-strict
-                    // <= and >=: solid line with standard thickness (like equations)
-                    // < and >: dashed line with standard thickness
-                    if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
-                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
-                    } else {
-                        this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
-                    }
+                    // Store inequality type for later rendering
+                    func._inequalityIsStrict = (inequality.operator === '>' || inequality.operator === '<');
                 }
             }
         }
         
+        // For non-strict inequalities, draw black outline first
+        if (func._inequalityIsStrict === false) {
+            this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.lineWidth = this.getLineWidth(6);
+            this.ctx.setLineDash([]);
+            
+            this.ctx.beginPath();
+            let pathStarted = false;
+            
+            for (let i = 0; i < func.points.length; i++) {
+                const point = func.points[i];
+                
+                if (!isFinite(point.y)) {
+                    pathStarted = false;
+                    continue;
+                }
+                
+                const screenPos = this.worldToScreen(point.x, point.y);
+                
+                if (!pathStarted) {
+                    this.ctx.moveTo(screenPos.x, screenPos.y);
+                    pathStarted = true;
+                } else {
+                    this.ctx.lineTo(screenPos.x, screenPos.y);
+                }
+            }
+            
+            this.ctx.stroke();
+        }
+        
+        // Now draw the main colored line
         this.ctx.strokeStyle = func.color;
+        this.ctx.lineWidth = this.getLineWidth(3);
+        this.ctx.setLineDash([]);
+        
         if (!func.expression.match(/[<>]/)) {
             this.ctx.setLineDash([]); // Ensure solid line for equations
             this.ctx.lineWidth = this.getLineWidth(3); // Default for equations without inequalities
@@ -17883,49 +17901,55 @@ class Graphiti {
         
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
-            // Set line style based on strict vs non-strict inequality
-            // <= and >=: solid line with standard thickness (like equations)
-            // < and >: dashed line with standard thickness
-            let lineWidth = this.getLineWidth(3); // Standard width for all
-            let lineDash = [];
+            // Strict inequalities (<, >): simple solid line
+            // Non-strict inequalities (≤, ≥): colored line with black outline for distinction
+            let isStrict = false;
             
             if (isInequality) {
                 const clean = this.convertFromLatex(func.expression).trim();
-                const isStrict = clean.includes('>') && !clean.includes('>=') || 
-                                clean.includes('<') && !clean.includes('<=');
-                
-                if (isStrict) {
-                    lineDash = [5, 5]; // Dashed for strict inequalities
-                }
+                isStrict = clean.includes('>') && !clean.includes('>=') || 
+                          clean.includes('<') && !clean.includes('<=');
             }
             
-            // Always draw boundary in function color (to hide pixelated shading edges)
-            this.ctx.strokeStyle = func.color;
-            this.ctx.lineWidth = lineWidth;
-            this.ctx.setLineDash(lineDash);
+            // For non-strict inequalities, draw black outline first, then colored line on top
+            const linesToDraw = isStrict ? 1 : 2;
             
-            // Draw individual line segments (every pair of connected points)
-            for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
-                const startPoint = pointsToUse[i];
-                const endPoint = pointsToUse[i + 1];
+            for (let pass = 0; pass < linesToDraw; pass++) {
+                if (pass === 0 && !isStrict) {
+                    // First pass for non-strict: draw black outline (wider)
+                    this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+                    this.ctx.lineWidth = this.getLineWidth(6);
+                } else {
+                    // Second pass for non-strict or only pass for strict: draw colored line
+                    this.ctx.strokeStyle = func.color;
+                    this.ctx.lineWidth = this.getLineWidth(3);
+                }
                 
-                if (startPoint && endPoint && 
-                    isFinite(startPoint.x) && isFinite(startPoint.y) &&
-                    isFinite(endPoint.x) && isFinite(endPoint.y)) {
+                this.ctx.setLineDash([]);
+                
+                // Draw individual line segments (every pair of connected points)
+                for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
+                    const startPoint = pointsToUse[i];
+                    const endPoint = pointsToUse[i + 1];
                     
-                    const startScreen = this.worldToScreen(startPoint.x, startPoint.y);
-                    const endScreen = this.worldToScreen(endPoint.x, endPoint.y);
-                    
-                    // Only draw if at least one endpoint is visible
-                    if ((startScreen.x >= -50 && startScreen.x <= this.viewport.width + 50 &&
-                         startScreen.y >= -50 && startScreen.y <= this.viewport.height + 50) ||
-                        (endScreen.x >= -50 && endScreen.x <= this.viewport.width + 50 &&
-                         endScreen.y >= -50 && endScreen.y <= this.viewport.height + 50)) {
+                    if (startPoint && endPoint && 
+                        isFinite(startPoint.x) && isFinite(startPoint.y) &&
+                        isFinite(endPoint.x) && isFinite(endPoint.y)) {
                         
-                        this.ctx.beginPath();
-                        this.ctx.moveTo(startScreen.x, startScreen.y);
-                        this.ctx.lineTo(endScreen.x, endScreen.y);
-                        this.ctx.stroke();
+                        const startScreen = this.worldToScreen(startPoint.x, startPoint.y);
+                        const endScreen = this.worldToScreen(endPoint.x, endPoint.y);
+                        
+                        // Only draw if at least one endpoint is visible
+                        if ((startScreen.x >= -50 && startScreen.x <= this.viewport.width + 50 &&
+                             startScreen.y >= -50 && startScreen.y <= this.viewport.height + 50) ||
+                            (endScreen.x >= -50 && endScreen.x <= this.viewport.width + 50 &&
+                             endScreen.y >= -50 && endScreen.y <= this.viewport.height + 50)) {
+                            
+                            this.ctx.beginPath();
+                            this.ctx.moveTo(startScreen.x, startScreen.y);
+                            this.ctx.lineTo(endScreen.x, endScreen.y);
+                            this.ctx.stroke();
+                        }
                     }
                 }
             }
