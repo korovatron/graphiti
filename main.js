@@ -1439,11 +1439,51 @@ class Graphiti {
                     { expression: 'y=\\arctan\\left(x\\right)', x: 3, hasIntegral: true }
                 ],
                 showNumericalMethod: true
+            },
+            'polar-basic': {
+                expressions: [
+                    'r=1+\\cos\\left(\\theta\\right)',                 // Cardioid
+                    'r=2\\cos\\left(3\\theta\\right)',                  // Rose curve
+                    '\\theta=\\frac{\\pi}{4}',                           // Ray at 45 degrees
+                    '\\theta=\\frac{3\\pi}{4}'                          // Ray at 135 degrees
+                ],
+                description: 'Polar Basics Demo',
+                viewport: { minX: -3, maxX: 3, minY: -3, maxY: 3 }
+            },
+            'polar-integral': {
+                expressions: [
+                    'r=\\theta'                                         // Spiral of Archimedes
+                ],
+                description: 'Polar Definite Integral Demo',
+                viewport: { minX: -8, maxX: 8, minY: -8, maxY: 8 },
+                badges: [
+                    { expression: 'r=\\theta', theta: Math.PI, hasIntegral: true },
+                    { expression: 'r=\\theta', theta: 2 * Math.PI, hasIntegral: true }
+                ]
+            },
+            'polar-area-between': {
+                expressions: [
+                    'r=2',                                              // Circle
+                    'r=1+\\cos\\left(\\theta\\right)'                 // Cardioid
+                ],
+                description: 'Polar Area Between Demo',
+                viewport: { minX: -3, maxX: 3, minY: -3, maxY: 3 },
+                badges: [
+                    { expression: 'r=2', theta: 0, hasIntegral: true },
+                    { expression: 'r=2', theta: Math.PI, hasIntegral: true },
+                    { expression: 'r=1+\\cos\\left(\\theta\\right)', theta: 0, hasIntegral: true },
+                    { expression: 'r=1+\\cos\\left(\\theta\\right)', theta: Math.PI, hasIntegral: true }
+                ]
             }
         };
         
         const demoSet = demoSets[demoSetId];
         if (!demoSet) return;
+        
+        // Clear any existing integral pairs and linked badge pairs from previous demo
+        this.integralPairs = [];
+        this.linkedBadgePairs = [];
+        this.selectedBadgeForLinking = null;
         
         // Disable all current functions (but keep them)
         const currentFunctions = this.getCurrentFunctions();
@@ -1505,9 +1545,12 @@ class Graphiti {
                 // Find the function that matches this badge's expression
                 const func = currentFunctions.find(f => f.expression === badgeSpec.expression && f.enabled);
                 if (func) {
+                    // Use x for Cartesian, theta for Polar
+                    const coordinate = badgeSpec.x !== undefined ? badgeSpec.x : badgeSpec.theta;
+                    
                     const badgeId = this.addBadgeWithTangentOrNormal(
                         func,
-                        badgeSpec.x,
+                        coordinate,
                         badgeSpec.hasTangent || false,
                         badgeSpec.hasNormal || false,
                         badgeSpec.neonTangent || false,
@@ -1540,8 +1583,9 @@ class Graphiti {
             // Update integral pairs to establish relationships and calculate areas
             this.updateIntegralPairs();
             
-            // For area-between-curves demo, enable the area between visualization
-            if (demoSetId === 'area-between-curves' && this.integralPairs.length === 2 && this.linkedBadgePairs.length > 0) {
+            // For area-between-curves demos, enable the area between visualization
+            if ((demoSetId === 'area-between-curves' || demoSetId === 'polar-area-between') && 
+                this.integralPairs.length === 2 && this.linkedBadgePairs.length > 0) {
                 // Enable showAreaBetween on the automatically created linked pair
                 this.linkedBadgePairs[0].showAreaBetween = true;
                 
@@ -1598,15 +1642,93 @@ class Graphiti {
     }
 
     // Helper method to programmatically add a badge with tangent/normal to a function
-    addBadgeWithTangentOrNormal(func, worldX, hasTangent, hasNormal, neonTangent = false, neonNormal = false, hasIntegral = false) {
-        // Find the closest point on the function curve to the specified x coordinate
-        const curvePoint = this.findClosestCurvePointAtX(func, worldX);
+    addBadgeWithTangentOrNormal(func, coordinate, hasTangent, hasNormal, neonTangent = false, neonNormal = false, hasIntegral = false) {
+        // Determine if this is a polar function
+        const functionType = this.detectFunctionType(func.expression);
+        const isPolar = functionType === 'polar' || functionType === 'polar-inequality' || functionType === 'theta-constant';
+        
+        let curvePoint = null;
+        
+        // For polar functions, coordinate is theta - find the corresponding point in func.points
+        if (isPolar) {
+            if (!func.points || func.points.length === 0) {
+                return null;
+            }
+            
+            let theta = coordinate;
+            let thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+            
+            // Find the point in func.points that corresponds to this theta
+            // The points were generated in plotPolarFunction with a specific step
+            const thetaMin = this.polarSettings.thetaMin;
+            const thetaMax = this.polarSettings.thetaMax;
+            const thetaStep = this.calculateDynamicPolarStep(thetaMin, thetaMax);
+            
+            // Calculate which index this theta corresponds to
+            const thetaMinRad = this.angleMode === 'degrees' ? thetaMin * Math.PI / 180 : thetaMin;
+            const index = Math.round((thetaForEval - thetaMinRad) / thetaStep);
+            
+            // Get the point at this index, or find the closest one
+            if (index >= 0 && index < func.points.length) {
+                const point = func.points[index];
+                if (point && isFinite(point.x) && isFinite(point.y)) {
+                    curvePoint = { worldX: point.x, worldY: point.y, function: func };
+                }
+            }
+            
+            // If we couldn't find it by index, search for closest point
+            if (!curvePoint) {
+                let closestDistance = Infinity;
+                for (let i = 0; i < func.points.length; i++) {
+                    const point = func.points[i];
+                    if (point && isFinite(point.x) && isFinite(point.y)) {
+                        // Calculate theta for this point
+                        const pointTheta = Math.atan2(point.y, point.x);
+                        const distance = Math.abs(pointTheta - thetaForEval);
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            curvePoint = { worldX: point.x, worldY: point.y, function: func };
+                        }
+                    }
+                }
+            }
+            
+            if (!curvePoint) {
+                return null;
+            }
+            
+            // Create the badge at the found point
+            const badgeId = this.addTraceBadge(
+                func.id,
+                curvePoint.worldX,
+                curvePoint.worldY,
+                func.color,
+                null,
+                null,
+                null
+            );
+            
+            // Get the badge and set its properties
+            const badge = this.input.persistentBadges.find(b => b.id === badgeId);
+            if (badge && hasIntegral) {
+                badge.hasIntegral = true;
+                badge.neonIntegral = false;
+                badge.hasTangent = false;
+                badge.hasNormal = false;
+                // Store the original theta value for polar integrals
+                badge.polarTheta = coordinate;
+            }
+            
+            return badgeId;
+        }
+        
+        // For Cartesian functions, use the original logic
+        curvePoint = this.findClosestCurvePointAtX(func, coordinate);
         if (!curvePoint) return null;
         
         // For explicit functions with integral badges, use exact x to avoid rounding errors
-        const functionType = this.detectFunctionType(func.expression);
         if (hasIntegral && (functionType === 'explicit' || functionType === 'explicit-inequality')) {
-            curvePoint.worldX = worldX; // Force exact x value
+            curvePoint.worldX = coordinate; // Force exact x value
         }
         
         // Create the badge
@@ -1630,7 +1752,7 @@ class Graphiti {
                 badge.hasTangent = false;
                 badge.hasNormal = false;
                 // Ensure exact x coordinate for integrals
-                badge.worldX = worldX;
+                badge.worldX = coordinate;
             }
             // For tangent/normal badges
             else if (hasTangent || hasNormal) {
@@ -3721,9 +3843,9 @@ class Graphiti {
             return 'explicit'; // f(x) format - assume explicit
         }
         
-        // Check for theta = constant (polar ray) in polar mode
+        // Check for polar functions in polar mode
         if (this.plotMode === 'polar') {
-            // Match t= or theta= or θ=
+            // Check for theta = constant (polar ray)
             const thetaMatch = clean.match(/^(θ|theta|t)\s*=\s*(.+)$/i);
             if (thetaMatch) {
                 // Check if right side is a constant expression (no theta or t variable)
@@ -3740,6 +3862,11 @@ class Graphiti {
                 if (!hasT && !hasTheta) {
                     return 'theta-constant';
                 }
+            }
+            
+            // Check for r = f(θ) format (polar function)
+            if (/^r\s*=/.test(clean)) {
+                return 'polar';
             }
         }
         
@@ -7070,8 +7197,13 @@ class Graphiti {
                 badges.sort((a, b) => {
                     if (sortFunctionType === 'parametric' && a.tValue !== null && b.tValue !== null) {
                         return a.tValue - b.tValue;
-                    } else if (this.plotMode === 'polar' && a.theta !== null && b.theta !== null) {
-                        return a.theta - b.theta;
+                    } else if (this.plotMode === 'polar') {
+                        // Use polarTheta if available (from programmatic badges), otherwise theta (from manual tracing)
+                        const aTheta = a.polarTheta !== null && a.polarTheta !== undefined ? a.polarTheta : a.theta;
+                        const bTheta = b.polarTheta !== null && b.polarTheta !== undefined ? b.polarTheta : b.theta;
+                        if (aTheta !== null && bTheta !== null) {
+                            return aTheta - bTheta;
+                        }
                     }
                     return a.worldX - b.worldX;
                 });
@@ -7119,8 +7251,9 @@ class Graphiti {
                         }
                     }
                 } else if (this.plotMode === 'polar') {
-                    start = badge1.theta;
-                    end = badge2.theta;
+                    // Use polarTheta if available (from programmatic badges), otherwise theta (from manual tracing)
+                    start = badge1.polarTheta !== null && badge1.polarTheta !== undefined ? badge1.polarTheta : badge1.theta;
+                    end = badge2.polarTheta !== null && badge2.polarTheta !== undefined ? badge2.polarTheta : badge2.theta;
                     area = this.calculatePolarIntegral(func, start, end);
                 } else {
                     start = badge1.worldX;
@@ -7999,6 +8132,7 @@ class Graphiti {
         this.initializeAngleMode();
         this.initializePolarRangeFields(); // Initialize polar range field styling
         this.initializeCartesianRangeFields(); // Initialize Cartesian range field styling
+        this.updateDemoSetVisibility(); // Initialize demo set visibility based on initial mode
         this.handleMobileLayout(true); // Force initial layout
         this.startAnimationLoop();
         
@@ -11131,6 +11265,9 @@ class Graphiti {
         // Update intercepts button state (only enabled in Cartesian mode)
         this.updateInterceptsToggleButton();
         
+        // Update demo set visibility based on mode
+        this.updateDemoSetVisibility();
+        
         // Clear existing function UI and recreate for current mode
         this.refreshFunctionUI();
 
@@ -11235,6 +11372,21 @@ class Graphiti {
         
         // Save functions to localStorage after mode switch
         this.saveFunctionsToLocalStorage();
+    }
+    
+    updateDemoSetVisibility() {
+        // Update demo set visibility based on current plot mode
+        const demoSetItems = document.querySelectorAll('.demo-set-item');
+        demoSetItems.forEach(item => {
+            const isPolarOnly = item.classList.contains('polar-only');
+            if (isPolarOnly) {
+                // Polar-only demos: show only in polar mode
+                item.style.display = this.plotMode === 'polar' ? 'block' : 'none';
+            } else {
+                // Cartesian demos: show only in cartesian mode
+                item.style.display = this.plotMode === 'cartesian' ? 'block' : 'none';
+            }
+        });
     }
     
     updateExamplesForMode() {
@@ -11621,6 +11773,9 @@ class Graphiti {
                 polarRanges.style.display = this.plotMode === 'polar' ? 'flex' : 'none';
                 polarOptions.style.display = this.plotMode === 'polar' ? 'block' : 'none';
             }
+            
+            // Update demo set visibility for the loaded mode
+            this.updateDemoSetVisibility();
             
             // Update Add Function button text
             const addFunctionBtn = document.getElementById('add-function');
@@ -21244,17 +21399,12 @@ class Graphiti {
             // For polar functions, pass theta as separate parameter for proper polar coordinate display
             // For parametric functions, pass tValue as separate parameter for proper parametric display
             const displayX = badge.worldX; // Always use Cartesian worldX for position
-            const thetaValue = (this.plotMode === 'polar' && badge.theta !== null && badge.theta !== undefined) 
-                ? badge.theta 
+            const thetaValue = (this.plotMode === 'polar' && (badge.theta !== null && badge.theta !== undefined || badge.polarTheta !== null && badge.polarTheta !== undefined)) 
+                ? (badge.theta !== null && badge.theta !== undefined ? badge.theta : badge.polarTheta)
                 : null;
             const tValueParam = (badge.tValue !== null && badge.tValue !== undefined) 
                 ? badge.tValue 
                 : null;
-            
-            // Debug: log if we're missing theta
-            if (this.plotMode === 'polar' && !thetaValue && badge.functionId) {
-                console.log('Badge missing theta:', badge.id, 'theta:', badge.theta);
-            }
             
             const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue, tValueParam);
             

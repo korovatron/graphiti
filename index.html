@@ -1611,11 +1611,10 @@
             cursor: pointer;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             transition: background 0.2s;
-            background: rgba(180, 0, 255, 0.05);
         }
 
         .demo-set-item:hover {
-            background: rgba(180, 0, 255, 0.15);
+            background: rgba(74, 144, 226, 0.1);
         }
 
         .example-formula {
@@ -1774,103 +1773,24 @@
                                 <div class="example-description">Trapezium rule: arctan with graphical visualization</div>
                             </div>
                             
-                            <div class="examples-header" id="examples-mode-header">Cartesian Examples</div>
-                            <!-- Cartesian examples -->
-                            <div class="cartesian-examples">
-                                <div class="example-item" data-expression="y=\sin(x)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">y=\sin(x)</math-field>
-                                    </div>
-                                    <div class="example-description">Trigonometric function</div>
+                            <!-- Polar Demo Sets -->
+                            <div class="demo-set-item polar-only" data-demo-set="polar-basic">
+                                <div class="example-formula">
+                                    <strong>⭐ Polar Basics</strong>
                                 </div>
-                                <div class="example-item" data-expression="y=\sec(x)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">y=\sec(x)</math-field>
-                                    </div>
-                                    <div class="example-description">Secant function</div>
-                                </div>
-                                <div class="example-item" data-expression="x+2y<4">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">x+2y<4</math-field>
-                                    </div>
-                                    <div class="example-description">Linear inequality</div>
-                                </div>
-                                <div class="example-item" data-expression="y=\sqrt{x}">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">y=\sqrt{x}</math-field>
-                                    </div>
-                                    <div class="example-description">Square root function</div>
-                                </div>
-                                <div class="example-item" data-expression="x^2+y^2\leq25">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">x^2+y^2\leq25</math-field>
-                                    </div>
-                                    <div class="example-description">Implicit: Filled circle</div>
-                                </div>
-                                <div class="example-item" data-expression="(x^2+y^2)^2=2(x^2-y^2)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">(x^2+y^2)^2=2(x^2-y^2)</math-field>
-                                    </div>
-                                    <div class="example-description">Implicit: Lemniscate</div>
-                                </div>
-                                <div class="example-item" data-expression="\left(\cos\left(t\right),\sin\left(t\right)\right)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">\left(\cos\left(t\right),\sin\left(t\right)\right)</math-field>
-                                    </div>
-                                    <div class="example-description">Parametric: Circle</div>
-                                </div>
-                                <div class="example-item" data-expression="\left(t-\sin\left(t\right),1-\cos\left(t\right)\right)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">\left(t-\sin\left(t\right),1-\cos\left(t\right)\right)</math-field>
-                                    </div>
-                                    <div class="example-description">Parametric: Cycloid</div>
-                                </div>
-                                <div class="example-item" data-expression="\left(\sin\left(3t\right),\sin\left(2t\right)\right)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">\left(\sin\left(3t\right),\sin\left(2t\right)\right)</math-field>
-                                    </div>
-                                    <div class="example-description">Parametric: Lissajous curve</div>
-                                </div>
+                                <div class="example-description">Shows r=f(θ) syntax: cardioid, rose, and θ=constant rays</div>
                             </div>
-                            
-                            <!-- Polar examples (hidden by default) -->
-                            <div class="polar-examples" style="display: none;">
-                                <div class="example-item" data-expression="r=1+\cos(\theta)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">r=1+\cos(\theta)</math-field>
-                                    </div>
-                                    <div class="example-description">Cardioid (heart shape)</div>
+                            <div class="demo-set-item polar-only" data-demo-set="polar-integral">
+                                <div class="example-formula">
+                                    <strong>⭐ Polar Integral</strong>
                                 </div>
-                                <div class="example-item" data-expression="r\leq2\cos(3\theta)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">r\leq2\cos(3\theta)</math-field>
-                                    </div>
-                                    <div class="example-description">Filled 3-petaled rose</div>
+                                <div class="example-description">Area calculation: spiral of Archimedes with bounds</div>
+                            </div>
+                            <div class="demo-set-item polar-only" data-demo-set="polar-area-between">
+                                <div class="example-formula">
+                                    <strong>⭐ Polar Area Between</strong>
                                 </div>
-                                <div class="example-item" data-expression="r=\theta">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">r=\theta</math-field>
-                                    </div>
-                                    <div class="example-description">Archimedean spiral</div>
-                                </div>
-                                <div class="example-item" data-expression="r=2+\cos(\theta)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">r=2+\cos(\theta)</math-field>
-                                    </div>
-                                    <div class="example-description">Limaçon (convex)</div>
-                                </div>
-                                <div class="example-item" data-expression="\theta=\frac{\pi}{4}">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">\theta=\frac{\pi}{4}</math-field>
-                                    </div>
-                                    <div class="example-description">Radial line</div>
-                                </div>
-                                <div class="example-item" data-expression="r=\csc(\theta)">
-                                    <div class="example-formula">
-                                        <math-field read-only style="font-size: 16px;">r=\csc(\theta)</math-field>
-                                    </div>
-                                    <div class="example-description">Cosecant function</div>
-                                </div>
+                                <div class="example-description">Area between curves: circle and cardioid</div>
                             </div>
                         </div>
 
