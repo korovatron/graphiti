@@ -13635,7 +13635,7 @@ class Graphiti {
         const explicitFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled || f.points.length === 0) return false;
             const functionType = this.detectFunctionType(f.expression);
-            return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
+            return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'polar' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         });
 
         if (explicitFunctions.length < 2) {
