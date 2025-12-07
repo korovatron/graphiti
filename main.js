@@ -1413,6 +1413,20 @@ class Graphiti {
                     { expression: 'y=\\frac{1}{x}', x: 1, hasIntegral: true },
                     { expression: 'y=\\frac{1}{x}', x: 4, hasIntegral: true }
                 ]
+            },
+            'area-between-curves': {
+                expressions: [
+                    'y=x^2',                                            // Parabola
+                    'y=2x+3'                                            // Line
+                ],
+                description: 'Area Between Curves Demo',
+                viewport: { minX: -2, maxX: 5, minY: -2, maxY: 16 },
+                badges: [
+                    { expression: 'y=x^2', x: -1, hasIntegral: true },
+                    { expression: 'y=x^2', x: 3, hasIntegral: true },
+                    { expression: 'y=2x+3', x: -1, hasIntegral: true },
+                    { expression: 'y=2x+3', x: 3, hasIntegral: true }
+                ]
             }
         };
         
@@ -1514,10 +1528,36 @@ class Graphiti {
             // Update integral pairs to establish relationships and calculate areas
             this.updateIntegralPairs();
             
-            // Calculate integrals for each pair
-            this.integralPairs.forEach(pair => {
-                this.updateIntegralForPair(pair.badge1Id, pair.badge2Id);
-            });
+            // For area-between-curves demo, enable the area between visualization
+            if (demoSetId === 'area-between-curves' && this.integralPairs.length === 2 && this.linkedBadgePairs.length > 0) {
+                // Enable showAreaBetween on the automatically created linked pair
+                this.linkedBadgePairs[0].showAreaBetween = true;
+                
+                // Calculate area between
+                const linkedPair = this.linkedBadgePairs[0];
+                if (linkedPair.pair1 && linkedPair.pair2) {
+                    // Calculate area between curves
+                    const badge1a = this.input.persistentBadges.find(b => b.id === linkedPair.pair1.badge1Id);
+                    const badge1b = this.input.persistentBadges.find(b => b.id === linkedPair.pair1.badge2Id);
+                    const badge2a = this.input.persistentBadges.find(b => b.id === linkedPair.pair2.badge1Id);
+                    const badge2b = this.input.persistentBadges.find(b => b.id === linkedPair.pair2.badge2Id);
+                    
+                    if (badge1a && badge1b && badge2a && badge2b) {
+                        const xStart = Math.min(badge1a.worldX, badge1b.worldX);
+                        const xEnd = Math.max(badge1a.worldX, badge1b.worldX);
+                        
+                        const func1 = linkedPair.pair1.func;
+                        const func2 = linkedPair.pair2.func;
+                        
+                        if (func1 && func2) {
+                            const points1 = func1.points || [];
+                            const points2 = func2.points || [];
+                            const areaBetween = this.calculateAreaBetweenCurves(points1, points2, xStart, xEnd);
+                            linkedPair.areaBetween = areaBetween;
+                        }
+                    }
+                }
+            }
             
             // Update badge screen positions
             this.updateBadgeScreenPositions();
