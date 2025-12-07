@@ -4024,20 +4024,67 @@ class Graphiti {
             if (this.inequalityIntersectionCache.viewport !== currentViewport) {
                 // Viewport changed - check if we should regenerate or reuse
                 const now = performance.now();
-                const timeSinceLastRender = now - this.inequalityIntersectionCache.lastRenderTime;
                 
-                // If viewport is actively changing (pan/zoom in progress), skip rendering entirely
-                // Don't draw the stale cached canvas - it will be at wrong coordinates
-                if (timeSinceLastRender < 150) {
+                // Track when viewport last changed - only update if it's a NEW viewport
+                if (this.inequalityIntersectionCache.viewport !== currentViewport && 
+                    this.inequalityIntersectionCache.lastTrackedViewport !== currentViewport) {
+                    // This is a new viewport we haven't seen before
+                    this.inequalityIntersectionCache.lastViewportChangeTime = now;
+                    this.inequalityIntersectionCache.lastTrackedViewport = currentViewport;
+                }
+                
+                const timeSinceViewportChanged = now - (this.inequalityIntersectionCache.lastViewportChangeTime || 0);
+                
+                // If viewport changed recently, use cached canvas but don't regenerate yet
+                if (timeSinceViewportChanged < 150) {
+                    
+                    // Parse cached and current viewport to calculate transform
+                    const cachedVp = this.inequalityIntersectionCache.viewport.split(',');
+                    const cachedMinX = parseFloat(cachedVp[0]);
+                    const cachedMinY = parseFloat(cachedVp[1]);
+                    const cachedMaxX = parseFloat(cachedVp[2]);
+                    const cachedMaxY = parseFloat(cachedVp[3]);
+                    
+                    // Calculate how world coordinates map to old canvas coordinates
+                    // Then map those to new screen coordinates
+                    this.ctx.save();
+                    this.ctx.globalAlpha = 0.25;
+                    
+                    // For any point in world space:
+                    // Old: screenX = (worldX - cachedMinX) / (cachedMaxX - cachedMinX) * canvasWidth
+                    // New: screenX = (worldX - currentMinX) / (currentMaxX - currentMinX) * canvasWidth
+                    // Transform: we need to shift and scale the cached canvas
+                    
+                    const cachedWorldWidth = cachedMaxX - cachedMinX;
+                    const cachedWorldHeight = cachedMaxY - cachedMinY;
+                    const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
+                    const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
+                    
+                    // Scale factor: how much bigger/smaller is current view vs cached
+                    const scaleX = cachedWorldWidth / currentWorldWidth;
+                    const scaleY = cachedWorldHeight / currentWorldHeight;
+                    
+                    // Translation: where does the cached view's origin appear in current view
+                    const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
+                    const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
+                    
+                    this.ctx.translate(offsetX, offsetY);
+                    this.ctx.scale(scaleX, scaleY);
+                    this.ctx.drawImage(this.inequalityIntersectionCache.canvas, 0, 0);
+                    this.ctx.restore();
+                    
                     // Schedule a regeneration for when viewport stabilizes
                     clearTimeout(this.viewportChangeTimer);
                     this.viewportChangeTimer = setTimeout(() => {
                         this.scheduleChunkedDraw();
                     }, 150);
                     
-                    return; // Don't draw anything
+                    return; // Don't regenerate
                 } else {
                     // Viewport has stabilized - regenerate at new viewport
+                    // Reset tracking for next change
+                    delete this.inequalityIntersectionCache.lastViewportChangeTime;
+                    delete this.inequalityIntersectionCache.lastTrackedViewport;
                 }
             } else {
                 // Use cached canvas - perfect match
@@ -4050,7 +4097,6 @@ class Graphiti {
         }
         
         // Cache miss - need to regenerate
-        const startTime = performance.now();
         // Create off-screen canvas for each inequality
         const offscreenCanvases = [];
         for (const { func, functionType } of inequalities) {
@@ -4158,13 +4204,16 @@ class Graphiti {
         const parts = [];
         
         for (const { func, functionType } of inequalities) {
-            // Include function ID, expression, enabled state, and point count
-            parts.push(`${func.id}:${func.expression}:${func.points ? func.points.length : 0}`);
+            // Include function ID and expression only (not point count - that changes during pan/zoom)
+            parts.push(`${func.id}:${func.expression}`);
             
-            // For implicit inequalities, include grid data state
+            // For implicit inequalities, include grid data state if significantly different
+            // (small grid changes during pan/zoom shouldn't invalidate cache)
             if (functionType === 'implicit-inequality' && func.gridData) {
+                // Only track rough grid size to avoid cache invalidation on minor changes
                 if (func.gridData.adaptiveCells) {
-                    parts.push(`:grid:${func.gridData.adaptiveCells.length}`);
+                    const roughSize = Math.floor(func.gridData.adaptiveCells.length / 1000) * 1000;
+                    parts.push(`:grid:${roughSize}`);
                 } else {
                     parts.push(`:grid:${func.gridData.width}x${func.gridData.height}`);
                 }
