@@ -8893,6 +8893,37 @@ class Graphiti {
             }, { passive: true });
         }
         
+        // Page Visibility API - Cancel expensive operations when page is hidden
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page is hidden (tab switched or minimized)
+                console.log('Page hidden - cancelling expensive operations');
+                
+                // Cancel any pending implicit intersection calculations
+                if (this.implicitIntersectionTimer) {
+                    clearTimeout(this.implicitIntersectionTimer);
+                    this.implicitIntersectionTimer = null;
+                }
+                
+                // Cancel any active worker calculations
+                if (this.intersectionWorker && this.isWorkerCalculating) {
+                    this.intersectionWorker.postMessage({ type: 'CANCEL_CALCULATION' });
+                    this.isWorkerCalculating = false;
+                }
+                
+                // Cancel any pending implicit function calculations
+                this.implicitCalculationId++;
+            } else {
+                // Page is visible again
+                console.log('Page visible - resuming normal operations');
+                
+                // Recalculate intersections if needed
+                if (this.showIntersections && this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0)) {
+                    this.calculateIntersectionsWithWorker(true);
+                }
+            }
+        });
+        
         // Mouse Events
         this.canvas.addEventListener('mousedown', (e) => {
             if (e.button === 2) { // Right-click
@@ -13651,6 +13682,11 @@ class Graphiti {
     }
 
     scheduleImplicitIntersectionCalculation(immediate = false) {
+        // Don't schedule if page is not visible (tab is backgrounded)
+        if (document.hidden) {
+            return;
+        }
+        
         // Clear any existing timer
         if (this.implicitIntersectionTimer) {
             clearTimeout(this.implicitIntersectionTimer);
@@ -17169,6 +17205,37 @@ class Graphiti {
     startAnimationLoop() {
         const animate = (currentTime) => {
             this.deltaTime = currentTime - this.lastFrameTime;
+            
+            // Detect if tab was heavily throttled (deltaTime > 5 seconds)
+            // This happens on Windows when tab is backgrounded for extended periods
+            if (this.deltaTime > 5000) {
+                console.log('Detected heavy throttling - cancelling background operations');
+                
+                // Cancel any pending timers
+                if (this.implicitIntersectionTimer) {
+                    clearTimeout(this.implicitIntersectionTimer);
+                    this.implicitIntersectionTimer = null;
+                }
+                
+                // Cancel any viewport change timers
+                if (this.viewportChangeTimer) {
+                    clearTimeout(this.viewportChangeTimer);
+                    this.viewportChangeTimer = null;
+                }
+                
+                // Cancel worker if calculating
+                if (this.intersectionWorker && this.isWorkerCalculating) {
+                    this.intersectionWorker.postMessage({ type: 'CANCEL_CALCULATION' });
+                    this.isWorkerCalculating = false;
+                }
+                
+                // Reset viewport changing flag
+                this.isViewportChanging = false;
+                
+                // Clamp deltaTime to prevent physics issues
+                this.deltaTime = 16; // ~60fps frame time
+            }
+            
             this.lastFrameTime = currentTime;
             
             // Track FPS if performance monitoring is enabled
