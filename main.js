@@ -4120,10 +4120,39 @@ class Graphiti {
             offscreenCtx.clearRect(0, 0, this.viewport.width, this.viewport.height);
             offscreenCtx.imageSmoothingEnabled = false;
             
+            // Determine if inequality is bounded or unbounded
+            let isBounded = false;
+            let bounds = null;
+            
             // Render this inequality's region to the off-screen canvas (white fill)
             if (functionType === 'explicit-inequality') {
                 const inequality = this.parseInequality(func.expression);
                 if (inequality && func.points && func.points.length >= 2) {
+                    // For explicit inequalities, determine if bounded by the inequality direction
+                    // < or <= fills below (bounded if the curve is closed or goes to edges)
+                    // > or >= fills above (typically unbounded unless curve loops)
+                    
+                    // Check if the curve forms a closed loop (first and last points are close)
+                    const firstPoint = func.points[0];
+                    const lastPoint = func.points[func.points.length - 1];
+                    const distance = Math.sqrt(
+                        Math.pow(lastPoint.x - firstPoint.x, 2) + 
+                        Math.pow(lastPoint.y - firstPoint.y, 2)
+                    );
+                    const isClosedCurve = distance < 0.1; // Small threshold for closed curves
+                    
+                    if (isClosedCurve) {
+                        isBounded = (inequality.operator === '<' || inequality.operator === '<=');
+                        const minX = Math.min(...func.points.map(p => p.x));
+                        const maxX = Math.max(...func.points.map(p => p.x));
+                        const minY = Math.min(...func.points.map(p => p.y));
+                        const maxY = Math.max(...func.points.map(p => p.y));
+                        bounds = { minX, maxX, minY, maxY };
+                    } else {
+                        // Not a closed curve - typically unbounded
+                        isBounded = false;
+                    }
+                    
                     if (inequality.operator === '>' || inequality.operator === '>=') {
                         this.fillAboveCurveComposite(offscreenCtx, func.points, 
                             this.viewport.width, this.viewport.height, this.viewport.maxY);
@@ -4135,6 +4164,9 @@ class Graphiti {
             } else if (functionType === 'polar-inequality') {
                 const inequality = this.parsePolarInequality(func.expression);
                 if (inequality && func.points && func.points.length >= 2) {
+                    // Polar inequalities are typically bounded (closed curves)
+                    isBounded = true;
+                    
                     if (inequality.operator === '>' || inequality.operator === '>=') {
                         this.fillOutsidePolarCurveComposite(offscreenCtx, func.points,
                             this.viewport.width, this.viewport.height);
@@ -4144,6 +4176,57 @@ class Graphiti {
                 }
             } else if (functionType === 'implicit-inequality') {
                 if (func.gridData) {
+                    // For implicit inequalities, check if the satisfied region is bounded
+                    // by analyzing the grid data to see if satisfied cells reach the viewport edges
+                    
+                    if (func.gridData.adaptiveCells) {
+                        // Extract operator to determine which cells satisfy the inequality
+                        const clean = this.convertFromLatex(func.expression).trim();
+                        let operator = null;
+                        if (clean.includes('≥') || clean.includes('>=')) operator = '>=';
+                        else if (clean.includes('≤') || clean.includes('<=')) operator = '<=';
+                        else if (clean.includes('>')) operator = '>';
+                        else if (clean.includes('<')) operator = '<';
+                        
+                        if (operator) {
+                            // Check if any satisfied cells touch the viewport edges
+                            let touchesLeft = false, touchesRight = false, touchesTop = false, touchesBottom = false;
+                            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                            
+                            for (const cell of func.gridData.adaptiveCells) {
+                                const { worldX, worldY, worldWidth, worldHeight, value } = cell;
+                                
+                                // Check if cell satisfies inequality
+                                let satisfies = false;
+                                if (operator === '>') satisfies = value > 0;
+                                else if (operator === '>=') satisfies = value >= 0;
+                                else if (operator === '<') satisfies = value < 0;
+                                else if (operator === '<=') satisfies = value <= 0;
+                                
+                                if (satisfies) {
+                                    // Track bounds of satisfied region
+                                    minX = Math.min(minX, worldX);
+                                    maxX = Math.max(maxX, worldX + worldWidth);
+                                    minY = Math.min(minY, worldY);
+                                    maxY = Math.max(maxY, worldY + worldHeight);
+                                    
+                                    // Check if cell touches viewport edges (with small tolerance)
+                                    const tolerance = 0.01;
+                                    if (Math.abs(worldX - this.viewport.minX) < tolerance) touchesLeft = true;
+                                    if (Math.abs(worldX + worldWidth - this.viewport.maxX) < tolerance) touchesRight = true;
+                                    if (Math.abs(worldY + worldHeight - this.viewport.maxY) < tolerance) touchesTop = true;
+                                    if (Math.abs(worldY - this.viewport.minY) < tolerance) touchesBottom = true;
+                                }
+                            }
+                            
+                            // Bounded if it doesn't touch any edges
+                            isBounded = !touchesLeft && !touchesRight && !touchesTop && !touchesBottom;
+                            if (isBounded && isFinite(minX)) {
+                                bounds = { minX, maxX, minY, maxY };
+                            }
+                        }
+                    }
+                    
                     this.drawImplicitInequalityComposite(offscreenCtx, func);
                 }
             }
@@ -18076,6 +18159,7 @@ class Graphiti {
     
     drawIntersectionMarker(screenX, screenY, intersection) {
         // Draw a small, unobtrusive marker
+        this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
         this.ctx.save();
         
         const outerRadius = this.getMarkerRadius(6);
@@ -18172,6 +18256,7 @@ class Graphiti {
     
     drawTurningPointMarker(screenX, screenY, turningPoint) {
         // Draw a marker with same neutral color as intersections
+        this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
         this.ctx.save();
         
         const outerRadius = this.getMarkerRadius(6);
@@ -18240,6 +18325,7 @@ class Graphiti {
         // Draw the culled set of markers
         for (const marker of culledMarkers) {
             // Draw as simple markers (same neutral color as intersections)
+            this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
             this.ctx.save();
             
             const outerRadius = this.getMarkerRadius(6);
@@ -18325,6 +18411,7 @@ class Graphiti {
     
     drawInterceptMarker(screenX, screenY, intercept) {
         // Draw a marker with same style as turning points/intersections
+        this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
         this.ctx.save();
         
         const outerRadius = this.getMarkerRadius(6);
@@ -18395,6 +18482,7 @@ class Graphiti {
         // Draw the culled set of markers
         for (const marker of culledMarkers) {
             // Draw as simple markers
+            this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
             this.ctx.save();
             
             const outerRadius = this.getMarkerRadius(6);
@@ -18464,6 +18552,7 @@ class Graphiti {
         // Draw the culled set of markers
         for (const marker of culledMarkers) {
             // Draw intersection marker (same style as normal intersections)
+            this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
             this.ctx.save();
             
             const outerRadius = this.getMarkerRadius(6);
