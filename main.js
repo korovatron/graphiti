@@ -1517,14 +1517,6 @@ class Graphiti {
                 maxY: demoSet.viewport.maxY
             };
             
-            console.log('Setting demo viewport:', targetViewport);
-            console.log('Current viewport before:', {
-                minX: this.viewport.minX,
-                maxX: this.viewport.maxX,
-                minY: this.viewport.minY,
-                maxY: this.viewport.maxY
-            });
-            
             // Set the bounds
             this.viewport.minX = targetViewport.minX;
             this.viewport.maxX = targetViewport.maxX;
@@ -1549,17 +1541,8 @@ class Graphiti {
             this.viewport.minY = centerY - halfHeight;
             this.viewport.maxY = centerY + halfHeight;
             
-            console.log('Calculated scale:', this.viewport.scale);
-            
             // Update the range input fields
             this.updateRangeInputs();
-            
-            console.log('Current viewport after initial set:', {
-                minX: this.viewport.minX,
-                maxX: this.viewport.maxX,
-                minY: this.viewport.minY,
-                maxY: this.viewport.maxY
-            });
         }
         
         // Add each expression from the demo set
@@ -1570,13 +1553,6 @@ class Graphiti {
         
         // Restore viewport after adding functions (in case addExampleFunction changed it)
         if (targetViewport) {
-            console.log('Current viewport before restore:', {
-                minX: this.viewport.minX,
-                maxX: this.viewport.maxX,
-                minY: this.viewport.minY,
-                maxY: this.viewport.maxY
-            });
-            
             // Set the bounds again
             this.viewport.minX = targetViewport.minX;
             this.viewport.maxX = targetViewport.maxX;
@@ -1603,14 +1579,6 @@ class Graphiti {
             
             // Update the range input fields
             this.updateRangeInputs();
-            
-            console.log('Current viewport after restore:', {
-                minX: this.viewport.minX,
-                maxX: this.viewport.maxX,
-                minY: this.viewport.minY,
-                maxY: this.viewport.maxY,
-                scale: this.viewport.scale
-            });
         }
         
         // Add badges if defined for this demo set
