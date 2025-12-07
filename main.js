@@ -2232,6 +2232,9 @@ class Graphiti {
             // Save the updated enabled state to localStorage
             this.saveFunctionsToLocalStorage();
             
+            // Update parameter sliders visibility based on enabled functions
+            this.updateParameterSliders();
+            
             // Replot all functions to ensure proper display with new state
             this.replotAllFunctions();
             
@@ -12560,7 +12563,8 @@ class Graphiti {
         // Only scan if there are functions in the current mode
         if (allFunctions && allFunctions.length > 0) {
             allFunctions.forEach(func => {
-                if (func.expression) {
+                // Only count parameters from enabled functions
+                if (func.expression && func.enabled) {
                     // Check for Greek letters in LaTeX
                     if (func.expression.includes('\\alpha')) usedParams.alpha = true;
                     if (func.expression.includes('\\beta')) usedParams.beta = true;
