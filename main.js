@@ -17673,12 +17673,14 @@ class Graphiti {
                     }
                     
                     // Set line style based on strict vs non-strict
+                    // <= and >=: solid line with standard thickness (like equations)
+                    // < and >: dashed line with standard thickness
                     if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([]); // Solid line for strict (matching Cartesian behavior)
-                        this.ctx.lineWidth = this.getLineWidth(1); // Thin line for strict inequalities
+                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width (same as equations)
+                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
                     }
                 }
             } else {
@@ -17696,12 +17698,14 @@ class Graphiti {
                     }
                     
                     // Set line style based on strict vs non-strict
+                    // <= and >=: solid line with standard thickness (like equations)
+                    // < and >: dashed line with standard thickness
                     if (inequality.operator === '>' || inequality.operator === '<') {
-                        this.ctx.setLineDash([]); // Solid line for strict
-                        this.ctx.lineWidth = this.getLineWidth(1); // Thin line for strict inequalities
+                        this.ctx.setLineDash([5, 5]); // Dashed line for strict inequalities
+                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
                     } else {
                         this.ctx.setLineDash([]); // Solid line for non-strict
-                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width (same as equations)
+                        this.ctx.lineWidth = this.getLineWidth(3); // Standard line width
                     }
                 }
             }
@@ -17784,26 +17788,26 @@ class Graphiti {
         
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
-            // Check if this is a strict inequality (< or >) vs non-strict (≤ or ≥)
-            // Use line thickness to distinguish: 1px for strict, 3px for non-strict/equations
-            let lineWidth = this.getLineWidth(3); // Default for equations (consistent with explicit)
+            // Set line style based on strict vs non-strict inequality
+            // <= and >=: solid line with standard thickness (like equations)
+            // < and >: dashed line with standard thickness
+            let lineWidth = this.getLineWidth(3); // Standard width for all
+            let lineDash = [];
+            
             if (isInequality) {
                 const clean = this.convertFromLatex(func.expression).trim();
                 const isStrict = clean.includes('>') && !clean.includes('>=') || 
                                 clean.includes('<') && !clean.includes('<=');
                 
-                // Consistent with explicit inequalities: 1px for strict, 3px for non-strict
                 if (isStrict) {
-                    lineWidth = this.getLineWidth(1);
-                } else {
-                    lineWidth = this.getLineWidth(3);
+                    lineDash = [5, 5]; // Dashed for strict inequalities
                 }
             }
             
             // Always draw boundary in function color (to hide pixelated shading edges)
             this.ctx.strokeStyle = func.color;
             this.ctx.lineWidth = lineWidth;
-            this.ctx.setLineDash([]); // Always solid line
+            this.ctx.setLineDash(lineDash);
             
             // Draw individual line segments (every pair of connected points)
             for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
