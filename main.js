@@ -1485,53 +1485,132 @@ class Graphiti {
         this.linkedBadgePairs = [];
         this.selectedBadgeForLinking = null;
         
-        // Disable all current functions (but keep them)
+        // Clear all current functions completely (remove from array and UI)
         const currentFunctions = this.getCurrentFunctions();
         
-        for (const func of currentFunctions) {
-            if (func.expression && func.expression.trim() !== '') {
-                func.enabled = false;
-                
-                // Remove all badges associated with this function
-                this.input.persistentBadges = this.input.persistentBadges.filter(
-                    badge => badge.functionId !== func.id
-                );
-                
-                // Update UI to reflect disabled state
-                const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
-                if (funcDiv) {
-                    this.updateFunctionVisualState(func, funcDiv);
-                }
-            }
-        }
-        
-        // Set optimal viewport for this demo
-        if (demoSet.viewport) {
-            this.viewport.minX = demoSet.viewport.minX;
-            this.viewport.maxX = demoSet.viewport.maxX;
-            this.viewport.minY = demoSet.viewport.minY;
-            this.viewport.maxY = demoSet.viewport.maxY;
-            this.updateViewport();
-        }
-        
-        // Add each expression from the demo set (or re-enable if it exists)
-        for (const expression of demoSet.expressions) {
-            // Check if this expression already exists
-            const existingFunc = currentFunctions.find(f => f.expression === expression);
+        // Remove all functions and their UI
+        while (currentFunctions.length > 0) {
+            const func = currentFunctions[0];
             
-            if (existingFunc) {
-                // Function exists, just enable it
-                existingFunc.enabled = true;
-                const funcDiv = document.querySelector(`[data-function-id="${existingFunc.id}"]`);
-                if (funcDiv) {
-                    this.updateFunctionVisualState(existingFunc, funcDiv);
-                }
-                // Replot in case it wasn't plotted
-                await this.plotFunction(existingFunc);
-            } else {
-                // Function doesn't exist, add it
-                await this.addExampleFunction(expression);
+            // Remove all badges associated with this function
+            this.input.persistentBadges = this.input.persistentBadges.filter(
+                badge => badge.functionId !== func.id
+            );
+            
+            // Remove the function UI
+            const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
+            if (funcDiv) {
+                funcDiv.remove();
             }
+            
+            // Remove from array
+            currentFunctions.shift();
+        }
+        
+        // Set optimal viewport for this demo BEFORE adding functions
+        let targetViewport = null;
+        if (demoSet.viewport) {
+            targetViewport = {
+                minX: demoSet.viewport.minX,
+                maxX: demoSet.viewport.maxX,
+                minY: demoSet.viewport.minY,
+                maxY: demoSet.viewport.maxY
+            };
+            
+            console.log('Setting demo viewport:', targetViewport);
+            console.log('Current viewport before:', {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY
+            });
+            
+            // Set the bounds
+            this.viewport.minX = targetViewport.minX;
+            this.viewport.maxX = targetViewport.maxX;
+            this.viewport.minY = targetViewport.minY;
+            this.viewport.maxY = targetViewport.maxY;
+            
+            // Calculate the appropriate scale for these bounds
+            const xRange = targetViewport.maxX - targetViewport.minX;
+            const yRange = targetViewport.maxY - targetViewport.minY;
+            const xScale = this.viewport.width / xRange;
+            const yScale = this.viewport.height / yRange;
+            this.viewport.scale = Math.min(xScale, yScale);
+            
+            // Enforce aspect ratio by adjusting bounds to match the scale
+            const centerX = (targetViewport.minX + targetViewport.maxX) / 2;
+            const centerY = (targetViewport.minY + targetViewport.maxY) / 2;
+            const halfWidth = this.viewport.width / (2 * this.viewport.scale);
+            const halfHeight = this.viewport.height / (2 * this.viewport.scale);
+            
+            this.viewport.minX = centerX - halfWidth;
+            this.viewport.maxX = centerX + halfWidth;
+            this.viewport.minY = centerY - halfHeight;
+            this.viewport.maxY = centerY + halfHeight;
+            
+            console.log('Calculated scale:', this.viewport.scale);
+            
+            // Update the range input fields
+            this.updateRangeInputs();
+            
+            console.log('Current viewport after initial set:', {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY
+            });
+        }
+        
+        // Add each expression from the demo set
+        for (const expression of demoSet.expressions) {
+            // Always add as new function (we cleared everything above)
+            await this.addExampleFunction(expression);
+        }
+        
+        // Restore viewport after adding functions (in case addExampleFunction changed it)
+        if (targetViewport) {
+            console.log('Current viewport before restore:', {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY
+            });
+            
+            // Set the bounds again
+            this.viewport.minX = targetViewport.minX;
+            this.viewport.maxX = targetViewport.maxX;
+            this.viewport.minY = targetViewport.minY;
+            this.viewport.maxY = targetViewport.maxY;
+            
+            // Recalculate the scale
+            const xRange = targetViewport.maxX - targetViewport.minX;
+            const yRange = targetViewport.maxY - targetViewport.minY;
+            const xScale = this.viewport.width / xRange;
+            const yScale = this.viewport.height / yRange;
+            this.viewport.scale = Math.min(xScale, yScale);
+            
+            // Enforce aspect ratio by adjusting bounds to match the scale
+            const centerX = (targetViewport.minX + targetViewport.maxX) / 2;
+            const centerY = (targetViewport.minY + targetViewport.maxY) / 2;
+            const halfWidth = this.viewport.width / (2 * this.viewport.scale);
+            const halfHeight = this.viewport.height / (2 * this.viewport.scale);
+            
+            this.viewport.minX = centerX - halfWidth;
+            this.viewport.maxX = centerX + halfWidth;
+            this.viewport.minY = centerY - halfHeight;
+            this.viewport.maxY = centerY + halfHeight;
+            
+            // Update the range input fields
+            this.updateRangeInputs();
+            
+            console.log('Current viewport after restore:', {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY,
+                scale: this.viewport.scale
+            });
         }
         
         // Add badges if defined for this demo set
