@@ -1427,6 +1427,18 @@ class Graphiti {
                     { expression: 'y=2x+3', x: -1, hasIntegral: true },
                     { expression: 'y=2x+3', x: 3, hasIntegral: true }
                 ]
+            },
+            'numerical-integration': {
+                expressions: [
+                    'y=\\arctan\\left(x\\right)'                        // Inverse tangent with arc notation
+                ],
+                description: 'Numerical Integration Demo',
+                viewport: { minX: -4, maxX: 4, minY: -2, maxY: 2 },
+                badges: [
+                    { expression: 'y=\\arctan\\left(x\\right)', x: -3, hasIntegral: true },
+                    { expression: 'y=\\arctan\\left(x\\right)', x: 3, hasIntegral: true }
+                ],
+                showNumericalMethod: true
             }
         };
         
@@ -1557,6 +1569,12 @@ class Graphiti {
                         }
                     }
                 }
+            }
+            
+            // For numerical-integration demo, enable trapezium rule visualization
+            if (demoSetId === 'numerical-integration' && demoSet.showNumericalMethod && this.integralPairs.length > 0) {
+                // Enable showTrapeziumRule on the integral pair
+                this.integralPairs[0].showTrapeziumRule = true;
             }
             
             // Update badge screen positions
