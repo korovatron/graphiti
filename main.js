@@ -1350,6 +1350,73 @@ class Graphiti {
         this.saveFunctionsToLocalStorage();
     }
 
+    async addDemoSet(demoSetId) {
+        // Define demo sets
+        const demoSets = {
+            'inequality-intersection': {
+                expressions: [
+                    'x^2+y^2<16',           // Strict: circle (no outline)
+                    'y\\geq x-3',           // Non-strict: line (with outline)
+                    'x+y\\leq 4'            // Non-strict: line (with outline)
+                ],
+                description: 'Inequality Intersection Demo',
+                viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
+            }
+        };
+        
+        const demoSet = demoSets[demoSetId];
+        if (!demoSet) return;
+        
+        // Disable all current functions (but keep them)
+        const currentFunctions = this.getCurrentFunctions();
+        
+        for (const func of currentFunctions) {
+            if (func.expression && func.expression.trim() !== '') {
+                func.enabled = false;
+                // Update UI to reflect disabled state
+                const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
+                if (funcDiv) {
+                    this.updateFunctionVisualState(func, funcDiv);
+                }
+            }
+        }
+        
+        // Set optimal viewport for this demo
+        if (demoSet.viewport) {
+            this.viewport.minX = demoSet.viewport.minX;
+            this.viewport.maxX = demoSet.viewport.maxX;
+            this.viewport.minY = demoSet.viewport.minY;
+            this.viewport.maxY = demoSet.viewport.maxY;
+            this.updateViewport();
+        }
+        
+        // Add each expression from the demo set (or re-enable if it exists)
+        for (const expression of demoSet.expressions) {
+            // Check if this expression already exists
+            const existingFunc = currentFunctions.find(f => f.expression === expression);
+            
+            if (existingFunc) {
+                // Function exists, just enable it
+                existingFunc.enabled = true;
+                const funcDiv = document.querySelector(`[data-function-id="${existingFunc.id}"]`);
+                if (funcDiv) {
+                    this.updateFunctionVisualState(existingFunc, funcDiv);
+                }
+                // Replot in case it wasn't plotted
+                await this.plotFunction(existingFunc);
+            } else {
+                // Function doesn't exist, add it
+                await this.addExampleFunction(expression);
+            }
+        }
+        
+        // Force a redraw
+        this.draw();
+        
+        // Save to localStorage
+        this.saveFunctionsToLocalStorage();
+    }
+
     // Ensure there's at least one empty function in the current mode
     ensureEmptyFunction() {
         const functions = this.getCurrentFunctions();
@@ -7875,7 +7942,20 @@ class Graphiti {
             // Handle example item clicks
             examplesDropdown.addEventListener('click', (e) => {
                 const exampleItem = e.target.closest('.example-item, .blank-function-item');
-                if (exampleItem) {
+                const demoSetItem = e.target.closest('.demo-set-item');
+                
+                if (demoSetItem) {
+                    const demoSetId = demoSetItem.dataset.demoSet;
+                    
+                    // Clear intersections when adding demo set
+                    this.clearIntersections();
+                    
+                    // Handle demo set
+                    this.addDemoSet(demoSetId);
+                    
+                    // Close dropdown
+                    examplesDropdown.classList.remove('show');
+                } else if (exampleItem) {
                     const expression = exampleItem.dataset.expression;
                     
                     // Clear intersections when adding a function
