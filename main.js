@@ -17713,6 +17713,7 @@ class Graphiti {
         
         this.ctx.strokeStyle = func.color;
         if (!func.expression.match(/[<>]/)) {
+            this.ctx.setLineDash([]); // Ensure solid line for equations
             this.ctx.lineWidth = this.getLineWidth(3); // Default for equations without inequalities
         }
         
