@@ -4047,7 +4047,7 @@ class Graphiti {
                 const timeSinceViewportChanged = now - (this.inequalityIntersectionCache.lastViewportChangeTime || 0);
                 
                 // If viewport changed recently, use cached canvas but don't regenerate yet
-                if (timeSinceViewportChanged < 150) {
+                if (timeSinceViewportChanged < 250) {
                     
                     // Parse cached and current viewport to calculate transform
                     const cachedVp = this.inequalityIntersectionCache.viewport.split(',');
@@ -4088,7 +4088,7 @@ class Graphiti {
                     clearTimeout(this.viewportChangeTimer);
                     this.viewportChangeTimer = setTimeout(() => {
                         this.scheduleChunkedDraw();
-                    }, 150);
+                    }, 250);
                     
                     return; // Don't regenerate
                 } else {
