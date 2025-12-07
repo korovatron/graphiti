@@ -1214,7 +1214,9 @@ class Graphiti {
     
     addFunction(expression = '') {
         const id = this.nextFunctionId++;
-        const color = this.functionColors[this.getCurrentFunctionCount() % this.functionColors.length];
+        // Count only enabled functions for color assignment
+        const enabledCount = this.getCurrentFunctions().filter(f => f.enabled && f.expression && f.expression.trim() !== '').length;
+        const color = this.functionColors[enabledCount % this.functionColors.length];
         
         const func = {
             id: id,
@@ -1360,6 +1362,33 @@ class Graphiti {
                     'x+y\\leq 4'            // Non-strict: line (with outline)
                 ],
                 description: 'Inequality Intersection Demo',
+                viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
+            },
+            'parametric-curves': {
+                expressions: [
+                    '\\left(\\cos\\left(t\\right),\\sin\\left(t\\right)\\right)',      // Circle
+                    '\\left(\\sin\\left(3t\\right),\\sin\\left(2t\\right)\\right)'    // Lissajous
+                ],
+                description: 'Parametric Curves Demo',
+                viewport: { minX: -1.5, maxX: 1.5, minY: -1.5, maxY: 1.5 }
+            },
+            'parameter-sliders': {
+                expressions: [
+                    'y=\\alpha\\sin\\left(\\beta x\\right)+\\gamma',    // Sine with amplitude, frequency, vertical shift
+                    'y=\\alpha\\sec\\left(\\beta x\\right)',            // Secant with amplitude and frequency
+                    'x^2+y^2=\\delta^2'                                 // Circle with radius
+                ],
+                description: 'Parameter Sliders Demo',
+                viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
+            },
+            'implicit-equations': {
+                expressions: [
+                    '\\frac{x^2}{16}+\\frac{y^2}{9}=1',                 // Ellipse
+                    '(x^2+y^2)^2=2(x^2-y^2)',                          // Lemniscate
+                    'x^3+y^3=3xy',                                      // Folium of Descartes
+                    'y^2=x^3-x'                                         // Cubic curve
+                ],
+                description: 'Implicit Equations Demo',
                 viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
             }
         };
@@ -17992,15 +18021,16 @@ class Graphiti {
             }
             
             // For non-strict inequalities, draw black outline first, then colored line on top
-            const linesToDraw = isStrict ? 1 : 2;
+            // For regular equations (not inequalities), just draw once
+            const linesToDraw = !isInequality ? 1 : (isStrict ? 1 : 2);
             
             for (let pass = 0; pass < linesToDraw; pass++) {
-                if (pass === 0 && !isStrict) {
-                    // First pass for non-strict: draw black outline (wider)
+                if (pass === 0 && isInequality && !isStrict) {
+                    // First pass for non-strict inequalities: draw black outline (wider)
                     this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
                     this.ctx.lineWidth = this.getLineWidth(6);
                 } else {
-                    // Second pass for non-strict or only pass for strict: draw colored line
+                    // For all other cases: draw colored line
                     this.ctx.strokeStyle = func.color;
                     this.ctx.lineWidth = this.getLineWidth(3);
                 }
