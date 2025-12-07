@@ -4013,6 +4013,17 @@ class Graphiti {
         
         if (inequalities.length < 2) return; // Need at least 2 inequalities for intersection
         
+        // Check if all inequalities have data before attempting to render
+        const allHaveData = inequalities.every(({ func, functionType }) => {
+            if (functionType === 'implicit-inequality') {
+                return func.gridData && func.gridData.adaptiveCells && func.gridData.adaptiveCells.length > 0;
+            } else {
+                return func.points && func.points.length > 0;
+            }
+        });
+        
+        if (!allHaveData) return; // Wait until all inequalities have been plotted
+        
         // Check if we can use cached result (comparing without viewport)
         const currentState = this.getInequalityIntersectionState(inequalities, false); // false = exclude viewport
         const currentViewport = this.getViewportState();
@@ -10559,6 +10570,9 @@ class Graphiti {
         this.implicitIntersections = [];
         this.frozenIntersectionBadges = [];
         
+        // Invalidate inequality intersection cache when switching modes
+        this.invalidateInequalityIntersectionCache();
+        
         this.plotMode = this.plotMode === 'cartesian' ? 'polar' : 'cartesian';
         
         // Handle angle mode: polar always uses radians, cartesian restores user preference
@@ -10785,10 +10799,7 @@ class Graphiti {
         // Update range inputs to reflect the current viewport values (no recalculation)
         this.updateRangeInputs();
 
-        // Force a complete redraw to ensure viewport is current
-        this.draw();
-        
-        // Replot all functions in current mode
+        // Replot all functions in current mode (this will trigger a draw)
         this.replotAllFunctions();
         
         // Update parameter sliders for the current mode
