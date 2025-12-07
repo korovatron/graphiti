@@ -1390,6 +1390,18 @@ class Graphiti {
                 ],
                 description: 'Implicit Equations Demo',
                 viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
+            },
+            'tangents-normals': {
+                expressions: [
+                    'y=\\sin(x)',                                       // Sine curve
+                    'y=x^2'                                             // Parabola
+                ],
+                description: 'Tangents & Normals Demo',
+                viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 },
+                badges: [
+                    { expression: 'y=\\sin(x)', x: 1, hasTangent: true, hasNormal: false, neonTangent: true },
+                    { expression: 'y=x^2', x: 1.5, hasTangent: false, hasNormal: true }
+                ]
             }
         };
         
@@ -1402,6 +1414,12 @@ class Graphiti {
         for (const func of currentFunctions) {
             if (func.expression && func.expression.trim() !== '') {
                 func.enabled = false;
+                
+                // Remove all badges associated with this function
+                this.input.persistentBadges = this.input.persistentBadges.filter(
+                    badge => badge.functionId !== func.id
+                );
+                
                 // Update UI to reflect disabled state
                 const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
                 if (funcDiv) {
@@ -1439,11 +1457,111 @@ class Graphiti {
             }
         }
         
+        // Add badges if defined for this demo set
+        if (demoSet.badges) {
+            // Wait a bit for functions to be fully plotted
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            for (const badgeSpec of demoSet.badges) {
+                // Find the function that matches this badge's expression
+                const func = currentFunctions.find(f => f.expression === badgeSpec.expression && f.enabled);
+                if (func) {
+                    this.addBadgeWithTangentOrNormal(
+                        func,
+                        badgeSpec.x,
+                        badgeSpec.hasTangent,
+                        badgeSpec.hasNormal,
+                        badgeSpec.neonTangent || false,
+                        badgeSpec.neonNormal || false
+                    );
+                }
+            }
+            
+            // Update badge screen positions
+            this.updateBadgeScreenPositions();
+            
+            // Recalculate tangent/normal intersections
+            this.tangentIntersections = this.findTangentIntersections();
+            this.normalIntersections = this.findNormalIntersections();
+            
+            // Recalculate function intersections if needed
+            if (this.showIntersections) {
+                this.calculateIntersectionsWithWorker(true);
+            }
+        }
+        
         // Force a redraw
         this.draw();
         
         // Save to localStorage
         this.saveFunctionsToLocalStorage();
+    }
+
+    // Helper method to programmatically add a badge with tangent/normal to a function
+    addBadgeWithTangentOrNormal(func, worldX, hasTangent, hasNormal, neonTangent = false, neonNormal = false) {
+        // Find the closest point on the function curve to the specified x coordinate
+        const curvePoint = this.findClosestCurvePointAtX(func, worldX);
+        if (!curvePoint) return null;
+        
+        // Create the badge
+        const badgeId = this.addTraceBadge(
+            func.id,
+            curvePoint.worldX,
+            curvePoint.worldY,
+            func.color,
+            null,
+            null,
+            null
+        );
+        
+        // Get the badge and set its properties
+        const badge = this.input.persistentBadges.find(b => b.id === badgeId);
+        if (badge) {
+            // Calculate slope data for tangent/normal
+            const slopeData = this.calculateSlopeAtPoint(func, curvePoint.worldX, curvePoint.worldY, null, null);
+            
+            if (slopeData && (hasTangent || hasNormal)) {
+                badge.tangentSlope = slopeData;
+                badge.tangentExpression = slopeData.expression;
+                badge.secondDerivative = slopeData.secondDerivative;
+                badge.hasTangent = hasTangent;
+                badge.hasNormal = hasNormal;
+                badge.neonTangent = neonTangent;
+                badge.neonNormal = neonNormal;
+            }
+        }
+        
+        return badgeId;
+    }
+    
+    // Helper to find the closest point on a function at a given x coordinate
+    findClosestCurvePointAtX(func, targetX) {
+        if (!func.points || func.points.length === 0) return null;
+        
+        // For explicit functions, just evaluate at x
+        const functionType = this.detectFunctionType(func.expression);
+        if (functionType === 'explicit' || functionType === 'explicit-inequality') {
+            const y = this.evaluateFunction(func, targetX);
+            if (y !== null && isFinite(y)) {
+                return { worldX: targetX, worldY: y, function: func };
+            }
+        }
+        
+        // For other function types, find the closest point in the points array
+        let closestPoint = null;
+        let closestDistance = Infinity;
+        
+        for (const point of func.points) {
+            if (point && isFinite(point.x) && isFinite(point.y)) {
+                const distance = Math.abs(point.x - targetX);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestPoint = { worldX: point.x, worldY: point.y, function: func };
+                }
+            }
+        }
+        
+        return closestPoint;
     }
 
     // Ensure there's at least one empty function in the current mode
