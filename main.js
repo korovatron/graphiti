@@ -1402,6 +1402,17 @@ class Graphiti {
                     { expression: 'y=\\sin(x)', x: 1, hasTangent: true, hasNormal: false, neonTangent: true },
                     { expression: 'y=x^2', x: 1.5, hasTangent: false, hasNormal: true }
                 ]
+            },
+            'definite-integral': {
+                expressions: [
+                    'y=\\frac{1}{x}'                                    // Hyperbola
+                ],
+                description: 'Definite Integral Demo',
+                viewport: { minX: -1, maxX: 6, minY: -1, maxY: 3 },
+                badges: [
+                    { expression: 'y=\\frac{1}{x}', x: 1, hasIntegral: true },
+                    { expression: 'y=\\frac{1}{x}', x: 4, hasIntegral: true }
+                ]
             }
         };
         
@@ -1462,20 +1473,51 @@ class Graphiti {
             // Wait a bit for functions to be fully plotted
             await new Promise(resolve => setTimeout(resolve, 200));
             
+            const integralBadgeIds = []; // Track integral badges for pairing
+            
             for (const badgeSpec of demoSet.badges) {
                 // Find the function that matches this badge's expression
                 const func = currentFunctions.find(f => f.expression === badgeSpec.expression && f.enabled);
                 if (func) {
-                    this.addBadgeWithTangentOrNormal(
+                    const badgeId = this.addBadgeWithTangentOrNormal(
                         func,
                         badgeSpec.x,
-                        badgeSpec.hasTangent,
-                        badgeSpec.hasNormal,
+                        badgeSpec.hasTangent || false,
+                        badgeSpec.hasNormal || false,
                         badgeSpec.neonTangent || false,
-                        badgeSpec.neonNormal || false
+                        badgeSpec.neonNormal || false,
+                        badgeSpec.hasIntegral || false
                     );
+                    
+                    // Track integral badges for pairing
+                    if (badgeSpec.hasIntegral && badgeId) {
+                        integralBadgeIds.push(badgeId);
+                    }
                 }
             }
+            
+            // Create integral pairs (assumes badges are added in pairs)
+            for (let i = 0; i < integralBadgeIds.length; i += 2) {
+                if (i + 1 < integralBadgeIds.length) {
+                    const badge1Id = integralBadgeIds[i];
+                    const badge2Id = integralBadgeIds[i + 1];
+                    const badge1 = this.input.persistentBadges.find(b => b.id === badge1Id);
+                    const badge2 = this.input.persistentBadges.find(b => b.id === badge2Id);
+                    
+                    if (badge1 && badge2 && badge1.functionId === badge2.functionId) {
+                        // The pair will be automatically created by updateIntegralPairs
+                        // Just make sure both badges have hasIntegral = true (already set above)
+                    }
+                }
+            }
+            
+            // Update integral pairs to establish relationships and calculate areas
+            this.updateIntegralPairs();
+            
+            // Calculate integrals for each pair
+            this.integralPairs.forEach(pair => {
+                this.updateIntegralForPair(pair.badge1Id, pair.badge2Id);
+            });
             
             // Update badge screen positions
             this.updateBadgeScreenPositions();
@@ -1498,10 +1540,16 @@ class Graphiti {
     }
 
     // Helper method to programmatically add a badge with tangent/normal to a function
-    addBadgeWithTangentOrNormal(func, worldX, hasTangent, hasNormal, neonTangent = false, neonNormal = false) {
+    addBadgeWithTangentOrNormal(func, worldX, hasTangent, hasNormal, neonTangent = false, neonNormal = false, hasIntegral = false) {
         // Find the closest point on the function curve to the specified x coordinate
         const curvePoint = this.findClosestCurvePointAtX(func, worldX);
         if (!curvePoint) return null;
+        
+        // For explicit functions with integral badges, use exact x to avoid rounding errors
+        const functionType = this.detectFunctionType(func.expression);
+        if (hasIntegral && (functionType === 'explicit' || functionType === 'explicit-inequality')) {
+            curvePoint.worldX = worldX; // Force exact x value
+        }
         
         // Create the badge
         const badgeId = this.addTraceBadge(
@@ -1517,17 +1565,29 @@ class Graphiti {
         // Get the badge and set its properties
         const badge = this.input.persistentBadges.find(b => b.id === badgeId);
         if (badge) {
-            // Calculate slope data for tangent/normal
-            const slopeData = this.calculateSlopeAtPoint(func, curvePoint.worldX, curvePoint.worldY, null, null);
-            
-            if (slopeData && (hasTangent || hasNormal)) {
-                badge.tangentSlope = slopeData;
-                badge.tangentExpression = slopeData.expression;
-                badge.secondDerivative = slopeData.secondDerivative;
-                badge.hasTangent = hasTangent;
-                badge.hasNormal = hasNormal;
-                badge.neonTangent = neonTangent;
-                badge.neonNormal = neonNormal;
+            // For integral badges
+            if (hasIntegral) {
+                badge.hasIntegral = true;
+                badge.neonIntegral = false;
+                badge.hasTangent = false;
+                badge.hasNormal = false;
+                // Ensure exact x coordinate for integrals
+                badge.worldX = worldX;
+            }
+            // For tangent/normal badges
+            else if (hasTangent || hasNormal) {
+                // Calculate slope data for tangent/normal
+                const slopeData = this.calculateSlopeAtPoint(func, curvePoint.worldX, curvePoint.worldY, null, null);
+                
+                if (slopeData) {
+                    badge.tangentSlope = slopeData;
+                    badge.tangentExpression = slopeData.expression;
+                    badge.secondDerivative = slopeData.secondDerivative;
+                    badge.hasTangent = hasTangent;
+                    badge.hasNormal = hasNormal;
+                    badge.neonTangent = neonTangent;
+                    badge.neonNormal = neonNormal;
+                }
             }
         }
         
@@ -1538,7 +1598,7 @@ class Graphiti {
     findClosestCurvePointAtX(func, targetX) {
         if (!func.points || func.points.length === 0) return null;
         
-        // For explicit functions, just evaluate at x
+        // For explicit functions, evaluate at exact x
         const functionType = this.detectFunctionType(func.expression);
         if (functionType === 'explicit' || functionType === 'explicit-inequality') {
             const y = this.evaluateFunction(func, targetX);
