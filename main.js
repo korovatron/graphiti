@@ -257,6 +257,16 @@ class Graphiti {
         // Flag for skipping expensive numerical integration recalculations during drag
         this.isDraggingBadge = false;
         
+        // Inequality intersection caching for performance
+        this.inequalityIntersectionCache = {
+            canvas: null,
+            inequalityStates: null, // Track which inequalities were used
+            viewport: null, // Track viewport state
+            lastRenderTime: 0 // Track when last rendered
+        };
+        this.isViewportChanging = false; // Track if actively panning/zooming
+        this.viewportChangeTimer = null; // Debounce timer for viewport changes
+        
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
         this.isWorkerCalculating = false;
@@ -1217,6 +1227,9 @@ class Graphiti {
         
         this.getCurrentFunctions().push(func);
         
+        // Invalidate inequality intersection cache when adding function
+        this.invalidateInequalityIntersectionCache();
+        
         // Reset cleared flag when user adds functions back
         if (this.plotMode === 'cartesian') {
             this.cartesianFunctionsCleared = false;
@@ -1680,6 +1693,9 @@ class Graphiti {
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
             
+            // Invalidate inequality intersection cache when toggling enabled state
+            this.invalidateInequalityIntersectionCache();
+            
             // Save the updated enabled state to localStorage
             this.saveFunctionsToLocalStorage();
             
@@ -2025,6 +2041,9 @@ class Graphiti {
         
         // Clear expression cache when functions are removed
         this.clearExpressionCache();
+        
+        // Invalidate inequality intersection cache when removing function
+        this.invalidateInequalityIntersectionCache();
         
         // Remove from the appropriate function array
         this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
@@ -3537,6 +3556,21 @@ class Graphiti {
         };
     }
 
+    countEnabledInequalities() {
+        // Count all enabled inequalities of all types
+        let count = 0;
+        for (const func of this.getCurrentFunctions()) {
+            if (!func.enabled) continue;
+            const functionType = this.detectFunctionType(func.expression);
+            if (functionType === 'explicit-inequality' || 
+                functionType === 'implicit-inequality' || 
+                functionType === 'polar-inequality') {
+                count++;
+            }
+        }
+        return count;
+    }
+
     fillAboveCurve(points, color) {
         if (!points || points.length < 2) return;
         
@@ -3703,6 +3737,452 @@ class Graphiti {
         
         ctx.closePath();
         ctx.fill('evenodd'); // Use even-odd rule to create the hole
+    }
+
+    // ================================
+    // INEQUALITY COMPOSITING METHODS (for intersections)
+    // ================================
+
+    fillAboveCurveComposite(offscreenCtx, points, viewportWidth, viewportHeight, viewportMaxY) {
+        if (!points || points.length < 2) return;
+        
+        // Fill with white on the off-screen canvas
+        offscreenCtx.fillStyle = 'white';
+        
+        // For each connected segment, fill from curve to top of viewport
+        offscreenCtx.beginPath();
+        let segmentStarted = false;
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            
+            if (!isFinite(point.y)) {
+                // End current segment
+                if (segmentStarted) {
+                    // Close path by going to top of viewport and back
+                    offscreenCtx.lineTo(this.worldToScreen(points[i-1].x, viewportMaxY).x, 0);
+                    offscreenCtx.lineTo(this.worldToScreen(points[Math.max(0, i - 1)].x, viewportMaxY).x, 0);
+                    segmentStarted = false;
+                }
+                continue;
+            }
+            
+            const screenPos = this.worldToScreen(point.x, point.y);
+            
+            if (!segmentStarted) {
+                // Start new segment - go to top of viewport first
+                offscreenCtx.moveTo(screenPos.x, 0);
+                offscreenCtx.lineTo(screenPos.x, screenPos.y);
+                segmentStarted = true;
+            } else {
+                offscreenCtx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        // Close final segment
+        if (segmentStarted && points.length > 0) {
+            const lastPoint = points[points.length - 1];
+            if (isFinite(lastPoint.y)) {
+                const lastScreen = this.worldToScreen(lastPoint.x, lastPoint.y);
+                offscreenCtx.lineTo(lastScreen.x, 0);
+            }
+        }
+        
+        offscreenCtx.closePath();
+        offscreenCtx.fill();
+    }
+
+    fillBelowCurveComposite(offscreenCtx, points, viewportWidth, viewportHeight, viewportMinY) {
+        if (!points || points.length < 2) return;
+        
+        // Fill with white on the off-screen canvas
+        offscreenCtx.fillStyle = 'white';
+        
+        // For each connected segment, fill from curve to bottom of viewport
+        offscreenCtx.beginPath();
+        let segmentStarted = false;
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            
+            if (!isFinite(point.y)) {
+                // End current segment
+                if (segmentStarted) {
+                    // Close path by going to bottom of viewport and back
+                    const lastValidPoint = points[i-1];
+                    offscreenCtx.lineTo(this.worldToScreen(lastValidPoint.x, viewportMinY).x, viewportHeight);
+                    segmentStarted = false;
+                }
+                continue;
+            }
+            
+            const screenPos = this.worldToScreen(point.x, point.y);
+            
+            if (!segmentStarted) {
+                // Start new segment - go to bottom of viewport first
+                offscreenCtx.moveTo(screenPos.x, viewportHeight);
+                offscreenCtx.lineTo(screenPos.x, screenPos.y);
+                segmentStarted = true;
+            } else {
+                offscreenCtx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        // Close final segment
+        if (segmentStarted && points.length > 0) {
+            const lastPoint = points[points.length - 1];
+            if (isFinite(lastPoint.y)) {
+                const lastScreen = this.worldToScreen(lastPoint.x, lastPoint.y);
+                offscreenCtx.lineTo(lastScreen.x, viewportHeight);
+            }
+        }
+        
+        offscreenCtx.closePath();
+        offscreenCtx.fill();
+    }
+
+    fillInsidePolarCurveComposite(offscreenCtx, points) {
+        if (!points || points.length < 2) return;
+        
+        // Fill with white on the off-screen canvas
+        offscreenCtx.fillStyle = 'white';
+        
+        // For polar inequalities r < f(θ), fill from origin to the boundary curve
+        offscreenCtx.beginPath();
+        
+        // Start at origin
+        const origin = this.worldToScreen(0, 0);
+        offscreenCtx.moveTo(origin.x, origin.y);
+        
+        // Trace the boundary curve
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            if (isFinite(point.x) && isFinite(point.y)) {
+                const screenPos = this.worldToScreen(point.x, point.y);
+                offscreenCtx.lineTo(screenPos.x, screenPos.y);
+            }
+        }
+        
+        // Close path back to origin
+        offscreenCtx.closePath();
+        offscreenCtx.fill();
+    }
+
+    fillOutsidePolarCurveComposite(offscreenCtx, points, viewportWidth, viewportHeight) {
+        if (!points || points.length < 2) return;
+        
+        // Fill with white on the off-screen canvas
+        offscreenCtx.fillStyle = 'white';
+        
+        // For polar inequalities r > f(θ), fill from the boundary curve to viewport edge
+        // This is done by creating a large outer boundary and cutting out the inner curve
+        
+        offscreenCtx.beginPath();
+        
+        // Create outer rectangle (viewport boundary)
+        offscreenCtx.rect(0, 0, viewportWidth, viewportHeight);
+        
+        // Trace the boundary curve in reverse to create a "hole"
+        for (let i = points.length - 1; i >= 0; i--) {
+            const point = points[i];
+            if (isFinite(point.x) && isFinite(point.y)) {
+                const screenPos = this.worldToScreen(point.x, point.y);
+                if (i === points.length - 1) {
+                    offscreenCtx.moveTo(screenPos.x, screenPos.y);
+                } else {
+                    offscreenCtx.lineTo(screenPos.x, screenPos.y);
+                }
+            }
+        }
+        
+        offscreenCtx.closePath();
+        offscreenCtx.fill('evenodd'); // Use even-odd rule to create the hole
+    }
+
+    drawImplicitInequalityComposite(offscreenCtx, func) {
+        if (!func.gridData) return;
+        
+        // Extract operator from expression
+        const clean = this.convertFromLatex(func.expression).trim();
+        let operator = null;
+        
+        if (clean.includes('≥') || clean.includes('>=')) {
+            operator = '>=';
+        } else if (clean.includes('≤') || clean.includes('<=')) {
+            operator = '<=';
+        } else if (clean.includes('>')) {
+            operator = '>';
+        } else if (clean.includes('<')) {
+            operator = '<';
+        }
+        
+        if (!operator) return;
+        
+        // Fill with white on the off-screen canvas
+        offscreenCtx.fillStyle = 'white';
+        
+        // Begin a single path for all satisfied cells to avoid seams
+        offscreenCtx.beginPath();
+        
+        // Handle adaptive grid (coarse cells + refined boundary cells)
+        if (func.gridData.adaptiveCells) {
+            for (const cell of func.gridData.adaptiveCells) {
+                const { worldX, worldY, worldWidth, worldHeight, value } = cell;
+                
+                // Check if inequality is satisfied
+                let satisfiesInequality = false;
+                if (operator === '>') {
+                    satisfiesInequality = value > 0;
+                } else if (operator === '>=') {
+                    satisfiesInequality = value >= 0;
+                } else if (operator === '<') {
+                    satisfiesInequality = value < 0;
+                } else if (operator === '<=') {
+                    satisfiesInequality = value <= 0;
+                }
+                
+                if (satisfiesInequality) {
+                    // Convert to screen coordinates
+                    const topLeft = this.worldToScreen(worldX, worldY);
+                    const bottomRight = this.worldToScreen(worldX + worldWidth, worldY + worldHeight);
+                    
+                    const rectWidth = bottomRight.x - topLeft.x;
+                    const rectHeight = bottomRight.y - topLeft.y;
+                    
+                    // Add rectangle to path
+                    offscreenCtx.rect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                }
+            }
+        } else {
+            // Handle uniform grid (legacy fallback)
+            const { width, height, values, minX, minY, cellWidth, cellHeight } = func.gridData;
+            
+            for (let i = 0; i < width - 1; i++) {
+                for (let j = 0; j < height - 1; j++) {
+                    const value = values[i][j];
+                    
+                    // Check if inequality is satisfied
+                    let satisfiesInequality = false;
+                    if (operator === '>') {
+                        satisfiesInequality = value > 0;
+                    } else if (operator === '>=') {
+                        satisfiesInequality = value >= 0;
+                    } else if (operator === '<') {
+                        satisfiesInequality = value < 0;
+                    } else if (operator === '<=') {
+                        satisfiesInequality = value <= 0;
+                    }
+                    
+                    if (satisfiesInequality) {
+                        // Convert grid position to world coordinates
+                        const worldX = minX + i * cellWidth;
+                        const worldY = minY + j * cellHeight;
+                        
+                        // Convert to screen coordinates
+                        const topLeft = this.worldToScreen(worldX, worldY);
+                        const bottomRight = this.worldToScreen(worldX + cellWidth, worldY + cellHeight);
+                        
+                        const rectWidth = bottomRight.x - topLeft.x;
+                        const rectHeight = bottomRight.y - topLeft.y;
+                        
+                        // Add rectangle to path
+                        offscreenCtx.rect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                    }
+                }
+            }
+        }
+        
+        // Fill all rectangles at once to avoid seams
+        offscreenCtx.fill();
+    }
+
+    drawInequalityIntersection() {
+        // This method renders the intersection of all enabled inequalities using canvas compositing
+        
+        // Collect all enabled inequalities
+        const inequalities = [];
+        for (const func of this.getCurrentFunctions()) {
+            if (!func.enabled) continue;
+            const functionType = this.detectFunctionType(func.expression);
+            if (functionType === 'explicit-inequality' || 
+                functionType === 'implicit-inequality' || 
+                functionType === 'polar-inequality') {
+                inequalities.push({ func, functionType });
+            }
+        }
+        
+        if (inequalities.length < 2) return; // Need at least 2 inequalities for intersection
+        
+        // Check if we can use cached result (comparing without viewport)
+        const currentState = this.getInequalityIntersectionState(inequalities, false); // false = exclude viewport
+        const currentViewport = this.getViewportState();
+        
+        if (this.inequalityIntersectionCache.canvas && 
+            this.inequalityIntersectionCache.inequalityStates === currentState) {
+            
+            // Check if viewport has changed but inequality data hasn't
+            if (this.inequalityIntersectionCache.viewport !== currentViewport) {
+                // Viewport changed - check if we should regenerate or reuse
+                const now = performance.now();
+                const timeSinceLastRender = now - this.inequalityIntersectionCache.lastRenderTime;
+                
+                // If viewport is actively changing (pan/zoom in progress), skip rendering entirely
+                // Don't draw the stale cached canvas - it will be at wrong coordinates
+                if (timeSinceLastRender < 150) {
+                    // Schedule a regeneration for when viewport stabilizes
+                    clearTimeout(this.viewportChangeTimer);
+                    this.viewportChangeTimer = setTimeout(() => {
+                        this.scheduleChunkedDraw();
+                    }, 150);
+                    
+                    return; // Don't draw anything
+                } else {
+                    // Viewport has stabilized - regenerate at new viewport
+                }
+            } else {
+                // Use cached canvas - perfect match
+                this.ctx.save();
+                this.ctx.globalAlpha = 0.25;
+                this.ctx.drawImage(this.inequalityIntersectionCache.canvas, 0, 0);
+                this.ctx.restore();
+                return;
+            }
+        }
+        
+        // Cache miss - need to regenerate
+        const startTime = performance.now();
+        // Create off-screen canvas for each inequality
+        const offscreenCanvases = [];
+        for (const { func, functionType } of inequalities) {
+            const offscreenCanvas = document.createElement('canvas');
+            offscreenCanvas.width = this.viewport.width;
+            offscreenCanvas.height = this.viewport.height;
+            const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+            
+            // Clear to transparent black and disable anti-aliasing for crisp edges
+            offscreenCtx.clearRect(0, 0, this.viewport.width, this.viewport.height);
+            offscreenCtx.imageSmoothingEnabled = false;
+            
+            // Render this inequality's region to the off-screen canvas (white fill)
+            if (functionType === 'explicit-inequality') {
+                const inequality = this.parseInequality(func.expression);
+                if (inequality && func.points && func.points.length >= 2) {
+                    if (inequality.operator === '>' || inequality.operator === '>=') {
+                        this.fillAboveCurveComposite(offscreenCtx, func.points, 
+                            this.viewport.width, this.viewport.height, this.viewport.maxY);
+                    } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                        this.fillBelowCurveComposite(offscreenCtx, func.points, 
+                            this.viewport.width, this.viewport.height, this.viewport.minY);
+                    }
+                }
+            } else if (functionType === 'polar-inequality') {
+                const inequality = this.parsePolarInequality(func.expression);
+                if (inequality && func.points && func.points.length >= 2) {
+                    if (inequality.operator === '>' || inequality.operator === '>=') {
+                        this.fillOutsidePolarCurveComposite(offscreenCtx, func.points,
+                            this.viewport.width, this.viewport.height);
+                    } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                        this.fillInsidePolarCurveComposite(offscreenCtx, func.points);
+                    }
+                }
+            } else if (functionType === 'implicit-inequality') {
+                if (func.gridData) {
+                    this.drawImplicitInequalityComposite(offscreenCtx, func);
+                }
+            }
+            
+            offscreenCanvases.push(offscreenCanvas);
+        }
+        
+        // Composite all canvases together using destination-in operation
+        // Start with the first canvas
+        if (offscreenCanvases.length === 0) return;
+        
+        const compositeCanvas = document.createElement('canvas');
+        compositeCanvas.width = this.viewport.width;
+        compositeCanvas.height = this.viewport.height;
+        const compositeCtx = compositeCanvas.getContext('2d', { alpha: true });
+        
+        // Disable anti-aliasing and image smoothing
+        compositeCtx.imageSmoothingEnabled = false;
+        
+        // Draw the first inequality
+        compositeCtx.drawImage(offscreenCanvases[0], 0, 0);
+        
+        // Composite each subsequent inequality using destination-in (keeps only overlapping regions)
+        for (let i = 1; i < offscreenCanvases.length; i++) {
+            compositeCtx.globalCompositeOperation = 'destination-in';
+            compositeCtx.drawImage(offscreenCanvases[i], 0, 0);
+        }
+        
+        // Reset composite operation
+        compositeCtx.globalCompositeOperation = 'source-over';
+        
+        // Draw the final composited result to the main canvas with neutral color
+        // Use light blue-gray with semi-transparency
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.25; // 25% opacity
+        
+        // Create a temporary canvas to draw the colored version
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = this.viewport.width;
+        colorCanvas.height = this.viewport.height;
+        const colorCtx = colorCanvas.getContext('2d', { alpha: true });
+        
+        // Fill with the desired color
+        colorCtx.fillStyle = '#6B9BD1'; // Light blue-gray color
+        colorCtx.fillRect(0, 0, this.viewport.width, this.viewport.height);
+        
+        // Mask with the intersection using destination-in
+        colorCtx.globalCompositeOperation = 'destination-in';
+        colorCtx.drawImage(compositeCanvas, 0, 0);
+        
+        // Draw the colored intersection to the main canvas
+        this.ctx.drawImage(colorCanvas, 0, 0);
+        
+        this.ctx.restore();
+        
+        // Cache the colored canvas for reuse
+        this.inequalityIntersectionCache.canvas = colorCanvas;
+        this.inequalityIntersectionCache.inequalityStates = currentState;
+        this.inequalityIntersectionCache.viewport = currentViewport;
+        this.inequalityIntersectionCache.lastRenderTime = performance.now();
+    }
+
+    getViewportState() {
+        return `${this.viewport.minX.toFixed(3)},${this.viewport.minY.toFixed(3)},${this.viewport.maxX.toFixed(3)},${this.viewport.maxY.toFixed(3)},${this.viewport.width}x${this.viewport.height}`;
+    }
+
+    getInequalityIntersectionState(inequalities, includeViewport = true) {
+        // Generate a state string that captures everything affecting the intersection
+        const parts = [];
+        
+        for (const { func, functionType } of inequalities) {
+            // Include function ID, expression, enabled state, and point count
+            parts.push(`${func.id}:${func.expression}:${func.points ? func.points.length : 0}`);
+            
+            // For implicit inequalities, include grid data state
+            if (functionType === 'implicit-inequality' && func.gridData) {
+                if (func.gridData.adaptiveCells) {
+                    parts.push(`:grid:${func.gridData.adaptiveCells.length}`);
+                } else {
+                    parts.push(`:grid:${func.gridData.width}x${func.gridData.height}`);
+                }
+            }
+        }
+        
+        // Optionally include viewport state
+        if (includeViewport) {
+            parts.push(`|vp:${this.getViewportState()}`);
+        }
+        
+        return parts.join('|');
+    }
+
+    invalidateInequalityIntersectionCache() {
+        // Call this when inequalities change (add/remove/edit function, toggle enabled)
+        this.inequalityIntersectionCache.canvas = null;
+        this.inequalityIntersectionCache.inequalityStates = null;
     }
 
     addAlphaToColor(color, alpha) {
@@ -16155,6 +16635,15 @@ class Graphiti {
         this.drawAxes();
         this.drawAxisLabels();
         
+        // Count enabled inequalities for compositing decision
+        const inequalityCount = this.countEnabledInequalities();
+        
+        // If multiple inequalities, render their intersection using compositing
+        // This must be drawn AFTER grid/axes but BEFORE function curves
+        if (inequalityCount >= 2) {
+            this.drawInequalityIntersection();
+        }
+        
         // Draw functions from current mode only
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
@@ -17115,17 +17604,23 @@ class Graphiti {
         const functionType = this.detectFunctionType(func.expression);
         const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         
-        // If it's an inequality, render shading first, then boundary
+        // Count inequalities to determine if we should use compositing or individual shading
+        const inequalityCount = this.countEnabledInequalities();
+        
+        // If it's an inequality, render shading first (only if single inequality), then boundary
         if (isInequality) {
             if (functionType === 'polar-inequality') {
                 // Handle polar inequality shading
                 const inequality = this.parsePolarInequality(func.expression);
                 if (inequality && func.inequality) {
-                    // For polar inequalities, shade the region
-                    if (inequality.operator === '>' || inequality.operator === '>=') {
-                        this.fillOutsidePolarCurve(func.points, func.color, func.inequality);
-                    } else if (inequality.operator === '<' || inequality.operator === '<=') {
-                        this.fillInsidePolarCurve(func.points, func.color, func.inequality);
+                    // Only shade individually if this is the only inequality
+                    if (inequalityCount === 1) {
+                        // For polar inequalities, shade the region
+                        if (inequality.operator === '>' || inequality.operator === '>=') {
+                            this.fillOutsidePolarCurve(func.points, func.color, func.inequality);
+                        } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                            this.fillInsidePolarCurve(func.points, func.color, func.inequality);
+                        }
                     }
                     
                     // Set line style based on strict vs non-strict
@@ -17141,11 +17636,14 @@ class Graphiti {
                 // Handle Cartesian inequality shading
                 const inequality = this.parseInequality(func.expression);
                 if (inequality) {
-                    // Render shading based on operator
-                    if (inequality.operator === '>' || inequality.operator === '>=') {
-                        this.fillAboveCurve(func.points, func.color);
-                    } else if (inequality.operator === '<' || inequality.operator === '<=') {
-                        this.fillBelowCurve(func.points, func.color);
+                    // Only shade individually if this is the only inequality
+                    if (inequalityCount === 1) {
+                        // Render shading based on operator
+                        if (inequality.operator === '>' || inequality.operator === '>=') {
+                            this.fillAboveCurve(func.points, func.color);
+                        } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                            this.fillBelowCurve(func.points, func.color);
+                        }
                     }
                     
                     // Set line style based on strict vs non-strict
@@ -17224,8 +17722,11 @@ class Graphiti {
         const functionType = this.detectFunctionType(func.expression);
         const isInequality = functionType === 'implicit-inequality';
         
-        // For implicit inequalities, render shading first if grid data is available
-        if (isInequality && func.gridData) {
+        // Count inequalities to determine if we should use compositing or individual shading
+        const inequalityCount = this.countEnabledInequalities();
+        
+        // For implicit inequalities, render shading first if grid data is available (only if single inequality)
+        if (isInequality && func.gridData && inequalityCount === 1) {
             this.drawImplicitInequality(func);
         }
         
