@@ -361,14 +361,16 @@
             appearance: none;
             width: 20px;
             height: 20px;
-            background: var(--accent-color);
+            background: var(--bg-secondary);
+            border: 1px solid #555;
             border-radius: 50%;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: filter 0.2s;
         }
         
         input[type="range"]::-webkit-slider-thumb:hover {
-            background: var(--accent-hover);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         /* Slider thumb label overlay */
@@ -395,15 +397,16 @@
         input[type="range"]::-moz-range-thumb {
             width: 20px;
             height: 20px;
-            background: var(--accent-color);
+            background: var(--bg-secondary);
+            border: 1px solid #555;
             border-radius: 50%;
             cursor: pointer;
-            border: none;
-            transition: background 0.2s;
+            transition: filter 0.2s;
         }
         
         input[type="range"]::-moz-range-thumb:hover {
-            background: var(--accent-hover);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         .title-screen {
@@ -490,14 +493,14 @@
         }
         
         .title-screen .title-button {
-            background: #2A3F5A;
-            color: white;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
             border: 1px solid #555;
             padding: 12px 30px;
             font-size: 1em;
             border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: filter 0.2s, box-shadow 0.2s;
             margin: 10px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
             display: inline-block;
@@ -505,13 +508,12 @@
         }
         
         .title-screen .title-button:hover {
-            background: #3A5170;
-            transform: translateY(-2px);
+            filter: brightness(1.15);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         .title-screen .title-button:active {
-            transform: translateY(0);
+            filter: brightness(1.1);
         }
         
         .title-screen .button-container {
