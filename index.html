@@ -233,8 +233,8 @@
         }
         
         button:hover {
-            background: var(--accent-hover);
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         /* Remove box-shadow from title/help buttons */
@@ -295,10 +295,11 @@
             min-width: 42px;
             height: 20px;
             min-height: 20px;
-            background: var(--input-bg);
+            background: var(--bg-secondary);
             border: 1px solid #555;
             border-radius: 4px;
-            color: var(--text-color);
+            color: var(--text-primary);
+            opacity: 0.7;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -313,8 +314,8 @@
         }
         
         .parameter-slider-item .range-button:hover {
-            background: var(--accent-color);
-            box-shadow: none;
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         .parameter-slider-item .arrow-button {
@@ -322,10 +323,10 @@
             height: 20px;
             min-width: 20px;
             min-height: 20px;
-            background: var(--input-bg);
+            background: var(--bg-secondary);
             border: 1px solid #555;
             border-radius: 4px;
-            color: var(--text-color);
+            color: var(--text-primary);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -340,8 +341,8 @@
         }
         
         .parameter-slider-item .arrow-button:hover {
-            background: var(--accent-color);
-            box-shadow: none;
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         input[type="range"] {
