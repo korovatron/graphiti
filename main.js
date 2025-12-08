@@ -21692,7 +21692,7 @@ class Graphiti {
             // Use contrasting color for better visibility
             const contrastColor = this.getContrastingColor(badge.functionColor);
             this.ctx.strokeStyle = contrastColor;
-            this.ctx.lineWidth = this.getLineWidth(2);
+            this.ctx.lineWidth = this.getLineWidth(3);
             this.ctx.globalAlpha = 0.8;
         }
         
@@ -21801,7 +21801,7 @@ class Graphiti {
             // Use contrasting color for better visibility
             const contrastColor = this.getContrastingColor(badge.functionColor);
             this.ctx.strokeStyle = contrastColor;
-            this.ctx.lineWidth = this.getLineWidth(2);
+            this.ctx.lineWidth = this.getLineWidth(3);
             this.ctx.globalAlpha = 0.8;
         }
         
