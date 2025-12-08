@@ -12509,18 +12509,60 @@ class Graphiti {
     initializeParameterSliders() {
         const sliders = ['alpha', 'beta', 'gamma', 'delta'];
         
+        // Store thumb update functions for each parameter (make accessible to class)
+        this.thumbUpdaters = {};
+        
+        // Store current ranges for each parameter
+        this.parameterRanges = {
+            alpha: { min: -10, max: 10, step: 1, label: '±10' },
+            beta: { min: -10, max: 10, step: 1, label: '±10' },
+            gamma: { min: -10, max: 10, step: 1, label: '±10' },
+            delta: { min: -10, max: 10, step: 1, label: '±10' }
+        };
+        
+        // Available range options (cycles through these)
+        this.rangeOptions = [
+            { min: -1, max: 1, step: 0.1, label: '±1' },
+            { min: -10, max: 10, step: 1, label: '±10' },
+            { min: -100, max: 100, step: 10, label: '±100' },
+            { min: -1000, max: 1000, step: 100, label: '±1K' }
+        ];
+        
         sliders.forEach(param => {
             const slider = document.getElementById(`${param}-slider`);
             const valueDisplay = document.getElementById(`${param}-value`);
+            const thumbLabel = document.getElementById(`${param}-thumb-label`);
             
             if (slider && valueDisplay) {
+                // Function to update thumb label position
+                const updateThumbPosition = () => {
+                    if (thumbLabel && slider.offsetWidth > 0) {
+                        const min = parseFloat(slider.min);
+                        const max = parseFloat(slider.max);
+                        const value = parseFloat(slider.value);
+                        const percent = (value - min) / (max - min);
+                        const sliderWidth = slider.offsetWidth;
+                        const thumbWidth = 20; // Width of the thumb
+                        // Calculate position - the thumb center moves from thumbWidth/2 to sliderWidth - thumbWidth/2
+                        const position = (thumbWidth / 2) + percent * (sliderWidth - thumbWidth);
+                        thumbLabel.style.left = `${position}px`;
+                        thumbLabel.style.top = '3px'; // Center vertically on thumb
+                    }
+                };
+                
+                // Store for use in arrow button handlers
+                this.thumbUpdaters[param] = updateThumbPosition;
+                
+                // Initialize thumb position after layout
+                setTimeout(updateThumbPosition, 0);
+                
                 let plotTimer = null;
                 let isFirstInputEvent = true;
                 
                 // Update parameter value and replot
                 const updateParameter = async (value) => {
                     this.parameters[param].value = value;
-                    valueDisplay.textContent = value.toFixed(2);
+                    valueDisplay.textContent = parseFloat(value.toFixed(2)).toString();
                     slider.value = value;
                     
                     // Clear markers on first input event (when slider starts moving)
@@ -12562,7 +12604,15 @@ class Graphiti {
                 // Slider input event
                 slider.addEventListener('input', (e) => {
                     updateParameter(parseFloat(e.target.value));
+                    updateThumbPosition();
                 });
+            }
+        });
+        
+        // Update all thumb positions on window resize
+        window.addEventListener('resize', () => {
+            if (this.thumbUpdaters) {
+                Object.values(this.thumbUpdaters).forEach(updater => updater());
             }
         });
         
@@ -12575,28 +12625,25 @@ class Graphiti {
                 
                 if (slider) {
                     const currentValue = parseFloat(slider.value);
+                    const range = this.parameterRanges[param];
+                    const step = range.step;
                     let newValue;
                     
-                    // If current value is not a whole number, go to nearest whole number in the direction
-                    if (currentValue !== Math.floor(currentValue)) {
-                        if (dir > 0) {
-                            // Going right: round up
-                            newValue = Math.ceil(currentValue);
-                        } else {
-                            // Going left: round down
-                            newValue = Math.floor(currentValue);
-                        }
-                    } else {
-                        // Already on whole number, add/subtract 1
-                        newValue = currentValue + dir;
-                    }
+                    // Round to nearest step and add/subtract step
+                    const stepsFromZero = Math.round(currentValue / step);
+                    newValue = (stepsFromZero + dir) * step;
                     
                     // Clamp to range
-                    newValue = Math.max(-10, Math.min(10, newValue));
+                    newValue = Math.max(range.min, Math.min(range.max, newValue));
                     
                     this.parameters[param].value = newValue;
                     slider.value = newValue;
-                    document.getElementById(`${param}-value`).textContent = newValue.toFixed(2);
+                    document.getElementById(`${param}-value`).textContent = parseFloat(newValue.toFixed(2)).toString();
+                    
+                    // Update thumb position
+                    if (this.thumbUpdaters && this.thumbUpdaters[param]) {
+                        this.thumbUpdaters[param]();
+                    }
                     
                     // Clear markers before replotting
                     this.clearIntersections();
@@ -12619,6 +12666,61 @@ class Graphiti {
                         this.turningPoints = this.findTurningPoints();
                     }
                     this.draw();
+                }
+            });
+        });
+        
+        // Range button event handlers
+        document.querySelectorAll('.range-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const param = e.currentTarget.dataset.param;
+                const currentRange = this.parameterRanges[param];
+                
+                // Find current range index
+                const currentIndex = this.rangeOptions.findIndex(
+                    opt => opt.min === currentRange.min && opt.max === currentRange.max
+                );
+                
+                // Cycle to next range
+                const nextIndex = (currentIndex + 1) % this.rangeOptions.length;
+                const newRange = this.rangeOptions[nextIndex];
+                
+                // Update stored range
+                this.parameterRanges[param] = { ...newRange };
+                
+                // Update button text
+                e.currentTarget.textContent = newRange.label;
+                
+                // Update slider attributes
+                const slider = document.getElementById(`${param}-slider`);
+                if (slider) {
+                    slider.min = newRange.min;
+                    slider.max = newRange.max;
+                    slider.step = newRange.step * 0.01; // Fine control for dragging
+                    
+                    // Keep current value, clamp if needed
+                    const currentValue = this.parameters[param].value;
+                    const clampedValue = Math.max(newRange.min, Math.min(newRange.max, currentValue));
+                    
+                    if (clampedValue !== currentValue) {
+                        this.parameters[param].value = clampedValue;
+                        slider.value = clampedValue;
+                        document.getElementById(`${param}-value`).textContent = parseFloat(clampedValue.toFixed(2)).toString();
+                        
+                        // Replot if value changed
+                        this.replotAllFunctions();
+                        this.updateBadgesAfterParameterChange();
+                        this.updateIntegralPairs();
+                        this.draw();
+                    } else {
+                        // Just update slider position (value stays same, range changed)
+                        slider.value = currentValue;
+                    }
+                    
+                    // Update thumb position for new range
+                    if (this.thumbUpdaters && this.thumbUpdaters[param]) {
+                        this.thumbUpdaters[param]();
+                    }
                 }
             });
         });
@@ -12669,6 +12771,14 @@ class Graphiti {
         if (betaContainer) betaContainer.style.display = usedParams.beta ? 'flex' : 'none';
         if (gammaContainer) gammaContainer.style.display = usedParams.gamma ? 'flex' : 'none';
         if (deltaContainer) deltaContainer.style.display = usedParams.delta ? 'flex' : 'none';
+        
+        // Update thumb label positions after sliders become visible
+        if (anyInUse && this.thumbUpdaters) {
+            // Use requestAnimationFrame to ensure layout is complete
+            requestAnimationFrame(() => {
+                Object.values(this.thumbUpdaters).forEach(updater => updater());
+            });
+        }
     }
 
     updateParametricRangeVisibility() {
