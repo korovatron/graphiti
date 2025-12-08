@@ -1416,13 +1416,13 @@ class Graphiti {
             },
             'definite-integral': {
                 expressions: [
-                    'y=\\frac{1}{x}'                                    // Hyperbola
+                    'y=\\cosh\\left(x\\right)'                          // Hyperbolic cosine
                 ],
                 description: 'Definite Integral Demo',
-                viewport: { minX: -1, maxX: 6, minY: -1, maxY: 3 },
+                viewport: { minX: -2, maxX: 2, minY: 0, maxY: 4 },
                 badges: [
-                    { expression: 'y=\\frac{1}{x}', x: 1, hasIntegral: true },
-                    { expression: 'y=\\frac{1}{x}', x: 4, hasIntegral: true }
+                    { expression: 'y=\\cosh\\left(x\\right)', x: -1, hasIntegral: true },
+                    { expression: 'y=\\cosh\\left(x\\right)', x: 1, hasIntegral: true }
                 ]
             },
             'area-between-curves': {
