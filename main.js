@@ -12476,12 +12476,21 @@ class Graphiti {
             
             if (slider && valueDisplay) {
                 let plotTimer = null;
+                let isFirstInputEvent = true;
                 
                 // Update parameter value and replot
                 const updateParameter = async (value) => {
                     this.parameters[param].value = value;
                     valueDisplay.textContent = value.toFixed(2);
                     slider.value = value;
+                    
+                    // Clear markers on first input event (when slider starts moving)
+                    if (isFirstInputEvent) {
+                        this.clearIntersections();
+                        this.clearIntercepts();
+                        this.clearTurningPoints();
+                        isFirstInputEvent = false;
+                    }
                     
                     // Debounce the replotting for smoother slider dragging
                     if (plotTimer) {
@@ -12492,7 +12501,22 @@ class Graphiti {
                         await this.replotAllFunctions();
                         this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
                         this.updateIntegralPairs(); // Recalculate integrals with new parameter values
+                        
+                        // Recalculate markers after slider stops moving
+                        if (this.showIntersections) {
+                            this.calculateIntersectionsWithWorker();
+                        }
+                        if (this.showIntercepts) {
+                            this.intercepts = this.findAxisIntercepts();
+                            this.cullInterceptMarkers();
+                        }
+                        if (this.showTurningPoints) {
+                            this.turningPoints = this.findTurningPoints();
+                        }
+                        this.draw();
+                        
                         plotTimer = null;
+                        isFirstInputEvent = true; // Reset for next drag
                     }, 16); // ~60fps update rate for smooth animation
                 };
                 
@@ -12535,9 +12559,27 @@ class Graphiti {
                     slider.value = newValue;
                     document.getElementById(`${param}-value`).textContent = newValue.toFixed(2);
                     
+                    // Clear markers before replotting
+                    this.clearIntersections();
+                    this.clearIntercepts();
+                    this.clearTurningPoints();
+                    
                     this.replotAllFunctions();
                     this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
                     this.updateIntegralPairs(); // Recalculate integrals with new parameter values
+                    
+                    // Recalculate markers
+                    if (this.showIntersections) {
+                        this.calculateIntersectionsWithWorker();
+                    }
+                    if (this.showIntercepts) {
+                        this.intercepts = this.findAxisIntercepts();
+                        this.cullInterceptMarkers();
+                    }
+                    if (this.showTurningPoints) {
+                        this.turningPoints = this.findTurningPoints();
+                    }
+                    this.draw();
                 }
             });
         });
