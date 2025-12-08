@@ -21689,8 +21689,9 @@ class Graphiti {
             this.ctx.shadowBlur = 15;
             this.ctx.shadowColor = neonColor;
         } else {
-            // Use function color with transparency
-            this.ctx.strokeStyle = badge.functionColor;
+            // Use contrasting color for better visibility
+            const contrastColor = this.getContrastingColor(badge.functionColor);
+            this.ctx.strokeStyle = contrastColor;
             this.ctx.lineWidth = this.getLineWidth(2);
             this.ctx.globalAlpha = 0.8;
         }
@@ -21797,8 +21798,9 @@ class Graphiti {
             this.ctx.shadowBlur = 15;
             this.ctx.shadowColor = neonColor;
         } else {
-            // Use function color with transparency
-            this.ctx.strokeStyle = badge.functionColor;
+            // Use contrasting color for better visibility
+            const contrastColor = this.getContrastingColor(badge.functionColor);
+            this.ctx.strokeStyle = contrastColor;
             this.ctx.lineWidth = this.getLineWidth(2);
             this.ctx.globalAlpha = 0.8;
         }
