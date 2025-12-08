@@ -1355,6 +1355,17 @@ class Graphiti {
     async addDemoSet(demoSetId) {
         // Define demo sets
         const demoSets = {
+            'explicit-functions': {
+                expressions: [
+                    'y=e^{x}',                                          // Exponential function
+                    'y=\\ln(x)',                                        // Natural logarithm
+                    'y=\\log(x)',                                       // Common logarithm (base 10)
+                    'y=\\sqrt{x}',                                      // Square root
+                    'y=\\left|x\\right|'                                // Absolute value
+                ],
+                description: 'Explicit Functions Demo',
+                viewport: { minX: -3, maxX: 8, minY: -3, maxY: 8 }
+            },
             'inequality-intersection': {
                 expressions: [
                     'x^2+y^2<16',           // Strict: circle (no outline)
