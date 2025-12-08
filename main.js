@@ -1491,6 +1491,26 @@ class Graphiti {
         const demoSet = demoSets[demoSetId];
         if (!demoSet) return;
         
+        // Check if any expression contains trig functions - if so, switch to radian mode
+        const hasTrigFunctions = demoSet.expressions.some(expr => {
+            const exprLower = expr.toLowerCase();
+            return /\\sin|\\cos|\\tan|\\sec|\\csc|\\cot/.test(exprLower);
+        });
+        
+        if (hasTrigFunctions && this.plotMode === 'cartesian' && this.angleMode !== 'radians') {
+            // Switch to radian mode for Cartesian trig functions
+            this.angleMode = 'radians';
+            this.cartesianAngleMode = 'radians';
+            
+            // Update UI
+            const degreesIcon = document.getElementById('degrees-icon');
+            const radiansIcon = document.getElementById('radians-icon');
+            if (degreesIcon && radiansIcon) {
+                degreesIcon.style.opacity = '0.3';
+                radiansIcon.style.opacity = '1';
+            }
+        }
+        
         // Clear any existing integral pairs and linked badge pairs from previous demo
         this.integralPairs = [];
         this.linkedBadgePairs = [];
