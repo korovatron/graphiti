@@ -1509,6 +1509,14 @@ class Graphiti {
                 degreesIcon.style.opacity = '0.3';
                 radiansIcon.style.opacity = '1';
             }
+            
+            // Reset parametric t-range to radian defaults for trig functions
+            this.cartesianViewport.tMin = 0;
+            this.cartesianViewport.tMax = 2 * Math.PI;
+            const tMinInput = document.getElementById('t-min');
+            const tMaxInput = document.getElementById('t-max');
+            if (tMinInput) this.setRangeValue(tMinInput, '0');
+            if (tMaxInput) this.setRangeValue(tMaxInput, '2\\pi');
         }
         
         // Clear any existing integral pairs and linked badge pairs from previous demo
