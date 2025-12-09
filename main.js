@@ -4570,7 +4570,9 @@ class Graphiti {
             }
         });
         
-        if (!allHaveData) return; // Wait until all inequalities have been plotted
+        if (!allHaveData) {
+            return; // Wait until all inequalities have been plotted
+        }
         
         // Check if we can use cached result (comparing without viewport)
         const currentState = this.getInequalityIntersectionState(inequalities, false); // false = exclude viewport
@@ -4596,7 +4598,6 @@ class Graphiti {
                 
                 // If viewport changed recently, use cached canvas but don't regenerate yet
                 if (timeSinceViewportChanged < 250) {
-                    
                     // Parse cached and current viewport to calculate transform
                     const cachedVp = this.inequalityIntersectionCache.viewport.split(',');
                     const cachedMinX = parseFloat(cachedVp[0]);
@@ -5034,7 +5035,13 @@ class Graphiti {
                     return;
                 }
                 points = result.points || result; // Handle both old and new format
-                if (result.gridData) func.gridData = result.gridData;
+                if (result.gridData) {
+                    func.gridData = result.gridData;
+                    // Invalidate intersection cache since grid data changed
+                    if (functionType === 'implicit-inequality') {
+                        this.invalidateInequalityIntersectionCache();
+                    }
+                }
             } else {
                 // Use adaptive resolution for inequalities (much faster), standard for equations
                 if (functionType === 'implicit-inequality') {
@@ -5045,7 +5052,11 @@ class Graphiti {
                         return;
                     }
                     points = result.points || result;
-                    if (result.gridData) func.gridData = result.gridData;
+                    if (result.gridData) {
+                        func.gridData = result.gridData;
+                        // Invalidate intersection cache since grid data changed
+                        this.invalidateInequalityIntersectionCache();
+                    }
                 } else {
                     const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
                     if (!result) {
@@ -5054,7 +5065,13 @@ class Graphiti {
                         return;
                     }
                     points = result.points || result;
-                    if (result.gridData) func.gridData = result.gridData;
+                    if (result.gridData) {
+                        func.gridData = result.gridData;
+                        // Invalidate intersection cache since grid data changed
+                        if (functionType === 'implicit-inequality') {
+                            this.invalidateInequalityIntersectionCache();
+                        }
+                    }
                 }
             }
             
