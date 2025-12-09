@@ -9768,7 +9768,10 @@ class Graphiti {
                 }
             } else {
                 // Normal panning mode - use threshold to prevent jittery panning
-                if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+                // Use no threshold for touch since touch events are stable and precise
+                const panThreshold = this.input.touch.active ? 0 : 2;
+                
+                if (Math.abs(deltaX) > panThreshold || Math.abs(deltaY) > panThreshold) {
                     this.input.dragging = true;
                     
                     // Convert screen delta to world delta
