@@ -14489,9 +14489,14 @@ class Graphiti {
                             if (isFinite(value) && prevValue !== null && prevValue * value <= 0) {
                                 // Sign change detected - intercept between prevX and x
                                 // Use linear interpolation for better accuracy
-                                const interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
+                                let interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
                                 
                                 if (isFinite(interceptX)) {
+                                    // Snap very close intercepts to exactly x=0
+                                    if (Math.abs(interceptX) < 0.02) {
+                                        interceptX = 0;
+                                    }
+                                    
                                     const isDuplicate = allIntercepts.some(existing => 
                                         Math.abs(existing.x - interceptX) < minDistance
                                     );
@@ -14558,7 +14563,12 @@ class Graphiti {
                 // Stop if we've searched enough
                 if (allIntercepts.length >= maxInterceptsToSearch) break;
                 
-                const xValue = candidate.x;
+                let xValue = candidate.x;
+                
+                // Snap very close intercepts to exactly x=0
+                if (Math.abs(xValue) < 0.02) {
+                    xValue = 0;
+                }
                 
                 const isDuplicate = allIntercepts.some(existing => 
                     Math.abs(existing.x - xValue) < minDistance
@@ -14736,9 +14746,14 @@ class Graphiti {
                             if (isFinite(value) && prevValue !== null && prevValue * value <= 0) {
                                 // Sign change detected - intercept between prevY and y
                                 // Use linear interpolation for better accuracy
-                                const interceptY = prevY - prevValue * (y - prevY) / (value - prevValue);
+                                let interceptY = prevY - prevValue * (y - prevY) / (value - prevValue);
                                 
                                 if (isFinite(interceptY)) {
+                                    // Snap very close intercepts to exactly y=0
+                                    if (Math.abs(interceptY) < 0.02) {
+                                        interceptY = 0;
+                                    }
+                                    
                                     const isDuplicate = allIntercepts.some(existing => 
                                         Math.abs(existing.y - interceptY) < minDistance
                                     );
@@ -14808,7 +14823,12 @@ class Graphiti {
                 // Stop if we've searched enough
                 if (allIntercepts.length >= maxInterceptsToSearch) break;
                 
-                const yValue = candidate.y;
+                let yValue = candidate.y;
+                
+                // Snap very close intercepts to exactly y=0
+                if (Math.abs(yValue) < 0.02) {
+                    yValue = 0;
+                }
                 
                 const isDuplicate = allIntercepts.some(existing => 
                     Math.abs(existing.y - yValue) < minDistance
