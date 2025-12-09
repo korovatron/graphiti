@@ -7345,10 +7345,15 @@ class Graphiti {
                     if (isDragging) {
                         area = this.calculateParametricArcLengthFromPoints(func, start, end);
                     } else {
-                        // Check if we have a cached high-precision value with matching bounds
+                        // Check if we have a cached high-precision value with matching bounds AND parameters
                         if (oldPair && oldPair.cachedArea !== undefined && 
                             Math.abs(oldPair.start - start) < 0.0001 && 
-                            Math.abs(oldPair.end - end) < 0.0001) {
+                            Math.abs(oldPair.end - end) < 0.0001 &&
+                            oldPair.cachedParams &&
+                            oldPair.cachedParams.alpha === this.parameters.alpha.value &&
+                            oldPair.cachedParams.beta === this.parameters.beta.value &&
+                            oldPair.cachedParams.gamma === this.parameters.gamma.value &&
+                            oldPair.cachedParams.delta === this.parameters.delta.value) {
                             // Use cached high-precision value
                             area = oldPair.cachedArea;
                         } else {
@@ -7370,10 +7375,15 @@ class Graphiti {
                     if (isDragging) {
                         area = this.calculateCartesianIntegralFromPoints(func, start, end);
                     } else {
-                        // Check if we have a cached high-precision area with matching bounds
+                        // Check if we have a cached high-precision area with matching bounds AND parameters
                         if (oldPair && oldPair.cachedArea !== undefined && 
                             Math.abs(oldPair.start - start) < 0.0001 && 
-                            Math.abs(oldPair.end - end) < 0.0001) {
+                            Math.abs(oldPair.end - end) < 0.0001 &&
+                            oldPair.cachedParams &&
+                            oldPair.cachedParams.alpha === this.parameters.alpha.value &&
+                            oldPair.cachedParams.beta === this.parameters.beta.value &&
+                            oldPair.cachedParams.gamma === this.parameters.gamma.value &&
+                            oldPair.cachedParams.delta === this.parameters.delta.value) {
                             // Use cached high-precision value
                             area = oldPair.cachedArea;
                         } else {
@@ -7404,11 +7414,18 @@ class Graphiti {
                 if (isParametric || this.plotMode === 'cartesian') {
                     const isDragging = this.input.tracing.active && this.input.badgeInteraction.targetBadge;
                     if (!isDragging) {
-                        // We just calculated with high precision, cache it
+                        // We just calculated with high precision, cache it along with parameter values
                         newPair.cachedArea = area;
+                        newPair.cachedParams = {
+                            alpha: this.parameters.alpha.value,
+                            beta: this.parameters.beta.value,
+                            gamma: this.parameters.gamma.value,
+                            delta: this.parameters.delta.value
+                        };
                     } else if (oldPair && oldPair.cachedArea !== undefined) {
                         // Preserve existing high-precision cache during dragging (don't overwrite with point-based value)
                         newPair.cachedArea = oldPair.cachedArea;
+                        newPair.cachedParams = oldPair.cachedParams;
                     }
                     // Note: If dragging and no cache exists, don't set cachedArea (will be calculated after drag ends)
                 }
@@ -21229,8 +21246,8 @@ class Graphiti {
         
         // Draw trapezium rule controls if applicable
         if (showTrapControls) {
-            // During ANY viewport change (pan/zoom/drag), skip this entire section to avoid hundreds of calls per second
-            // The shapes will still draw using the existing pair.numericalResult from before viewport change started
+            // Calculate numerical approximation if needed
+            // During viewport changes, use cached result to avoid expensive recalculation
             if (!this.isViewportChanging && !this.isDraggingBadge) {
                 // Calculate numerical approximation based on selected method
                 // Cache the result on the pair object itself to avoid recalculating during pan/zoom
@@ -21238,7 +21255,12 @@ class Graphiti {
                 
                 if (pair.cachedNumericalResult && 
                     pair.cachedNumericalResult.method === pair.numericalMethod &&
-                    pair.cachedNumericalResult.stripCount === pair.trapeziumStripCount) {
+                    pair.cachedNumericalResult.stripCount === pair.trapeziumStripCount &&
+                    pair.cachedNumericalResult.params &&
+                    pair.cachedNumericalResult.params.alpha === this.parameters.alpha.value &&
+                    pair.cachedNumericalResult.params.beta === this.parameters.beta.value &&
+                    pair.cachedNumericalResult.params.gamma === this.parameters.gamma.value &&
+                    pair.cachedNumericalResult.params.delta === this.parameters.delta.value) {
                     // Use cached result
                     numericalResult = pair.cachedNumericalResult.result;
                 } else {
@@ -21253,7 +21275,13 @@ class Graphiti {
                     pair.cachedNumericalResult = {
                         method: pair.numericalMethod,
                         stripCount: pair.trapeziumStripCount,
-                        result: numericalResult
+                        result: numericalResult,
+                        params: {
+                            alpha: this.parameters.alpha.value,
+                            beta: this.parameters.beta.value,
+                            gamma: this.parameters.gamma.value,
+                            delta: this.parameters.delta.value
+                        }
                     };
                 }
                 
@@ -21264,10 +21292,13 @@ class Graphiti {
                 this.cacheNumericalShapePaths(pair);
             }
             
-            // If we have a numerical result, display the UI
-            if (pair.numericalResult) {
+            // Always display UI if we have a numerical result (even if stale during viewport changes)
+            if (pair.numericalResult || (pair.cachedNumericalResult && pair.cachedNumericalResult.result)) {
+                // Use current result if available, otherwise use cached
+                const displayResult = pair.numericalResult || pair.cachedNumericalResult.result;
+                
                 const controlsY = panelY + basePanelHeight; // No gap at all
-                const approximation = pair.numericalResult.approximation;
+                const approximation = displayResult.approximation;
             
             // Display approximation value
             // Label left-aligned, value right-aligned
