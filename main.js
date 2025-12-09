@@ -14491,7 +14491,7 @@ class Graphiti {
                                 // Use linear interpolation for better accuracy
                                 const interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
                                 
-                                if (isFinite(interceptX) && Math.abs(interceptX) > 0.15) {
+                                if (isFinite(interceptX)) {
                                     const isDuplicate = allIntercepts.some(existing => 
                                         Math.abs(existing.x - interceptX) < minDistance
                                     );
@@ -14546,10 +14546,8 @@ class Graphiti {
             }
             
             // Filter out invalid candidates (NaN or infinite values)
-            // Also exclude candidates very close to origin (edge case, visually obvious)
             const validCandidates = candidates.filter(c => 
-                isFinite(c.x) && isFinite(c.y) && 
-                !(Math.abs(c.x) < 0.15 && c.y < 0.15)  // Exclude origin region
+                isFinite(c.x) && isFinite(c.y)
             );
             
             // Sort candidates by x position
@@ -14740,7 +14738,7 @@ class Graphiti {
                                 // Use linear interpolation for better accuracy
                                 const interceptY = prevY - prevValue * (y - prevY) / (value - prevValue);
                                 
-                                if (isFinite(interceptY) && Math.abs(interceptY) > 0.15) {
+                                if (isFinite(interceptY)) {
                                     const isDuplicate = allIntercepts.some(existing => 
                                         Math.abs(existing.y - interceptY) < minDistance
                                     );
@@ -14798,10 +14796,8 @@ class Graphiti {
             }
             
             // Filter out invalid candidates (NaN or infinite values)
-            // Also exclude candidates very close to origin (edge case, visually obvious)
             const validCandidates = candidates.filter(c => 
-                isFinite(c.x) && isFinite(c.y) &&
-                !(c.x < 0.15 && Math.abs(c.y) < 0.15)  // Exclude origin region
+                isFinite(c.x) && isFinite(c.y)
             );
             
             // Sort candidates by y position
