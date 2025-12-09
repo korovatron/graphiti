@@ -174,8 +174,12 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
                 if (diff1 * diff2 < 0) { // Sign change detected (crossing intersection)
                     // Linear interpolation to estimate intersection point
                     const ratio = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
-                    const intersectionX = x1 + ratio * (x2 - x1);
-                    const intersectionY = y1_at_x1 + ratio * (y1_at_x2 - y1_at_x1);
+                    let intersectionX = x1 + ratio * (x2 - x1);
+                    let intersectionY = y1_at_x1 + ratio * (y1_at_x2 - y1_at_x1);
+                    
+                    // Snap very close intersections to exactly origin
+                    if (Math.abs(intersectionX) < 0.02) intersectionX = 0;
+                    if (Math.abs(intersectionY) < 0.02) intersectionY = 0;
                     
                     intersections.push({
                         x: intersectionX,
@@ -208,9 +212,15 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
                 );
                 
                 if (intersection) {
+                    // Snap very close intersections to exactly origin
+                    let snappedX = intersection.x;
+                    let snappedY = intersection.y;
+                    if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                    if (Math.abs(snappedY) < 0.02) snappedY = 0;
+                    
                     intersections.push({
-                        x: intersection.x,
-                        y: intersection.y,
+                        x: snappedX,
+                        y: snappedY,
                         func1: func1,
                         func2: func2,
                         isApproximate: true
@@ -243,9 +253,15 @@ function findImplicitIntersections(func1, func2) {
                 );
                 
                 if (!isDuplicate) {
+                    // Snap very close intersections to exactly origin
+                    let snappedX = intersection.x;
+                    let snappedY = intersection.y;
+                    if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                    if (Math.abs(snappedY) < 0.02) snappedY = 0;
+                    
                     intersections.push({
-                        x: intersection.x,
-                        y: intersection.y,
+                        x: snappedX,
+                        y: snappedY,
                         func1: func1,
                         func2: func2,
                         isApproximate: true
@@ -313,9 +329,15 @@ function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
             );
             
             if (!isDuplicate) {
+                // Snap very close intersections to exactly origin
+                let snappedX = intersection.x;
+                let snappedY = intersection.y;
+                if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                if (Math.abs(snappedY) < 0.02) snappedY = 0;
+                
                 intersections.push({
-                    x: intersection.x,
-                    y: intersection.y,
+                    x: snappedX,
+                    y: snappedY,
                     func1: explicitFunc,
                     func2: implicitFunc,
                     isApproximate: true
@@ -377,10 +399,14 @@ function findLineSegmentIntersection(p1, p2, p3, p4) {
     
     // Check if intersection is within both line segments
     if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-        return {
-            x: x1 + t * (x2 - x1),
-            y: y1 + t * (y2 - y1)
-        };
+        let x = x1 + t * (x2 - x1);
+        let y = y1 + t * (y2 - y1);
+        
+        // Snap very close intersections to exactly origin
+        if (Math.abs(x) < 0.02) x = 0;
+        if (Math.abs(y) < 0.02) y = 0;
+        
+        return { x, y };
     }
     
     return null;

@@ -6941,8 +6941,12 @@ class Graphiti {
             if (func1Above !== func2Above) {
                 // Crossing detected - interpolate to find exact intersection point
                 const t = Math.abs(p1.y - tangentY1) / (Math.abs(p1.y - tangentY1) + Math.abs(p2.y - tangentY2));
-                const intersectionX = p1.x + t * (p2.x - p1.x);
-                const intersectionY = slope * intersectionX + intercept;
+                let intersectionX = p1.x + t * (p2.x - p1.x);
+                let intersectionY = slope * intersectionX + intercept;
+                
+                // Snap very close intersections to exactly origin
+                if (Math.abs(intersectionX) < 0.02) intersectionX = 0;
+                if (Math.abs(intersectionY) < 0.02) intersectionY = 0;
                 
                 // Skip if intersection is at the tangent point itself (within tolerance)
                 const distToBadge = Math.sqrt(
@@ -7123,6 +7127,10 @@ class Graphiti {
     }
     
     createNormalIntersection(intersectionX, intersectionY, badge1, badge2) {
+        // Snap very close intersections to exactly origin
+        if (Math.abs(intersectionX) < 0.02) intersectionX = 0;
+        if (Math.abs(intersectionY) < 0.02) intersectionY = 0;
+        
         // Skip if intersection is at either normal point itself
         const distToBadge1 = Math.sqrt(
             Math.pow(intersectionX - badge1.worldX, 2) + 
@@ -7161,6 +7169,10 @@ class Graphiti {
     }
     
     createMixedIntersection(intersectionX, intersectionY, normalBadge, tangentBadge) {
+        // Snap very close intersections to exactly origin
+        if (Math.abs(intersectionX) < 0.02) intersectionX = 0;
+        if (Math.abs(intersectionY) < 0.02) intersectionY = 0;
+        
         // Skip if intersection is at either point itself
         const distToNormal = Math.sqrt(
             Math.pow(intersectionX - normalBadge.worldX, 2) + 
@@ -7222,8 +7234,12 @@ class Graphiti {
             if (diff1 * diff2 <= 0) { // Sign change indicates crossing
                 // Linear interpolation to find intersection point
                 const t = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
-                const intersectionX = p1.x + t * (p2.x - p1.x);
-                const intersectionY = p1.y + t * (p2.y - p1.y);
+                let intersectionX = p1.x + t * (p2.x - p1.x);
+                let intersectionY = p1.y + t * (p2.y - p1.y);
+                
+                // Snap very close intersections to exactly origin
+                if (Math.abs(intersectionX) < 0.02) intersectionX = 0;
+                if (Math.abs(intersectionY) < 0.02) intersectionY = 0;
                 
                 // Skip if intersection is at the normal point itself (within tolerance)
                 const distToBadge = Math.sqrt(
@@ -8033,9 +8049,15 @@ class Graphiti {
                     );
                     
                     if (!isDuplicate) {
+                        // Snap very close intersections to exactly origin
+                        let snappedX = intersection.x;
+                        let snappedY = intersection.y;
+                        if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                        if (Math.abs(snappedY) < 0.02) snappedY = 0;
+                        
                         intersections.push({
-                            x: intersection.x,
-                            y: intersection.y,
+                            x: snappedX,
+                            y: snappedY,
                             func1: func1,
                             func2: func2,
                             isApproximate: false
@@ -8081,10 +8103,14 @@ class Graphiti {
         
         // Check if intersection point lies within both line segments
         if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-            return {
-                x: p1.x + t * (p2.x - p1.x),
-                y: p1.y + t * (p2.y - p1.y)
-            };
+            let x = p1.x + t * (p2.x - p1.x);
+            let y = p1.y + t * (p2.y - p1.y);
+            
+            // Snap very close intersections to exactly origin
+            if (Math.abs(x) < 0.02) x = 0;
+            if (Math.abs(y) < 0.02) y = 0;
+            
+            return { x, y };
         }
         
         return null;
@@ -8130,8 +8156,12 @@ class Graphiti {
                     if (diff1 * diff2 < 0) { // Sign change detected (crossing intersection)
                         // Linear interpolation to estimate intersection point
                         const ratio = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
-                        const intersectionX = x1 + ratio * (x2 - x1);
-                        const intersectionY = y1_at_x1 + ratio * (y1_at_x2 - y1_at_x1);
+                        let intersectionX = x1 + ratio * (x2 - x1);
+                        let intersectionY = y1_at_x1 + ratio * (y1_at_x2 - y1_at_x1);
+                        
+                        // Snap very close intersections to exactly origin
+                        if (Math.abs(intersectionX) < 0.02) intersectionX = 0;
+                        if (Math.abs(intersectionY) < 0.02) intersectionY = 0;
                         
                         intersections.push({
                             x: intersectionX,
@@ -8164,9 +8194,15 @@ class Graphiti {
                     );
                     
                     if (intersection) {
+                        // Snap very close intersections to exactly origin
+                        let snappedX = intersection.x;
+                        let snappedY = intersection.y;
+                        if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                        if (Math.abs(snappedY) < 0.02) snappedY = 0;
+                        
                         intersections.push({
-                            x: intersection.x,
-                            y: intersection.y,
+                            x: snappedX,
+                            y: snappedY,
                             func1: func1,
                             func2: func2,
                             isApproximate: true
@@ -8200,10 +8236,14 @@ class Graphiti {
         
         // Check if intersection is within both line segments
         if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-            return {
-                x: x1 + t * (x2 - x1),
-                y: y1 + t * (y2 - y1)
-            };
+            let x = x1 + t * (x2 - x1);
+            let y = y1 + t * (y2 - y1);
+            
+            // Snap very close intersections to exactly origin
+            if (Math.abs(x) < 0.02) x = 0;
+            if (Math.abs(y) < 0.02) y = 0;
+            
+            return { x, y };
         }
         
         return null;
@@ -14473,6 +14513,29 @@ class Graphiti {
                     let prevValue = null;
                     let prevX = null;
                     
+                    // Always explicitly check x=0 if it's in viewport
+                    if (xMin <= 0 && xMax >= 0) {
+                        scope.x = 0;
+                        scope.y = 0;
+                        try {
+                            const leftVal = leftCompiled.evaluate(scope);
+                            const rightVal = rightCompiled.evaluate(scope);
+                            const value = leftVal - rightVal;
+                            
+                            if (isFinite(value) && Math.abs(value) < 0.001) {
+                                allIntercepts.push({
+                                    x: 0,
+                                    y: 0,
+                                    type: 'x-intercept',
+                                    functionId: func.id,
+                                    color: func.color
+                                });
+                            }
+                        } catch (e) {
+                            // Skip if evaluation fails
+                        }
+                    }
+                    
                     for (let i = 0; i <= sampleCount; i++) {
                         // Stop if we've searched enough
                         if (allIntercepts.length >= maxInterceptsToSearch) break;
@@ -14520,13 +14583,11 @@ class Graphiti {
                         }
                     }
                     
-                    // If we found intercepts analytically, select evenly spaced ones
-                    if (allIntercepts.length > 0) {
-                        return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
-                    }
+                    // Return analytical results (even if empty) - more reliable than point-based fallback
+                    return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
                 }
             } catch (error) {
-                // Fall back to point-based search if analytical method fails
+                // Fall back to point-based search only if analytical method fails
             }
             
             // Fallback: search through plotted points for points close to y=0
@@ -14730,6 +14791,29 @@ class Graphiti {
                     let prevValue = null;
                     let prevY = null;
                     
+                    // Always explicitly check y=0 if it's in viewport
+                    if (yMin <= 0 && yMax >= 0) {
+                        scope.x = 0;
+                        scope.y = 0;
+                        try {
+                            const leftVal = leftCompiled.evaluate(scope);
+                            const rightVal = rightCompiled.evaluate(scope);
+                            const value = leftVal - rightVal;
+                            
+                            if (isFinite(value) && Math.abs(value) < 0.001) {
+                                allIntercepts.push({
+                                    x: 0,
+                                    y: 0,
+                                    type: 'y-intercept',
+                                    functionId: func.id,
+                                    color: func.color
+                                });
+                            }
+                        } catch (e) {
+                            // Skip if evaluation fails
+                        }
+                    }
+                    
                     for (let i = 0; i <= sampleCount; i++) {
                         // Stop if we've searched enough
                         if (allIntercepts.length >= maxInterceptsToSearch) break;
@@ -14777,13 +14861,11 @@ class Graphiti {
                         }
                     }
                     
-                    // If we found intercepts analytically, select evenly spaced ones
-                    if (allIntercepts.length > 0) {
-                        return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
-                    }
+                    // Return analytical results (even if empty) - more reliable than point-based fallback
+                    return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
                 }
             } catch (error) {
-                // Fall back to point-based search if analytical method fails
+                // Fall back to point-based search only if analytical method fails
             }
             
             // Fallback: search through plotted points for points close to x=0
@@ -15547,9 +15629,15 @@ class Graphiti {
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
                 if (isFinite(x) && isFinite(y)) {
+                    // Snap very close points to exactly origin
+                    let snappedX = x;
+                    let snappedY = y;
+                    if (Math.abs(x) < 0.02) snappedX = 0;
+                    if (Math.abs(y) < 0.02) snappedY = 0;
+                    
                     turningPoints.push({
-                        x: x,
-                        y: y,
+                        x: snappedX,
+                        y: snappedY,
                         func: func,
                         type: type, // 'minimum', 'maximum', or 'inflection'
                         derivative: derivativeStr,
@@ -15660,8 +15748,12 @@ class Graphiti {
                         }
                     }
                     
-                    const xTurn = (xa + xb) / 2;
-                    const yTurn = (ya + yb) / 2;
+                    let xTurn = (xa + xb) / 2;
+                    let yTurn = (ya + yb) / 2;
+                    
+                    // Snap very close points to exactly origin
+                    if (Math.abs(xTurn) < 0.02) xTurn = 0;
+                    if (Math.abs(yTurn) < 0.02) yTurn = 0;
                     
                     // Calculate second derivative to classify as max or min
                     const partialsTurn = calculatePartials(xTurn, yTurn);
@@ -15724,8 +15816,12 @@ class Graphiti {
                         }
                     }
                     
-                    const xTurn = (xa + xb) / 2;
-                    const yTurn = (ya + yb) / 2;
+                    let xTurn = (xa + xb) / 2;
+                    let yTurn = (ya + yb) / 2;
+                    
+                    // Snap very close points to exactly origin
+                    if (Math.abs(xTurn) < 0.02) xTurn = 0;
+                    if (Math.abs(yTurn) < 0.02) yTurn = 0;
                     
                     turningPoints.push({
                         x: xTurn,
