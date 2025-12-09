@@ -12835,11 +12835,45 @@ class Graphiti {
             });
         }
         
-        // Update parameter tracking
-        this.parameters.alpha.inUse = usedParams.alpha;
-        this.parameters.beta.inUse = usedParams.beta;
-        this.parameters.gamma.inUse = usedParams.gamma;
-        this.parameters.delta.inUse = usedParams.delta;
+        // Update parameter tracking and reset to defaults when transitioning from unused to used
+        const params = ['alpha', 'beta', 'gamma', 'delta'];
+        params.forEach(param => {
+            const wasInUse = this.parameters[param].inUse;
+            const isNowInUse = usedParams[param];
+            
+            // If parameter is now being used but wasn't before, reset to defaults
+            if (isNowInUse && !wasInUse) {
+                this.parameters[param].value = 1;
+                this.parameters[param].min = -10;
+                this.parameters[param].max = 10;
+                
+                // Reset the range to default ±10
+                this.parameterRanges[param] = { min: -10, max: 10, step: 1, label: '±10' };
+                
+                // Update the slider element
+                const slider = document.getElementById(`${param}-slider`);
+                if (slider) {
+                    slider.value = 1;
+                    slider.min = -10;
+                    slider.max = 10;
+                    slider.step = 0.01;
+                }
+                
+                // Update the value display
+                const valueDisplay = document.getElementById(`${param}-value`);
+                if (valueDisplay) {
+                    valueDisplay.textContent = '1.00';
+                }
+                
+                // Update range button display
+                const rangeButton = document.querySelector(`.range-button[data-param="${param}"]`);
+                if (rangeButton) {
+                    rangeButton.textContent = '±10';
+                }
+            }
+            
+            this.parameters[param].inUse = isNowInUse;
+        });
         
         // Show/hide sliders based on usage
         const sliderContainer = document.getElementById('parameter-sliders');
