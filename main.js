@@ -3119,6 +3119,11 @@ class Graphiti {
             // This ensures intercepts and other features work reliably during viewport changes
             func.points = processedPoints;
             func.displayPoints = processedPoints;
+            
+            // Invalidate intersection cache if this is an inequality
+            if (functionType === 'explicit-inequality') {
+                this.invalidateInequalityIntersectionCache();
+            }
         } catch (error) {
             console.error('Error parsing function:', error);
             // Silent error for better UX during typing - no alert popup
@@ -3304,6 +3309,9 @@ class Graphiti {
                 expression: processedExpression,
                 compiledExpression: compiledExpression
             };
+            
+            // Invalidate intersection cache since polar inequality changed
+            this.invalidateInequalityIntersectionCache();
         } catch (error) {
             console.error('Error parsing polar inequality:', error);
             func.points = [];
@@ -3384,6 +3392,9 @@ class Graphiti {
                 expression: processedExpression,
                 compiledExpression: compiledExpression
             };
+            
+            // Invalidate intersection cache since polar inequality changed
+            this.invalidateInequalityIntersectionCache();
         } catch (error) {
             console.error('Error parsing polar inequality:', error);
             func.points = [];
