@@ -14692,11 +14692,24 @@ class Graphiti {
                     continue;
                 }
                 
-                // Check for sign change in y (crossing x-axis)
-                if (p1.y * p2.y < 0) {
-                    // Linear interpolation to find more accurate x coordinate
-                    const t = -p1.y / (p2.y - p1.y);
-                    const xIntercept = p1.x + t * (p2.x - p1.x);
+                // Check for sign change in y (crossing x-axis) or very close to zero
+                if (p1.y * p2.y < 0 || (p1.y === 0 && p2.y !== 0) || (p1.y !== 0 && p2.y === 0)) {
+                    let xIntercept, yIntercept = 0;
+                    
+                    if (p1.y === 0) {
+                        xIntercept = p1.x;
+                    } else if (p2.y === 0) {
+                        xIntercept = p2.x;
+                    } else {
+                        // Linear interpolation to find more accurate x coordinate
+                        const t = -p1.y / (p2.y - p1.y);
+                        xIntercept = p1.x + t * (p2.x - p1.x);
+                    }
+                    
+                    // Snap very close intercepts to exactly x=0
+                    if (Math.abs(xIntercept) < 0.02) {
+                        xIntercept = 0;
+                    }
                     
                     const isDuplicate = allIntercepts.some(existing => 
                         Math.abs(existing.x - xIntercept) < minDistance
@@ -14705,22 +14718,7 @@ class Graphiti {
                     if (!isDuplicate) {
                         allIntercepts.push({
                             x: xIntercept,
-                            y: 0,
-                            type: 'x-intercept',
-                            functionId: func.id,
-                            color: func.color
-                        });
-                    }
-                } else if (Math.abs(p1.y) < 0.01) {
-                    // Point is very close to x-axis
-                    const isDuplicate = allIntercepts.some(existing => 
-                        Math.abs(existing.x - p1.x) < minDistance
-                    );
-                    
-                    if (!isDuplicate) {
-                        allIntercepts.push({
-                            x: p1.x,
-                            y: 0,
+                            y: yIntercept,
                             type: 'x-intercept',
                             functionId: func.id,
                             color: func.color
@@ -14973,11 +14971,24 @@ class Graphiti {
                     continue;
                 }
                 
-                // Check for sign change in x (crossing y-axis)
-                if (p1.x * p2.x < 0) {
-                    // Linear interpolation to find more accurate y coordinate
-                    const t = -p1.x / (p2.x - p1.x);
-                    const yIntercept = p1.y + t * (p2.y - p1.y);
+                // Check for sign change in x (crossing y-axis) or exactly zero
+                if (p1.x * p2.x < 0 || (p1.x === 0 && p2.x !== 0) || (p1.x !== 0 && p2.x === 0)) {
+                    let xIntercept = 0, yIntercept;
+                    
+                    if (p1.x === 0) {
+                        yIntercept = p1.y;
+                    } else if (p2.x === 0) {
+                        yIntercept = p2.y;
+                    } else {
+                        // Linear interpolation to find more accurate y coordinate
+                        const t = -p1.x / (p2.x - p1.x);
+                        yIntercept = p1.y + t * (p2.y - p1.y);
+                    }
+                    
+                    // Snap very close intercepts to exactly y=0
+                    if (Math.abs(yIntercept) < 0.02) {
+                        yIntercept = 0;
+                    }
                     
                     const isDuplicate = allIntercepts.some(existing => 
                         Math.abs(existing.y - yIntercept) < minDistance
@@ -14985,23 +14996,8 @@ class Graphiti {
                     
                     if (!isDuplicate) {
                         allIntercepts.push({
-                            x: 0,
+                            x: xIntercept,
                             y: yIntercept,
-                            type: 'y-intercept',
-                            functionId: func.id,
-                            color: func.color
-                        });
-                    }
-                } else if (Math.abs(p1.x) < 0.01) {
-                    // Point is very close to y-axis
-                    const isDuplicate = allIntercepts.some(existing => 
-                        Math.abs(existing.y - p1.y) < minDistance
-                    );
-                    
-                    if (!isDuplicate) {
-                        allIntercepts.push({
-                            x: 0,
-                            y: p1.y,
                             type: 'y-intercept',
                             functionId: func.id,
                             color: func.color
