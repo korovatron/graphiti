@@ -232,15 +232,18 @@
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
         }
         
-        button:hover {
-            filter: brightness(1.15);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-        }
-        
-        /* Remove box-shadow from title/help buttons */
-        #return-to-title:hover,
-        #help-button:hover {
-            box-shadow: none;
+        /* Only apply hover effects on devices with hover capability (not touch screens) */
+        @media (hover: hover) {
+            button:hover {
+                filter: brightness(1.15);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            }
+            
+            /* Remove box-shadow from title/help buttons */
+            #return-to-title:hover,
+            #help-button:hover {
+                box-shadow: none;
+            }
         }
         
         input[type="text"], input[type="number"] {
@@ -313,9 +316,11 @@
             box-shadow: none;
         }
         
-        .parameter-slider-item .range-button:hover {
-            filter: brightness(1.15);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        @media (hover: hover) {
+            .parameter-slider-item .range-button:hover {
+                filter: brightness(1.15);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            }
         }
         
         .parameter-slider-item .arrow-button {
@@ -340,9 +345,11 @@
             box-shadow: none;
         }
         
-        .parameter-slider-item .arrow-button:hover {
-            filter: brightness(1.15);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        @media (hover: hover) {
+            .parameter-slider-item .arrow-button:hover {
+                filter: brightness(1.15);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            }
         }
         
         input[type="range"] {
@@ -637,9 +644,11 @@
             position: relative;
         }
         
-        .function-item .color-indicator:hover {
-            border-color: rgba(255, 255, 255, 0.5);
-            transform: scale(1.1);
+        @media (hover: hover) {
+            .function-item .color-indicator:hover {
+                border-color: rgba(255, 255, 255, 0.5);
+                transform: scale(1.1);
+            }
         }
         
         .function-item .color-indicator:active {
@@ -663,8 +672,10 @@
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
         
-        .function-item .remove-btn:hover {
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+        @media (hover: hover) {
+            .function-item .remove-btn:hover {
+                box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+            }
         }
         
         .function-item .remove-btn:active {
@@ -1603,8 +1614,10 @@
             cursor: pointer;
         }
 
-        .split-button-dropdown:hover {
-            background: #3A4F6A;
+        @media (hover: hover) {
+            .split-button-dropdown:hover {
+                background: #3A4F6A;
+            }
         }
 
         .examples-dropdown {
