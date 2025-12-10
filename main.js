@@ -17757,6 +17757,7 @@ class Graphiti {
         const isInputFocused = activeElement && (
             activeElement.tagName === 'INPUT' || 
             activeElement.tagName === 'TEXTAREA' ||
+            activeElement.tagName === 'MATH-FIELD' ||
             activeElement.isContentEditable
         );
         
