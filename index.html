@@ -882,18 +882,27 @@
         }
 
         .landscape-dismiss-btn {
-            background: var(--primary-color);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid #555;
+            padding: 12px 30px;
             font-size: 1em;
-            transition: background-color 0.2s;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: filter 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            min-width: 120px;
         }
-
-        .landscape-dismiss-btn:hover {
-            background: #2980b9;
+        
+        @media (hover: hover) {
+            .landscape-dismiss-btn:hover {
+                filter: brightness(1.15);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            }
+        }
+        
+        .landscape-dismiss-btn:active {
+            filter: brightness(1.1);
         }
         
         /* Target the actual math content for larger font size */
