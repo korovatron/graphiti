@@ -13382,17 +13382,39 @@ class Graphiti {
         let result = expression;
         
         for (const func of trigFunctions) {
-            // Use a simpler approach to avoid infinite loops
-            // Match the pattern: func(anything) where anything doesn't contain the same func
-            const pattern = new RegExp(`\\b${func}\\s*\\(([^()]+|\\([^()]*\\))\\)`, 'g');
+            // Find all occurrences of func( and extract the argument with proper nesting
+            const funcPattern = new RegExp(`\\b${func}\\s*\\(`, 'g');
+            let match;
+            let offset = 0;
             
-            result = result.replace(pattern, (match, argument) => {
-                // Only wrap if not already wrapped with degree conversion
-                if (argument.includes('*pi/180')) {
-                    return match; // Already converted
+            // Process each match
+            while ((match = funcPattern.exec(result)) !== null) {
+                const startIndex = match.index + match[0].length; // Position after "func("
+                
+                // Find matching closing parenthesis with proper nesting
+                let depth = 1;
+                let endIndex = startIndex;
+                while (endIndex < result.length && depth > 0) {
+                    if (result[endIndex] === '(') depth++;
+                    else if (result[endIndex] === ')') depth--;
+                    endIndex++;
                 }
-                return `${func}((${argument})*pi/180)`;
-            });
+                
+                if (depth === 0) {
+                    // Found matching parenthesis
+                    const argument = result.substring(startIndex, endIndex - 1);
+                    
+                    // Only wrap if not already wrapped with degree conversion
+                    if (!argument.includes('*pi/180')) {
+                        const before = result.substring(0, match.index);
+                        const after = result.substring(endIndex);
+                        result = before + `${func}((${argument})*pi/180)` + after;
+                        
+                        // Reset regex to search from the beginning due to string modification
+                        funcPattern.lastIndex = 0;
+                    }
+                }
+            }
         }
         
         return result;
