@@ -156,7 +156,11 @@
         button, label, img, .logo, .range-label, .title-screen,
         #help-button, #return-to-title, .color-indicator,
         .function-item .remove-btn, .split-button-dropdown,
-        .parameter-slider-item .range-button, .parameter-slider-item .arrow-button {
+        .parameter-slider-item .range-button, .parameter-slider-item .arrow-button,
+        #function-panel, .function-item, .function-controls,
+        .examples-header, .example-item, .demo-set-item,
+        .example-formula, .example-description, .blank-function-item,
+        .split-button-content, .dropdown-item, .landscape-edit-message {
             -webkit-user-select: none;
             user-select: none;
             -webkit-user-drag: none;
@@ -867,18 +871,24 @@
             color: var(--text-color);
             margin: 0 0 15px 0;
             font-size: 1.2em;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .landscape-edit-message p {
             color: var(--text-muted);
             margin: 0 0 20px 0;
             line-height: 1.4;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .landscape-edit-message .rotate-icon {
             font-size: 2em;
             margin: 10px 0;
             opacity: 0.7;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .landscape-dismiss-btn {
@@ -1694,6 +1704,8 @@
             pointer-events: none;
             transition: opacity 0.25s ease, transform 0.25s ease;
             scrollbar-width: none; /* Firefox */
+            -webkit-user-select: none;
+            user-select: none;
             -ms-overflow-style: none; /* IE/Edge */
         }
 
@@ -1713,6 +1725,8 @@
             font-weight: 600;
             color: #4A90E2;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .example-item {
@@ -1720,6 +1734,8 @@
             cursor: pointer;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             transition: background 0.2s;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .example-item:last-child {
@@ -1735,6 +1751,8 @@
             cursor: pointer;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             transition: background 0.2s;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .demo-set-item:hover {
@@ -1746,6 +1764,8 @@
             align-items: center;
             gap: 12px;
             margin-bottom: 4px;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .example-formula math-field {
@@ -1774,6 +1794,8 @@
             font-size: 12px;
             color: #999;
             margin-left: 0;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .blank-function-item {
@@ -1782,6 +1804,8 @@
             border-bottom: 2px solid rgba(255, 255, 255, 0.2);
             font-weight: 600;
             background: rgba(42, 63, 90, 0.5);
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .blank-function-item:hover {
