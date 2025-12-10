@@ -152,6 +152,17 @@
             touch-action: none;
         }
         
+        /* Prevent text selection and dragging on UI elements (not input fields) */
+        button, label, img, .logo, .range-label, .title-screen,
+        #help-button, #return-to-title, .color-indicator,
+        .function-item .remove-btn, .split-button-dropdown,
+        .parameter-slider-item .range-button, .parameter-slider-item .arrow-button {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-user-drag: none;
+            -webkit-touch-callout: none;
+        }
+        
         #app-container {
             width: 100vw;
             height: var(--actual-vh, 100vh); /* Mobile: JS-calculated height for iOS PWA fix */
