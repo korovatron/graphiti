@@ -230,6 +230,7 @@
             font-size: 14px;
             transition: background-color 0.2s;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            -webkit-tap-highlight-color: transparent; /* Remove mobile tap highlight */
         }
         
         /* Only apply hover effects on devices with hover capability (not touch screens) */
@@ -244,6 +245,17 @@
             #help-button:hover {
                 box-shadow: none;
             }
+        }
+        
+        /* Active state for all devices (provides touch feedback) */
+        button:active {
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        
+        #return-to-title:active,
+        #help-button:active {
+            box-shadow: none;
         }
         
         input[type="text"], input[type="number"] {
@@ -323,6 +335,11 @@
             }
         }
         
+        .parameter-slider-item .range-button:active {
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        
         .parameter-slider-item .arrow-button {
             width: 20px;
             height: 20px;
@@ -350,6 +367,11 @@
                 filter: brightness(1.15);
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
             }
+        }
+        
+        .parameter-slider-item .arrow-button:active {
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         }
         
         input[type="range"] {
@@ -652,7 +674,8 @@
         }
         
         .function-item .color-indicator:active {
-            transform: scale(0.95);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: scale(1.1);
         }
         
         .function-item .remove-btn {
@@ -1618,6 +1641,10 @@
             .split-button-dropdown:hover {
                 background: #3A4F6A;
             }
+        }
+        
+        .split-button-dropdown:active {
+            background: #3A4F6A;
         }
 
         .examples-dropdown {
