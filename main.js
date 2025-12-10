@@ -2960,6 +2960,12 @@ class Graphiti {
         // Detect function type for cartesian mode
         const functionType = this.detectFunctionType(func.expression);
         
+        // Clear inequality-related properties if function is no longer an inequality
+        if (functionType !== 'explicit-inequality' && functionType !== 'implicit-inequality' && functionType !== 'polar-inequality') {
+            delete func.inequality;
+            delete func._inequalityIsStrict;
+        }
+        
         if (functionType === 'parametric') {
             this.plotParametricFunction(func);
             if (this.performance.enabled) {
@@ -3151,6 +3157,10 @@ class Graphiti {
             this.plotPolarInequality(func);
             return;
         }
+        
+        // Clear inequality-related properties if function is no longer an inequality
+        delete func.inequality;
+        delete func._inequalityIsStrict;
         
         try {
             // Convert from LaTeX first, then prepare the expression for evaluation
