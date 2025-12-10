@@ -222,6 +222,14 @@ class Graphiti {
         this.implicitFunctionCache = new Map(); // Cache: functionId -> { viewport, points, timestamp }
         this.viewportChangeThreshold = 0.1; // Relative threshold for cache invalidation
         
+        // Extended viewport buffer configuration for smooth panning
+        this.implicitBufferConfig = {
+            extensionPercent: 0.40,          // Generate 40% beyond visible viewport (more pan range)
+            bufferResolutionFactor: 0.6,     // Use 60% of normal coarse resolution in buffer
+            skipContourRefinement: false,    // Still do contours in buffer (fast enough)
+            regenerateTrigger: 0.15          // Regenerate when within 15% of extended edge
+        };
+        
         // Legacy manual intersection storage (keeping for compatibility)
         this.manualImplicitIntersections = []; // Store manually calculated implicit intersections
         this.showIntersections = true; // Toggle for intersection display (on by default)
@@ -1194,6 +1202,28 @@ class Graphiti {
         }
         
         return current;
+    }
+    
+    // Get extended viewport with buffer zone for implicit curve generation
+    getExtendedViewport(visibleViewport, extensionPercent) {
+        const viewportWidth = visibleViewport.maxX - visibleViewport.minX;
+        const viewportHeight = visibleViewport.maxY - visibleViewport.minY;
+        // Use the larger dimension for extension to ensure equal buffer in all directions
+        const maxDimension = Math.max(viewportWidth, viewportHeight);
+        const extendX = maxDimension * extensionPercent;
+        const extendY = maxDimension * extensionPercent;
+        
+        return {
+            minX: visibleViewport.minX - extendX,
+            maxX: visibleViewport.maxX + extendX,
+            minY: visibleViewport.minY - extendY,
+            maxY: visibleViewport.maxY + extendY,
+            width: visibleViewport.width,
+            height: visibleViewport.height,
+            centerX: visibleViewport.centerX,
+            centerY: visibleViewport.centerY,
+            scale: visibleViewport.scale
+        };
     }
     
     // Helper method to get current function array length for color selection
@@ -5432,13 +5462,18 @@ class Graphiti {
     }
 
     async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null) {
-        const viewportWidth = this.viewport.maxX - this.viewport.minX;
-        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        // Get visible viewport and calculate extended viewport with buffer
+        const visibleViewport = this.viewport;
+        const extendedViewport = this.getExtendedViewport(visibleViewport, this.implicitBufferConfig.extensionPercent);
         
-        // Adaptive resolution scaling for smooth curves at all zoom levels
-        // With optimized plotting (~20ms at 120×120), we can afford higher resolution when zoomed in
-        // At very wide zoom (>80), use even higher resolution since full grid is used
-        const viewportSize = Math.max(viewportWidth, viewportHeight);
+        const viewportWidth = extendedViewport.maxX - extendedViewport.minX;
+        const viewportHeight = extendedViewport.maxY - extendedViewport.minY;
+        
+        // Adaptive resolution scaling based on VISIBLE viewport size (not extended)
+        // Resolution should match what user sees, then we just generate more area
+        const visibleWidth = visibleViewport.maxX - visibleViewport.minX;
+        const visibleHeight = visibleViewport.maxY - visibleViewport.minY;
+        const viewportSize = Math.max(visibleWidth, visibleHeight);
         
         let resolution;
         if (viewportSize > 100) {
@@ -5473,10 +5508,16 @@ class Graphiti {
             resolution = 440;
         }
         
-        const stepX = viewportWidth / resolution;
-        const stepY = viewportHeight / resolution;
+        // Scale resolution lightly - use 0.7 power for minimal computational cost
+        // For 40% extension (1.8x per dimension), 1.8^0.7 = 1.48x resolution
+        // This gives ~2.2x cells total vs 3.24x with full scaling (much faster)
+        // Buffer has slightly lower quality but regenerates quickly on pan stop
+        const extensionFactor = 1 + this.implicitBufferConfig.extensionPercent * 2;
+        const scaledResolution = Math.ceil(resolution * Math.pow(extensionFactor, 0.7));
+        const stepX = viewportWidth / scaledResolution;
+        const stepY = viewportHeight / scaledResolution;
         
-        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId);
+        return await this.marchingSquaresAtResolutionAsync(equation, scaledResolution, stepX, stepY, immediate, functionId, calculationId, extendedViewport, visibleViewport);
     }
 
     marchingSquaresHighRes(equation) {
@@ -5494,23 +5535,34 @@ class Graphiti {
 
     async marchingSquaresHighResAsync(equation, immediate = false, functionId = null, calculationId = null) {
         // Fixed high resolution for intersection detection - ignores zoom level
-        const viewportWidth = this.viewport.maxX - this.viewport.minX;
-        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        // Get visible viewport and calculate extended viewport with buffer
+        const visibleViewport = this.viewport;
+        const extendedViewport = this.getExtendedViewport(visibleViewport, this.implicitBufferConfig.extensionPercent);
+        
+        const viewportWidth = extendedViewport.maxX - extendedViewport.minX;
+        const viewportHeight = extendedViewport.maxY - extendedViewport.minY;
         
         // Use fixed high resolution for consistent intersection detection
-        const resolution = 150; // High resolution regardless of zoom
+        // Scale resolution lightly (0.7 power) to balance quality and performance
+        const baseResolution = 150; // High resolution regardless of zoom
+        const extensionFactor = 1 + this.implicitBufferConfig.extensionPercent * 2;
+        const resolution = Math.ceil(baseResolution * Math.pow(extensionFactor, 0.7));
         const stepX = viewportWidth / resolution;
         const stepY = viewportHeight / resolution;
         
-        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId);
+        return await this.marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate, functionId, calculationId, extendedViewport, visibleViewport);
     }
 
     async marchingSquaresAdaptiveAsync(equation, immediate = false, functionId = null, calculationId = null) {
         // Adaptive resolution for inequalities: coarse grid everywhere, fine grid near boundary
         const startTime = performance.now();
         
+        // Inequalities don't use extended viewport - shading regenerates quickly
+        // and extended viewport causes performance issues with intersection compositing
         const viewportWidth = this.viewport.maxX - this.viewport.minX;
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        
+        // Resolution scaling based on visible viewport size
         const viewportSize = Math.max(viewportWidth, viewportHeight);
         
         // Adaptive coarse grid resolution - scale with viewport size to avoid missing thin curves
@@ -5919,8 +5971,12 @@ class Graphiti {
         return segments;
     }
 
-    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null) {
+    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null, extendedViewport = null, visibleViewport = null) {
         const startTime = performance.now();
+        
+        // Use extended viewport if provided, otherwise use current viewport
+        const viewport = extendedViewport || this.viewport;
+        const visible = visibleViewport || this.viewport;
         
         // Compile expressions once for performance
         const leftCompiled = this.getCompiledExpression(equation.leftExpression);
@@ -5940,13 +5996,15 @@ class Graphiti {
             }
         };
         
-        // Optimization strategy depends on viewport size
+        // Optimization strategy depends on VISIBLE viewport size (not extended)
         // At very wide zoom (>80 units), curves are tiny - use full high-res grid
         // At normal/close zoom, use localized optimization for speed
-        const viewportWidth = this.viewport.maxX - this.viewport.minX;
-        const viewportHeight = this.viewport.maxY - this.viewport.minY;
-        const viewportSize = Math.max(viewportWidth, viewportHeight);
-        const useFullGrid = viewportSize > 80;
+        const viewportWidth = viewport.maxX - viewport.minX;
+        const viewportHeight = viewport.maxY - viewport.minY;
+        const visibleWidth = visible.maxX - visible.minX;
+        const visibleHeight = visible.maxY - visible.minY;
+        const visibleSize = Math.max(visibleWidth, visibleHeight);
+        const useFullGrid = visibleSize > 80;
         
         if (useFullGrid) {
             // Wide zoom: Full grid evaluation for reliability
@@ -5957,8 +6015,8 @@ class Graphiti {
             for (let i = 0; i <= resolution; i++) {
                 grid[i] = [];
                 for (let j = 0; j <= resolution; j++) {
-                    const x = this.viewport.minX + i * stepX;
-                    const y = this.viewport.minY + j * stepY;
+                    const x = viewport.minX + i * stepX;
+                    const y = viewport.minY + j * stepY;
                     grid[i][j] = evalPoint(x, y);
                     evals++;
                     
@@ -5972,8 +6030,8 @@ class Graphiti {
             const segments = [];
             for (let i = 0; i < resolution; i++) {
                 for (let j = 0; j < resolution; j++) {
-                    const x = this.viewport.minX + i * stepX;
-                    const y = this.viewport.minY + j * stepY;
+                    const x = viewport.minX + i * stepX;
+                    const y = viewport.minY + j * stepY;
                     
                     const corners = [
                         grid[i][j],
@@ -6006,6 +6064,7 @@ class Graphiti {
         
         // Normal/close zoom: Use localized optimization for speed
         // This dramatically reduces evaluations at extreme zoom (e.g., 420×420 = 176,400 → ~20,000)
+        // Resolution is already scaled by caller, so coarse resolution is based on that
         const coarseResolution = Math.min(90, Math.floor(resolution / 3)); // Adaptive coarse resolution
         const coarseStepX = viewportWidth / coarseResolution;
         const coarseStepY = viewportHeight / coarseResolution;
@@ -6015,8 +6074,8 @@ class Graphiti {
         for (let i = 0; i <= coarseResolution; i++) {
             coarseGrid[i] = [];
             for (let j = 0; j <= coarseResolution; j++) {
-                const x = this.viewport.minX + i * coarseStepX;
-                const y = this.viewport.minY + j * coarseStepY;
+                const x = viewport.minX + i * coarseStepX;
+                const y = viewport.minY + j * coarseStepY;
                 coarseGrid[i][j] = evalPoint(x, y);
             }
             if (i % 10 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
@@ -6068,8 +6127,8 @@ class Graphiti {
         
         for (const regionKey of fineRegions) {
             const [i, j] = regionKey.split(',').map(Number);
-            const x = this.viewport.minX + i * stepX;
-            const y = this.viewport.minY + j * stepY;
+            const x = viewport.minX + i * stepX;
+            const y = viewport.minY + j * stepY;
             grid[i][j] = evalPoint(x, y);
         }
         
@@ -6085,8 +6144,8 @@ class Graphiti {
             if (!grid[i+1][j+1] && grid[i+1][j+1] !== 0) continue;
             if (!grid[i][j+1] && grid[i][j+1] !== 0) continue;
             
-            const x = this.viewport.minX + i * stepX;
-            const y = this.viewport.minY + j * stepY;
+            const x = viewport.minX + i * stepX;
+            const y = viewport.minY + j * stepY;
             
             const corners = [
                 grid[i][j],
@@ -6123,15 +6182,19 @@ class Graphiti {
             points.push({ x: NaN, y: NaN, connected: false });
         }
         
-        // Package grid data for inequality shading
+        // Package grid data for inequality shading with both extended and visible bounds
         const gridData = {
             width: resolution + 1,
             height: resolution + 1,
             values: grid,
-            minX: this.viewport.minX,
-            minY: this.viewport.minY,
+            minX: viewport.minX,
+            minY: viewport.minY,
             cellWidth: stepX,
-            cellHeight: stepY
+            cellHeight: stepY,
+            visibleMinX: visible.minX,
+            visibleMinY: visible.minY,
+            visibleMaxX: visible.maxX,
+            visibleMaxY: visible.maxY
         };
         
         return { points, gridData };
