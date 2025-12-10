@@ -736,6 +736,17 @@
             display: none;
         }
         
+        /* Remove hover effect from virtual keyboard toggle */
+        .function-item math-field::part(virtual-keyboard-toggle):hover,
+        .function-item math-field::part(keyboard-toggle):hover,
+        #cartesian-ranges math-field::part(virtual-keyboard-toggle):hover,
+        #cartesian-ranges-y math-field::part(virtual-keyboard-toggle):hover,
+        #parametric-ranges math-field::part(virtual-keyboard-toggle):hover,
+        #polar-ranges math-field::part(virtual-keyboard-toggle):hover {
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        
         /* Hide virtual keyboard toggle on mobile since keyboard appears automatically */
         @media (hover: none) and (pointer: coarse) {
             .function-item math-field::part(virtual-keyboard-toggle),
