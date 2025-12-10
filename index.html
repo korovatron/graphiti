@@ -167,6 +167,14 @@
             -webkit-touch-callout: none;
         }
         
+        /* Re-enable text selection for math-field elements */
+        math-field, math-field * {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            -webkit-touch-callout: default !important;
+            cursor: text !important;
+        }
+        
         #app-container {
             width: 100vw;
             height: var(--actual-vh, 100vh); /* Mobile: JS-calculated height for iOS PWA fix */
