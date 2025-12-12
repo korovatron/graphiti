@@ -1980,23 +1980,29 @@ class Graphiti {
             <div class="integral-limits-container" data-function-id="${func.id}">
                 <div class="integral-limit-row">
                     <label class="integral-limit-label">Lower limit:</label>
-                    <math-field 
-                        class="integral-limit-field integral-lower-limit"
-                        default-mode="math"
-                        virtual-keyboard-mode="onfocus"
-                        color-scheme="dark"
-                        data-limit-type="lower"
-                    ></math-field>
+                    <div class="integral-limit-row-content">
+                        <math-field 
+                            class="integral-limit-field integral-lower-limit"
+                            default-mode="math"
+                            virtual-keyboard-mode="onfocus"
+                            color-scheme="dark"
+                            data-limit-type="lower"
+                        ></math-field>
+                        <div class="integral-spacer"></div>
+                    </div>
                 </div>
                 <div class="integral-limit-row">
                     <label class="integral-limit-label">Upper limit:</label>
-                    <math-field 
-                        class="integral-limit-field integral-upper-limit"
-                        default-mode="math"
-                        virtual-keyboard-mode="onfocus"
-                        color-scheme="dark"
-                        data-limit-type="upper"
-                    ></math-field>
+                    <div class="integral-limit-row-content">
+                        <math-field 
+                            class="integral-limit-field integral-upper-limit"
+                            default-mode="math"
+                            virtual-keyboard-mode="onfocus"
+                            color-scheme="dark"
+                            data-limit-type="upper"
+                        ></math-field>
+                        <button class="remove-btn integral-remove-btn" title="Delete function">×</button>
+                    </div>
                 </div>
                 </div>
             </div>
@@ -2118,7 +2124,7 @@ class Graphiti {
         
         // Add event listeners
         const colorIndicator = funcDiv.querySelector('.color-indicator');
-        const removeBtn = funcDiv.querySelector('.remove-btn');
+        const removeBtns = funcDiv.querySelectorAll('.remove-btn'); // Get all remove buttons (one in controls, one in integral limits)
         
         // Get computed CSS variable values to match polar range fields exactly
         const computedStyle = getComputedStyle(document.documentElement);
@@ -2429,6 +2435,8 @@ class Graphiti {
             this.removeBadgesForFunction(func.id);
             // Clear intersection badges that involve this function only
             this.removeIntersectionBadgesForFunction(func.id);
+            // Update integral limit fields to hide them when badges are removed
+            this.updateIntegralLimitFields();
             func.enabled = !func.enabled;
             this.updateFunctionVisualState(func, funcDiv);
             
@@ -2466,12 +2474,14 @@ class Graphiti {
             }
         });
         
-        removeBtn.addEventListener('click', () => {
-            // Clear badges for this function when removing
-            this.removeBadgesForFunction(func.id);
-            // Clear intersection badges that involve this function
-            this.removeIntersectionBadgesForFunction(func.id);
-            this.removeFunction(func.id);
+        removeBtns.forEach(removeBtn => {
+            removeBtn.addEventListener('click', () => {
+                // Clear badges for this function when removing
+                this.removeBadgesForFunction(func.id);
+                // Clear intersection badges that involve this function
+                this.removeIntersectionBadgesForFunction(func.id);
+                this.removeFunction(func.id);
+            });
         });
         
         container.appendChild(funcDiv);
@@ -7839,6 +7849,12 @@ class Graphiti {
             if (integralBadges.length >= 2) {
                 limitsContainer.classList.add('visible');
                 
+                // Hide the remove button in function-controls (it's now in the integral limits container)
+                const functionControlsRemoveBtn = funcItem.querySelector('.function-controls .remove-btn');
+                if (functionControlsRemoveBtn) {
+                    functionControlsRemoveBtn.style.display = 'none';
+                }
+                
                 // Sort badges by their coordinate
                 integralBadges.sort((a, b) => {
                     if (this.plotMode === 'polar') {
@@ -7904,6 +7920,12 @@ class Graphiti {
                 }
             } else {
                 limitsContainer.classList.remove('visible');
+                
+                // Show the remove button in function-controls when integrals are not visible
+                const functionControlsRemoveBtn = funcItem.querySelector('.function-controls .remove-btn');
+                if (functionControlsRemoveBtn) {
+                    functionControlsRemoveBtn.style.display = 'flex';
+                }
             }
         }
     }
