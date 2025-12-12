@@ -8970,6 +8970,15 @@ class Graphiti {
                 }
             }
         });
+        
+        // Periodic heartbeat to detect and recover from animation loop crashes
+        // Check every 3 seconds if we're in graphing state but animation loop is dead
+        setInterval(() => {
+            if (!document.hidden && this.currentState === this.states.GRAPHING && !this.animationId) {
+                console.warn('Animation loop heartbeat check: Loop is dead, restarting...');
+                this.ensureAnimationLoopRunning();
+            }
+        }, 3000);
     }
     
     setupEventListeners() {
@@ -9573,6 +9582,9 @@ class Graphiti {
             } else {
                 // Page is visible again
                 console.log('Page visible - resuming normal operations');
+                
+                // Ensure animation loop is running (critical for responsiveness)
+                this.ensureAnimationLoopRunning();
                 
                 // Recalculate intersections if needed
                 if (this.showIntersections && this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0)) {
