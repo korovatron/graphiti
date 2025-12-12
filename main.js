@@ -2322,6 +2322,13 @@ class Graphiti {
             
             // Add focus styling
             lowerLimitField.addEventListener('focusin', () => {
+                // Check for landscape editing restriction first
+                if (this.shouldRestrictLandscapeEditing()) {
+                    lowerLimitField.blur();
+                    this.showLandscapeEditingRestriction();
+                    return;
+                }
+                
                 lowerLimitField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                 lowerLimitField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
                 lowerLimitField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
@@ -2390,6 +2397,13 @@ class Graphiti {
             
             // Add focus styling
             upperLimitField.addEventListener('focusin', () => {
+                // Check for landscape editing restriction first
+                if (this.shouldRestrictLandscapeEditing()) {
+                    upperLimitField.blur();
+                    this.showLandscapeEditingRestriction();
+                    return;
+                }
+                
                 upperLimitField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                 upperLimitField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
                 upperLimitField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
