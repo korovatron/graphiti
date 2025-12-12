@@ -1944,36 +1944,61 @@ class Graphiti {
             : '\\text{Enter f(x) or f(x,y)}';
 
         funcDiv.innerHTML = `
-            <math-field 
-                class="mathlive-input" 
-                placeholder="${placeholder}"
-                default-mode="math"
-                smart-fence="true"
-                smart-superscript="true"
-                virtual-keyboard-mode="auto"
-                virtual-keyboards="numeric functions symbols greek"
-                color-scheme="dark"
-                style="
-                    width: 100%;
-                    padding: 8px;
-                    font-size: 14px;
-                    border: 1px solid var(--border-color);
-                    border-radius: 4px;
-                    background: var(--input-bg);
-                    color: var(--text-primary);
-                    outline: none;
-                    box-sizing: border-box;
-                    --hue: 220;
-                    --accent-color: var(--accent-color);
-                    --background: var(--input-bg);
-                    --text-color: var(--text-primary);
-                    --selection-background-color: var(--accent-color);
-                    --selection-color: #fff;
-                    --contains-highlight-background-color: var(--accent-color);
-                "></math-field>
-            <div class="function-controls">
-                <div class="color-indicator" style="background-color: ${func.color}; opacity: ${func.enabled ? '1' : '0.3'}; filter: ${func.enabled ? 'none' : 'grayscale(100%)'}" title="Click to ${func.enabled ? 'hide' : 'show'} function"></div>
-                <button class="remove-btn" title="Delete function">×</button>
+            <div class="function-main-row">
+                <math-field 
+                    class="mathlive-input" 
+                    placeholder="${placeholder}"
+                    default-mode="math"
+                    smart-fence="true"
+                    smart-superscript="true"
+                    virtual-keyboard-mode="auto"
+                    virtual-keyboards="numeric functions symbols greek"
+                    color-scheme="dark"
+                    style="
+                        width: 100%;
+                        padding: 8px;
+                        font-size: 14px;
+                        border: 1px solid var(--border-color);
+                        border-radius: 4px;
+                        background: var(--input-bg);
+                        color: var(--text-primary);
+                        outline: none;
+                        box-sizing: border-box;
+                        --hue: 220;
+                        --accent-color: var(--accent-color);
+                        --background: var(--input-bg);
+                        --text-color: var(--text-primary);
+                        --selection-background-color: var(--accent-color);
+                        --selection-color: #fff;
+                        --contains-highlight-background-color: var(--accent-color);
+                    "></math-field>
+                <div class="function-controls">
+                    <div class="color-indicator" style="background-color: ${func.color}; opacity: ${func.enabled ? '1' : '0.3'}; filter: ${func.enabled ? 'none' : 'grayscale(100%)'}" title="Click to ${func.enabled ? 'hide' : 'show'} function"></div>
+                    <button class="remove-btn" title="Delete function">×</button>
+                </div>
+            </div>
+            <div class="integral-limits-container" data-function-id="${func.id}">
+                <div class="integral-limit-row">
+                    <label class="integral-limit-label">Lower limit:</label>
+                    <math-field 
+                        class="integral-limit-field integral-lower-limit"
+                        default-mode="math"
+                        virtual-keyboard-mode="onfocus"
+                        color-scheme="dark"
+                        data-limit-type="lower"
+                    ></math-field>
+                </div>
+                <div class="integral-limit-row">
+                    <label class="integral-limit-label">Upper limit:</label>
+                    <math-field 
+                        class="integral-limit-field integral-upper-limit"
+                        default-mode="math"
+                        virtual-keyboard-mode="onfocus"
+                        color-scheme="dark"
+                        data-limit-type="upper"
+                    ></math-field>
+                </div>
+                </div>
             </div>
         `;
         
@@ -2254,6 +2279,150 @@ class Graphiti {
                 }
             }
         });
+        
+        // Add event listeners for integral limit fields
+        const lowerLimitField = funcDiv.querySelector('.integral-lower-limit');
+        const upperLimitField = funcDiv.querySelector('.integral-upper-limit');
+        
+        // Get additional CSS variable values for styling (reuse computedStyle and accentColor from above)
+        const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+        const textPrimary = computedStyle.getPropertyValue('--text-primary').trim() || '#E8F4FD';
+        
+        if (lowerLimitField) {
+            // Set background color and styling directly
+            lowerLimitField.style.setProperty('background', inputBg, 'important');
+            lowerLimitField.style.setProperty('color', textPrimary, 'important');
+            lowerLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+            lowerLimitField.style.setProperty('outline', 'none', 'important');
+            lowerLimitField.style.setProperty('--background', inputBg, 'important');
+            lowerLimitField.style.setProperty('--text-color', textPrimary, 'important');
+            lowerLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+            
+            lowerLimitField.addEventListener('input', () => {
+                // Validate the input first
+                const latex = lowerLimitField.getValue();
+                const numericValue = this.evaluateLatexExpression(latex);
+                
+                if (numericValue === null || isNaN(numericValue) || !isFinite(numericValue)) {
+                    // Invalid input - show error styling
+                    this.setInputError(lowerLimitField, true);
+                } else {
+                    // Valid input - clear error and update badge
+                    this.setInputError(lowerLimitField, false);
+                    this.handleIntegralLimitChange(func.id, 'lower', latex);
+                }
+            });
+            
+            // Allow Enter key to finalize input
+            lowerLimitField.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    lowerLimitField.blur();
+                }
+            });
+            
+            // Add focus styling
+            lowerLimitField.addEventListener('focusin', () => {
+                lowerLimitField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                lowerLimitField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                lowerLimitField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                lowerLimitField.style.setProperty('outline', 'none', 'important');
+            });
+            
+            lowerLimitField.addEventListener('focusout', () => {
+                lowerLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                lowerLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                lowerLimitField.style.setProperty('box-shadow', 'none', 'important');
+                lowerLimitField.style.setProperty('outline', 'none', 'important');
+            });
+            
+            // Auto-focus field when virtual keyboard toggle is clicked
+            lowerLimitField.addEventListener('click', (e) => {
+                const path = e.composedPath();
+                const toggleClicked = path.some(el => {
+                    return el.getAttribute && (
+                        el.getAttribute('part') === 'virtual-keyboard-toggle' ||
+                        el.classList?.contains('ML__virtual-keyboard-toggle')
+                    );
+                });
+                
+                if (toggleClicked && !lowerLimitField.hasFocus()) {
+                    lowerLimitField.focus();
+                    if (lowerLimitField.getValue()) {
+                        setTimeout(() => {
+                            lowerLimitField.selection = { ranges: [[Infinity, Infinity]] };
+                        }, 10);
+                    }
+                }
+            });
+        }
+        
+        if (upperLimitField) {
+            // Set background color and styling directly
+            upperLimitField.style.setProperty('background', inputBg, 'important');
+            upperLimitField.style.setProperty('color', textPrimary, 'important');
+            upperLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+            upperLimitField.style.setProperty('outline', 'none', 'important');
+            upperLimitField.style.setProperty('--background', inputBg, 'important');
+            upperLimitField.style.setProperty('--text-color', textPrimary, 'important');
+            upperLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+            
+            upperLimitField.addEventListener('input', () => {
+                // Validate the input first
+                const latex = upperLimitField.getValue();
+                const numericValue = this.evaluateLatexExpression(latex);
+                
+                if (numericValue === null || isNaN(numericValue) || !isFinite(numericValue)) {
+                    // Invalid input - show error styling
+                    this.setInputError(upperLimitField, true);
+                } else {
+                    // Valid input - clear error and update badge
+                    this.setInputError(upperLimitField, false);
+                    this.handleIntegralLimitChange(func.id, 'upper', latex);
+                }
+            });
+            
+            // Allow Enter key to finalize input
+            upperLimitField.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    upperLimitField.blur();
+                }
+            });
+            
+            // Add focus styling
+            upperLimitField.addEventListener('focusin', () => {
+                upperLimitField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                upperLimitField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                upperLimitField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                upperLimitField.style.setProperty('outline', 'none', 'important');
+            });
+            
+            upperLimitField.addEventListener('focusout', () => {
+                upperLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                upperLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                upperLimitField.style.setProperty('box-shadow', 'none', 'important');
+                upperLimitField.style.setProperty('outline', 'none', 'important');
+            });
+            
+            // Auto-focus field when virtual keyboard toggle is clicked
+            upperLimitField.addEventListener('click', (e) => {
+                const path = e.composedPath();
+                const toggleClicked = path.some(el => {
+                    return el.getAttribute && (
+                        el.getAttribute('part') === 'virtual-keyboard-toggle' ||
+                        el.classList?.contains('ML__virtual-keyboard-toggle')
+                    );
+                });
+                
+                if (toggleClicked && !upperLimitField.hasFocus()) {
+                    upperLimitField.focus();
+                    if (upperLimitField.getValue()) {
+                        setTimeout(() => {
+                            upperLimitField.selection = { ranges: [[Infinity, Infinity]] };
+                        }, 10);
+                    }
+                }
+            });
+        }
         
         colorIndicator.addEventListener('click', () => {
             // Clear badges for this function when toggling visibility
@@ -7624,6 +7793,306 @@ class Graphiti {
         
         // Remove any null checkboxes
         this.integralPanelCheckboxes = this.integralPanelCheckboxes.filter(p => p !== null);
+        
+        // Update integral limit fields for all functions
+        this.updateIntegralLimitFields();
+    }
+    
+    // Update integral limit input fields for all functions based on their integral badges
+    updateIntegralLimitFields() {
+        // Get all function items
+        const functionItems = document.querySelectorAll('.function-item');
+        
+        for (const funcItem of functionItems) {
+            const funcId = parseInt(funcItem.getAttribute('data-function-id'));
+            if (isNaN(funcId)) continue;
+            
+            // Find integral badges for this function
+            const integralBadges = this.input.persistentBadges.filter(
+                badge => badge.hasIntegral && badge.functionId === funcId
+            );
+            
+            // If actively dragging an integral badge for this function, include it as a virtual badge
+            if (this.input.tracing.active && 
+                this.input.badgeInteraction.originalBadgeState && 
+                this.input.badgeInteraction.originalBadgeState.hasIntegral &&
+                this.input.tracing.functionId === funcId) {
+                
+                const virtualBadge = {
+                    id: this.input.badgeInteraction.originalBadgeId,
+                    functionId: funcId,
+                    worldX: this.input.tracing.worldX,
+                    worldY: this.input.tracing.worldY,
+                    theta: this.input.tracing.theta,
+                    polarTheta: this.input.tracing.theta,
+                    tValue: this.input.tracing.tValue,
+                    hasIntegral: true
+                };
+                integralBadges.push(virtualBadge);
+            }
+            
+            // Get the integral limits container
+            const limitsContainer = funcItem.querySelector('.integral-limits-container');
+            if (!limitsContainer) continue;
+            
+            // Show/hide the container based on whether integral badges exist
+            if (integralBadges.length >= 2) {
+                limitsContainer.classList.add('visible');
+                
+                // Sort badges by their coordinate
+                integralBadges.sort((a, b) => {
+                    if (this.plotMode === 'polar') {
+                        const aTheta = a.polarTheta !== null && a.polarTheta !== undefined ? a.polarTheta : a.theta;
+                        const bTheta = b.polarTheta !== null && b.polarTheta !== undefined ? b.polarTheta : b.theta;
+                        return (aTheta || 0) - (bTheta || 0);
+                    } else {
+                        // Check if parametric
+                        const func = this.findFunctionById(funcId);
+                        if (func) {
+                            const functionType = this.detectFunctionType(func.expression);
+                            if (functionType === 'parametric' && a.tValue !== null && b.tValue !== null) {
+                                return a.tValue - b.tValue;
+                            }
+                        }
+                        return (a.worldX || 0) - (b.worldX || 0);
+                    }
+                });
+                
+                // Update the limit fields with current values
+                const lowerLimitField = limitsContainer.querySelector('.integral-lower-limit');
+                const upperLimitField = limitsContainer.querySelector('.integral-upper-limit');
+                
+                if (lowerLimitField && upperLimitField && integralBadges.length >= 2) {
+                    // Get the lower and upper values
+                    let lowerValue, upperValue;
+                    
+                    if (this.plotMode === 'polar') {
+                        lowerValue = integralBadges[0].polarTheta !== null && integralBadges[0].polarTheta !== undefined 
+                            ? integralBadges[0].polarTheta : integralBadges[0].theta;
+                        upperValue = integralBadges[1].polarTheta !== null && integralBadges[1].polarTheta !== undefined 
+                            ? integralBadges[1].polarTheta : integralBadges[1].theta;
+                    } else {
+                        // Check if parametric
+                        const func = this.findFunctionById(funcId);
+                        if (func) {
+                            const functionType = this.detectFunctionType(func.expression);
+                            if (functionType === 'parametric') {
+                                lowerValue = integralBadges[0].tValue;
+                                upperValue = integralBadges[1].tValue;
+                            } else {
+                                lowerValue = integralBadges[0].worldX;
+                                upperValue = integralBadges[1].worldX;
+                            }
+                        } else {
+                            lowerValue = integralBadges[0].worldX;
+                            upperValue = integralBadges[1].worldX;
+                        }
+                    }
+                    
+                    // Format values as LaTeX (handle special values like pi)
+                    const lowerLatex = this.formatValueAsLatex(lowerValue);
+                    const upperLatex = this.formatValueAsLatex(upperValue);
+                    
+                    // Only update if the field doesn't have focus (to avoid overwriting user input)
+                    // and if the value has changed to avoid cursor jumping
+                    if (!lowerLimitField.hasFocus() && lowerLimitField.getValue() !== lowerLatex) {
+                        lowerLimitField.setValue(lowerLatex);
+                    }
+                    if (!upperLimitField.hasFocus() && upperLimitField.getValue() !== upperLatex) {
+                        upperLimitField.setValue(upperLatex);
+                    }
+                }
+            } else {
+                limitsContainer.classList.remove('visible');
+            }
+        }
+    }
+    
+    // Handle when user changes an integral limit field
+    handleIntegralLimitChange(funcId, limitType, latexValue) {
+        try {
+            // Convert LaTeX to numeric value
+            const numericValue = this.evaluateLatexExpression(latexValue);
+            if (numericValue === null || isNaN(numericValue) || !isFinite(numericValue)) {
+                return; // Invalid value, ignore
+            }
+            
+            // Find integral badges for this function
+            const integralBadges = this.input.persistentBadges.filter(
+                badge => badge.hasIntegral && badge.functionId === funcId
+            );
+            
+            if (integralBadges.length < 2) return;
+            
+            // Sort badges to determine which is lower/upper
+            integralBadges.sort((a, b) => {
+                if (this.plotMode === 'polar') {
+                    const aTheta = a.polarTheta !== null && a.polarTheta !== undefined ? a.polarTheta : a.theta;
+                    const bTheta = b.polarTheta !== null && b.polarTheta !== undefined ? b.polarTheta : b.theta;
+                    return (aTheta || 0) - (bTheta || 0);
+                } else {
+                    const func = this.findFunctionById(funcId);
+                    if (func) {
+                        const functionType = this.detectFunctionType(func.expression);
+                        if (functionType === 'parametric' && a.tValue !== null && b.tValue !== null) {
+                            return a.tValue - b.tValue;
+                        }
+                    }
+                    return (a.worldX || 0) - (b.worldX || 0);
+                }
+            });
+            
+            // Update the appropriate badge
+            const badgeToUpdate = limitType === 'lower' ? integralBadges[0] : integralBadges[1];
+            
+            // Get the function to evaluate the new position
+            const func = this.findFunctionById(funcId);
+            if (!func) return;
+            
+            const functionType = this.detectFunctionType(func.expression);
+            
+            if (this.plotMode === 'polar') {
+                // Update theta value for polar mode
+                // For polar mode, we need to evaluate r as a function of theta
+                let processedExpression = this.convertFromLatex(func.expression);
+                // Remove r= prefix if present
+                if (processedExpression.toLowerCase().startsWith('r=')) {
+                    processedExpression = processedExpression.substring(2).trim();
+                }
+                
+                const scope = this.getEvaluationScope({ theta: numericValue, t: numericValue });
+                const r = math.evaluate(processedExpression, scope);
+                
+                if (r !== null && isFinite(r)) {
+                    badgeToUpdate.theta = numericValue;
+                    badgeToUpdate.polarTheta = numericValue;
+                    // Calculate cartesian coordinates
+                    badgeToUpdate.worldX = r * Math.cos(numericValue);
+                    badgeToUpdate.worldY = r * Math.sin(numericValue);
+                }
+            } else if (functionType === 'parametric') {
+                // Update t value for parametric functions
+                const parsed = this.parseParametricEquation(func.expression);
+                if (parsed) {
+                    let xExpr = parsed.xExpr.toLowerCase();
+                    let yExpr = parsed.yExpr.toLowerCase();
+                    
+                    // Add implicit multiplication
+                    xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
+                    xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
+                    yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
+                    yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
+                    
+                    const compiledX = this.getCompiledExpression(xExpr);
+                    const compiledY = this.getCompiledExpression(yExpr);
+                    
+                    // Convert t to radians if in degree mode
+                    const tParam = this.angleMode === 'degrees' ? (numericValue * Math.PI / 180) : numericValue;
+                    const scope = this.getEvaluationScope({ t: tParam });
+                    
+                    try {
+                        const x = compiledX.evaluate(scope);
+                        const y = compiledY.evaluate(scope);
+                        
+                        if (isFinite(x) && isFinite(y)) {
+                            badgeToUpdate.tValue = numericValue;
+                            badgeToUpdate.worldX = x;
+                            badgeToUpdate.worldY = y;
+                        }
+                    } catch (error) {
+                        console.warn('Error evaluating parametric function:', error);
+                    }
+                }
+            } else {
+                // Update x value for explicit/implicit functions
+                const y = this.evaluateFunction(func.expression, numericValue);
+                if (y !== null && isFinite(y)) {
+                    badgeToUpdate.worldX = numericValue;
+                    badgeToUpdate.worldY = y;
+                }
+            }
+            
+            // Update integral pairs and redraw
+            this.updateIntegralPairs();
+            this.draw();
+            
+        } catch (error) {
+            console.warn('Error handling integral limit change:', error);
+        }
+    }
+    
+    // Format a numeric value as LaTeX (handles pi, fractions, etc.)
+    formatValueAsLatex(value) {
+        if (value === null || value === undefined || !isFinite(value)) {
+            return '';
+        }
+        
+        // Check if value is close to a multiple of pi
+        const piMultiple = value / Math.PI;
+        const roundedPiMultiple = Math.round(piMultiple * 12) / 12; // Check for multiples of pi/12
+        
+        if (Math.abs(piMultiple - roundedPiMultiple) < 0.001) {
+            if (Math.abs(roundedPiMultiple - 1) < 0.001) {
+                return '\\pi';
+            } else if (Math.abs(roundedPiMultiple + 1) < 0.001) {
+                return '-\\pi';
+            } else if (Math.abs(roundedPiMultiple) < 0.001) {
+                return '0';
+            } else if (roundedPiMultiple > 0) {
+                // Positive multiple of pi
+                const frac = this.decimalToFraction(roundedPiMultiple);
+                if (frac.denominator === 1) {
+                    return frac.numerator === 1 ? '\\pi' : `${frac.numerator}\\pi`;
+                } else {
+                    return `\\frac{${frac.numerator}\\pi}{${frac.denominator}}`;
+                }
+            } else {
+                // Negative multiple of pi
+                const frac = this.decimalToFraction(-roundedPiMultiple);
+                if (frac.denominator === 1) {
+                    return frac.numerator === 1 ? '-\\pi' : `-${frac.numerator}\\pi`;
+                } else {
+                    return `-\\frac{${frac.numerator}\\pi}{${frac.denominator}}`;
+                }
+            }
+        }
+        
+        // Round to reasonable precision
+        const rounded = Math.round(value * 1000) / 1000;
+        return rounded.toString();
+    }
+    
+    // Helper to convert decimal to fraction
+    decimalToFraction(decimal) {
+        const tolerance = 1e-6;
+        let numerator = 1;
+        let denominator = 1;
+        
+        for (let d = 1; d <= 12; d++) {
+            const n = Math.round(decimal * d);
+            if (Math.abs(decimal - n / d) < tolerance) {
+                numerator = n;
+                denominator = d;
+                break;
+            }
+        }
+        
+        return { numerator, denominator };
+    }
+    
+    // Evaluate a LaTeX expression to a numeric value
+    evaluateLatexExpression(latex) {
+        try {
+            // Convert LaTeX to math.js expression
+            const mathExpr = this.convertFromLatex(latex);
+            
+            // Evaluate with parameters
+            const result = math.evaluate(mathExpr, this.getEvaluationScope({}));
+            
+            return typeof result === 'number' ? result : null;
+        } catch (error) {
+            return null;
+        }
     }
     
     calculateCartesianIntegral(func, x1, x2) {
@@ -13758,6 +14227,8 @@ class Graphiti {
         // Remove integral pair if this badge is part of one
         if (isIntegralBadge) {
             this.removeIntegralPairForBadge(badgeId);
+            // Update integral limit fields visibility after removing integral badge
+            this.updateIntegralLimitFields();
         } else {
             // Only remove this specific badge if it's not an integral badge
             // (integral badges are removed by removeIntegralPairForBadge which removes both)

@@ -661,13 +661,19 @@
         
         .function-item {
             display: flex;
-            align-items: stretch;
-            gap: 8px;
+            flex-direction: column;
+            gap: 0;
             margin-bottom: 10px;
             padding: 8px;
             background: rgba(74, 144, 226, 0.1);
             border-radius: 4px;
             border-left: 3px solid;
+        }
+        
+        .function-item .function-main-row {
+            display: flex;
+            align-items: stretch;
+            gap: 8px;
         }
         
         .function-item .function-controls {
@@ -847,6 +853,80 @@
                     padding-bottom: 0px !important;
                     margin-bottom: 0px !important;
                 }
+            }
+        }
+
+        /* Integral limits container styling */
+        .integral-limits-container {
+            display: none; /* Hidden by default, shown when integrals exist */
+            flex-direction: row;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .integral-limits-container.visible {
+            display: flex;
+        }
+
+        .integral-limit-row {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .integral-limit-label {
+            font-size: 14px;
+            display: block;
+            margin-bottom: 2px;
+            color: var(--text-primary);
+        }
+
+        .integral-limit-field {
+            width: 100%;
+            max-width: 100%;
+            font-size: 16px !important;
+            padding: 2px 4px !important;
+            line-height: 1.2 !important;
+            min-height: auto;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+            --border-radius: 4px;
+            --border: 1px solid var(--border-color);
+            --background: var(--input-bg) !important;
+            --text-color: var(--text-primary);
+            --caret-color: white;
+            --selection-background-color: var(--accent-color);
+            --selection-color: white;
+            --contains-highlight-background-color: rgba(74, 144, 226, 0.3);
+            --keyboard-zindex: 9999;
+        }
+        
+        /* Hide scrollbar for Webkit browsers (Chrome, Safari) */
+        .integral-limit-field::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .integral-limit-field::part(content) {
+            font-size: 16px !important;
+            line-height: 1.2 !important;
+        }
+        
+        .integral-limit-field:focus-within {
+            --border: 1px solid var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+        }
+
+        /* Hide menu toggle and virtual keyboard toggle for integral limit fields */
+        .integral-limit-field::part(menu-toggle) {
+            display: none;
+        }
+        
+        /* Hide virtual keyboard toggle on mobile for integral limit fields */
+        @media (hover: none) and (pointer: coarse) {
+            .integral-limit-field::part(virtual-keyboard-toggle),
+            .integral-limit-field::part(keyboard-toggle) {
+                display: none !important;
             }
         }
 
