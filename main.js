@@ -12046,6 +12046,9 @@ class Graphiti {
         // Update demo set visibility based on mode
         this.updateDemoSetVisibility();
         
+        // Update parametric range visibility (hide in polar mode)
+        this.updateParametricRangeVisibility();
+        
         // Clear existing function UI and recreate for current mode
         this.refreshFunctionUI();
 
