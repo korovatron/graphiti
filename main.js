@@ -25068,51 +25068,82 @@ class Graphiti {
 
 
     fixIOSViewportBug() {
-        // Fix iOS PWA viewport bug by using actual window dimensions
-        // Also addresses race condition with safe-area-inset calculation on iOS PWAs
+        // Complete iOS PWA viewport bug fix (iPhone & iPad)
+        // iOS incorrectly subtracts safe-area-inset-top from innerHeight in PWA mode
+        let lastKnownHeight = 0;
+        
         const setActualViewportHeight = () => {
-            const actualHeight = window.innerHeight;
-            document.documentElement.style.setProperty('--actual-vh', `${actualHeight}px`);
-            
-            // Force a layout recalculation to ensure safe-area-inset values are applied
-            // This helps when iOS hasn't finished calculating safe areas yet
-            if (document.body) {
-                void document.body.offsetHeight;
+            // 1. Use visualViewport API when available (more reliable than innerHeight on iOS)
+            let viewportHeight = window.innerHeight;
+            if (window.visualViewport && window.visualViewport.height) {
+                viewportHeight = window.visualViewport.height;
             }
+            
+            // 2. Detect PWA mode (bug only occurs in PWA, not Safari browser)
+            const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                          window.navigator.standalone === true;
+            
+            // 3. Portrait mode compensation (iPhone & iPad)
+            const isPortrait = window.innerHeight > window.innerWidth;
+            
+            if (isPWA && isPortrait) {
+                // Compare actual viewport with expected screen height
+                const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
+                const difference = screenPortraitHeight - viewportHeight;
+                
+                // iPhone diff ~59px, iPad diff ~32px - use 15px threshold
+                if (difference > 15) {
+                    // Get the safe-area-top value from CSS
+                    const computedStyle = getComputedStyle(document.documentElement);
+                    const safeTop = computedStyle.getPropertyValue('--safe-area-top');
+                    const safeTopPx = parseInt(safeTop) || 0;
+                    
+                    // Add it back to compensate for iOS bug
+                    if (safeTopPx > 0) {
+                        viewportHeight += safeTopPx;
+                    }
+                }
+            }
+            // Landscape mode - skip all compensation (CSS env() handles notch automatically)
+            
+            // 6. Set CSS custom property
+            document.documentElement.style.setProperty('--actual-vh', `${viewportHeight}px`);
+            
+            // 7. Detect significant height changes (iOS sometimes reports wrong height initially)
+            if (lastKnownHeight > 0 && Math.abs(viewportHeight - lastKnownHeight) > 30) {
+                // Trigger resize event to update canvas/layout
+                setTimeout(() => {
+                    window.dispatchEvent(new Event('resize'));
+                }, 50);
+            }
+            
+            lastKnownHeight = viewportHeight;
         };
 
-        // Set initial value
+        // 5. Multiple delayed calculations (iOS doesn't always have safe area values ready immediately)
         setActualViewportHeight();
+        setTimeout(setActualViewportHeight, 50);
+        setTimeout(setActualViewportHeight, 150);
+        setTimeout(setActualViewportHeight, 300);
+        setTimeout(setActualViewportHeight, 500);
+        setTimeout(setActualViewportHeight, 800);
+        setTimeout(setActualViewportHeight, 1200);
 
-        // iOS PWA: Safe area insets may not be available immediately on launch
-        // Wait for them to be calculated, then force a recalculation
-        const isIOSPWA = window.navigator.standalone === true || 
-                         window.matchMedia('(display-mode: standalone)').matches;
-        
-        if (isIOSPWA) {
-            // Multiple attempts to catch when safe areas become available
-            setTimeout(setActualViewportHeight, 50);
-            setTimeout(setActualViewportHeight, 150);
-            setTimeout(setActualViewportHeight, 300);
-            
-            // Use visualViewport API if available (more reliable for PWAs)
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', setActualViewportHeight);
-            }
-        }
-
-        // Update on resize/orientation change
+        // 9. Event listeners
         window.addEventListener('resize', setActualViewportHeight);
         window.addEventListener('orientationchange', () => {
-            // iOS needs a delay after orientation change
             setTimeout(setActualViewportHeight, 100);
+            setTimeout(setActualViewportHeight, 300);
         });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', setActualViewportHeight);
+        }
         
-        // Additional safety: recalculate when page becomes visible
-        // (handles app switching on iOS)
+        // Additional safety: recalculate when page becomes visible (handles app switching on iOS)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
                 setTimeout(setActualViewportHeight, 50);
+                setTimeout(setActualViewportHeight, 200);
             }
         });
     }
