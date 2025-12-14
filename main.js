@@ -23316,15 +23316,15 @@ class Graphiti {
             let xStr;
             if (shouldUsePiFractions) {
                 const piFraction = this.formatAsPiFraction(worldX);
-                xStr = piFraction || this.formatCoordinate(worldX);
+                xStr = piFraction || this.formatCoordinate(worldX, 'x');
             } else {
                 // Always check for common values (like √2/2) even when no trig present
                 const xCommon = this.formatAsCommonValue(worldX);
-                xStr = xCommon || this.formatCoordinate(worldX);
+                xStr = xCommon || this.formatCoordinate(worldX, 'x');
             }
             // Always check y for common values (like √3/2)
             const yCommon = this.formatAsCommonValue(worldY);
-            const yStr = yCommon || this.formatCoordinate(worldY);
+            const yStr = yCommon || this.formatCoordinate(worldY, 'y');
             return `(${xStr}, ${yStr})`;
         }
     }
@@ -23368,15 +23368,25 @@ class Graphiti {
         return luminance > 0.5 ? '#000000' : '#FFFFFF';
     }
 
-    formatCoordinate(value) {
+    formatCoordinate(value, axis = null) {
         // Format coordinate values for display - never use scientific notation
         // Use context-aware precision based on current viewport scale
+        // axis: 'x' or 'y' to use specific axis range, null for max of both
         
         // Get the current viewport range to determine appropriate precision
         const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
         const xRange = currentViewport.maxX - currentViewport.minX;
         const yRange = currentViewport.maxY - currentViewport.minY;
-        const typicalRange = Math.max(xRange, yRange);
+        
+        // Use specific axis range if specified, otherwise use max (for backwards compatibility)
+        let typicalRange;
+        if (axis === 'x') {
+            typicalRange = xRange;
+        } else if (axis === 'y') {
+            typicalRange = yRange;
+        } else {
+            typicalRange = Math.max(xRange, yRange);
+        }
         
         // Calculate precision based on viewport scale
         // For large ranges, we need fewer decimal places
