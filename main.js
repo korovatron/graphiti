@@ -25068,20 +25068,52 @@ class Graphiti {
 
 
     fixIOSViewportBug() {
-        // Fix iOS PWA 9-pixel viewport bug by using actual window dimensions
+        // Fix iOS PWA viewport bug by using actual window dimensions
+        // Also addresses race condition with safe-area-inset calculation on iOS PWAs
         const setActualViewportHeight = () => {
             const actualHeight = window.innerHeight;
             document.documentElement.style.setProperty('--actual-vh', `${actualHeight}px`);
+            
+            // Force a layout recalculation to ensure safe-area-inset values are applied
+            // This helps when iOS hasn't finished calculating safe areas yet
+            if (document.body) {
+                void document.body.offsetHeight;
+            }
         };
 
         // Set initial value
         setActualViewportHeight();
+
+        // iOS PWA: Safe area insets may not be available immediately on launch
+        // Wait for them to be calculated, then force a recalculation
+        const isIOSPWA = window.navigator.standalone === true || 
+                         window.matchMedia('(display-mode: standalone)').matches;
+        
+        if (isIOSPWA) {
+            // Multiple attempts to catch when safe areas become available
+            setTimeout(setActualViewportHeight, 50);
+            setTimeout(setActualViewportHeight, 150);
+            setTimeout(setActualViewportHeight, 300);
+            
+            // Use visualViewport API if available (more reliable for PWAs)
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', setActualViewportHeight);
+            }
+        }
 
         // Update on resize/orientation change
         window.addEventListener('resize', setActualViewportHeight);
         window.addEventListener('orientationchange', () => {
             // iOS needs a delay after orientation change
             setTimeout(setActualViewportHeight, 100);
+        });
+        
+        // Additional safety: recalculate when page becomes visible
+        // (handles app switching on iOS)
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                setTimeout(setActualViewportHeight, 50);
+            }
         });
     }
 
