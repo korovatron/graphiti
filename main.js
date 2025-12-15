@@ -1525,6 +1525,14 @@ class Graphiti {
                     { expression: 'r=1+\\cos\\left(\\theta\\right)', theta: 0, hasIntegral: true },
                     { expression: 'r=1+\\cos\\left(\\theta\\right)', theta: Math.PI, hasIntegral: true }
                 ]
+            },
+            'derivatives-turning-points': {
+                expressions: [
+                    'y=x^3-3x',                                         // Cubic with turning points
+                    'y=\\frac{d}{dx}\\left(x^3-3x\\right)'             // Its derivative
+                ],
+                description: 'Derivatives & Turning Points Demo',
+                viewport: { minX: -3, maxX: 3, minY: -5, maxY: 5 }
             }
         };
         
