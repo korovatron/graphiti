@@ -9377,7 +9377,11 @@ class Graphiti {
                 this.updateViewportScale();
                 
                 // Enforce 1:1 aspect ratio for both modes to keep circles circular
-                this.enforceSquareAspectRatio();
+                // BUT skip this for regular trig functions which need different X and Y scales
+                const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+                if (!hasRegularTrig) {
+                    this.enforceSquareAspectRatio();
+                }
                 
                 // Update range inputs to reflect the reset
                 this.updateRangeInputs();
@@ -15662,7 +15666,15 @@ class Graphiti {
 
     bisectionMethod(expression, x1, x2, variable = 'y') {
         // Convert from LaTeX first since expression might be in LaTeX format
-        const convertedExpression = this.convertFromLatex(expression);
+        let convertedExpression = this.convertFromLatex(expression);
+        
+        // Apply degree mode conversion if needed for trig functions
+        if (this.angleMode === 'degrees') {
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(convertedExpression.toLowerCase());
+            if (hasRegularTrigWithX) {
+                convertedExpression = this.convertTrigToDegreeMode(convertedExpression);
+            }
+        }
         
         // Use bisection to find where the function crosses zero
         const maxIterations = 50;
