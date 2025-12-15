@@ -574,7 +574,11 @@ class Graphiti {
                                 [
                                     // Bottom row with navigation, shift key between . and -
                                     '[left]', '[right]',
-                                    { latex: '=', label: '=' },
+                                    { 
+                                        insert: '\\frac{d}{dx}\\left(#?\\right)', 
+                                        label: 'd/dx', 
+                                        class: 'small derivative-key'
+                                    },
                                     { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
@@ -12442,6 +12446,25 @@ class Graphiti {
                         } else {
                             // In polar mode, show theta
                             row[index] = { latex: '\\theta', class: 'variable-key' };
+                        }
+                    }
+                    
+                    // Find and update the derivative key
+                    if (key.insert && key.insert.includes('frac{d}')) {
+                        if (isCartesian) {
+                            // Cartesian mode: d/dx
+                            row[index] = {
+                                insert: '\\frac{d}{dx}\\left(#?\\right)',
+                                label: 'd/dx',
+                                class: 'small derivative-key'
+                            };
+                        } else {
+                            // Polar mode: d/dθ
+                            row[index] = {
+                                insert: '\\frac{d}{d\\theta}\\left(#?\\right)',
+                                label: 'd/dθ',
+                                class: 'small derivative-key'
+                            };
                         }
                     }
                 });
