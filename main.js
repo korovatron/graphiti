@@ -344,7 +344,8 @@ class Graphiti {
                                 '\\atanh': '\\operatorname{atanh}',
                                 '\\asech': '\\operatorname{asech}',
                                 '\\acsch': '\\operatorname{acsch}',
-                                '\\acoth': '\\operatorname{acoth}'
+                                '\\acoth': '\\operatorname{acoth}',
+                                '\\derivative': '\\operatorname{derivative}'
                             };
                             
                             // Inline shortcuts to recognize typed function names
@@ -395,6 +396,9 @@ class Graphiti {
                                 'log(': '\\log(#0)',
                                 'ln': '\\ln',
                                 'ln(': '\\ln(#0)',
+                                // Derivative function
+                                'derivative': '\\operatorname{derivative}',
+                                'derivative(': '\\operatorname{derivative}(#0)',
                                 // Inequality shortcuts - convert >= to ≥ and <= to ≤
                                 '>=': '\\geq',
                                 '<=': '\\leq'
@@ -2704,7 +2708,51 @@ class Graphiti {
                         if (processedExpression.toLowerCase().startsWith('y=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
-                        math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
+                        
+                        try {
+                            // Special handling for derivative() - extract and compute symbolically
+                            if (processedExpression.includes('derivative(')) {
+                                // Extract the expression and variable from derivative(expr, var)
+                                // Find the last comma to split expression and variable (handles nested commas)
+                                const derivStart = processedExpression.indexOf('derivative(');
+                                if (derivStart !== -1) {
+                                    let depth = 0;
+                                    let lastCommaPos = -1;
+                                    const start = derivStart + 'derivative('.length;
+                                    
+                                    for (let i = start; i < processedExpression.length; i++) {
+                                        if (processedExpression[i] === '(') depth++;
+                                        else if (processedExpression[i] === ')') {
+                                            if (depth === 0) break; // End of derivative call
+                                            depth--;
+                                        }
+                                        else if (processedExpression[i] === ',' && depth === 0) {
+                                            lastCommaPos = i;
+                                        }
+                                    }
+                                    
+                                    if (lastCommaPos !== -1) {
+                                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                                        const endParen = processedExpression.indexOf(')', lastCommaPos);
+                                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                                        
+                                        // Compute derivative using math.derivative()
+                                        const symbolicResult = math.derivative(expr, variable);
+                                        
+                                        // Test if we can evaluate the result numerically
+                                        const numericTest = math.evaluate(symbolicResult.toString(), this.getEvaluationScope({ x: 1 }));
+                                    } else {
+                                        throw new Error('Invalid derivative format - missing comma');
+                                    }
+                                } else {
+                                    throw new Error('Invalid derivative format');
+                                }
+                            } else {
+                                const evalResult = math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
+                            }
+                        } catch (err) {
+                            throw err;
+                        }
                         
                         // Additional validation: try to evaluate at x=0 for explicit functions only
                         const testResult = this.evaluateFunction(func.expression, 0);
@@ -3216,6 +3264,49 @@ class Graphiti {
             }
             
             processedExpression = processedExpression.toLowerCase();
+            
+            // Handle derivative() - extract and compute symbolically using math.derivative()
+            if (processedExpression.includes('derivative(')) {
+                try {
+                    // Extract the expression and variable from derivative(expr, var)
+                    // Find the last comma to split expression and variable (handles nested commas)
+                    const derivStart = processedExpression.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) break; // End of derivative call
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1) {
+                            const expr = processedExpression.substring(start, lastCommaPos).trim();
+                            const endParen = processedExpression.indexOf(')', lastCommaPos);
+                            const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // Compute derivative using math.derivative()
+                            const derivativeResult = math.derivative(expr, variable);
+                            processedExpression = derivativeResult.toString();
+                        } else {
+                            throw new Error('Invalid derivative format - missing comma');
+                        }
+                    } else {
+                        throw new Error('Invalid derivative format');
+                    }
+                } catch (err) {
+                    console.error('[DERIVATIVE] Symbolic evaluation failed:', err.message);
+                    func.points = [];
+                    return;
+                }
+            }
             
             // Handle degree mode preprocessing
             if (this.angleMode === 'degrees') {
@@ -6701,7 +6792,7 @@ class Graphiti {
         let processedExpression = expression.toLowerCase();
         
         // Protect function names AND parameter names before processing implicit multiplication
-        const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+        const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'derivative'];
         const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
         const constantNames = ['pi', 'e']; // Protect constants from implicit multiplication
         
@@ -6794,7 +6885,7 @@ class Graphiti {
             let processedExpression = expression.toLowerCase();
             
             // Protect function names AND parameter names before processing implicit multiplication
-            const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs'];
+            const functionNames = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'derivative'];
             const paramNames = ['alpha', 'beta', 'gamma', 'delta'];
             const constantNames = ['pi', 'e']; // Protect constants from implicit multiplication
             
@@ -6875,7 +6966,7 @@ class Graphiti {
         // Check if expression contains properly formatted function calls
         // This helps avoid breaking function names with the variable*variable regex
         // Match function names regardless of spaces before the parenthesis
-        const functionPattern = /\b(sin|cos|tan|sec|csc|cot|asin|acos|atan|asinh|acosh|atanh|sinh|cosh|tanh|log|log10|log2|ln|exp|sqrt|cbrt|abs|ceil|floor|round|sign|min|max)\s*\(/i;
+        const functionPattern = /\b(sin|cos|tan|sec|csc|cot|asin|acos|atan|asinh|acosh|atanh|sinh|cosh|tanh|log|log10|log2|ln|exp|sqrt|cbrt|abs|ceil|floor|round|sign|min|max|derivative)\s*\(/i;
         return functionPattern.test(expression);
     }
     
@@ -24935,6 +25026,11 @@ class Graphiti {
         expression = expression.replace(/\\operatorname\{acsch\}/g, 'acsch');
         expression = expression.replace(/\\operatorname\{acoth\}/g, 'acoth');
         
+        // Derivative function (math.js symbolic derivative)
+        // Handle both \operatorname{derivative} and \operatorname{\mathrm{derivative}}
+        expression = expression.replace(/\\operatorname\{\\mathrm\{derivative\}\}/g, 'derivative');
+        expression = expression.replace(/\\operatorname\{derivative\}/g, 'derivative');
+        
         // Fix malformed \operatorname patterns where entire function call is wrapped
         // e.g., \operatorname{\mathrm{(arccos(x))}} -> arccos(x)
         // This happens when users type certain patterns on physical keyboard
@@ -25018,6 +25114,7 @@ class Graphiti {
         // IMPORTANT: Process longer function names FIRST to avoid partial matches
         // (e.g., 'asinh' before 'sinh', 'asin' before 'sin')
         const functionNames = [
+            'derivative',  // Add derivative (longest function name)
             'asinh', 'acosh', 'atanh', 'asech', 'acsch', 'acoth',  // Longest first
             'asin', 'acos', 'atan', 'asec', 'acsc', 'acot',
             'log10_',  // log10_ marker before log
