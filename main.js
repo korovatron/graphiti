@@ -15791,7 +15791,39 @@ class Graphiti {
                 }
                 
                 // Convert from LaTeX first since we now store LaTeX format
-                const expr = this.convertFromLatex(exprToEvaluate);
+                let expr = this.convertFromLatex(exprToEvaluate);
+                
+                // Handle derivative() - compute symbolically first
+                if (expr.toLowerCase().includes('derivative(')) {
+                    const lowerExpr = expr.toLowerCase();
+                    const derivStart = lowerExpr.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        
+                        for (let i = start; i < lowerExpr.length; i++) {
+                            if (lowerExpr[i] === '(') depth++;
+                            else if (lowerExpr[i] === ')') {
+                                if (depth === 0) break;
+                                depth--;
+                            }
+                            else if (lowerExpr[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1) {
+                            const derivExpr = expr.substring(start, lastCommaPos).trim();
+                            const endParen = expr.indexOf(')', lastCommaPos);
+                            const variable = expr.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            const derivativeResult = math.derivative(derivExpr, variable);
+                            expr = derivativeResult.toString();
+                        }
+                    }
+                }
+                
                 const scope = this.getEvaluationScope({ x: 0 });
                 const y = math.evaluate(expr, scope);
                 
@@ -15834,6 +15866,37 @@ class Graphiti {
     bisectionMethod(expression, x1, x2, variable = 'y') {
         // Convert from LaTeX first since expression might be in LaTeX format
         let convertedExpression = this.convertFromLatex(expression);
+        
+        // Handle derivative() - compute symbolically first
+        if (convertedExpression.toLowerCase().includes('derivative(')) {
+            const lowerExpr = convertedExpression.toLowerCase();
+            const derivStart = lowerExpr.indexOf('derivative(');
+            if (derivStart !== -1) {
+                let depth = 0;
+                let lastCommaPos = -1;
+                const start = derivStart + 'derivative('.length;
+                
+                for (let i = start; i < lowerExpr.length; i++) {
+                    if (lowerExpr[i] === '(') depth++;
+                    else if (lowerExpr[i] === ')') {
+                        if (depth === 0) break;
+                        depth--;
+                    }
+                    else if (lowerExpr[i] === ',' && depth === 0) {
+                        lastCommaPos = i;
+                    }
+                }
+                
+                if (lastCommaPos !== -1) {
+                    const derivExpr = convertedExpression.substring(start, lastCommaPos).trim();
+                    const endParen = convertedExpression.indexOf(')', lastCommaPos);
+                    const derivVariable = convertedExpression.substring(lastCommaPos + 1, endParen).trim();
+                    
+                    const derivativeResult = math.derivative(derivExpr, derivVariable);
+                    convertedExpression = derivativeResult.toString();
+                }
+            }
+        }
         
         // Apply degree mode conversion if needed for trig functions
         if (this.angleMode === 'degrees') {
@@ -16215,18 +16278,46 @@ class Graphiti {
                         
                         try {
                             math.parse(cleanExpression);
-                            const processedExpression = cleanExpression.toLowerCase();
+                            let processedExpression = cleanExpression.toLowerCase();
                             
-                            // Skip if expression already contains derivative()
+                            // If expression contains derivative(), compute it symbolically first
                             if (processedExpression.includes('derivative(')) {
-                                continue;
+                                try {
+                                    const derivStart = processedExpression.indexOf('derivative(');
+                                    let depth = 0;
+                                    let lastCommaPos = -1;
+                                    const start = derivStart + 'derivative('.length;
+                                    
+                                    for (let i = start; i < processedExpression.length; i++) {
+                                        if (processedExpression[i] === '(') depth++;
+                                        else if (processedExpression[i] === ')') {
+                                            if (depth === 0) break;
+                                            depth--;
+                                        }
+                                        else if (processedExpression[i] === ',' && depth === 0) {
+                                            lastCommaPos = i;
+                                        }
+                                    }
+                                    
+                                    if (lastCommaPos !== -1) {
+                                        const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
+                                        const endParen = processedExpression.indexOf(')', lastCommaPos);
+                                        const derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                                        
+                                        const derivativeResult = math.derivative(derivExpr, derivVariable);
+                                        processedExpression = derivativeResult.toString();
+                                    }
+                                } catch (err) {
+                                    console.warn('Could not compute derivative for turning points:', err);
+                                    continue;
+                                }
                             }
                             
                             const derivative = math.derivative(processedExpression, 'x');
                             const derivativeStr = derivative.toString();
                             const secondDerivative = math.derivative(derivative, 'x');
                             const secondDerivativeStr = secondDerivative.toString();
-                            const functionTurningPoints = this.findTurningPointsForFunction(boundaryFunc, derivativeStr, secondDerivativeStr);
+                            const functionTurningPoints = this.findTurningPointsForFunction(boundaryFunc, derivativeStr, secondDerivativeStr, processedExpression);
                             turningPoints.push(...functionTurningPoints);
                         } catch (error) {
                             console.warn(`Could not find turning points for boundary of ${func.expression}:`, error);
@@ -16283,11 +16374,39 @@ class Graphiti {
                 }
                 
                 // Make function names case-insensitive for derivative calculation (same as evaluateFunction)
-                const processedExpression = cleanExpression.toLowerCase();
+                let processedExpression = cleanExpression.toLowerCase();
                 
-                // Skip derivative calculation if expression already contains derivative()
+                // If expression contains derivative(), compute it symbolically first
                 if (processedExpression.includes('derivative(')) {
-                    continue;
+                    try {
+                        const derivStart = processedExpression.indexOf('derivative(');
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) break;
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1) {
+                            const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
+                            const endParen = processedExpression.indexOf(')', lastCommaPos);
+                            const derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            const derivativeResult = math.derivative(derivExpr, derivVariable);
+                            processedExpression = derivativeResult.toString();
+                        }
+                    } catch (err) {
+                        console.warn('Could not compute derivative for turning points:', err);
+                        continue;
+                    }
                 }
                 
                 // Get symbolic derivative using math.js
@@ -16299,7 +16418,8 @@ class Graphiti {
                 const secondDerivativeStr = secondDerivative.toString();
                 
                 // Find turning points by finding roots of f'(x) = 0
-                const functionTurningPoints = this.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr);
+                // Pass the processed expression (after derivative computation) so y values are calculated correctly
+                const functionTurningPoints = this.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression);
                 turningPoints.push(...functionTurningPoints);
                 
             } catch (error) {
@@ -16367,10 +16487,42 @@ class Graphiti {
                 // Make function names case-insensitive for derivative calculation
                 let processedExpression = cleanExpression.toLowerCase();
                 
-                // Skip derivative calculation if expression already contains derivative()
-                // (user is already plotting a derivative, finding turning points would require second derivative)
+                // If expression contains derivative(), compute it symbolically first
                 if (processedExpression.includes('derivative(')) {
-                    continue;
+                    try {
+                        const derivStart = processedExpression.indexOf('derivative(');
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) break;
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1) {
+                            const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
+                            const endParen = processedExpression.indexOf(')', lastCommaPos);
+                            let derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // In polar mode, theta is converted to 't'
+                            if (derivVariable === 'theta') {
+                                derivVariable = 't';
+                            }
+                            
+                            const derivativeResult = math.derivative(derivExpr, derivVariable);
+                            processedExpression = derivativeResult.toString();
+                        }
+                    } catch (err) {
+                        console.warn('Could not compute derivative for polar turning points:', err);
+                        continue;
+                    }
                 }
                 
                 // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
@@ -16402,7 +16554,8 @@ class Graphiti {
                 }
                 
                 // Find turning points by finding roots of dr/dtheta = 0
-                const functionTurningPoints = this.findPolarTurningPointsForFunction(func, derivativeStr);
+                // Pass the processed expression so r values are calculated correctly for derivative functions
+                const functionTurningPoints = this.findPolarTurningPointsForFunction(func, derivativeStr, processedExpression);
                 turningPoints.push(...functionTurningPoints);
                 
             } catch (error) {
@@ -16415,7 +16568,7 @@ class Graphiti {
         return turningPoints;
     }
     
-    findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr) {
+    findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression = null) {
         const turningPoints = [];
         
         // Get current viewport bounds for searching
@@ -16427,8 +16580,18 @@ class Graphiti {
         
         for (const x of roots) {
             try {
-                // Calculate y value at this x using same approach as evaluateFunction
-                const y = this.evaluateFunction(func.expression, x);
+                // Calculate y value at this x
+                // If processedExpression is provided (e.g., for derivative functions), use it
+                // Otherwise use the original func.expression
+                let y;
+                if (processedExpression) {
+                    // Evaluate the processed expression directly
+                    const compiledExpr = this.getCompiledExpression(processedExpression);
+                    y = compiledExpr.evaluate(this.getEvaluationScope({x: x}));
+                } else {
+                    // Use same approach as evaluateFunction
+                    y = this.evaluateFunction(func.expression, x);
+                }
                 
                 // Classify using second derivative test (also needs degree handling)
                 let secondDerivValue;
@@ -17331,7 +17494,7 @@ class Graphiti {
         return null;
     }
     
-    findPolarTurningPointsForFunction(func, derivativeStr) {
+    findPolarTurningPointsForFunction(func, derivativeStr, processedExpression = null) {
         const turningPoints = [];
         
         // Get theta range from polar settings
@@ -17343,47 +17506,71 @@ class Graphiti {
         
         for (const theta of roots) {
             try {
-                // Evaluate r at this theta - use same approach as findPolarTurningPoints
-                let cleanExpression;
+                let r;
                 
-                // For polar inequalities, use the boundary expression
-                if (func.inequality && func.inequality.expression) {
-                    cleanExpression = func.inequality.expression;
-                } else {
-                    // Convert from LaTeX first since we now store LaTeX format
-                    const convertedExpression = this.convertFromLatex(func.expression);
+                // If processedExpression is provided (e.g., for derivative functions), use it
+                if (processedExpression) {
+                    // Use the already-processed expression
+                    const compiledExpression = this.getCompiledExpression(processedExpression);
                     
-                    // Clean the expression - remove "r=" or "r>", "r<", "r≥", "r≤" prefix if present
-                    cleanExpression = convertedExpression.trim();
-                    if (/^r\s*[=><≥≤]/.test(cleanExpression.toLowerCase())) {
-                        // Find the operator and take everything after it
-                        const match = cleanExpression.match(/^r\s*[=><≥≤]\s*(.+)$/i);
-                        if (match) {
-                            cleanExpression = match[1].trim();
+                    // Convert theta to radians if in degree mode
+                    const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    
+                    const scope = this.getEvaluationScope({ 
+                        theta: thetaForEval, 
+                        t: thetaForEval,
+                        pi: Math.PI,
+                        e: Math.E
+                    });
+                    
+                    r = compiledExpression.evaluate(scope);
+                } else {
+                    // Original logic: re-process the expression from func
+                    // Evaluate r at this theta - use same approach as findPolarTurningPoints
+                    let cleanExpression;
+                    
+                    // For polar inequalities, use the boundary expression
+                    if (func.inequality && func.inequality.expression) {
+                        cleanExpression = func.inequality.expression;
+                    } else {
+                        // Convert from LaTeX first since we now store LaTeX format
+                        const convertedExpression = this.convertFromLatex(func.expression);
+                        
+                        // Clean the expression - remove "r=" or "r>", "r<", "r≥", "r≤" prefix if present
+                        cleanExpression = convertedExpression.trim();
+                        if (/^r\s*[=><≥≤]/.test(cleanExpression.toLowerCase())) {
+                            // Find the operator and take everything after it
+                            const match = cleanExpression.match(/^r\s*[=><≥≤]\s*(.+)$/i);
+                            if (match) {
+                                cleanExpression = match[1].trim();
+                            }
                         }
                     }
+                    
+                    let expression = cleanExpression.toLowerCase();
+                    
+                    // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+                    expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                    expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+                    
+                    // Note: No need for convertTrigToDegreeMode in polar - we convert theta itself
+                    const compiledExpression = this.getCompiledExpression(expression);
+                    
+                    // Convert theta to radians if in degree mode
+                    const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    
+                    const scope = this.getEvaluationScope({ 
+                        theta: thetaForEval, 
+                        t: thetaForEval,
+                        pi: Math.PI,
+                        e: Math.E
+                    });
+                    
+                    r = compiledExpression.evaluate(scope);
                 }
                 
-                let processedExpression = cleanExpression.toLowerCase();
-                
-                // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
-                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
-                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
-                
-                // Note: No need for convertTrigToDegreeMode in polar - we convert theta itself
-                const compiledExpression = this.getCompiledExpression(processedExpression);
-                
-                // Convert theta to radians if in degree mode
+                // Convert theta to radians if in degree mode for coordinate conversion
                 const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
-                
-                const scope = this.getEvaluationScope({ 
-                    theta: thetaForEval, 
-                    t: thetaForEval,
-                    pi: Math.PI,
-                    e: Math.E
-                });
-                
-                let r = compiledExpression.evaluate(scope);
                 
                 // Handle negative r values
                 let adjustedTheta = theta;
