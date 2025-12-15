@@ -396,9 +396,11 @@ class Graphiti {
                                 'log(': '\\log(#0)',
                                 'ln': '\\ln',
                                 'ln(': '\\ln(#0)',
-                                // Derivative function
-                                'derivative': '\\operatorname{derivative}',
-                                'derivative(': '\\operatorname{derivative}(#0)',
+                                // Derivative function - insert d/dx notation (variable inferred from dx)
+                                'derivative': '\\frac{d}{dx}\\left(#?\\right)',
+                                'ddx': '\\frac{d}{dx}\\left(#?\\right)',
+                                'ddt': '\\frac{d}{dt}\\left(#?\\right)',
+                                'ddtheta': '\\frac{d}{d\\theta}\\left(#?\\right)',
                                 // Inequality shortcuts - convert >= to ≥ and <= to ≤
                                 '>=': '\\geq',
                                 '<=': '\\leq'
@@ -2661,6 +2663,38 @@ class Graphiti {
                         if (processedExpression.toLowerCase().startsWith('r=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
+                        
+                        // Handle derivative() for polar mode
+                        if (processedExpression.toLowerCase().includes('derivative(')) {
+                            const derivStart = processedExpression.toLowerCase().indexOf('derivative(');
+                            if (derivStart !== -1) {
+                                let depth = 0;
+                                let lastCommaPos = -1;
+                                const start = derivStart + 'derivative('.length;
+                                
+                                for (let i = start; i < processedExpression.length; i++) {
+                                    if (processedExpression[i] === '(') depth++;
+                                    else if (processedExpression[i] === ')') {
+                                        if (depth === 0) break;
+                                        depth--;
+                                    }
+                                    else if (processedExpression[i] === ',' && depth === 0) {
+                                        lastCommaPos = i;
+                                    }
+                                }
+                                
+                                if (lastCommaPos !== -1) {
+                                    const expr = processedExpression.substring(start, lastCommaPos).trim();
+                                    const endParen = processedExpression.indexOf(')', lastCommaPos);
+                                    const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                                    
+                                    // Compute derivative symbolically
+                                    const symbolicResult = math.derivative(expr, variable);
+                                    processedExpression = symbolicResult.toString();
+                                }
+                            }
+                        }
+                        
                         math.evaluate(processedExpression, this.getEvaluationScope({ t: 1, theta: 1 }));
                     }
                 } else {
@@ -3475,6 +3509,48 @@ class Graphiti {
                 processedExpression = processedExpression.substring(2).trim();
             }
             processedExpression = processedExpression.toLowerCase();
+            
+            // Handle derivative() - extract and compute symbolically using math.derivative()
+            if (processedExpression.includes('derivative(')) {
+                try {
+                    const derivStart = processedExpression.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) break;
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1) {
+                            const expr = processedExpression.substring(start, lastCommaPos).trim();
+                            const endParen = processedExpression.indexOf(')', lastCommaPos);
+                            let variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // In polar mode, \theta is converted to 't', so if variable is 'theta', use 't'
+                            if (variable === 'theta') {
+                                variable = 't';
+                            }
+                            
+                            // Compute derivative using math.derivative()
+                            const derivativeResult = math.derivative(expr, variable);
+                            processedExpression = derivativeResult.toString();
+                        }
+                    }
+                } catch (err) {
+                    console.error('[DERIVATIVE] Polar symbolic evaluation failed:', err.message);
+                    func.points = [];
+                    return;
+                }
+            }
             
             // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
             processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
@@ -16140,6 +16216,12 @@ class Graphiti {
                         try {
                             math.parse(cleanExpression);
                             const processedExpression = cleanExpression.toLowerCase();
+                            
+                            // Skip if expression already contains derivative()
+                            if (processedExpression.includes('derivative(')) {
+                                continue;
+                            }
+                            
                             const derivative = math.derivative(processedExpression, 'x');
                             const derivativeStr = derivative.toString();
                             const secondDerivative = math.derivative(derivative, 'x');
@@ -16202,6 +16284,11 @@ class Graphiti {
                 
                 // Make function names case-insensitive for derivative calculation (same as evaluateFunction)
                 const processedExpression = cleanExpression.toLowerCase();
+                
+                // Skip derivative calculation if expression already contains derivative()
+                if (processedExpression.includes('derivative(')) {
+                    continue;
+                }
                 
                 // Get symbolic derivative using math.js
                 const derivative = math.derivative(processedExpression, 'x');
@@ -16279,6 +16366,12 @@ class Graphiti {
                 
                 // Make function names case-insensitive for derivative calculation
                 let processedExpression = cleanExpression.toLowerCase();
+                
+                // Skip derivative calculation if expression already contains derivative()
+                // (user is already plotting a derivative, finding turning points would require second derivative)
+                if (processedExpression.includes('derivative(')) {
+                    continue;
+                }
                 
                 // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
                 processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
@@ -24795,6 +24888,84 @@ class Graphiti {
         return latex;
     }
     
+    convertDerivativeNotation(expression) {
+        // Convert d/dx notation to derivative(expr, x)
+        // Handles: \frac{d}{dx}\left(expr\right) or \frac{d}{dtheta}(expr)
+        const patterns = [
+            { pattern: '\\frac{d}{dx}', variable: 'x' },
+            { pattern: '\\frac{d}{dt}', variable: 't' },
+            { pattern: '\\frac{d}{dtheta}', variable: 'theta' },
+            { pattern: '\\frac{d}{d\\theta}', variable: 'theta' }
+        ];
+        
+        for (const {pattern, variable} of patterns) {
+            let startIndex = 0;
+            while ((startIndex = expression.indexOf(pattern, startIndex)) !== -1) {
+                // Find the expression after the derivative notation
+                let exprStart = startIndex + pattern.length;
+                
+                // Skip any whitespace
+                while (exprStart < expression.length && expression[exprStart] === ' ') {
+                    exprStart++;
+                }
+                
+                // Check if it's \left( or just (
+                let isLeftRight = false;
+                if (expression.substring(exprStart, exprStart + 6) === '\\left(') {
+                    isLeftRight = true;
+                    exprStart += 6;
+                } else if (expression[exprStart] === '(') {
+                    exprStart += 1;
+                } else {
+                    // No parentheses found, skip this one
+                    startIndex = exprStart;
+                    continue;
+                }
+                
+                // Find matching closing parenthesis
+                let depth = 1;
+                let exprEnd = exprStart;
+                while (exprEnd < expression.length && depth > 0) {
+                    if (expression.substring(exprEnd, exprEnd + 7) === '\\right)') {
+                        depth--;
+                        if (depth === 0) break;
+                        exprEnd += 7;
+                    } else if (expression.substring(exprEnd, exprEnd + 6) === '\\left(') {
+                        depth++;
+                        exprEnd += 6;
+                    } else if (expression[exprEnd] === ')') {
+                        depth--;
+                        if (depth === 0) break;
+                        exprEnd++;
+                    } else if (expression[exprEnd] === '(') {
+                        depth++;
+                        exprEnd++;
+                    } else {
+                        exprEnd++;
+                    }
+                }
+                
+                if (depth === 0) {
+                    // Extract the expression
+                    const expr = expression.substring(exprStart, exprEnd);
+                    
+                    // Replace with derivative(expr, variable) - variable is inferred from d/dx notation
+                    const replacement = `derivative(${expr},${variable})`;
+                    const endPos = isLeftRight ? exprEnd + 7 : exprEnd + 1;
+                    expression = expression.substring(0, startIndex) + replacement + expression.substring(endPos);
+                    
+                    // Continue searching after the replacement
+                    startIndex = startIndex + replacement.length;
+                } else {
+                    // Malformed expression, skip
+                    startIndex = exprEnd;
+                }
+            }
+        }
+        
+        return expression;
+    }
+    
     convertFractions(expression) {
         // Helper function to find matching closing brace
         const findMatchingBrace = (str, startIndex) => {
@@ -24853,13 +25024,23 @@ class Graphiti {
         
         let expression = latex;
         
-        // FIRST: Handle LaTeX parentheses before any other processing
+        // Remove MathLive placeholders that can appear during editing
+        expression = expression.replace(/\\placeholder\{[^}]*\}/g, '');
+        expression = expression.replace(/\\placeholder/g, '');
+        
+        // Convert d/dx notation to derivative(expr, x) BEFORE cleaning up LaTeX parentheses
+        // This needs to handle nested expressions properly and requires \left( \right) to still be present
+        expression = this.convertDerivativeNotation(expression);
+        
+        // Now handle LaTeX parentheses
         expression = expression.replace(/\\left\(/g, '(');
         expression = expression.replace(/\\right\)/g, ')');
         expression = expression.replace(/\\left\[/g, '[');
         expression = expression.replace(/\\right\]/g, ']');
         expression = expression.replace(/\\left\{/g, '{');
         expression = expression.replace(/\\right\}/g, '}');
+        expression = expression.replace(/\\left\./g, '');
+        expression = expression.replace(/\\right\./g, '');
         
         // Convert LaTeX back to math.js expressions
         // Fractions: \frac{a}{b} -> (a)/(b) - handle nested braces properly
@@ -25030,6 +25211,9 @@ class Graphiti {
         // Handle both \operatorname{derivative} and \operatorname{\mathrm{derivative}}
         expression = expression.replace(/\\operatorname\{\\mathrm\{derivative\}\}/g, 'derivative');
         expression = expression.replace(/\\operatorname\{derivative\}/g, 'derivative');
+        
+        // Note: convertDerivativeNotation is now called earlier (before LaTeX cleanup)
+        // to preserve \left( and \right) patterns needed for parsing
         
         // Fix malformed \operatorname patterns where entire function call is wrapped
         // e.g., \operatorname{\mathrm{(arccos(x))}} -> arccos(x)
