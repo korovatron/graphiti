@@ -286,13 +286,16 @@ class Graphiti {
         
         // Performance monitoring
         this.performance = {
-            enabled: false, // Toggle with Ctrl+Shift+P
+            enabled: false, // Toggle with Ctrl+Alt+P
             fps: 0,
             frameCount: 0,
             lastFpsUpdate: 0,
             plotTimes: new Map(), // functionId -> milliseconds
             intersectionTime: 0,
-            lastFrameTime: 0
+            lastFrameTime: 0,
+            overlay: null, // DOM element for floating overlay
+            overlayElements: {}, // References to overlay sub-elements
+            lastOverlayUpdate: 0 // Throttle overlay updates
         };
         
         // Animation
@@ -9526,6 +9529,41 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const titleScreen = document.getElementById('title-screen');
         
+        // Initialize floating performance monitor overlay (toggled with Ctrl+Alt+P)
+        this.performance.overlay = document.getElementById('performance-overlay');
+        if (this.performance.overlay) {
+            this.performance.overlayElements = {
+                fps: document.getElementById('perf-fps'),
+                loop: document.getElementById('perf-loop'),
+                state: document.getElementById('perf-state'),
+                frame: document.getElementById('perf-frame')
+            };
+        }
+        
+        // Keyboard shortcut: Ctrl+Alt+P to toggle performance monitor
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'p') {
+                e.preventDefault();
+                this.performance.enabled = !this.performance.enabled;
+                
+                if (this.performance.overlay) {
+                    if (this.performance.enabled) {
+                        this.performance.overlay.classList.add('visible');
+                        // Initialize FPS tracking
+                        this.performance.lastFpsUpdate = performance.now();
+                        this.performance.frameCount = 0;
+                        this.performance.fps = 0;
+                        console.log('Performance monitor enabled (Ctrl+Alt+P to hide)');
+                    } else {
+                        this.performance.overlay.classList.remove('visible');
+                        console.log('Performance monitor disabled');
+                    }
+                }
+                
+                this.updatePerformanceOverlay(true);
+            }
+        });
+        
         // Fade in title screen and initialize sine wave
         if (titleScreen) {
             // Initialize sine wave text
@@ -11822,17 +11860,6 @@ class Graphiti {
     }
     
     handleKeyboard(e) {
-        // Performance overlay toggle (Ctrl+Shift+P) - works even when input is focused
-        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p') {
-            e.preventDefault();
-            this.performance.enabled = !this.performance.enabled;
-            if (this.performance.enabled) {
-                this.performance.lastFpsUpdate = performance.now();
-                this.performance.frameCount = 0;
-            }
-            return;
-        }
-        
         // Check if any input field is currently focused, including MathLive fields
         const activeElement = document.activeElement;
         const isInputFocused = activeElement && (
@@ -19318,16 +19345,15 @@ class Graphiti {
             
             this.lastFrameTime = currentTime;
             
-            // Track FPS if performance monitoring is enabled
-            if (this.performance.enabled) {
-                this.performance.frameCount++;
-                const elapsed = currentTime - this.performance.lastFpsUpdate;
-                if (elapsed >= 1000) { // Update FPS every second
-                    this.performance.fps = Math.round((this.performance.frameCount * 1000) / elapsed);
-                    this.performance.frameCount = 0;
-                    this.performance.lastFpsUpdate = currentTime;
-                }
+            // Track FPS and update overlay
+            this.performance.frameCount++;
+            const elapsed = currentTime - this.performance.lastFpsUpdate;
+            if (elapsed >= 1000) { // Update FPS every second
+                this.performance.fps = Math.round((this.performance.frameCount * 1000) / elapsed);
+                this.performance.frameCount = 0;
+                this.performance.lastFpsUpdate = currentTime;
             }
+            this.updatePerformanceOverlay();
             
             this.update(this.deltaTime);
             this.draw();
@@ -19345,6 +19371,7 @@ class Graphiti {
             console.log('Animation loop was stopped - restarting after idle period');
             this.showAnimationRestartIndicator();
             this.startAnimationLoop();
+            this.updatePerformanceOverlay(true);
         }
     }
 
@@ -19605,11 +19632,6 @@ class Graphiti {
             this.drawPolarAnimationSweepLine(); // Draw radar sweep line first (behind everything)
             this.drawPolarAnimationCoordinates();
             this.drawPolarAnimationPoint();
-        }
-        
-        // Draw performance overlay if enabled
-        if (this.performance.enabled) {
-            this.drawPerformanceOverlay();
         }
         
         // Draw rectangular zoom preview (desktop only, Cartesian mode only)
