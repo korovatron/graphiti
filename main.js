@@ -16616,8 +16616,17 @@ class Graphiti {
                 // Otherwise use the original func.expression
                 let y;
                 if (processedExpression) {
-                    // Evaluate the processed expression directly
-                    const compiledExpr = this.getCompiledExpression(processedExpression);
+                    // Evaluate the processed expression with proper degree mode handling
+                    let processedExprForEval = processedExpression;
+                    if (this.angleMode === 'degrees') {
+                        // Apply same preprocessing as evaluateFunction for degree mode
+                        const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExprForEval);
+                        
+                        if (hasRegularTrigWithX) {
+                            processedExprForEval = this.convertTrigToDegreeMode(processedExprForEval);
+                        }
+                    }
+                    const compiledExpr = this.getCompiledExpression(processedExprForEval);
                     y = compiledExpr.evaluate(this.getEvaluationScope({x: x}));
                 } else {
                     // Use same approach as evaluateFunction
