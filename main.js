@@ -2771,6 +2771,49 @@ class Graphiti {
                         }
                         // Test that the right side is a valid expression
                         processedExpression = inequality.rightSide;
+                        
+                        // Handle derivative() in inequalities - replace all derivative() calls
+                        while (processedExpression.toLowerCase().includes('derivative(')) {
+                            const derivStart = processedExpression.toLowerCase().indexOf('derivative(');
+                            if (derivStart !== -1) {
+                                let depth = 0;
+                                let lastCommaPos = -1;
+                                const start = derivStart + 'derivative('.length;
+                                let endParen = -1;
+                                
+                                for (let i = start; i < processedExpression.length; i++) {
+                                    if (processedExpression[i] === '(') depth++;
+                                    else if (processedExpression[i] === ')') {
+                                        if (depth === 0) {
+                                            endParen = i;
+                                            break;
+                                        }
+                                        depth--;
+                                    }
+                                    else if (processedExpression[i] === ',' && depth === 0) {
+                                        lastCommaPos = i;
+                                    }
+                                }
+                                
+                                if (lastCommaPos !== -1 && endParen !== -1) {
+                                    const expr = processedExpression.substring(start, lastCommaPos).trim();
+                                    const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                                    
+                                    // Compute derivative symbolically
+                                    const symbolicResult = math.derivative(expr, variable);
+                                    
+                                    // Replace only the derivative() call with its result
+                                    processedExpression = processedExpression.substring(0, derivStart) + 
+                                                          '(' + symbolicResult.toString() + ')' + 
+                                                          processedExpression.substring(endParen + 1);
+                                } else {
+                                    break; // Invalid format, stop processing
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        
                         math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
                     } else {
                         // For explicit functions, test with x variable
