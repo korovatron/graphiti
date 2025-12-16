@@ -17424,8 +17424,53 @@ class Graphiti {
                     cleanExpression = cleanExpression.substring(2).trim();
                 }
                 
-                // Add implicit multiplication
                 processedExpression = cleanExpression.toLowerCase();
+                
+                // Handle derivative() - process before compiling
+                while (processedExpression.includes('derivative(')) {
+                    const derivStart = processedExpression.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break;
+                                }
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1 && endParen !== -1) {
+                            const expr = processedExpression.substring(start, lastCommaPos).trim();
+                            let variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // In polar mode, theta is converted to 't'
+                            if (variable === 'theta') {
+                                variable = 't';
+                            }
+                            
+                            const derivativeResult = math.derivative(expr, variable);
+                            processedExpression = processedExpression.substring(0, derivStart) + 
+                                                  '(' + derivativeResult.toString() + ')' + 
+                                                  processedExpression.substring(endParen + 1);
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Add implicit multiplication
                 processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
                 processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
             }
@@ -18335,7 +18380,63 @@ class Graphiti {
                 // Use pre-compiled boundary expression for inequalities
                 expressionToEvaluate = func.inequality.compiledExpression;
             } else {
-                const processedExpression = this.convertFromLatex(func.expression);
+                let processedExpression = this.convertFromLatex(func.expression);
+                
+                // Remove r= prefix if present
+                if (processedExpression.toLowerCase().startsWith('r=')) {
+                    processedExpression = processedExpression.substring(2).trim();
+                }
+                
+                processedExpression = processedExpression.toLowerCase();
+                
+                // Handle derivative() - process before compiling
+                while (processedExpression.includes('derivative(')) {
+                    const derivStart = processedExpression.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break;
+                                }
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1 && endParen !== -1) {
+                            const expr = processedExpression.substring(start, lastCommaPos).trim();
+                            let variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // In polar mode, theta is converted to 't'
+                            if (variable === 'theta') {
+                                variable = 't';
+                            }
+                            
+                            const derivativeResult = math.derivative(expr, variable);
+                            processedExpression = processedExpression.substring(0, derivStart) + 
+                                                  '(' + derivativeResult.toString() + ')' + 
+                                                  processedExpression.substring(endParen + 1);
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Add implicit multiplication
+                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+                
                 expressionToEvaluate = math.compile(processedExpression);
             }
             
