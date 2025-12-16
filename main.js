@@ -16248,34 +16248,45 @@ class Graphiti {
                 // Convert from LaTeX first since we now store LaTeX format
                 let expr = this.convertFromLatex(exprToEvaluate);
                 
-                // Handle derivative() - compute symbolically first
-                if (expr.toLowerCase().includes('derivative(')) {
-                    const lowerExpr = expr.toLowerCase();
-                    const derivStart = lowerExpr.indexOf('derivative(');
+                // Handle derivative() - replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                while (expr.toLowerCase().includes('derivative(')) {
+                    const derivStart = expr.toLowerCase().indexOf('derivative(');
                     if (derivStart !== -1) {
                         let depth = 0;
                         let lastCommaPos = -1;
                         const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
                         
-                        for (let i = start; i < lowerExpr.length; i++) {
-                            if (lowerExpr[i] === '(') depth++;
-                            else if (lowerExpr[i] === ')') {
-                                if (depth === 0) break;
+                        for (let i = start; i < expr.length; i++) {
+                            if (expr[i] === '(') depth++;
+                            else if (expr[i] === ')') {
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break;
+                                }
                                 depth--;
                             }
-                            else if (lowerExpr[i] === ',' && depth === 0) {
+                            else if (expr[i] === ',' && depth === 0) {
                                 lastCommaPos = i;
                             }
                         }
                         
-                        if (lastCommaPos !== -1) {
+                        if (lastCommaPos !== -1 && endParen !== -1) {
                             const derivExpr = expr.substring(start, lastCommaPos).trim();
-                            const endParen = expr.indexOf(')', lastCommaPos);
                             const variable = expr.substring(lastCommaPos + 1, endParen).trim();
                             
-                            const derivativeResult = math.derivative(derivExpr, variable);
-                            expr = derivativeResult.toString();
+                            // Compute derivative symbolically
+                            const symbolicResult = math.derivative(derivExpr, variable);
+                            
+                            // Replace only the derivative() call with its result, preserving surrounding expression
+                            expr = expr.substring(0, derivStart) + 
+                                   '(' + symbolicResult.toString() + ')' + 
+                                   expr.substring(endParen + 1);
+                        } else {
+                            break; // Invalid format, stop processing
                         }
+                    } else {
+                        break;
                     }
                 }
                 
