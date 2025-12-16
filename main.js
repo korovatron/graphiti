@@ -19499,6 +19499,38 @@ class Graphiti {
         }
     }
     
+    updatePerformanceOverlay(force = false) {
+        if (!this.performance.enabled || !this.performance.overlay) return;
+        
+        // Throttle updates to 250ms unless forced
+        const now = performance.now();
+        if (!force && (now - this.performance.lastOverlayUpdate) < 250) return;
+        this.performance.lastOverlayUpdate = now;
+        
+        const elements = this.performance.overlayElements;
+        if (!elements.fps || !elements.loop || !elements.state || !elements.frame) return;
+        
+        // Update FPS - color coded
+        const fps = this.performance.fps;
+        elements.fps.textContent = fps > 0 ? fps : '--';
+        elements.fps.className = 'perf-value ' + (fps >= 55 ? 'good' : fps >= 30 ? 'warning' : 'error');
+        
+        // Update loop status
+        const loopRunning = this.animationId !== null;
+        elements.loop.textContent = loopRunning ? '✓ Running' : '✗ Stopped';
+        elements.loop.className = 'perf-value ' + (loopRunning ? 'good' : 'error');
+        
+        // Update state
+        const stateName = this.currentState === this.states.TITLE ? 'Title' : 'Graphing';
+        elements.state.textContent = stateName;
+        elements.state.className = 'perf-value good';
+        
+        // Update frame time
+        const frameTime = this.deltaTime || 0;
+        elements.frame.textContent = frameTime > 0 ? `${frameTime.toFixed(1)}ms` : '--';
+        elements.frame.className = 'perf-value ' + (frameTime <= 16 ? 'good' : frameTime <= 33 ? 'warning' : 'error');
+    }
+    
     // ================================
     // DRAWING/RENDERING
     // ================================
