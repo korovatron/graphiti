@@ -1254,9 +1254,22 @@ class Graphiti {
     
     addFunction(expression = '') {
         const id = this.nextFunctionId++;
-        // Count only enabled functions for color assignment
-        const enabledCount = this.getCurrentFunctions().filter(f => f.enabled && f.expression && f.expression.trim() !== '').length;
-        const color = this.functionColors[enabledCount % this.functionColors.length];
+        // Use total function count (including blank) for color assignment
+        const currentFunctions = this.getCurrentFunctions();
+        let colorIndex = currentFunctions.length % this.functionColors.length;
+        let color = this.functionColors[colorIndex];
+        
+        // Check if the function directly above (in the same mode) has the same color
+        // If so, use the next color in the cycle to avoid adjacent duplicates
+        if (currentFunctions.length > 0) {
+            // Get the last function in the current mode
+            const lastFunction = currentFunctions[currentFunctions.length - 1];
+            if (lastFunction.color === color) {
+                // Use next color in cycle
+                colorIndex = (colorIndex + 1) % this.functionColors.length;
+                color = this.functionColors[colorIndex];
+            }
+        }
         
         const func = {
             id: id,
@@ -12387,7 +12400,16 @@ class Graphiti {
             // Add all saved functions without triggering save (to avoid overwriting on mode switch)
             functionsToLoad.forEach(funcData => {
                 const id = this.nextFunctionId++;
-                const color = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+                let color = this.functionColors[this.getCurrentFunctions().length % this.functionColors.length];
+                
+                // Check if the last function has the same color
+                const currentFunctions = this.getCurrentFunctions();
+                if (currentFunctions.length > 0) {
+                    const lastFunction = currentFunctions[currentFunctions.length - 1];
+                    if (lastFunction.color === color) {
+                        color = this.functionColors[(currentFunctions.length + 1) % this.functionColors.length];
+                    }
+                }
                 
                 const func = {
                     id: id,
@@ -12930,7 +12952,15 @@ class Graphiti {
         if (savedData.hasSavedCartesian) {
             savedData.cartesian.forEach(funcData => {
                 const id = this.nextFunctionId++;
-                const color = this.functionColors[this.cartesianFunctions.length % this.functionColors.length];
+                let color = this.functionColors[this.cartesianFunctions.length % this.functionColors.length];
+                
+                // Check if the last function has the same color
+                if (this.cartesianFunctions.length > 0) {
+                    const lastFunction = this.cartesianFunctions[this.cartesianFunctions.length - 1];
+                    if (lastFunction.color === color) {
+                        color = this.functionColors[(this.cartesianFunctions.length + 1) % this.functionColors.length];
+                    }
+                }
                 
                 const func = {
                     id: id,
@@ -12971,7 +13001,15 @@ class Graphiti {
         if (savedData.hasSavedPolar) {
             savedData.polar.forEach(funcData => {
                 const id = this.nextFunctionId++;
-                const color = this.functionColors[this.polarFunctions.length % this.functionColors.length];
+                let color = this.functionColors[this.polarFunctions.length % this.functionColors.length];
+                
+                // Check if the last function has the same color
+                if (this.polarFunctions.length > 0) {
+                    const lastFunction = this.polarFunctions[this.polarFunctions.length - 1];
+                    if (lastFunction.color === color) {
+                        color = this.functionColors[(this.polarFunctions.length + 1) % this.functionColors.length];
+                    }
+                }
                 
                 const func = {
                     id: id,
