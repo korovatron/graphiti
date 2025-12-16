@@ -13086,7 +13086,7 @@ class Graphiti {
         // Clear existing content
         taglineContainer.innerHTML = '';
         
-        const text = 'Interactive Function Graphing';
+        const text = 'Graphs with Attitude';
         const words = text.split(' ');
         
         // White color throughout
