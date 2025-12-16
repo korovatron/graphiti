@@ -8690,6 +8690,64 @@ class Graphiti {
         // Ensure x1 < x2
         if (x1 > x2) [x1, x2] = [x2, x1];
         
+        // Pre-process expression once (including derivative handling)
+        let processedExpression = this.convertFromLatex(func.expression);
+        if (processedExpression.toLowerCase().startsWith('y=')) {
+            processedExpression = processedExpression.substring(2);
+        }
+        processedExpression = processedExpression.toLowerCase();
+        
+        // Handle derivative() - process once before loop
+        while (processedExpression.includes('derivative(')) {
+            try {
+                const derivStart = processedExpression.indexOf('derivative(');
+                if (derivStart !== -1) {
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = derivStart + 'derivative('.length;
+                    let endParen = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        const derivativeResult = math.derivative(expr, variable);
+                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                              '(' + derivativeResult.toString() + ')' + 
+                                              processedExpression.substring(endParen + 1);
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } catch (err) {
+                console.error('[DERIVATIVE] Trapezium rule derivative processing failed:', err.message);
+                return { approximation: 0, strips: [] };
+            }
+        }
+        
+        // Add implicit multiplication and convert to degree mode if needed
+        processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
+        processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
+        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Compile once
+        const compiled = this.getCompiledExpression(processedExpression);
+        
         const h = (x2 - x1) / n; // Width of each strip
         let sum = 0;
         const strips = [];
@@ -8699,9 +8757,16 @@ class Graphiti {
             const xLeft = x1 + i * h;
             const xRight = x1 + (i + 1) * h;
             
-            // Evaluate function at both ends of the strip
-            const yLeft = this.evaluateFunction(func.expression, xLeft);
-            const yRight = this.evaluateFunction(func.expression, xRight);
+            // Evaluate using pre-compiled expression
+            let yLeft, yRight;
+            try {
+                const scopeLeft = this.getEvaluationScope({ x: xLeft });
+                yLeft = compiled.evaluate(scopeLeft);
+                const scopeRight = this.getEvaluationScope({ x: xRight });
+                yRight = compiled.evaluate(scopeRight);
+            } catch (e) {
+                continue;
+            }
             
             // Skip if either evaluation failed
             if (yLeft === null || yRight === null || isNaN(yLeft) || isNaN(yRight)) {
@@ -8735,6 +8800,64 @@ class Graphiti {
         // Ensure x1 < x2
         if (x1 > x2) [x1, x2] = [x2, x1];
         
+        // Pre-process expression once (including derivative handling)
+        let processedExpression = this.convertFromLatex(func.expression);
+        if (processedExpression.toLowerCase().startsWith('y=')) {
+            processedExpression = processedExpression.substring(2);
+        }
+        processedExpression = processedExpression.toLowerCase();
+        
+        // Handle derivative() - process once before loop
+        while (processedExpression.includes('derivative(')) {
+            try {
+                const derivStart = processedExpression.indexOf('derivative(');
+                if (derivStart !== -1) {
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = derivStart + 'derivative('.length;
+                    let endParen = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        const derivativeResult = math.derivative(expr, variable);
+                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                              '(' + derivativeResult.toString() + ')' + 
+                                              processedExpression.substring(endParen + 1);
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } catch (err) {
+                console.error('[DERIVATIVE] Riemann sum derivative processing failed:', err.message);
+                return { approximation: 0, rectangles: [] };
+            }
+        }
+        
+        // Add implicit multiplication and convert to degree mode if needed
+        processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
+        processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
+        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Compile once
+        const compiled = this.getCompiledExpression(processedExpression);
+        
         const h = (x2 - x1) / n; // Width of each rectangle
         let sum = 0;
         const rectangles = [];
@@ -8754,8 +8877,14 @@ class Graphiti {
                 xSample = (xLeft + xRight) / 2;
             }
             
-            // Evaluate function at sample point
-            const yValue = this.evaluateFunction(func.expression, xSample);
+            // Evaluate using pre-compiled expression
+            let yValue;
+            try {
+                const scope = this.getEvaluationScope({ x: xSample });
+                yValue = compiled.evaluate(scope);
+            } catch (e) {
+                continue;
+            }
             
             // Skip if evaluation failed
             if (yValue === null || isNaN(yValue)) {
@@ -8794,6 +8923,64 @@ class Graphiti {
             n = n + 1;
         }
         
+        // Pre-process expression once (including derivative handling)
+        let processedExpression = this.convertFromLatex(func.expression);
+        if (processedExpression.toLowerCase().startsWith('y=')) {
+            processedExpression = processedExpression.substring(2);
+        }
+        processedExpression = processedExpression.toLowerCase();
+        
+        // Handle derivative() - process once before loop
+        while (processedExpression.includes('derivative(')) {
+            try {
+                const derivStart = processedExpression.indexOf('derivative(');
+                if (derivStart !== -1) {
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = derivStart + 'derivative('.length;
+                    let endParen = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        const derivativeResult = math.derivative(expr, variable);
+                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                              '(' + derivativeResult.toString() + ')' + 
+                                              processedExpression.substring(endParen + 1);
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } catch (err) {
+                console.error('[DERIVATIVE] Simpsons rule derivative processing failed:', err.message);
+                return { approximation: 0, strips: [] };
+            }
+        }
+        
+        // Add implicit multiplication and convert to degree mode if needed
+        processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
+        processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
+        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Compile once
+        const compiled = this.getCompiledExpression(processedExpression);
+        
         const h = (x2 - x1) / n; // Width of each strip
         let sum = 0;
         const strips = [];
@@ -8802,7 +8989,13 @@ class Graphiti {
         const points = [];
         for (let i = 0; i <= n; i++) {
             const x = x1 + i * h;
-            const y = this.evaluateFunction(func.expression, x);
+            let y;
+            try {
+                const scope = this.getEvaluationScope({ x: x });
+                y = compiled.evaluate(scope);
+            } catch (e) {
+                return { approximation: 0, strips: [] };
+            }
             if (y === null || isNaN(y)) {
                 // If any point fails, return empty result
                 return { approximation: 0, strips: [] };
@@ -21883,6 +22076,64 @@ class Graphiti {
         
         if (!shapes) return;
         
+        // Pre-process expression once for all evaluations (including derivative handling)
+        let processedExpression = this.convertFromLatex(pair.func.expression);
+        if (processedExpression.toLowerCase().startsWith('y=')) {
+            processedExpression = processedExpression.substring(2);
+        }
+        processedExpression = processedExpression.toLowerCase();
+        
+        // Handle derivative() - process once before all loops
+        while (processedExpression.includes('derivative(')) {
+            try {
+                const derivStart = processedExpression.indexOf('derivative(');
+                if (derivStart !== -1) {
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = derivStart + 'derivative('.length;
+                    let endParen = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        const derivativeResult = math.derivative(expr, variable);
+                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                              '(' + derivativeResult.toString() + ')' + 
+                                              processedExpression.substring(endParen + 1);
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } catch (err) {
+                console.error('[DERIVATIVE] Shape path caching derivative processing failed:', err.message);
+                return;
+            }
+        }
+        
+        // Add implicit multiplication and convert to degree mode if needed
+        processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
+        processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
+        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Compile once for all evaluations
+        const compiled = this.getCompiledExpression(processedExpression);
+        
         pair.cachedShapePaths = {
             errorRegions: [],
             outlines: [],
@@ -21897,12 +22148,17 @@ class Graphiti {
                 const dx = (segment.x2 - segment.x0) / numSamples;
                 const errorPath = [];
                 
-                // Points along curve (forward)
+                // Points along curve (forward) - use pre-compiled expression
                 for (let i = 0; i <= numSamples; i++) {
                     const x = segment.x0 + i * dx;
-                    const y = this.evaluateFunction(pair.func.expression, x);
-                    if (y !== null && !isNaN(y)) {
-                        errorPath.push({x, y});
+                    try {
+                        const scope = this.getEvaluationScope({ x: x });
+                        const y = compiled.evaluate(scope);
+                        if (y !== null && !isNaN(y) && isFinite(y)) {
+                            errorPath.push({x, y});
+                        }
+                    } catch (e) {
+                        // Skip invalid points
                     }
                 }
                 
@@ -21963,12 +22219,17 @@ class Graphiti {
                 
                 errorPath.push({x: rect.xLeft, y: rect.yValue});
                 
-                // Points along curve
+                // Points along curve - use pre-compiled expression
                 for (let i = 0; i <= numSamples; i++) {
                     const x = rect.xLeft + i * dx;
-                    const y = this.evaluateFunction(pair.func.expression, x);
-                    if (y !== null && !isNaN(y)) {
-                        errorPath.push({x, y});
+                    try {
+                        const scope = this.getEvaluationScope({ x: x });
+                        const y = compiled.evaluate(scope);
+                        if (y !== null && !isNaN(y) && isFinite(y)) {
+                            errorPath.push({x, y});
+                        }
+                    } catch (e) {
+                        // Skip invalid points
                     }
                 }
                 
@@ -21997,12 +22258,17 @@ class Graphiti {
                 
                 errorPath.push({x: strip.xLeft, y: strip.yLeft});
                 
-                // Points along curve
+                // Points along curve - use pre-compiled expression
                 for (let i = 0; i <= numSamples; i++) {
                     const x = strip.xLeft + i * dx;
-                    const y = this.evaluateFunction(pair.func.expression, x);
-                    if (y !== null && !isNaN(y)) {
-                        errorPath.push({x, y});
+                    try {
+                        const scope = this.getEvaluationScope({ x: x });
+                        const y = compiled.evaluate(scope);
+                        if (y !== null && !isNaN(y) && isFinite(y)) {
+                            errorPath.push({x, y});
+                        }
+                    } catch (e) {
+                        // Skip invalid points
                     }
                 }
                 
