@@ -8342,6 +8342,72 @@ class Graphiti {
             return this.calculateCartesianIntegralFromPoints(func, x1, x2);
         }
         
+        // Pre-process expression once to avoid repeating expensive derivative processing
+        let processedExpression = this.convertFromLatex(func.expression);
+        
+        // Handle explicit inequalities: extract the right side (boundary function)
+        if (/^y\s*[><≥≤]/.test(processedExpression)) {
+            const match = processedExpression.match(/^y\s*[><≥≤]\s*(.+)$/);
+            if (match) {
+                processedExpression = match[1].trim();
+            }
+        } else if (processedExpression.toLowerCase().startsWith('y=')) {
+            processedExpression = processedExpression.substring(2);
+        }
+        
+        processedExpression = processedExpression.toLowerCase();
+        
+        // Handle derivative() - process once before the loop
+        while (processedExpression.includes('derivative(')) {
+            const derivStart = processedExpression.indexOf('derivative(');
+            if (derivStart !== -1) {
+                let depth = 0;
+                let lastCommaPos = -1;
+                const start = derivStart + 'derivative('.length;
+                let endParen = -1;
+                
+                for (let i = start; i < processedExpression.length; i++) {
+                    if (processedExpression[i] === '(') depth++;
+                    else if (processedExpression[i] === ')') {
+                        if (depth === 0) {
+                            endParen = i;
+                            break;
+                        }
+                        depth--;
+                    }
+                    else if (processedExpression[i] === ',' && depth === 0) {
+                        lastCommaPos = i;
+                    }
+                }
+                
+                if (lastCommaPos !== -1 && endParen !== -1) {
+                    const expr = processedExpression.substring(start, lastCommaPos).trim();
+                    const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                    
+                    const derivativeResult = math.derivative(expr, variable);
+                    processedExpression = processedExpression.substring(0, derivStart) + 
+                                          '(' + derivativeResult.toString() + ')' + 
+                                          processedExpression.substring(endParen + 1);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // Handle degree mode
+        if (this.angleMode === 'degrees') {
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            if (hasRegularTrigWithX) {
+                processedExpression = this.convertTrigToDegreeMode(processedExpression);
+            }
+        }
+        
+        // Compile once for efficiency
+        const compiledExpression = this.getCompiledExpression(processedExpression);
+        const scope = this.getEvaluationScope({});
+        
         // For explicit functions, use formula-based calculation with n=1000 for high accuracy
         const n = 1000;
         const h = (x2 - x1) / n;
@@ -8351,11 +8417,14 @@ class Graphiti {
             const xLeft = x1 + i * h;
             const xRight = x1 + (i + 1) * h;
             
-            const yLeft = this.evaluateFunction(func.expression, xLeft);
-            const yRight = this.evaluateFunction(func.expression, xRight);
+            // Evaluate using pre-compiled expression
+            scope.x = xLeft;
+            const yLeft = compiledExpression.evaluate(scope);
+            scope.x = xRight;
+            const yRight = compiledExpression.evaluate(scope);
             
             // Skip if either evaluation failed
-            if (yLeft === null || yRight === null || isNaN(yLeft) || isNaN(yRight)) {
+            if (yLeft === null || yRight === null || isNaN(yLeft) || isNaN(yRight) || !isFinite(yLeft) || !isFinite(yRight)) {
                 continue;
             }
             
@@ -14136,6 +14205,54 @@ class Graphiti {
             // Simply convert the entire expression to lowercase
             processedExpression = processedExpression.toLowerCase();
             
+            // Handle derivative() - extract and compute symbolically using math.derivative()
+            // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+            while (processedExpression.includes('derivative(')) {
+                try {
+                    const derivStart = processedExpression.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break;
+                                }
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1 && endParen !== -1) {
+                            const expr = processedExpression.substring(start, lastCommaPos).trim();
+                            const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // Compute derivative using math.derivative()
+                            const derivativeResult = math.derivative(expr, variable);
+                            
+                            // Replace only the derivative() call with its result, preserving surrounding expression
+                            processedExpression = processedExpression.substring(0, derivStart) + 
+                                                  '(' + derivativeResult.toString() + ')' + 
+                                                  processedExpression.substring(endParen + 1);
+                        } else {
+                            break; // Invalid format, stop processing
+                        }
+                    } else {
+                        break;
+                    }
+                } catch (err) {
+                    // If derivative computation fails, return NaN
+                    return NaN;
+                }
+            }
+            
             // Handle degree mode by preprocessing the expression
             if (this.angleMode === 'degrees') {
                 // Check if THIS specific expression contains regular trig functions
@@ -17127,7 +17244,50 @@ class Graphiti {
             try {
                 let processedExpression = cleanExpression.toLowerCase();
                 
-                // Handle degree mode for trig functions - convert BEFORE taking derivative
+                // Handle derivative() - extract and compute symbolically first
+                // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                while (processedExpression.includes('derivative(')) {
+                    const derivStart = processedExpression.indexOf('derivative(');
+                    if (derivStart !== -1) {
+                        let depth = 0;
+                        let lastCommaPos = -1;
+                        const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
+                        
+                        for (let i = start; i < processedExpression.length; i++) {
+                            if (processedExpression[i] === '(') depth++;
+                            else if (processedExpression[i] === ')') {
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break;
+                                }
+                                depth--;
+                            }
+                            else if (processedExpression[i] === ',' && depth === 0) {
+                                lastCommaPos = i;
+                            }
+                        }
+                        
+                        if (lastCommaPos !== -1 && endParen !== -1) {
+                            const expr = processedExpression.substring(start, lastCommaPos).trim();
+                            const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            
+                            // Compute derivative using math.derivative()
+                            const derivativeResult = math.derivative(expr, variable);
+                            
+                            // Replace only the derivative() call with its result, preserving surrounding expression
+                            processedExpression = processedExpression.substring(0, derivStart) + 
+                                                  '(' + derivativeResult.toString() + ')' + 
+                                                  processedExpression.substring(endParen + 1);
+                        } else {
+                            break; // Invalid format, stop processing
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Handle degree mode for trig functions - convert AFTER processing derivatives
                 let degreeConversionApplied = false;
                 if (this.angleMode === 'degrees') {
                     const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
