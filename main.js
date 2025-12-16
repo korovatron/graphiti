@@ -3653,13 +3653,14 @@ class Graphiti {
                     
                     // Check if point is within reasonable bounds
                     if (isFinite(x) && isFinite(y)) {
-                        points.push({ x, y, connected: true });
+                        // Store original theta (from loop, before adjustments) for integral shading
+                        points.push({ x, y, connected: true, theta: theta });
                     } else {
-                        points.push({ x: NaN, y: NaN, connected: false });
+                        points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                     }
                 } catch (e) {
                     // Skip points that can't be evaluated
-                    points.push({ x: NaN, y: NaN, connected: false });
+                    points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                 }
             }
             
@@ -3735,7 +3736,7 @@ class Graphiti {
                         points.push({ x: NaN, y: NaN, connected: false });
                     }
                 } catch (e) {
-                    points.push({ x: NaN, y: NaN, connected: false });
+                    points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                 }
             }
             
@@ -3813,12 +3814,12 @@ class Graphiti {
                     const y = r * Math.sin(adjustedThetaForEval);
                     
                     if (isFinite(x) && isFinite(y)) {
-                        points.push({ x, y, connected: true });
+                        points.push({ x, y, connected: true, theta: theta });
                     } else {
-                        points.push({ x: NaN, y: NaN, connected: false });
+                        points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                     }
                 } catch (e) {
-                    points.push({ x: NaN, y: NaN, connected: false });
+                    points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                 }
             }
             
@@ -3882,7 +3883,7 @@ class Graphiti {
                 const r = (i / (numPoints - 1)) * maxViewportRadius;
                 const x = r * Math.cos(thetaRad);
                 const y = r * Math.sin(thetaRad);
-                points.push({ x, y, connected: true });
+                points.push({ x, y, connected: true, theta: thetaValue });
             }
             
             func.points = points;
@@ -18709,7 +18710,68 @@ class Graphiti {
                 // Use pre-compiled boundary expression for inequalities
                 compiled = func.inequality.compiledExpression;
             } else {
-                const processedExpression = this.convertFromLatex(func.expression);
+                let processedExpression = this.convertFromLatex(func.expression).trim();
+                if (processedExpression.toLowerCase().startsWith('r=')) {
+                    processedExpression = processedExpression.substring(2).trim();
+                }
+                processedExpression = processedExpression.toLowerCase();
+                
+                // Handle derivative() - extract and compute symbolically using math.derivative()
+                while (processedExpression.includes('derivative(')) {
+                    try {
+                        const derivStart = processedExpression.indexOf('derivative(');
+                        if (derivStart !== -1) {
+                            let depth = 0;
+                            let lastCommaPos = -1;
+                            const start = derivStart + 'derivative('.length;
+                            let endParen = -1;
+                            
+                            for (let i = start; i < processedExpression.length; i++) {
+                                if (processedExpression[i] === '(') depth++;
+                                else if (processedExpression[i] === ')') {
+                                    if (depth === 0) {
+                                        endParen = i;
+                                        break;
+                                    }
+                                    depth--;
+                                }
+                                else if (processedExpression[i] === ',' && depth === 0) {
+                                    lastCommaPos = i;
+                                }
+                            }
+                            
+                            if (lastCommaPos !== -1 && endParen !== -1) {
+                                const expr = processedExpression.substring(start, lastCommaPos).trim();
+                                let variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                                
+                                // In polar mode, \theta is converted to 't', so if variable is 'theta', use 't'
+                                if (variable === 'theta') {
+                                    variable = 't';
+                                }
+                                
+                                // Compute derivative using math.derivative()
+                                const derivativeResult = math.derivative(expr, variable);
+                                
+                                // Replace only the derivative() call with its result
+                                processedExpression = processedExpression.substring(0, derivStart) + 
+                                                      '(' + derivativeResult.toString() + ')' + 
+                                                      processedExpression.substring(endParen + 1);
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    } catch (err) {
+                        console.error('[DERIVATIVE] Polar trace symbolic evaluation failed:', err.message);
+                        return null;
+                    }
+                }
+                
+                // Add implicit multiplication
+                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+                
                 compiled = math.compile(processedExpression);
             }
             
@@ -22267,15 +22329,38 @@ class Graphiti {
         const getPointsWithTheta = (func, start, end) => {
             return func.points.filter(p => {
                 if (isNaN(p.x) || isNaN(p.y)) return false;
-                let theta = Math.atan2(p.y, p.x);
-                while (theta < 0) theta += 2 * Math.PI;
-                while (theta > 2 * Math.PI) theta -= 2 * Math.PI;
-                return theta >= start && theta <= end;
+                
+                // Use stored theta if available, otherwise calculate from x, y
+                let theta = p.theta;
+                if (theta === undefined || theta === null) {
+                    theta = Math.atan2(p.y, p.x);
+                }
+                
+                // Convert theta to radians if in degree mode (for comparison with start/end)
+                const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                
+                // Normalize to [0, 2π]
+                let normalizedTheta = thetaRad;
+                while (normalizedTheta < 0) normalizedTheta += 2 * Math.PI;
+                while (normalizedTheta > 2 * Math.PI) normalizedTheta -= 2 * Math.PI;
+                
+                return normalizedTheta >= start && normalizedTheta <= end;
             }).map(p => {
-                let theta = Math.atan2(p.y, p.x);
-                while (theta < 0) theta += 2 * Math.PI;
-                while (theta > 2 * Math.PI) theta -= 2 * Math.PI;
-                return { x: p.x, y: p.y, theta };
+                // Use stored theta if available, otherwise calculate from x, y
+                let theta = p.theta;
+                if (theta === undefined || theta === null) {
+                    theta = Math.atan2(p.y, p.x);
+                }
+                
+                // Convert theta to radians if in degree mode
+                const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                
+                // Normalize to [0, 2π]
+                let normalizedTheta = thetaRad;
+                while (normalizedTheta < 0) normalizedTheta += 2 * Math.PI;
+                while (normalizedTheta > 2 * Math.PI) normalizedTheta -= 2 * Math.PI;
+                
+                return { x: p.x, y: p.y, theta: normalizedTheta };
             }).sort((a, b) => a.theta - b.theta);
         };
         
@@ -22617,18 +22702,27 @@ class Graphiti {
         // Get points within theta range
         const relevantPoints = [];
         for (const p of func.points) {
-            let theta = Math.atan2(p.y, p.x);
+            // Use stored theta value if available, otherwise calculate from x, y
+            let theta = p.theta;
+            if (theta === undefined || theta === null) {
+                theta = Math.atan2(p.y, p.x);
+            }
+            
+            // Convert theta to radians if in degree mode (for comparison with pair.start/end)
+            const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+            
             // Normalize theta to [0, 2π]
-            while (theta < 0) theta += 2 * Math.PI;
-            while (theta > 2 * Math.PI) theta -= 2 * Math.PI;
+            let normalizedTheta = thetaRad;
+            while (normalizedTheta < 0) normalizedTheta += 2 * Math.PI;
+            while (normalizedTheta > 2 * Math.PI) normalizedTheta -= 2 * Math.PI;
             
             let start = pair.start;
             let end = pair.end;
             while (start < 0) start += 2 * Math.PI;
             while (end < 0) end += 2 * Math.PI;
             
-            if (theta >= start && theta <= end) {
-                relevantPoints.push({ x: p.x, y: p.y, theta });
+            if (normalizedTheta >= start && normalizedTheta <= end) {
+                relevantPoints.push({ x: p.x, y: p.y, theta: normalizedTheta });
             }
         }
         
