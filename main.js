@@ -16332,17 +16332,22 @@ class Graphiti {
                             let processedExpression = cleanExpression.toLowerCase();
                             
                             // If expression contains derivative(), compute it symbolically first
-                            if (processedExpression.includes('derivative(')) {
+                            // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                            while (processedExpression.includes('derivative(')) {
                                 try {
                                     const derivStart = processedExpression.indexOf('derivative(');
                                     let depth = 0;
                                     let lastCommaPos = -1;
                                     const start = derivStart + 'derivative('.length;
+                                    let endParen = -1;
                                     
                                     for (let i = start; i < processedExpression.length; i++) {
                                         if (processedExpression[i] === '(') depth++;
                                         else if (processedExpression[i] === ')') {
-                                            if (depth === 0) break;
+                                            if (depth === 0) {
+                                                endParen = i;
+                                                break;
+                                            }
                                             depth--;
                                         }
                                         else if (processedExpression[i] === ',' && depth === 0) {
@@ -16350,13 +16355,18 @@ class Graphiti {
                                         }
                                     }
                                     
-                                    if (lastCommaPos !== -1) {
+                                    if (lastCommaPos !== -1 && endParen !== -1) {
                                         const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
-                                        const endParen = processedExpression.indexOf(')', lastCommaPos);
                                         const derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                                         
                                         const derivativeResult = math.derivative(derivExpr, derivVariable);
-                                        processedExpression = derivativeResult.toString();
+                                        
+                                        // Replace only the derivative() call with its result, preserving surrounding expression
+                                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                                              '(' + derivativeResult.toString() + ')' + 
+                                                              processedExpression.substring(endParen + 1);
+                                    } else {
+                                        break; // Invalid format, stop processing
                                     }
                                 } catch (err) {
                                     console.warn('Could not compute derivative for turning points:', err);
@@ -16428,17 +16438,22 @@ class Graphiti {
                 let processedExpression = cleanExpression.toLowerCase();
                 
                 // If expression contains derivative(), compute it symbolically first
-                if (processedExpression.includes('derivative(')) {
+                // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                while (processedExpression.includes('derivative(')) {
                     try {
                         const derivStart = processedExpression.indexOf('derivative(');
                         let depth = 0;
                         let lastCommaPos = -1;
                         const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
                         
                         for (let i = start; i < processedExpression.length; i++) {
                             if (processedExpression[i] === '(') depth++;
                             else if (processedExpression[i] === ')') {
-                                if (depth === 0) break;
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break;
+                                }
                                 depth--;
                             }
                             else if (processedExpression[i] === ',' && depth === 0) {
@@ -16446,17 +16461,22 @@ class Graphiti {
                             }
                         }
                         
-                        if (lastCommaPos !== -1) {
+                        if (lastCommaPos !== -1 && endParen !== -1) {
                             const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
-                            const endParen = processedExpression.indexOf(')', lastCommaPos);
                             const derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                             
                             const derivativeResult = math.derivative(derivExpr, derivVariable);
-                            processedExpression = derivativeResult.toString();
+                            
+                            // Replace only the derivative() call with its result, preserving surrounding expression
+                            processedExpression = processedExpression.substring(0, derivStart) + 
+                                                  '(' + derivativeResult.toString() + ')' + 
+                                                  processedExpression.substring(endParen + 1);
+                        } else {
+                            break; // Invalid format, stop processing
                         }
                     } catch (err) {
                         console.warn('Could not compute derivative for turning points:', err);
-                        continue;
+                        break;
                     }
                 }
                 
