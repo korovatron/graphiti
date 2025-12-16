@@ -2677,17 +2677,22 @@ class Graphiti {
                         }
                         
                         // Handle derivative() for polar mode
-                        if (processedExpression.toLowerCase().includes('derivative(')) {
+                        // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                        while (processedExpression.toLowerCase().includes('derivative(')) {
                             const derivStart = processedExpression.toLowerCase().indexOf('derivative(');
                             if (derivStart !== -1) {
                                 let depth = 0;
                                 let lastCommaPos = -1;
                                 const start = derivStart + 'derivative('.length;
+                                let endParen = -1;
                                 
                                 for (let i = start; i < processedExpression.length; i++) {
                                     if (processedExpression[i] === '(') depth++;
                                     else if (processedExpression[i] === ')') {
-                                        if (depth === 0) break;
+                                        if (depth === 0) {
+                                            endParen = i;
+                                            break;
+                                        }
                                         depth--;
                                     }
                                     else if (processedExpression[i] === ',' && depth === 0) {
@@ -2695,15 +2700,22 @@ class Graphiti {
                                     }
                                 }
                                 
-                                if (lastCommaPos !== -1) {
+                                if (lastCommaPos !== -1 && endParen !== -1) {
                                     const expr = processedExpression.substring(start, lastCommaPos).trim();
-                                    const endParen = processedExpression.indexOf(')', lastCommaPos);
                                     const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                                     
                                     // Compute derivative symbolically
                                     const symbolicResult = math.derivative(expr, variable);
-                                    processedExpression = symbolicResult.toString();
+                                    
+                                    // Replace only the derivative() call with its result, preserving surrounding expression
+                                    processedExpression = processedExpression.substring(0, derivStart) + 
+                                                          '(' + symbolicResult.toString() + ')' + 
+                                                          processedExpression.substring(endParen + 1);
+                                } else {
+                                    break; // Invalid format, stop processing
                                 }
+                            } else {
+                                break;
                             }
                         }
                         
@@ -3312,7 +3324,8 @@ class Graphiti {
             processedExpression = processedExpression.toLowerCase();
             
             // Handle derivative() - extract and compute symbolically using math.derivative()
-            if (processedExpression.includes('derivative(')) {
+            // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+            while (processedExpression.includes('derivative(')) {
                 try {
                     // Extract the expression and variable from derivative(expr, var)
                     // Find the last comma to split expression and variable (handles nested commas)
@@ -3321,11 +3334,15 @@ class Graphiti {
                         let depth = 0;
                         let lastCommaPos = -1;
                         const start = derivStart + 'derivative('.length;
+                        let endParen = -1;
                         
                         for (let i = start; i < processedExpression.length; i++) {
                             if (processedExpression[i] === '(') depth++;
                             else if (processedExpression[i] === ')') {
-                                if (depth === 0) break; // End of derivative call
+                                if (depth === 0) {
+                                    endParen = i;
+                                    break; // End of derivative call
+                                }
                                 depth--;
                             }
                             else if (processedExpression[i] === ',' && depth === 0) {
@@ -3333,16 +3350,19 @@ class Graphiti {
                             }
                         }
                         
-                        if (lastCommaPos !== -1) {
+                        if (lastCommaPos !== -1 && endParen !== -1) {
                             const expr = processedExpression.substring(start, lastCommaPos).trim();
-                            const endParen = processedExpression.indexOf(')', lastCommaPos);
                             const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                             
                             // Compute derivative using math.derivative()
                             const derivativeResult = math.derivative(expr, variable);
-                            processedExpression = derivativeResult.toString();
+                            
+                            // Replace only the derivative() call with its result, preserving surrounding expression
+                            processedExpression = processedExpression.substring(0, derivStart) + 
+                                                  '(' + derivativeResult.toString() + ')' + 
+                                                  processedExpression.substring(endParen + 1);
                         } else {
-                            throw new Error('Invalid derivative format - missing comma');
+                            throw new Error('Invalid derivative format - missing comma or closing parenthesis');
                         }
                     } else {
                         throw new Error('Invalid derivative format');
