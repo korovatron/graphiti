@@ -17166,8 +17166,49 @@ class Graphiti {
                 
                 let type = 'inflection'; // fallback
                 
-                if (Math.abs(secondDerivValue) > 1e-10) { // avoid numerical noise
+                // If second derivative is finite and non-zero, use it
+                if (isFinite(secondDerivValue) && Math.abs(secondDerivValue) > 1e-10) {
                     type = secondDerivValue > 0 ? 'minimum' : 'maximum';
+                } else if (!isFinite(secondDerivValue)) {
+                    // Fallback: check sign of first derivative on either side of the root
+                    console.log(`[DEBUG findTurningPointsForFunction] Second derivative is NaN/infinite, using first derivative sign test`);
+                    const epsilon = 0.0001; // Small step for testing
+                    
+                    try {
+                        let leftDerivValue, rightDerivValue;
+                        
+                        if (this.angleMode === 'degrees') {
+                            let processedDerivExpr = derivativeStr;
+                            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedDerivExpr);
+                            if (hasRegularTrigWithX) {
+                                processedDerivExpr = this.convertTrigToDegreeMode(processedDerivExpr);
+                            }
+                            const compiledDeriv = this.getCompiledExpression(processedDerivExpr);
+                            leftDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x - epsilon}));
+                            rightDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x + epsilon}));
+                        } else {
+                            const compiledDeriv = this.getCompiledExpression(derivativeStr);
+                            leftDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x - epsilon}));
+                            rightDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x + epsilon}));
+                        }
+                        
+                        console.log(`[DEBUG findTurningPointsForFunction] f'(${x - epsilon}) = ${leftDerivValue}, f'(${x + epsilon}) = ${rightDerivValue}`);
+                        
+                        // Determine type based on sign change
+                        if (leftDerivValue < 0 && rightDerivValue > 0) {
+                            type = 'minimum'; // derivative changes from - to +
+                            console.log(`[DEBUG findTurningPointsForFunction] First derivative test: minimum (- to +)`);
+                        } else if (leftDerivValue > 0 && rightDerivValue < 0) {
+                            type = 'maximum'; // derivative changes from + to -
+                            console.log(`[DEBUG findTurningPointsForFunction] First derivative test: maximum (+ to -)`);
+                        } else {
+                            type = 'inflection'; // no clear sign change or both same sign
+                            console.log(`[DEBUG findTurningPointsForFunction] First derivative test: inflection (no sign change)`);
+                        }
+                    } catch (error) {
+                        console.log(`[DEBUG findTurningPointsForFunction] First derivative sign test failed: ${error.message}`);
+                        type = 'inflection'; // fallback on error
+                    }
                 }
                 console.log(`[DEBUG findTurningPointsForFunction] Classified as: ${type}`);
                 
