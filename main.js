@@ -17114,16 +17114,19 @@ class Graphiti {
         
         for (const x of roots) {
             try {
+                console.log(`[DEBUG findTurningPointsForFunction] Processing root x=${x}, angleMode=${this.angleMode}`);
                 // Calculate y value at this x
                 // If processedExpression is provided (e.g., for derivative functions), use it
                 // Otherwise use the original func.expression
                 let y;
                 if (processedExpression) {
+                    console.log(`[DEBUG findTurningPointsForFunction] Using processedExpression: ${processedExpression}`);
                     // Evaluate the processed expression with proper degree mode handling
                     let processedExprForEval = processedExpression;
                     if (this.angleMode === 'degrees') {
                         // Apply same preprocessing as evaluateFunction for degree mode
                         const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExprForEval);
+                        console.log(`[DEBUG findTurningPointsForFunction] hasRegularTrigWithX for y: ${hasRegularTrigWithX}`);
                         
                         if (hasRegularTrigWithX) {
                             processedExprForEval = this.convertTrigToDegreeMode(processedExprForEval);
@@ -17131,17 +17134,23 @@ class Graphiti {
                     }
                     const compiledExpr = this.getCompiledExpression(processedExprForEval);
                     y = compiledExpr.evaluate(this.getEvaluationScope({x: x}));
+                    console.log(`[DEBUG findTurningPointsForFunction] Evaluated y = ${y}`);
                 } else {
+                    console.log(`[DEBUG findTurningPointsForFunction] Using func.expression: ${func.expression}`);
                     // Use same approach as evaluateFunction
                     y = this.evaluateFunction(func.expression, x);
+                    console.log(`[DEBUG findTurningPointsForFunction] Evaluated y = ${y}`);
                 }
                 
                 // Classify using second derivative test (also needs degree handling)
                 let secondDerivValue;
+                console.log(`[DEBUG findTurningPointsForFunction] Evaluating second derivative at x=${x}`);
                 if (this.angleMode === 'degrees') {
                     // Apply same preprocessing as evaluateFunction for degree mode
-                    let processedSecondDerivExpr = secondDerivativeStr.toLowerCase();
+                    // Don't lowercase to avoid converting NaN → nan (which math.js can't parse)
+                    let processedSecondDerivExpr = secondDerivativeStr;
                     const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedSecondDerivExpr);
+                    console.log(`[DEBUG findTurningPointsForFunction] hasRegularTrigWithX for 2nd deriv: ${hasRegularTrigWithX}`);
                     
                     if (hasRegularTrigWithX) {
                         processedSecondDerivExpr = this.convertTrigToDegreeMode(processedSecondDerivExpr);
@@ -17153,15 +17162,18 @@ class Graphiti {
                     const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
                     secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: x}));
                 }
+                console.log(`[DEBUG findTurningPointsForFunction] secondDerivValue = ${secondDerivValue}`);
                 
                 let type = 'inflection'; // fallback
                 
                 if (Math.abs(secondDerivValue) > 1e-10) { // avoid numerical noise
                     type = secondDerivValue > 0 ? 'minimum' : 'maximum';
                 }
+                console.log(`[DEBUG findTurningPointsForFunction] Classified as: ${type}`);
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
                 if (isFinite(x) && isFinite(y)) {
+                    console.log(`[DEBUG findTurningPointsForFunction] Point is finite, adding to array`);
                     // Snap very close points to exactly origin
                     let snappedX = x;
                     let snappedY = y;
@@ -17176,12 +17188,17 @@ class Graphiti {
                         derivative: derivativeStr,
                         secondDerivative: secondDerivativeStr
                     });
+                    console.log(`[DEBUG findTurningPointsForFunction] Added turning point: (${snappedX}, ${snappedY}) type=${type}`);
+                } else {
+                    console.log(`[DEBUG findTurningPointsForFunction] Point rejected - not finite: x=${x} y=${y}`);
                 }
             } catch (error) {
                 // Skip this root if evaluation fails
+                console.log(`[DEBUG findTurningPointsForFunction] Error evaluating root x=${x}: ${error.message}`);
                 continue;
             }
         }
+        console.log(`[DEBUG findTurningPointsForFunction] Returning ${turningPoints.length} turning points`);
         
         return turningPoints;
     }
@@ -18251,6 +18268,8 @@ class Graphiti {
         const maxRootsToSearch = 100; // Maximum to search for (prevent infinite loops)
         const stepSize = (xMax - xMin) / steps;
         
+        console.log('[DEBUG findRootsInRange] angleMode:', this.angleMode, 'expression:', expression, 'xMin:', xMin, 'xMax:', xMax);
+        
         // Helper function to evaluate derivative expression with same degree handling as evaluateFunction
         const evaluateDerivative = (expr, xValue) => {
             // Apply the same preprocessing as evaluateFunction for degree mode
@@ -18259,6 +18278,8 @@ class Graphiti {
             if (this.angleMode === 'degrees') {
                 // Check if this derivative expression contains regular trig functions
                 const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpr);
+                
+                console.log('[DEBUG evaluateDerivative] angleMode=degrees, hasRegularTrigWithX:', hasRegularTrigWithX, 'expr:', expr);
                 
                 if (hasRegularTrigWithX) {
                     // Preprocess the expression to wrap trig function arguments with degree conversion
@@ -18300,8 +18321,10 @@ class Graphiti {
         
         try {
             prevValue = evaluateDerivative(expression, prevX);
-        } catch {
+            console.log('[DEBUG findRootsInRange] Initial evaluation at x =', prevX, '-> value =', prevValue);
+        } catch (e) {
             prevValue = NaN;
+            console.log('[DEBUG findRootsInRange] Initial evaluation FAILED at x =', prevX, 'error:', e.message);
         }
         
         for (let i = 1; i <= steps; i++) {
@@ -18313,7 +18336,13 @@ class Graphiti {
             
             try {
                 currentValue = evaluateDerivative(expression, currentX);
-            } catch {
+                
+                // Log first few evaluations
+                if (i <= 5 || (i >= steps/2 - 2 && i <= steps/2 + 2)) {
+                    console.log('[DEBUG findRootsInRange] x =', currentX.toFixed(4), '-> value =', currentValue);
+                }
+            } catch (e) {
+                console.log('[DEBUG findRootsInRange] Evaluation FAILED at x =', currentX, 'error:', e.message);
                 currentValue = NaN;
             }
             
@@ -18321,16 +18350,21 @@ class Graphiti {
             if (isFinite(prevValue) && isFinite(currentValue) && 
                 prevValue * currentValue < 0) {
                 
+                console.log('[DEBUG findRootsInRange] SIGN CHANGE DETECTED between x =', prevX, 'and x =', currentX);
+                
                 // Use bisection method to refine the root
                 const root = this.bisectionMethodForTurningPoints(expression, prevX, currentX);
                 if (root !== null && !roots.some(r => Math.abs(r - root) < 1e-6)) {
                     roots.push(root);
+                    console.log('[DEBUG findRootsInRange] Root refined to:', root);
                 }
             }
             
             prevX = currentX;
             prevValue = currentValue;
         }
+        
+        console.log('[DEBUG findRootsInRange] Total roots found:', roots.length, roots);
         
         // Return evenly spaced selection from all found roots
         return this.selectEvenlySpaced(roots.map(r => ({x: r})), maxRootsToDisplay).map(item => item.x);
