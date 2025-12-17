@@ -17570,6 +17570,10 @@ class Graphiti {
             return null;
         }
         
+        // Create a clean math.js instance for symbolic differentiation
+        // The global math instance has pow overridden which breaks symbolic differentiation
+        const cleanMath = math.create(math.all);
+        
         // Check if this is a polar function
         if (this.plotMode === 'polar' && theta !== null && theta !== undefined) {
             return this.calculatePolarSlope(func, theta, worldX, worldY);
@@ -17662,47 +17666,119 @@ class Graphiti {
                     }
                 }
                 
-                // FIX: Parse the expression first to ensure clean derivative calculation
-                const parsedExpression = math.parse(processedExpression);
-                const derivative = math.derivative(parsedExpression, 'x');
+                // Use clean math instance for symbolic differentiation
+                const parsedExpression = cleanMath.parse(processedExpression);
+                const derivative = cleanMath.derivative(parsedExpression, 'x');
                 const derivativeStr = derivative.toString();
                 
-                // Evaluate the first derivative at the given x value
-                const compiledDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
-                const slope = compiledDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
+                // Check if first derivative has NaN - if so, use numerical first derivative
+                let slope;
+                let useNumericalFirstDeriv = false;
                 
-                // Calculate second derivative using numerical method
-                // Note: Math.js has a bug with symbolic second derivatives for certain expressions,
-                // producing NaN in the result. Numerical method is more reliable.
-                let secondDerivValue = null;
-                try {
-                    // Five-point stencil method for numerical second derivative
-                    // Formula: f''(x) ≈ [-f(x+2h) + 16f(x+h) - 30f(x) + 16f(x-h) - f(x-2h)] / (12h²)
-                    // This is O(h^4) accurate - very precise
+                if (/\bNaN\b/i.test(derivativeStr)) {
+                    useNumericalFirstDeriv = true;
+                    
+                    // Numerical first derivative using central difference
                     const h = 0.0001;
-                    const scope = this.getEvaluationScope({});
-                    
-                    // Evaluate first derivative at five points
-                    const compiledFirstDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
-                    scope.x = worldX - 2*h;
-                    const fMinus2 = compiledFirstDeriv.evaluate(scope);
-                    scope.x = worldX - h;
-                    const fMinus1 = compiledFirstDeriv.evaluate(scope);
-                    scope.x = worldX;
-                    const f0 = compiledFirstDeriv.evaluate(scope);
-                    scope.x = worldX + h;
-                    const fPlus1 = compiledFirstDeriv.evaluate(scope);
-                    scope.x = worldX + 2*h;
-                    const fPlus2 = compiledFirstDeriv.evaluate(scope);
-                    
-                    // Five-point stencil formula
-                    secondDerivValue = (-fPlus2 + 16*fPlus1 - 30*f0 + 16*fMinus1 - fMinus2) / (12 * h * h);
-                    
-                    if (!isFinite(secondDerivValue)) {
+                    const compiledFunc = this.getCompiledExpression(processedExpression);
+                    const fPlus = compiledFunc.evaluate(this.getEvaluationScope({x: worldX + h, pi: Math.PI, e: Math.E}));
+                    const fMinus = compiledFunc.evaluate(this.getEvaluationScope({x: worldX - h, pi: Math.PI, e: Math.E}));
+                    slope = (fPlus - fMinus) / (2 * h);
+                } else {
+                    // Evaluate the first derivative at the given x value
+                    const compiledDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
+                    slope = compiledDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
+                }
+                
+                // Calculate second derivative
+                let secondDerivValue = null;
+                
+                // If first derivative has NaN, must use numerical for second derivative too
+                if (useNumericalFirstDeriv) {
+                    console.log('⚠️ Using numerical method for 2nd derivative (1st deriv has NaN)');
+                    try {
+                        // Numerical second derivative on the original function
+                        const h = 0.0001;
+                        const compiledFunc = this.getCompiledExpression(processedExpression);
+                        const scope = this.getEvaluationScope({pi: Math.PI, e: Math.E});
+                        
+                        scope.x = worldX - 2*h;
+                        const fMinus2 = compiledFunc.evaluate(scope);
+                        scope.x = worldX - h;
+                        const fMinus1 = compiledFunc.evaluate(scope);
+                        scope.x = worldX;
+                        const f0 = compiledFunc.evaluate(scope);
+                        scope.x = worldX + h;
+                        const fPlus1 = compiledFunc.evaluate(scope);
+                        scope.x = worldX + 2*h;
+                        const fPlus2 = compiledFunc.evaluate(scope);
+                        
+                        secondDerivValue = (-fPlus2 + 16*fPlus1 - 30*f0 + 16*fMinus1 - fMinus2) / (12 * h * h);
+                        
+                        if (!isFinite(secondDerivValue)) {
+                            secondDerivValue = null;
+                        }
+                    } catch (error) {
                         secondDerivValue = null;
                     }
-                } catch (numericalError) {
-                    secondDerivValue = null;
+                } else {
+                    // Try symbolic second derivative
+                    let symbolicWorked = false;
+                    try {
+                        const secondDerivSymbolic = cleanMath.derivative(derivative, 'x');
+                        const secondDerivStr = secondDerivSymbolic.toString();
+                        
+                        if (!/\bNaN\b/i.test(secondDerivStr)) {
+                            const secondDerivLower = secondDerivStr.toLowerCase()
+                                .replace(/\bnan\b/gi, 'NaN')
+                                .replace(/\binfinity\b/gi, 'Infinity');
+                            const compiledSecondDeriv = this.getCompiledExpression(secondDerivLower);
+                            secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
+                            
+                            if (isFinite(secondDerivValue)) {
+                                symbolicWorked = true;
+                            } else {
+                                throw new Error('Not finite');
+                            }
+                        } else {
+                            throw new Error('Contains NaN');
+                        }
+                    } catch (symbolicError) {
+                        // Symbolic differentiation failed, will use numerical method
+                    }
+                    
+                    // Use numerical if symbolic failed
+                    if (!symbolicWorked) {
+                        try {
+                            // Five-point stencil method for numerical second derivative
+                            // Formula: f''(x) ≈ [-f(x+2h) + 16f(x+h) - 30f(x) + 16f(x-h) - f(x-2h)] / (12h²)
+                            // This is O(h^4) accurate - very precise
+                            const h = 0.0001;
+                            const scope = this.getEvaluationScope({});
+                            
+                            // Evaluate first derivative at five points
+                            const compiledFirstDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
+                            scope.x = worldX - 2*h;
+                            const fMinus2 = compiledFirstDeriv.evaluate(scope);
+                            scope.x = worldX - h;
+                            const fMinus1 = compiledFirstDeriv.evaluate(scope);
+                            scope.x = worldX;
+                            const f0 = compiledFirstDeriv.evaluate(scope);
+                            scope.x = worldX + h;
+                            const fPlus1 = compiledFirstDeriv.evaluate(scope);
+                            scope.x = worldX + 2*h;
+                            const fPlus2 = compiledFirstDeriv.evaluate(scope);
+                            
+                            // Five-point stencil formula
+                            secondDerivValue = (-fPlus2 + 16*fPlus1 - 30*f0 + 16*fMinus1 - fMinus2) / (12 * h * h);
+                            
+                            if (!isFinite(secondDerivValue)) {
+                                secondDerivValue = null;
+                            }
+                        } catch (numericalError) {
+                            secondDerivValue = null;
+                        }
+                    }
                 }
                 
                 if (isFinite(slope)) {

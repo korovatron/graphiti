@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test First Derivative Forms</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+</head>
+<body>
+    <h1>Testing Differentiation of First Derivative Forms</h1>
+    <div id="output"></div>
+    
+    <script>
+        const output = document.getElementById('output');
+        
+        function test(expr, description) {
+            output.innerHTML += `<h2>${description}: ${expr}</h2>`;
+            try {
+                const parsed = math.parse(expr);
+                output.innerHTML += `Parsed: ${parsed.toString()}<br>`;
+                
+                const deriv = math.derivative(parsed, 'x');
+                const derivStr = deriv.toString();
+                output.innerHTML += `Derivative: ${derivStr}<br>`;
+                
+                if (/NaN/i.test(derivStr)) {
+                    output.innerHTML += `<span style="color: red; font-weight: bold">✗ Contains NaN!</span><br><br>`;
+                } else {
+                    output.innerHTML += `<span style="color: green">✓ Success (no NaN)</span><br><br>`;
+                }
+            } catch (e) {
+                output.innerHTML += `<span style="color: red">✗ Error: ${e.message}</span><br><br>`;
+            }
+        }
+        
+        // Test differentiating the FIRST DERIVATIVES directly
+        output.innerHTML += '<h1>Differentiating First Derivative Forms</h1>';
+        test('-(1 / x ^ 2)', 'First deriv of 1/x (from app)');
+        test('-(2 / x ^ 3)', 'First deriv of 1/x² (from app)');
+        test('-(3 / x ^ 4)', 'First deriv of 1/x³ (from app)');
+        test('-x^(-2)', 'Alternative form 1');
+        test('-1/x^2', 'Simple form');
+        test('-(1/x^2)', 'Parenthesized');
+        test('-1 / x^2', 'With spaces');
+        test('-(1) / (x^2)', 'Extra parens');
+    </script>
+</body>
+</html>
