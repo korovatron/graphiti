@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Simple Reciprocal - y = 1/x</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+</head>
+<body>
+    <h1>Testing y = 1/x</h1>
+    <pre id="output"></pre>
+    
+    <script>
+        const output = document.getElementById('output');
+        let log = '';
+        
+        function test() {
+            try {
+                log += '=== Test 1: Pass STRING to derivative (like app does) ===\n\n';
+                
+                const exprStr = '(1)/(x)';
+                log += `Expression STRING: ${exprStr}\n\n`;
+                
+                // First derivative - pass string directly
+                const firstDeriv = math.derivative(exprStr, 'x');
+                const firstDerivStr = firstDeriv.toString();
+                log += `First derivative: ${firstDerivStr}\n\n`;
+                
+                // Second derivative - parse string then simplify
+                const firstDerivParsed = math.parse(firstDerivStr);
+                const firstDerivSimplified = math.simplify(firstDerivParsed);
+                log += `Simplified: ${firstDerivSimplified.toString()}\n`;
+                const secondDeriv = math.derivative(firstDerivSimplified, 'x');
+                log += `Second derivative object: ${secondDeriv}\n`;
+                log += `Second derivative args[0]: ${secondDeriv.args[0]}\n`;
+                log += `Second derivative args[0] value: ${secondDeriv.args[0].value}\n`;
+                const secondDerivStr = secondDeriv.toString();
+                log += `Second derivative STRING: ${secondDerivStr}\n`;
+                log += `Contains NaN? ${/\bNaN\b/i.test(secondDerivStr)}\n\n`;
+                
+                log += '\n=== Test 2: Parse THEN pass to derivative ===\n\n';
+                
+                const parsed = math.parse(exprStr);
+                log += `Parsed: ${parsed.toString()}\n\n`;
+                
+                const firstDeriv2 = math.derivative(parsed, 'x');
+                const firstDerivStr2 = firstDeriv2.toString();
+                log += `First derivative: ${firstDerivStr2}\n\n`;
+                
+                const firstDerivParsed2 = math.parse(firstDerivStr2);
+                const firstDerivSimplified2 = math.simplify(firstDerivParsed2);
+                const secondDeriv2 = math.derivative(firstDerivSimplified2, 'x');
+                log += `Second derivative object: ${secondDeriv2}\n`;
+                log += `Second derivative args[0]: ${secondDeriv2.args[0]}\n`;
+                log += `Second derivative args[0] value: ${secondDeriv2.args[0].value}\n`;
+                const secondDerivStr2 = secondDeriv2.toString();
+                log += `Second derivative STRING: ${secondDerivStr2}\n`;
+                log += `Contains NaN? ${/\bNaN\b/i.test(secondDerivStr2)}\n`;
+                
+            } catch (error) {
+                log += `\n\nFATAL ERROR: ${error.message}\n${error.stack}`;
+            }
+            
+            output.textContent = log;
+        }
+        
+        test();
+    </script>
+</body>
+</html>
