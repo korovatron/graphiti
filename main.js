@@ -18483,7 +18483,12 @@ class Graphiti {
         // Convert range to radians if in degree mode for consistent internal calculations
         const thetaMinRad = this.angleMode === 'degrees' ? thetaMin * Math.PI / 180 : thetaMin;
         const thetaMaxRad = this.angleMode === 'degrees' ? thetaMax * Math.PI / 180 : thetaMax;
-        const stepSize = (thetaMaxRad - thetaMinRad) / steps;
+        
+        // Adaptive step count: ensure minimum resolution regardless of theta range
+        // Use at least 200 steps for wide ranges, up to 1000 for very wide ranges
+        const range = thetaMaxRad - thetaMinRad;
+        const adaptiveSteps = Math.max(steps, Math.min(1000, Math.ceil(range * 20)));
+        const stepSize = range / adaptiveSteps;
         
         // Helper function to evaluate polar derivative expression
         const evaluatePolarDerivative = (expr, thetaValue) => {
@@ -18528,7 +18533,7 @@ class Graphiti {
         let prevValue;
         
         try {
-            prevValue = evaluatePolarDerivative(expression, prevTheta);
+            prevValue = evaluadaptiveStePolarDerivative(expression, prevTheta);
         } catch {
             prevValue = NaN;
         }
