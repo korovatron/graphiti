@@ -17669,25 +17669,18 @@ class Graphiti {
                 const compiledDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
                 const slope = compiledDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
                 
-                // Try to get second derivative, but don't fail if it's too complex
+                // Calculate second derivative (try symbolic first, fall back to numerical if needed)
                 let secondDerivValue = null;
                 try {
-                    // Try simplifying the first derivative before taking the second derivative
-                    let derivToUse = derivativeStr;
-                    try {
-                        const simplified = math.simplify(derivativeStr);
-                        derivToUse = simplified.toString();
-                    } catch (simplifyError) {
-                        // Simplification failed, use original
-                    }
-                    
-                    // Take derivative of the simplified string
-                    const secondDerivative = math.derivative(derivToUse, 'x');
+                    // Try symbolic second derivative
+                    const firstDerivParsed = math.parse(derivativeStr);
+                    const firstDerivSimplified = math.simplify(firstDerivParsed);
+                    const secondDerivative = math.derivative(firstDerivSimplified, 'x');
                     const secondDerivativeStr = secondDerivative.toString();
                     
                     // Check if math.js produced an invalid derivative containing NaN
+                    // This is a known bug with certain expressions (e.g., reciprocal functions)
                     if (/\bNaN\b/i.test(secondDerivativeStr)) {
-                        // Math.js bug detected - fall back to numerical method
                         throw new Error('Symbolic derivative contains NaN');
                     }
                     
@@ -17699,19 +17692,17 @@ class Graphiti {
                     const compiledSecondDeriv = this.getCompiledExpression(secondDerivLower);
                     secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
                     
-                    // Validate second derivative
                     if (!isFinite(secondDerivValue)) {
                         secondDerivValue = null;
                     }
                 } catch (secondDerivError) {
-                    // Second derivative too complex or failed - try numerical method
-                    
-                    // Numerical second derivative using five-point stencil
+                    // Fallback: numerical second derivative using five-point stencil method
+                    // This is used when symbolic differentiation fails (e.g., math.js bugs with reciprocal functions)
                     try {
                         const h = 0.0001;
                         const scope = this.getEvaluationScope({});
                         
-                        // Evaluate first derivative at x-2h, x-h, x, x+h, x+2h
+                        // Evaluate first derivative at five points
                         const compiledFirstDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
                         scope.x = worldX - 2*h;
                         const fMinus2 = compiledFirstDeriv.evaluate(scope);
