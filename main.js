@@ -18307,7 +18307,14 @@ class Graphiti {
         const roots = [];
         const maxRootsToDisplay = 20; // Maximum to display (evenly spaced)
         const maxRootsToSearch = 100; // Maximum to search for (prevent infinite loops)
-        const stepSize = (xMax - xMin) / steps;
+        
+        // Adaptive step count: ensure minimum resolution regardless of zoom level
+        // Use at least 400 steps for wide ranges, up to 1000 for very wide ranges
+        const range = xMax - xMin;
+        const adaptiveSteps = Math.max(steps, Math.min(1000, Math.ceil(range * 20)));
+        const stepSize = range / adaptiveSteps;
+        
+        console.log(`[DEBUG findRootsInRange] range=${range.toFixed(2)}, using ${adaptiveSteps} steps (step size=${stepSize.toFixed(6)})`);
         
         console.log('[DEBUG findRootsInRange] angleMode:', this.angleMode, 'expression:', expression, 'xMin:', xMin, 'xMax:', xMax);
         
@@ -18368,7 +18375,7 @@ class Graphiti {
             console.log('[DEBUG findRootsInRange] Initial evaluation FAILED at x =', prevX, 'error:', e.message);
         }
         
-        for (let i = 1; i <= steps; i++) {
+        for (let i = 1; i <= adaptiveSteps; i++) {
             // Stop if we've searched enough
             if (roots.length >= maxRootsToSearch) break;
             
@@ -18379,7 +18386,7 @@ class Graphiti {
                 currentValue = evaluateDerivative(expression, currentX);
                 
                 // Log first few evaluations
-                if (i <= 5 || (i >= steps/2 - 2 && i <= steps/2 + 2)) {
+                if (i <= 5 || (i >= adaptiveSteps/2 - 2 && i <= adaptiveSteps/2 + 2)) {
                     console.log('[DEBUG findRootsInRange] x =', currentX.toFixed(4), '-> value =', currentValue);
                 }
             } catch (e) {
