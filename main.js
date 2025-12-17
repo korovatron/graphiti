@@ -17168,6 +17168,7 @@ class Graphiti {
                     type = secondDerivValue > 0 ? 'minimum' : 'maximum';
                 } else if (!isFinite(secondDerivValue)) {
                     // Fallback: check sign of first derivative on either side of the root
+                    console.log('⚠️ Turning point classification: using first derivative sign test (2nd derivative unavailable)');
                     const epsilon = 0.0001; // Small step for testing
                     
                     try {
@@ -17698,6 +17699,7 @@ class Graphiti {
                 } catch (secondDerivError) {
                     // Fallback: numerical second derivative using five-point stencil method
                     // This is used when symbolic differentiation fails (e.g., math.js bugs with reciprocal functions)
+                    console.log('⚠️ Using numerical method for 2nd derivative (symbolic failed)');
                     try {
                         const h = 0.0001;
                         const scope = this.getEvaluationScope({});
