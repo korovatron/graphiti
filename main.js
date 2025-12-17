@@ -15789,10 +15789,13 @@ class Graphiti {
                 if (equation) {
                     // Sample x values and find where F(x,0) ≈ 0
                     const xValues = [];
-                    const sampleCount = 100;
                     const xMin = this.viewport.minX;
                     const xMax = this.viewport.maxX;
-                    const step = (xMax - xMin) / sampleCount;
+                    const range = xMax - xMin;
+                    
+                    // Adaptive sampling: maintain consistent resolution across zoom levels
+                    const sampleCount = Math.max(100, Math.min(500, Math.ceil(range * 10)));
+                    const step = range / sampleCount;
                     
                     const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
                     const leftCompiled = this.getCompiledExpression(equation.leftExpression);
@@ -16065,10 +16068,13 @@ class Graphiti {
                 if (equation) {
                     // Sample y values and find where F(0,y) ≈ 0
                     const yValues = [];
-                    const sampleCount = 100;
                     const yMin = this.viewport.minY;
                     const yMax = this.viewport.maxY;
-                    const step = (yMax - yMin) / sampleCount;
+                    const range = yMax - yMin;
+                    
+                    // Adaptive sampling: maintain consistent resolution across zoom levels
+                    const sampleCount = Math.max(100, Math.min(500, Math.ceil(range * 10)));
+                    const step = range / sampleCount;
                     
                     const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
                     const leftCompiled = this.getCompiledExpression(equation.leftExpression);
