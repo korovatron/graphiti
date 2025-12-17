@@ -17672,9 +17672,31 @@ class Graphiti {
                 // Try to get second derivative, but don't fail if it's too complex
                 let secondDerivValue = null;
                 try {
-                    const secondDerivative = math.derivative(derivative, 'x');
+                    // Try simplifying the first derivative before taking the second derivative
+                    let derivToUse = derivativeStr;
+                    try {
+                        const simplified = math.simplify(derivativeStr);
+                        derivToUse = simplified.toString();
+                    } catch (simplifyError) {
+                        // Simplification failed, use original
+                    }
+                    
+                    // Take derivative of the simplified string
+                    const secondDerivative = math.derivative(derivToUse, 'x');
                     const secondDerivativeStr = secondDerivative.toString();
-                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr.toLowerCase());
+                    
+                    // Check if math.js produced an invalid derivative containing NaN
+                    if (/\bNaN\b/i.test(secondDerivativeStr)) {
+                        // Math.js bug detected - fall back to numerical method
+                        throw new Error('Symbolic derivative contains NaN');
+                    }
+                    
+                    // Convert to lowercase but preserve NaN, Infinity, -Infinity
+                    let secondDerivLower = secondDerivativeStr.toLowerCase();
+                    secondDerivLower = secondDerivLower.replace(/\bnan\b/gi, 'NaN');
+                    secondDerivLower = secondDerivLower.replace(/\binfinity\b/gi, 'Infinity');
+                    
+                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivLower);
                     secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: worldX, pi: Math.PI, e: Math.E}));
                     
                     // Validate second derivative
@@ -17682,8 +17704,35 @@ class Graphiti {
                         secondDerivValue = null;
                     }
                 } catch (secondDerivError) {
-                    // Second derivative too complex or failed - that's okay
-                    secondDerivValue = null;
+                    // Second derivative too complex or failed - try numerical method
+                    
+                    // Numerical second derivative using five-point stencil
+                    try {
+                        const h = 0.0001;
+                        const scope = this.getEvaluationScope({});
+                        
+                        // Evaluate first derivative at x-2h, x-h, x, x+h, x+2h
+                        const compiledFirstDeriv = this.getCompiledExpression(derivativeStr.toLowerCase());
+                        scope.x = worldX - 2*h;
+                        const fMinus2 = compiledFirstDeriv.evaluate(scope);
+                        scope.x = worldX - h;
+                        const fMinus1 = compiledFirstDeriv.evaluate(scope);
+                        scope.x = worldX;
+                        const f0 = compiledFirstDeriv.evaluate(scope);
+                        scope.x = worldX + h;
+                        const fPlus1 = compiledFirstDeriv.evaluate(scope);
+                        scope.x = worldX + 2*h;
+                        const fPlus2 = compiledFirstDeriv.evaluate(scope);
+                        
+                        // Five-point stencil: f''(x) ≈ (-f(x+2h) + 16f(x+h) - 30f(x) + 16f(x-h) - f(x-2h)) / (12h²)
+                        secondDerivValue = (-fPlus2 + 16*fPlus1 - 30*f0 + 16*fMinus1 - fMinus2) / (12 * h * h);
+                        
+                        if (!isFinite(secondDerivValue)) {
+                            secondDerivValue = null;
+                        }
+                    } catch (numericalError) {
+                        secondDerivValue = null;
+                    }
                 }
                 
                 if (isFinite(slope)) {
