@@ -10566,14 +10566,29 @@ class Graphiti {
             } else {
                 // Page is visible again
                 console.log('Page visible - resuming normal operations');
-                
-                // Ensure animation loop is running (critical for responsiveness)
-                this.ensureAnimationLoopRunning();
-                
-                // Recalculate intersections if needed
-                if (this.showIntersections && this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0)) {
-                    this.calculateIntersectionsWithWorker(true);
+                this.handleAppResume();
+            }
+        });
+        
+        // PWA-specific resume handling (for iOS/Android standalone mode)
+        // These events fire when PWA is brought back from background
+        window.addEventListener('focus', () => {
+            if (this.currentState === this.states.GRAPHING && document.visibilityState === 'visible') {
+                console.log('Window focus - checking if resume needed');
+                // Check if significant time has passed (PWA was suspended)
+                const now = performance.now();
+                if (this.lastFrameTime && (now - this.lastFrameTime) > 5000) {
+                    console.log('PWA resume detected - resetting state');
+                    this.handleAppResume();
                 }
+            }
+        });
+        
+        // iOS-specific pageshow event (fires when PWA is restored from bfcache)
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted && this.currentState === this.states.GRAPHING) {
+                console.log('Page restored from bfcache - resetting state');
+                this.handleAppResume();
             }
         });
         
@@ -13869,7 +13884,7 @@ class Graphiti {
         // Clear existing content
         taglineContainer.innerHTML = '';
         
-        const text = 'Graphs with Attitude';
+        const text = 'Any Curve You Like';
         const words = text.split(' ');
         
         // White color throughout
@@ -20268,6 +20283,12 @@ class Graphiti {
                 // CRITICAL: Update lastFrameTime to current time to prevent infinite loop
                 // Without this, next frame will calculate huge deltaTime again from stale lastFrameTime
                 this.lastFrameTime = currentTime;
+                
+                // Trigger recovery mode
+                if (!this._performanceMode) {
+                    console.log('Heavy throttling recovery - enabling performance mode');
+                    this.handleAppResume();
+                }
             } else {
                 // Normal frame timing update
                 this.lastFrameTime = currentTime;
@@ -20284,8 +20305,26 @@ class Graphiti {
             this.updatePerformanceOverlay();
             
             try {
+                const updateStart = performance.now();
                 this.update(this.deltaTime);
+                const updateTime = performance.now() - updateStart;
+                
+                const drawStart = performance.now();
                 this.draw();
+                const drawTime = performance.now() - drawStart;
+                
+                const totalFrameTime = updateTime + drawTime;
+                
+                // Warn if frame is taking too long (over 100ms)
+                if (totalFrameTime > 100) {
+                    console.warn(`Slow frame detected: update=${updateTime.toFixed(1)}ms, draw=${drawTime.toFixed(1)}ms, total=${totalFrameTime.toFixed(1)}ms`);
+                    
+                    // If frame is VERY slow (over 200ms), trigger recovery
+                    if (totalFrameTime > 200 && !this._performanceMode) {
+                        console.warn('Extremely slow frame - triggering performance recovery');
+                        this.handleAppResume();
+                    }
+                }
             } catch (error) {
                 // Log error but keep animation loop running
                 console.error('Animation loop error:', error);
@@ -20314,6 +20353,59 @@ class Graphiti {
             this.performance.lastFpsUpdate = 0;
             this.startAnimationLoop();
             this.updatePerformanceOverlay(true);
+        }
+    }
+
+    handleAppResume() {
+        // Consolidated resume handler for PWA and visibility changes
+        // CRITICAL: Reset frame timing to prevent huge deltaTime spike on next frame
+        // The animation loop may still be running but heavily throttled with stale lastFrameTime
+        this.lastFrameTime = 0;
+        this.performance.lastFpsUpdate = 0;
+        this.performance.frameCount = 0;
+        
+        // Clear any stale cached rendering data that may have accumulated
+        this.invalidateInequalityIntersectionCache();
+        this.culledInterceptMarkers = [];
+        
+        // Clear frozen marker arrays to prevent stale screen positions
+        this.frozenIntersectionBadges = [];
+        this.frozenTurningPointBadges = [];
+        this.frozenInterceptBadges = [];
+        this.isViewportChanging = false;
+        
+        // Clear expression cache to prevent stale compiled functions
+        this.clearExpressionCache();
+        
+        // Enable performance mode temporarily to reduce render load
+        this._performanceMode = true;
+        this._performanceModeFrames = 0;
+        
+        // Force canvas context reset (fixes PWA canvas degradation)
+        if (this.ctx && this.canvas) {
+            const width = this.canvas.width;
+            const height = this.canvas.height;
+            // Force context reset by changing canvas size
+            this.canvas.width = width + 1;
+            this.canvas.height = height + 1;
+            this.canvas.width = width;
+            this.canvas.height = height;
+            // Reacquire context
+            this.ctx = this.canvas.getContext('2d');
+        }
+        
+        // In PWA mode, force replot all functions to ensure they're fresh
+        if (this.isStandalonePWA()) {
+            console.log('PWA mode - forcing complete function replot');
+            this.replotAllFunctions().catch(err => console.error('Replot error:', err));
+        }
+        
+        // Ensure animation loop is running (critical for responsiveness)
+        this.ensureAnimationLoopRunning();
+        
+        // Recalculate intersections if needed
+        if (this.showIntersections && this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0)) {
+            this.calculateIntersectionsWithWorker(true);
         }
     }
 
@@ -20501,18 +20593,31 @@ class Graphiti {
     }
     
     drawGraphingScreen() {
+        // Performance mode: skip expensive operations after PWA resume
+        const isPerformanceMode = this._performanceMode && this._performanceModeFrames < 60;
+        if (isPerformanceMode) {
+            this._performanceModeFrames++;
+            if (this._performanceModeFrames >= 60) {
+                this._performanceMode = false;
+                console.log('Performance mode disabled after 60 frames');
+            }
+        }
+        
         // Draw coordinate system
         this.drawGrid();
         this.drawAxes();
         this.drawAxisLabels();
         
-        // Count enabled inequalities for compositing decision
-        const inequalityCount = this.countEnabledInequalities();
-        
-        // If multiple inequalities, render their intersection using compositing
-        // This must be drawn AFTER grid/axes but BEFORE function curves
-        if (inequalityCount >= 2) {
-            this.drawInequalityIntersection();
+        // Skip expensive compositing in performance mode
+        if (!isPerformanceMode) {
+            // Count enabled inequalities for compositing decision
+            const inequalityCount = this.countEnabledInequalities();
+            
+            // If multiple inequalities, render their intersection using compositing
+            // This must be drawn AFTER grid/axes but BEFORE function curves
+            if (inequalityCount >= 2) {
+                this.drawInequalityIntersection();
+            }
         }
         
         // Draw functions from current mode only
@@ -20574,8 +20679,8 @@ class Graphiti {
             }
         }
         
-        // Draw integration shaded regions (before badges)
-        if (this.integralPairs.length > 0) {
+        // Draw integration shaded regions (before badges) - skip in performance mode
+        if (!isPerformanceMode && this.integralPairs.length > 0) {
             this.drawIntegrationRegions();
         }
         
@@ -20590,8 +20695,8 @@ class Graphiti {
             this.drawPersistentBadges();
         }
         
-        // Draw integral panel at bottom-right for ALL pairs (after badges so it's on top)
-        if (this.integralPairs.length > 0) {
+        // Draw integral panel at bottom-right for ALL pairs (after badges so it's on top) - skip in performance mode
+        if (!isPerformanceMode && this.integralPairs.length > 0) {
             this.drawIntegralPanel();
         }
         
