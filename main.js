@@ -9907,9 +9907,10 @@ class Graphiti {
                 }
             } else {
                 // Page is visible again - resume animation loop if not already running
-                if (!this.animationId && this.currentState === this.states.GRAPHING) {
+                if (!this.animationId) {
                     // Reset frame timing to prevent huge deltaTime on first frame
                     this.lastFrameTime = 0;
+                    // Restart animation loop regardless of state - state-specific rendering is handled in update/draw
                     this.startAnimationLoop();
                 }
             }
