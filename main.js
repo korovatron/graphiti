@@ -9908,6 +9908,8 @@ class Graphiti {
             } else {
                 // Page is visible again - resume animation loop if not already running
                 if (!this.animationId && this.currentState === this.states.GRAPHING) {
+                    // Reset frame timing to prevent huge deltaTime on first frame
+                    this.lastFrameTime = 0;
                     this.startAnimationLoop();
                 }
             }
@@ -20225,6 +20227,12 @@ class Graphiti {
     
     startAnimationLoop() {
         const animate = (currentTime) => {
+            // Initialize lastFrameTime on first frame (when it's 0)
+            if (this.lastFrameTime === 0) {
+                this.lastFrameTime = currentTime;
+                this.performance.lastFpsUpdate = currentTime;
+            }
+            
             this.deltaTime = currentTime - this.lastFrameTime;
             
             // Detect if tab was heavily throttled (deltaTime > 5 seconds)
@@ -20255,9 +20263,14 @@ class Graphiti {
                 
                 // Clamp deltaTime to prevent physics issues
                 this.deltaTime = 16; // ~60fps frame time
+                
+                // CRITICAL: Update lastFrameTime to current time to prevent infinite loop
+                // Without this, next frame will calculate huge deltaTime again from stale lastFrameTime
+                this.lastFrameTime = currentTime;
+            } else {
+                // Normal frame timing update
+                this.lastFrameTime = currentTime;
             }
-            
-            this.lastFrameTime = currentTime;
             
             // Track FPS and update overlay
             this.performance.frameCount++;
@@ -20269,8 +20282,19 @@ class Graphiti {
             }
             this.updatePerformanceOverlay();
             
-            this.update(this.deltaTime);
-            this.draw();
+            try {
+                this.update(this.deltaTime);
+                this.draw();
+            } catch (error) {
+                // Log error but keep animation loop running
+                console.error('Animation loop error:', error);
+                // Show user-friendly error indicator
+                if (!this._errorIndicatorShown) {
+                    this._errorIndicatorShown = true;
+                    setTimeout(() => { this._errorIndicatorShown = false; }, 5000);
+                    console.warn('Animation error occurred but loop continues running');
+                }
+            }
             
             this.animationId = requestAnimationFrame(animate);
         };
@@ -20284,6 +20308,9 @@ class Graphiti {
         if (!this.animationId && this.currentState === this.states.GRAPHING) {
             console.log('Animation loop was stopped - restarting after idle period');
             this.showAnimationRestartIndicator();
+            // Reset frame timing to prevent huge deltaTime on first frame
+            this.lastFrameTime = 0;
+            this.performance.lastFpsUpdate = 0;
             this.startAnimationLoop();
             this.updatePerformanceOverlay(true);
         }
