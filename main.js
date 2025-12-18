@@ -1566,7 +1566,8 @@ class Graphiti {
             'derivatives-turning-points': {
                 expressions: [
                     'y=x^3-3x',                                         // Cubic with turning points
-                    'y=\\frac{d}{dx}\\left(x^3-3x\\right)'             // Its derivative
+                    'y=\\frac{d}{dx}\\left(x^3-3x\\right)',            // Its derivative
+                    'y=\\frac{d}{dx}\\left(\\frac{d}{dx}\\left(x^3-3x\\right)\\right)'  // Second derivative
                 ],
                 description: 'Derivatives & Turning Points Demo',
                 viewport: { minX: -3, maxX: 3, minY: -5, maxY: 5 }
