@@ -498,7 +498,11 @@ class Graphiti {
                                     { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
-                                    { latex: '.', label: '.' },
+                                    { 
+                                        latex: '.', 
+                                        label: '.',
+                                        shift: { latex: ',', label: ',' }
+                                    },
                                     { label: '[shift]', width: 1 },
                                     { latex: '-', label: '-' }
                                 ]
@@ -590,7 +594,11 @@ class Graphiti {
                                     { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
-                                    { latex: '.', label: '.' },
+                                    { 
+                                        latex: '.', 
+                                        label: '.',
+                                        shift: { latex: ',', label: ',' }
+                                    },
                                     { label: '[shift]', width: 1 },
                                     { latex: '-', label: '-' }
                                 ]
@@ -685,7 +693,11 @@ class Graphiti {
                                     { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
-                                    { latex: '.', label: '.' },
+                                    { 
+                                        latex: '.', 
+                                        label: '.',
+                                        shift: { latex: ',', label: ',' }
+                                    },
                                     { label: '[shift]', width: 1 },
                                     { latex: '-', label: '-' }
                                 ]
@@ -763,7 +775,11 @@ class Graphiti {
                                     { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
-                                    { latex: '.', label: '.' },
+                                    { 
+                                        latex: '.', 
+                                        label: '.',
+                                        shift: { latex: ',', label: ',' }
+                                    },
                                     { label: '[shift]', width: 1 },
                                     { latex: '-', label: '-' }
                                 ]
