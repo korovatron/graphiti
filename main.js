@@ -107,6 +107,11 @@ class Graphiti {
         this.regexCache = new Map(); // Map<string, RegExp>
         this.initializeRegexCache();
         
+        // Clean math.js instance for symbolic differentiation
+        // The global math instance has pow overridden (for plotting fractional powers with negative bases)
+        // which breaks symbolic differentiation, so we need a clean instance
+        this.cleanMath = math.create(math.all);
+        
         // Input handling
         this.input = {
             mouse: { x: 0, y: 0, down: false },
@@ -2721,7 +2726,7 @@ class Graphiti {
                                     const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                                     
                                     // Compute derivative symbolically
-                                    const symbolicResult = math.derivative(expr, variable);
+                                    const symbolicResult = this.cleanMath.derivative(expr, variable);
                                     
                                     // Replace only the derivative() call with its result, preserving surrounding expression
                                     processedExpression = processedExpression.substring(0, derivStart) + 
@@ -2803,7 +2808,7 @@ class Graphiti {
                                     const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                                     
                                     // Compute derivative symbolically
-                                    const symbolicResult = math.derivative(expr, variable);
+                                    const symbolicResult = this.cleanMath.derivative(expr, variable);
                                     
                                     // Replace only the derivative() call with its result
                                     processedExpression = processedExpression.substring(0, derivStart) + 
@@ -2828,19 +2833,28 @@ class Graphiti {
                         
                         try {
                             // Special handling for derivative() - extract and compute symbolically
-                            if (processedExpression.includes('derivative(')) {
-                                // Extract the expression and variable from derivative(expr, var)
-                                // Find the last comma to split expression and variable (handles nested commas)
-                                const derivStart = processedExpression.indexOf('derivative(');
-                                if (derivStart !== -1) {
+                            // Process from innermost to outermost by finding the LAST 'derivative(' that doesn't contain another derivative
+                            while (processedExpression.includes('derivative(')) {
+                                // Find the last occurrence of 'derivative(' to process innermost first
+                                let derivStart = -1;
+                                let searchIndex = 0;
+                                let foundInnermost = false;
+                                
+                                // Keep finding derivative( until we find one whose content doesn't contain another derivative(
+                                while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
+                                    const start = searchIndex + 'derivative('.length;
                                     let depth = 0;
+                                    let endParen = -1;
                                     let lastCommaPos = -1;
-                                    const start = derivStart + 'derivative('.length;
                                     
+                                    // Find the matching closing paren and comma
                                     for (let i = start; i < processedExpression.length; i++) {
                                         if (processedExpression[i] === '(') depth++;
                                         else if (processedExpression[i] === ')') {
-                                            if (depth === 0) break; // End of derivative call
+                                            if (depth === 0) {
+                                                endParen = i;
+                                                break;
+                                            }
                                             depth--;
                                         }
                                         else if (processedExpression[i] === ',' && depth === 0) {
@@ -2848,25 +2862,61 @@ class Graphiti {
                                         }
                                     }
                                     
-                                    if (lastCommaPos !== -1) {
-                                        const expr = processedExpression.substring(start, lastCommaPos).trim();
-                                        const endParen = processedExpression.indexOf(')', lastCommaPos);
-                                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                                        
-                                        // Compute derivative using math.derivative()
-                                        const symbolicResult = math.derivative(expr, variable);
-                                        
-                                        // Test if we can evaluate the result numerically
-                                        const numericTest = math.evaluate(symbolicResult.toString(), this.getEvaluationScope({ x: 1 }));
-                                    } else {
-                                        throw new Error('Invalid derivative format - missing comma');
+                                    if (lastCommaPos !== -1 && endParen !== -1) {
+                                        const expr = processedExpression.substring(start, lastCommaPos);
+                                        // Check if this expression contains another derivative( - if not, it's innermost
+                                        if (!expr.includes('derivative(')) {
+                                            derivStart = searchIndex;
+                                            foundInnermost = true;
+                                            break;
+                                        }
                                     }
-                                } else {
-                                    throw new Error('Invalid derivative format');
+                                    
+                                    searchIndex++;
                                 }
-                            } else {
-                                const evalResult = math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
+                                
+                                if (!foundInnermost || derivStart === -1) {
+                                    throw new Error('Invalid nested derivative structure');
+                                }
+                                
+                                // Now process the innermost derivative
+                                const start = derivStart + 'derivative('.length;
+                                let depth = 0;
+                                let lastCommaPos = -1;
+                                let endParen = -1;
+                                
+                                for (let i = start; i < processedExpression.length; i++) {
+                                    if (processedExpression[i] === '(') depth++;
+                                    else if (processedExpression[i] === ')') {
+                                        if (depth === 0) {
+                                            endParen = i;
+                                            break;
+                                        }
+                                        depth--;
+                                    }
+                                    else if (processedExpression[i] === ',' && depth === 0) {
+                                        lastCommaPos = i;
+                                    }
+                                }
+                                
+                                if (lastCommaPos !== -1 && endParen !== -1) {
+                                    const expr = processedExpression.substring(start, lastCommaPos).trim();
+                                    const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                                    
+                                    // Compute derivative using math.derivative()
+                                    const symbolicResult = this.cleanMath.derivative(expr, variable);
+                                    
+                                    // Replace only the derivative() call with its result, preserving surrounding expression
+                                    processedExpression = processedExpression.substring(0, derivStart) + 
+                                                          '(' + symbolicResult.toString() + ')' + 
+                                                          processedExpression.substring(endParen + 1);
+                                } else {
+                                    throw new Error('Invalid derivative format - missing comma');
+                                }
                             }
+                            
+                            // After processing all derivatives, test if we can evaluate the result
+                            const evalResult = math.evaluate(processedExpression, this.getEvaluationScope({ x: 1 }));
                         } catch (err) {
                             throw err;
                         }
@@ -3383,24 +3433,28 @@ class Graphiti {
             processedExpression = processedExpression.toLowerCase();
             
             // Handle derivative() - extract and compute symbolically using math.derivative()
-            // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+            // Process from innermost to outermost by finding derivatives that don't contain other derivatives
             while (processedExpression.includes('derivative(')) {
                 try {
-                    // Extract the expression and variable from derivative(expr, var)
-                    // Find the last comma to split expression and variable (handles nested commas)
-                    const derivStart = processedExpression.indexOf('derivative(');
-                    if (derivStart !== -1) {
+                    // Find the innermost derivative (one whose content doesn't contain another derivative)
+                    let derivStart = -1;
+                    let searchIndex = 0;
+                    let foundInnermost = false;
+                    
+                    // Keep finding derivative( until we find one whose content doesn't contain another derivative(
+                    while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
+                        const start = searchIndex + 'derivative('.length;
                         let depth = 0;
-                        let lastCommaPos = -1;
-                        const start = derivStart + 'derivative('.length;
                         let endParen = -1;
+                        let lastCommaPos = -1;
                         
+                        // Find the matching closing parenthesis
                         for (let i = start; i < processedExpression.length; i++) {
                             if (processedExpression[i] === '(') depth++;
                             else if (processedExpression[i] === ')') {
                                 if (depth === 0) {
                                     endParen = i;
-                                    break; // End of derivative call
+                                    break;
                                 }
                                 depth--;
                             }
@@ -3410,21 +3464,57 @@ class Graphiti {
                         }
                         
                         if (lastCommaPos !== -1 && endParen !== -1) {
-                            const expr = processedExpression.substring(start, lastCommaPos).trim();
-                            const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            const content = processedExpression.substring(start, endParen);
                             
-                            // Compute derivative using math.derivative()
-                            const derivativeResult = math.derivative(expr, variable);
-                            
-                            // Replace only the derivative() call with its result, preserving surrounding expression
-                            processedExpression = processedExpression.substring(0, derivStart) + 
-                                                  '(' + derivativeResult.toString() + ')' + 
-                                                  processedExpression.substring(endParen + 1);
-                        } else {
-                            throw new Error('Invalid derivative format - missing comma or closing parenthesis');
+                            // Check if this content contains another derivative(
+                            if (!content.includes('derivative(')) {
+                                // Found innermost derivative
+                                derivStart = searchIndex;
+                                foundInnermost = true;
+                                break;
+                            }
                         }
+                        
+                        searchIndex++;
+                    }
+                    
+                    if (!foundInnermost) {
+                        throw new Error('No valid innermost derivative found');
+                    }
+                    
+                    // Process the innermost derivative
+                    const start = derivStart + 'derivative('.length;
+                    let depth = 0;
+                    let endParen = -1;
+                    let lastCommaPos = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        
+                        // Compute derivative using math.derivative()
+                        const derivativeResult = this.cleanMath.derivative(expr, variable);
+                        
+                        // Replace only the derivative() call with its result, preserving surrounding expression
+                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                              '(' + derivativeResult.toString() + ')' + 
+                                              processedExpression.substring(endParen + 1);
                     } else {
-                        throw new Error('Invalid derivative format');
+                        throw new Error('Invalid derivative format - missing comma or closing parenthesis');
                     }
                 } catch (err) {
                     console.error('[DERIVATIVE] Symbolic evaluation failed:', err.message);
@@ -3636,7 +3726,7 @@ class Graphiti {
                             }
                             
                             // Compute derivative using math.derivative()
-                            const derivativeResult = math.derivative(expr, variable);
+                            const derivativeResult = this.cleanMath.derivative(expr, variable);
                             
                             // Replace only the derivative() call with its result, preserving surrounding expression
                             processedExpression = processedExpression.substring(0, derivStart) + 
@@ -8417,10 +8507,18 @@ class Graphiti {
         
         processedExpression = processedExpression.toLowerCase();
         
-        // Handle derivative() - process once before the loop
+        // Handle derivative() - process from INNERMOST to outermost to avoid nested derivative() calls
         while (processedExpression.includes('derivative(')) {
-            const derivStart = processedExpression.indexOf('derivative(');
-            if (derivStart !== -1) {
+            // Find the INNERMOST derivative (one without another derivative inside)
+            let innermostStart = -1;
+            let innermostEnd = -1;
+            let innermostComma = -1;
+            
+            let searchPos = 0;
+            while (true) {
+                const derivStart = processedExpression.indexOf('derivative(', searchPos);
+                if (derivStart === -1) break;
+                
                 let depth = 0;
                 let lastCommaPos = -1;
                 const start = derivStart + 'derivative('.length;
@@ -8442,15 +8540,29 @@ class Graphiti {
                 
                 if (lastCommaPos !== -1 && endParen !== -1) {
                     const expr = processedExpression.substring(start, lastCommaPos).trim();
-                    const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                     
-                    const derivativeResult = math.derivative(expr, variable);
-                    processedExpression = processedExpression.substring(0, derivStart) + 
-                                          '(' + derivativeResult.toString() + ')' + 
-                                          processedExpression.substring(endParen + 1);
-                } else {
-                    break;
+                    // Check if this expression contains another derivative call
+                    if (!expr.includes('derivative(')) {
+                        // This is an innermost derivative
+                        innermostStart = derivStart;
+                        innermostEnd = endParen;
+                        innermostComma = lastCommaPos;
+                        break;
+                    }
                 }
+                
+                searchPos = derivStart + 1;
+            }
+            
+            if (innermostStart !== -1 && innermostEnd !== -1 && innermostComma !== -1) {
+                const start = innermostStart + 'derivative('.length;
+                const expr = processedExpression.substring(start, innermostComma).trim();
+                const variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+                
+                const derivativeResult = this.cleanMath.derivative(expr, variable);
+                processedExpression = processedExpression.substring(0, innermostStart) + 
+                                      '(' + derivativeResult.toString() + ')' + 
+                                      processedExpression.substring(innermostEnd + 1);
             } else {
                 break;
             }
@@ -8743,11 +8855,18 @@ class Graphiti {
         }
         processedExpression = processedExpression.toLowerCase();
         
-        // Handle derivative() - process once before loop
+        // Handle derivative() - process from INNERMOST to outermost
         while (processedExpression.includes('derivative(')) {
             try {
-                const derivStart = processedExpression.indexOf('derivative(');
-                if (derivStart !== -1) {
+                let innermostStart = -1;
+                let innermostEnd = -1;
+                let innermostComma = -1;
+                
+                let searchPos = 0;
+                while (true) {
+                    const derivStart = processedExpression.indexOf('derivative(', searchPos);
+                    if (derivStart === -1) break;
+                    
                     let depth = 0;
                     let lastCommaPos = -1;
                     const start = derivStart + 'derivative('.length;
@@ -8769,14 +8888,26 @@ class Graphiti {
                     
                     if (lastCommaPos !== -1 && endParen !== -1) {
                         const expr = processedExpression.substring(start, lastCommaPos).trim();
-                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                        const derivativeResult = math.derivative(expr, variable);
-                        processedExpression = processedExpression.substring(0, derivStart) + 
-                                              '(' + derivativeResult.toString() + ')' + 
-                                              processedExpression.substring(endParen + 1);
-                    } else {
-                        break;
+                        
+                        if (!expr.includes('derivative(')) {
+                            innermostStart = derivStart;
+                            innermostEnd = endParen;
+                            innermostComma = lastCommaPos;
+                            break;
+                        }
                     }
+                    
+                    searchPos = derivStart + 1;
+                }
+                
+                if (innermostStart !== -1 && innermostEnd !== -1 && innermostComma !== -1) {
+                    const start = innermostStart + 'derivative('.length;
+                    const expr = processedExpression.substring(start, innermostComma).trim();
+                    const variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+                    const derivativeResult = this.cleanMath.derivative(expr, variable);
+                    processedExpression = processedExpression.substring(0, innermostStart) + 
+                                          '(' + derivativeResult.toString() + ')' + 
+                                          processedExpression.substring(innermostEnd + 1);
                 } else {
                     break;
                 }
@@ -8853,11 +8984,18 @@ class Graphiti {
         }
         processedExpression = processedExpression.toLowerCase();
         
-        // Handle derivative() - process once before loop
+        // Handle derivative() - process from INNERMOST to outermost
         while (processedExpression.includes('derivative(')) {
             try {
-                const derivStart = processedExpression.indexOf('derivative(');
-                if (derivStart !== -1) {
+                let innermostStart = -1;
+                let innermostEnd = -1;
+                let innermostComma = -1;
+                
+                let searchPos = 0;
+                while (true) {
+                    const derivStart = processedExpression.indexOf('derivative(', searchPos);
+                    if (derivStart === -1) break;
+                    
                     let depth = 0;
                     let lastCommaPos = -1;
                     const start = derivStart + 'derivative('.length;
@@ -8879,14 +9017,26 @@ class Graphiti {
                     
                     if (lastCommaPos !== -1 && endParen !== -1) {
                         const expr = processedExpression.substring(start, lastCommaPos).trim();
-                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                        const derivativeResult = math.derivative(expr, variable);
-                        processedExpression = processedExpression.substring(0, derivStart) + 
-                                              '(' + derivativeResult.toString() + ')' + 
-                                              processedExpression.substring(endParen + 1);
-                    } else {
-                        break;
+                        
+                        if (!expr.includes('derivative(')) {
+                            innermostStart = derivStart;
+                            innermostEnd = endParen;
+                            innermostComma = lastCommaPos;
+                            break;
+                        }
                     }
+                    
+                    searchPos = derivStart + 1;
+                }
+                
+                if (innermostStart !== -1 && innermostEnd !== -1 && innermostComma !== -1) {
+                    const start = innermostStart + 'derivative('.length;
+                    const expr = processedExpression.substring(start, innermostComma).trim();
+                    const variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+                    const derivativeResult = this.cleanMath.derivative(expr, variable);
+                    processedExpression = processedExpression.substring(0, innermostStart) + 
+                                          '(' + derivativeResult.toString() + ')' + 
+                                          processedExpression.substring(innermostEnd + 1);
                 } else {
                     break;
                 }
@@ -8976,11 +9126,18 @@ class Graphiti {
         }
         processedExpression = processedExpression.toLowerCase();
         
-        // Handle derivative() - process once before loop
+        // Handle derivative() - process from INNERMOST to outermost
         while (processedExpression.includes('derivative(')) {
             try {
-                const derivStart = processedExpression.indexOf('derivative(');
-                if (derivStart !== -1) {
+                let innermostStart = -1;
+                let innermostEnd = -1;
+                let innermostComma = -1;
+                
+                let searchPos = 0;
+                while (true) {
+                    const derivStart = processedExpression.indexOf('derivative(', searchPos);
+                    if (derivStart === -1) break;
+                    
                     let depth = 0;
                     let lastCommaPos = -1;
                     const start = derivStart + 'derivative('.length;
@@ -9002,14 +9159,26 @@ class Graphiti {
                     
                     if (lastCommaPos !== -1 && endParen !== -1) {
                         const expr = processedExpression.substring(start, lastCommaPos).trim();
-                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                        const derivativeResult = math.derivative(expr, variable);
-                        processedExpression = processedExpression.substring(0, derivStart) + 
-                                              '(' + derivativeResult.toString() + ')' + 
-                                              processedExpression.substring(endParen + 1);
-                    } else {
-                        break;
+                        
+                        if (!expr.includes('derivative(')) {
+                            innermostStart = derivStart;
+                            innermostEnd = endParen;
+                            innermostComma = lastCommaPos;
+                            break;
+                        }
                     }
+                    
+                    searchPos = derivStart + 1;
+                }
+                
+                if (innermostStart !== -1 && innermostEnd !== -1 && innermostComma !== -1) {
+                    const start = innermostStart + 'derivative('.length;
+                    const expr = processedExpression.substring(start, innermostComma).trim();
+                    const variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+                    const derivativeResult = this.cleanMath.derivative(expr, variable);
+                    processedExpression = processedExpression.substring(0, innermostStart) + 
+                                          '(' + derivativeResult.toString() + ')' + 
+                                          processedExpression.substring(innermostEnd + 1);
                 } else {
                     break;
                 }
@@ -14508,16 +14677,22 @@ class Graphiti {
             processedExpression = processedExpression.toLowerCase();
             
             // Handle derivative() - extract and compute symbolically using math.derivative()
-            // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+            // Process from innermost to outermost by finding derivatives that don't contain other derivatives
             while (processedExpression.includes('derivative(')) {
                 try {
-                    const derivStart = processedExpression.indexOf('derivative(');
-                    if (derivStart !== -1) {
+                    // Find the innermost derivative (one whose content doesn't contain another derivative)
+                    let derivStart = -1;
+                    let searchIndex = 0;
+                    let foundInnermost = false;
+                    
+                    // Keep finding derivative( until we find one whose content doesn't contain another derivative(
+                    while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
+                        const start = searchIndex + 'derivative('.length;
                         let depth = 0;
-                        let lastCommaPos = -1;
-                        const start = derivStart + 'derivative('.length;
                         let endParen = -1;
+                        let lastCommaPos = -1;
                         
+                        // Find the matching closing parenthesis
                         for (let i = start; i < processedExpression.length; i++) {
                             if (processedExpression[i] === '(') depth++;
                             else if (processedExpression[i] === ')') {
@@ -14533,21 +14708,57 @@ class Graphiti {
                         }
                         
                         if (lastCommaPos !== -1 && endParen !== -1) {
-                            const expr = processedExpression.substring(start, lastCommaPos).trim();
-                            const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                            const content = processedExpression.substring(start, endParen);
                             
-                            // Compute derivative using math.derivative()
-                            const derivativeResult = math.derivative(expr, variable);
-                            
-                            // Replace only the derivative() call with its result, preserving surrounding expression
-                            processedExpression = processedExpression.substring(0, derivStart) + 
-                                                  '(' + derivativeResult.toString() + ')' + 
-                                                  processedExpression.substring(endParen + 1);
-                        } else {
-                            break; // Invalid format, stop processing
+                            // Check if this content contains another derivative(
+                            if (!content.includes('derivative(')) {
+                                // Found innermost derivative
+                                derivStart = searchIndex;
+                                foundInnermost = true;
+                                break;
+                            }
                         }
+                        
+                        searchIndex++;
+                    }
+                    
+                    if (!foundInnermost) {
+                        break; // No valid innermost derivative found
+                    }
+                    
+                    // Process the innermost derivative
+                    const start = derivStart + 'derivative('.length;
+                    let depth = 0;
+                    let endParen = -1;
+                    let lastCommaPos = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        
+                        // Compute derivative using math.derivative()
+                        const derivativeResult = this.cleanMath.derivative(expr, variable);
+                        
+                        // Replace only the derivative() call with its result, preserving surrounding expression
+                        processedExpression = processedExpression.substring(0, derivStart) + 
+                                              '(' + derivativeResult.toString() + ')' + 
+                                              processedExpression.substring(endParen + 1);
                     } else {
-                        break;
+                        break; // Invalid format, stop processing
                     }
                 } catch (err) {
                     // If derivative computation fails, return NaN
@@ -16281,44 +16492,98 @@ class Graphiti {
                 // Convert from LaTeX first since we now store LaTeX format
                 let expr = this.convertFromLatex(exprToEvaluate);
                 
-                // Handle derivative() - replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                // Handle derivative() - replace all derivative() calls INNERMOST-FIRST to support nested derivatives
                 while (expr.toLowerCase().includes('derivative(')) {
-                    const derivStart = expr.toLowerCase().indexOf('derivative(');
-                    if (derivStart !== -1) {
-                        let depth = 0;
-                        let lastCommaPos = -1;
-                        const start = derivStart + 'derivative('.length;
-                        let endParen = -1;
+                    try {
+                        // Find ALL derivative() occurrences in the expression
+                        const allDerivStarts = [];
+                        let searchPos = 0;
+                        while (true) {
+                            const pos = expr.toLowerCase().indexOf('derivative(', searchPos);
+                            if (pos === -1) break;
+                            allDerivStarts.push(pos);
+                            searchPos = pos + 1;
+                        }
                         
-                        for (let i = start; i < expr.length; i++) {
-                            if (expr[i] === '(') depth++;
-                            else if (expr[i] === ')') {
-                                if (depth === 0) {
-                                    endParen = i;
-                                    break;
+                        if (allDerivStarts.length === 0) break;
+                        
+                        // For each derivative(), check if its content contains another derivative()
+                        let innermostDerivStart = -1;
+                        
+                        for (const derivStart of allDerivStarts) {
+                            let depth = 0;
+                            let lastCommaPos = -1;
+                            const start = derivStart + 'derivative('.length;
+                            let endParen = -1;
+                            
+                            // Find the matching closing paren and last comma
+                            for (let i = start; i < expr.length; i++) {
+                                if (expr[i] === '(') depth++;
+                                else if (expr[i] === ')') {
+                                    if (depth === 0) {
+                                        endParen = i;
+                                        break;
+                                    }
+                                    depth--;
                                 }
-                                depth--;
+                                else if (expr[i] === ',' && depth === 0) {
+                                    lastCommaPos = i;
+                                }
                             }
-                            else if (expr[i] === ',' && depth === 0) {
-                                lastCommaPos = i;
+                            
+                            if (lastCommaPos !== -1 && endParen !== -1) {
+                                // Extract the content between derivative( and the comma
+                                const derivExpr = expr.substring(start, lastCommaPos).trim();
+                                
+                                // Check if this content contains 'derivative(' - if not, it's innermost
+                                if (!derivExpr.toLowerCase().includes('derivative(')) {
+                                    innermostDerivStart = derivStart;
+                                    break; // Found innermost, process it
+                                }
                             }
                         }
                         
-                        if (lastCommaPos !== -1 && endParen !== -1) {
-                            const derivExpr = expr.substring(start, lastCommaPos).trim();
-                            const variable = expr.substring(lastCommaPos + 1, endParen).trim();
+                        // If we found an innermost derivative, process it
+                        if (innermostDerivStart !== -1) {
+                            let depth = 0;
+                            let lastCommaPos = -1;
+                            const start = innermostDerivStart + 'derivative('.length;
+                            let endParen = -1;
                             
-                            // Compute derivative symbolically
-                            const symbolicResult = math.derivative(derivExpr, variable);
+                            for (let i = start; i < expr.length; i++) {
+                                if (expr[i] === '(') depth++;
+                                else if (expr[i] === ')') {
+                                    if (depth === 0) {
+                                        endParen = i;
+                                        break;
+                                    }
+                                    depth--;
+                                }
+                                else if (expr[i] === ',' && depth === 0) {
+                                    lastCommaPos = i;
+                                }
+                            }
                             
-                            // Replace only the derivative() call with its result, preserving surrounding expression
-                            expr = expr.substring(0, derivStart) + 
-                                   '(' + symbolicResult.toString() + ')' + 
-                                   expr.substring(endParen + 1);
+                            if (lastCommaPos !== -1 && endParen !== -1) {
+                                const derivExpr = expr.substring(start, lastCommaPos).trim();
+                                const variable = expr.substring(lastCommaPos + 1, endParen).trim();
+                                
+                                // Compute derivative symbolically
+                                const symbolicResult = this.cleanMath.derivative(derivExpr, variable);
+                                
+                                // Replace only the derivative() call with its result, preserving surrounding expression
+                                expr = expr.substring(0, innermostDerivStart) + 
+                                       '(' + symbolicResult.toString() + ')' + 
+                                       expr.substring(endParen + 1);
+                            } else {
+                                break; // Invalid format, stop processing
+                            }
                         } else {
-                            break; // Invalid format, stop processing
+                            // No innermost found (all derivatives contain nested derivatives) - should not happen
+                            break;
                         }
-                    } else {
+                    } catch (err) {
+                        console.warn('Could not compute derivative for y-intercept:', err);
                         break;
                     }
                 }
@@ -16366,44 +16631,98 @@ class Graphiti {
         // Convert from LaTeX first since expression might be in LaTeX format
         let convertedExpression = this.convertFromLatex(expression);
         
-        // Handle derivative() - replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+        // Handle derivative() - replace all derivative() calls INNERMOST-FIRST to support nested derivatives
         while (convertedExpression.toLowerCase().includes('derivative(')) {
-            const derivStart = convertedExpression.toLowerCase().indexOf('derivative(');
-            if (derivStart !== -1) {
-                let depth = 0;
-                let lastCommaPos = -1;
-                const start = derivStart + 'derivative('.length;
-                let endParen = -1;
+            try {
+                // Find ALL derivative() occurrences in the expression
+                const allDerivStarts = [];
+                let searchPos = 0;
+                while (true) {
+                    const pos = convertedExpression.toLowerCase().indexOf('derivative(', searchPos);
+                    if (pos === -1) break;
+                    allDerivStarts.push(pos);
+                    searchPos = pos + 1;
+                }
                 
-                for (let i = start; i < convertedExpression.length; i++) {
-                    if (convertedExpression[i] === '(') depth++;
-                    else if (convertedExpression[i] === ')') {
-                        if (depth === 0) {
-                            endParen = i;
-                            break;
+                if (allDerivStarts.length === 0) break;
+                
+                // For each derivative(), check if its content contains another derivative()
+                let innermostDerivStart = -1;
+                
+                for (const derivStart of allDerivStarts) {
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = derivStart + 'derivative('.length;
+                    let endParen = -1;
+                    
+                    // Find the matching closing paren and last comma
+                    for (let i = start; i < convertedExpression.length; i++) {
+                        if (convertedExpression[i] === '(') depth++;
+                        else if (convertedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
                         }
-                        depth--;
+                        else if (convertedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
                     }
-                    else if (convertedExpression[i] === ',' && depth === 0) {
-                        lastCommaPos = i;
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        // Extract the content between derivative( and the comma
+                        const derivExpr = convertedExpression.substring(start, lastCommaPos).trim();
+                        
+                        // Check if this content contains 'derivative(' - if not, it's innermost
+                        if (!derivExpr.toLowerCase().includes('derivative(')) {
+                            innermostDerivStart = derivStart;
+                            break; // Found innermost, process it
+                        }
                     }
                 }
                 
-                if (lastCommaPos !== -1 && endParen !== -1) {
-                    const derivExpr = convertedExpression.substring(start, lastCommaPos).trim();
-                    const derivVariable = convertedExpression.substring(lastCommaPos + 1, endParen).trim();
+                // If we found an innermost derivative, process it
+                if (innermostDerivStart !== -1) {
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = innermostDerivStart + 'derivative('.length;
+                    let endParen = -1;
                     
-                    // Compute derivative symbolically
-                    const symbolicResult = math.derivative(derivExpr, derivVariable);
+                    for (let i = start; i < convertedExpression.length; i++) {
+                        if (convertedExpression[i] === '(') depth++;
+                        else if (convertedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (convertedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
                     
-                    // Replace only the derivative() call with its result, preserving surrounding expression
-                    convertedExpression = convertedExpression.substring(0, derivStart) + 
-                                          '(' + symbolicResult.toString() + ')' + 
-                                          convertedExpression.substring(endParen + 1);
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const derivExpr = convertedExpression.substring(start, lastCommaPos).trim();
+                        const derivVariable = convertedExpression.substring(lastCommaPos + 1, endParen).trim();
+                        
+                        // Compute derivative symbolically
+                        const symbolicResult = this.cleanMath.derivative(derivExpr, derivVariable);
+                        
+                        // Replace only the derivative() call with its result, preserving surrounding expression
+                        convertedExpression = convertedExpression.substring(0, innermostDerivStart) + 
+                                              '(' + symbolicResult.toString() + ')' + 
+                                              convertedExpression.substring(endParen + 1);
+                    } else {
+                        break; // Invalid format, stop processing
+                    }
                 } else {
-                    break; // Invalid format, stop processing
+                    // No innermost found (all derivatives contain nested derivatives) - should not happen
+                    break;
                 }
-            } else {
+            } catch (err) {
+                console.warn('Could not compute derivative for bisection:', err);
                 break;
             }
         }
@@ -16818,7 +17137,7 @@ class Graphiti {
                                         const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
                                         const derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                                         
-                                        const derivativeResult = math.derivative(derivExpr, derivVariable);
+                                        const derivativeResult = this.cleanMath.derivative(derivExpr, derivVariable);
                                         
                                         // Replace only the derivative() call with its result, preserving surrounding expression
                                         processedExpression = processedExpression.substring(0, derivStart) + 
@@ -16833,9 +17152,9 @@ class Graphiti {
                                 }
                             }
                             
-                            const derivative = math.derivative(processedExpression, 'x');
+                            const derivative = this.cleanMath.derivative(processedExpression, 'x');
                             const derivativeStr = derivative.toString();
-                            const secondDerivative = math.derivative(derivative, 'x');
+                            const secondDerivative = this.cleanMath.derivative(derivative, 'x');
                             const secondDerivativeStr = secondDerivative.toString();
                             const functionTurningPoints = this.findTurningPointsForFunction(boundaryFunc, derivativeStr, secondDerivativeStr, processedExpression);
                             turningPoints.push(...functionTurningPoints);
@@ -16897,14 +17216,60 @@ class Graphiti {
                 let processedExpression = cleanExpression.toLowerCase();
                 
                 // If expression contains derivative(), compute it symbolically first
-                // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                // Process from innermost to outermost by finding derivatives that don't contain other derivatives
                 while (processedExpression.includes('derivative(')) {
                     try {
-                        const derivStart = processedExpression.indexOf('derivative(');
-                        let depth = 0;
-                        let lastCommaPos = -1;
+                        // Find the innermost derivative (one whose content doesn't contain another derivative)
+                        let derivStart = -1;
+                        let searchIndex = 0;
+                        let foundInnermost = false;
+                        
+                        // Keep finding derivative( until we find one whose content doesn't contain another derivative(
+                        while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
+                            const start = searchIndex + 'derivative('.length;
+                            let depth = 0;
+                            let endParen = -1;
+                            let lastCommaPos = -1;
+                            
+                            // Find the matching closing parenthesis
+                            for (let i = start; i < processedExpression.length; i++) {
+                                if (processedExpression[i] === '(') depth++;
+                                else if (processedExpression[i] === ')') {
+                                    if (depth === 0) {
+                                        endParen = i;
+                                        break;
+                                    }
+                                    depth--;
+                                }
+                                else if (processedExpression[i] === ',' && depth === 0) {
+                                    lastCommaPos = i;
+                                }
+                            }
+                            
+                            if (lastCommaPos !== -1 && endParen !== -1) {
+                                const content = processedExpression.substring(start, endParen);
+                                
+                                // Check if this content contains another derivative(
+                                if (!content.includes('derivative(')) {
+                                    // Found innermost derivative
+                                    derivStart = searchIndex;
+                                    foundInnermost = true;
+                                    break;
+                                }
+                            }
+                            
+                            searchIndex++;
+                        }
+                        
+                        if (!foundInnermost) {
+                            break; // No valid innermost derivative found
+                        }
+                        
+                        // Process the innermost derivative
                         const start = derivStart + 'derivative('.length;
+                        let depth = 0;
                         let endParen = -1;
+                        let lastCommaPos = -1;
                         
                         for (let i = start; i < processedExpression.length; i++) {
                             if (processedExpression[i] === '(') depth++;
@@ -16924,7 +17289,7 @@ class Graphiti {
                             const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
                             const derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
                             
-                            const derivativeResult = math.derivative(derivExpr, derivVariable);
+                            const derivativeResult = this.cleanMath.derivative(derivExpr, derivVariable);
                             
                             // Replace only the derivative() call with its result, preserving surrounding expression
                             processedExpression = processedExpression.substring(0, derivStart) + 
@@ -16940,11 +17305,11 @@ class Graphiti {
                 }
                 
                 // Get symbolic derivative using math.js
-                const derivative = math.derivative(processedExpression, 'x');
+                            const derivative = this.cleanMath.derivative(processedExpression, 'x');
                 const derivativeStr = derivative.toString();
                 
                 // Also get second derivative for classification
-                const secondDerivative = math.derivative(derivative, 'x');
+                const secondDerivative = this.cleanMath.derivative(derivative, 'x');
                 const secondDerivativeStr = secondDerivative.toString();
                 
                 // Find turning points by finding roots of f'(x) = 0
@@ -17018,14 +17383,60 @@ class Graphiti {
                 let processedExpression = cleanExpression.toLowerCase();
                 
                 // If expression contains derivative(), compute it symbolically first
-                // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
+                // Process from innermost to outermost by finding derivatives that don't contain other derivatives
                 while (processedExpression.includes('derivative(')) {
                     try {
-                        const derivStart = processedExpression.indexOf('derivative(');
-                        let depth = 0;
-                        let lastCommaPos = -1;
+                        // Find the innermost derivative (one whose content doesn't contain another derivative)
+                        let derivStart = -1;
+                        let searchIndex = 0;
+                        let foundInnermost = false;
+                        
+                        // Keep finding derivative( until we find one whose content doesn't contain another derivative(
+                        while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
+                            const start = searchIndex + 'derivative('.length;
+                            let depth = 0;
+                            let endParen = -1;
+                            let lastCommaPos = -1;
+                            
+                            // Find the matching closing parenthesis
+                            for (let i = start; i < processedExpression.length; i++) {
+                                if (processedExpression[i] === '(') depth++;
+                                else if (processedExpression[i] === ')') {
+                                    if (depth === 0) {
+                                        endParen = i;
+                                        break;
+                                    }
+                                    depth--;
+                                }
+                                else if (processedExpression[i] === ',' && depth === 0) {
+                                    lastCommaPos = i;
+                                }
+                            }
+                            
+                            if (lastCommaPos !== -1 && endParen !== -1) {
+                                const content = processedExpression.substring(start, endParen);
+                                
+                                // Check if this content contains another derivative(
+                                if (!content.includes('derivative(')) {
+                                    // Found innermost derivative
+                                    derivStart = searchIndex;
+                                    foundInnermost = true;
+                                    break;
+                                }
+                            }
+                            
+                            searchIndex++;
+                        }
+                        
+                        if (!foundInnermost) {
+                            break; // No valid innermost derivative found
+                        }
+                        
+                        // Process the innermost derivative
                         const start = derivStart + 'derivative('.length;
+                        let depth = 0;
                         let endParen = -1;
+                        let lastCommaPos = -1;
                         
                         for (let i = start; i < processedExpression.length; i++) {
                             if (processedExpression[i] === '(') depth++;
@@ -17050,7 +17461,7 @@ class Graphiti {
                                 derivVariable = 't';
                             }
                             
-                            const derivativeResult = math.derivative(derivExpr, derivVariable);
+                            const derivativeResult = this.cleanMath.derivative(derivExpr, derivVariable);
                             
                             // Replace only the derivative() call with its result, preserving surrounding expression
                             processedExpression = processedExpression.substring(0, derivStart) + 
@@ -17075,12 +17486,12 @@ class Graphiti {
                 let derivativeStr;
                 try {
                     // Try theta first
-                    derivative = math.derivative(processedExpression, 'theta');
+                    derivative = this.cleanMath.derivative(processedExpression, 'theta');
                     derivativeStr = derivative.toString();
                     
                     // If derivative is just "0", try with 't' instead
                     if (derivativeStr === '0') {
-                        derivative = math.derivative(processedExpression, 't');
+                        derivative = this.cleanMath.derivative(processedExpression, 't');
                         derivativeStr = derivative.toString();
                     }
                     
@@ -17433,13 +17844,13 @@ class Graphiti {
             // Get symbolic derivatives dy/dt and dx/dt using math.js
             let dydt, dxdt, d2ydt2, d2xdt2;
             try {
-                const yParsed = math.parse(yExpr.toLowerCase());
-                const xParsed = math.parse(xExpr.toLowerCase());
-                dydt = math.derivative(yParsed, 't');
-                dxdt = math.derivative(xParsed, 't');
+                const yParsed = this.cleanMath.parse(yExpr.toLowerCase());
+                const xParsed = this.cleanMath.parse(xExpr.toLowerCase());
+                dydt = this.cleanMath.derivative(yParsed, 't');
+                dxdt = this.cleanMath.derivative(xParsed, 't');
                 // Get second derivatives for classification
-                d2ydt2 = math.derivative(dydt, 't');
-                d2xdt2 = math.derivative(dxdt, 't');
+                d2ydt2 = this.cleanMath.derivative(dydt, 't');
+                d2xdt2 = this.cleanMath.derivative(dxdt, 't');
             } catch (error) {
                 console.warn('Could not compute derivatives for parametric function:', error);
                 return turningPoints;
@@ -17595,76 +18006,101 @@ class Graphiti {
             return this.calculateImplicitTangent(func, worldX, worldY);
         }
         
-        try {
-            // Convert from LaTeX first
-            const convertedExpression = this.convertFromLatex(func.expression);
+        // Convert from LaTeX first
+        const convertedExpression = this.convertFromLatex(func.expression);
+        
+        // Clean the expression - remove "y=" or inequality operators (y>, y<, y≥, y≤) if present
+        let cleanExpression = convertedExpression.trim();
+        if (/^y\s*[=><≥≤]/.test(cleanExpression)) {
+            // Extract just the right side (boundary function)
+            const match = cleanExpression.match(/^y\s*[=><≥≤]\s*(.+)$/);
+            if (match) {
+                cleanExpression = match[1].trim();
+            }
+        }
+        
+        // Process derivatives first (outside try block so it's accessible in numerical fallback)
+        let processedExpression = cleanExpression.toLowerCase();
             
-            // Clean the expression - remove "y=" or inequality operators (y>, y<, y≥, y≤) if present
-            let cleanExpression = convertedExpression.trim();
-            if (/^y\s*[=><≥≤]/.test(cleanExpression)) {
-                // Extract just the right side (boundary function)
-                const match = cleanExpression.match(/^y\s*[=><≥≤]\s*(.+)$/);
-                if (match) {
-                    cleanExpression = match[1].trim();
+            // Handle derivative() - extract and compute symbolically first
+            // Process from INNERMOST to outermost derivative calls to avoid nested derivative() in expressions
+            while (processedExpression.includes('derivative(')) {
+                // Find the LAST (innermost) occurrence of 'derivative(' that doesn't contain another derivative inside
+                let innermostStart = -1;
+                let innermostEnd = -1;
+                let innermostComma = -1;
+                
+                // Search all occurrences and find the one without nested derivatives
+                let searchPos = 0;
+                while (true) {
+                    const derivStart = processedExpression.indexOf('derivative(', searchPos);
+                    if (derivStart === -1) break;
+                    
+                    let depth = 0;
+                    let lastCommaPos = -1;
+                    const start = derivStart + 'derivative('.length;
+                    let endParen = -1;
+                    
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+                    
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        
+                        // Check if this expression contains another derivative call
+                        if (!expr.includes('derivative(')) {
+                            // This is an innermost derivative (no nested derivatives inside)
+                            innermostStart = derivStart;
+                            innermostEnd = endParen;
+                            innermostComma = lastCommaPos;
+                            break; // Found the innermost, process it
+                        }
+                    }
+                    
+                    searchPos = derivStart + 1; // Continue searching
+                }
+                
+                if (innermostStart !== -1 && innermostEnd !== -1 && innermostComma !== -1) {
+                    const start = innermostStart + 'derivative('.length;
+                    const expr = processedExpression.substring(start, innermostComma).trim();
+                    const variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+                    
+                    // Compute derivative using cleanMath (local instance)
+                    const derivativeResult = cleanMath.derivative(expr, variable);
+                    
+                    // Replace only this innermost derivative() call with its result
+                    processedExpression = processedExpression.substring(0, innermostStart) + 
+                                          '(' + derivativeResult.toString() + ')' + 
+                                          processedExpression.substring(innermostEnd + 1);
+                } else {
+                    break; // No valid derivative found, stop processing
                 }
             }
             
+            // Handle degree mode for trig functions - convert AFTER processing derivatives
+            let degreeConversionApplied = false;
+            if (this.angleMode === 'degrees') {
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                if (hasRegularTrigWithX) {
+                    processedExpression = this.convertTrigToDegreeMode(processedExpression);
+                    degreeConversionApplied = true;
+                }
+            }
+            
+        try {
             // Try symbolic derivative first (more accurate)
             try {
-                let processedExpression = cleanExpression.toLowerCase();
-                
-                // Handle derivative() - extract and compute symbolically first
-                // Replace all derivative() calls in the expression (supports multiple derivatives and coefficients)
-                while (processedExpression.includes('derivative(')) {
-                    const derivStart = processedExpression.indexOf('derivative(');
-                    if (derivStart !== -1) {
-                        let depth = 0;
-                        let lastCommaPos = -1;
-                        const start = derivStart + 'derivative('.length;
-                        let endParen = -1;
-                        
-                        for (let i = start; i < processedExpression.length; i++) {
-                            if (processedExpression[i] === '(') depth++;
-                            else if (processedExpression[i] === ')') {
-                                if (depth === 0) {
-                                    endParen = i;
-                                    break;
-                                }
-                                depth--;
-                            }
-                            else if (processedExpression[i] === ',' && depth === 0) {
-                                lastCommaPos = i;
-                            }
-                        }
-                        
-                        if (lastCommaPos !== -1 && endParen !== -1) {
-                            const expr = processedExpression.substring(start, lastCommaPos).trim();
-                            const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                            
-                            // Compute derivative using math.derivative()
-                            const derivativeResult = math.derivative(expr, variable);
-                            
-                            // Replace only the derivative() call with its result, preserving surrounding expression
-                            processedExpression = processedExpression.substring(0, derivStart) + 
-                                                  '(' + derivativeResult.toString() + ')' + 
-                                                  processedExpression.substring(endParen + 1);
-                        } else {
-                            break; // Invalid format, stop processing
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                
-                // Handle degree mode for trig functions - convert AFTER processing derivatives
-                let degreeConversionApplied = false;
-                if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
-                    if (hasRegularTrigWithX) {
-                        processedExpression = this.convertTrigToDegreeMode(processedExpression);
-                        degreeConversionApplied = true;
-                    }
-                }
                 
                 // Use clean math instance for symbolic differentiation
                 const parsedExpression = cleanMath.parse(processedExpression);
@@ -17797,16 +18233,16 @@ class Graphiti {
             
             // Fallback to numerical differentiation (central difference method)
             const h = 0.0001; // Small step size
-            const compiledExpr = this.getCompiledExpression(cleanExpression.toLowerCase());
+            const compiledExpr = this.getCompiledExpression(processedExpression);
             
             // Central difference: f'(x) ≈ (f(x+h) - f(x-h)) / (2h)
             let yPlus, yMinus, yPlusPlus, yMinusMinus;
             
             try {
                 if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(cleanExpression.toLowerCase());
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
                     if (hasRegularTrigWithX) {
-                        const processedExpr = this.convertTrigToDegreeMode(cleanExpression.toLowerCase());
+                        const processedExpr = this.convertTrigToDegreeMode(processedExpression);
                         const compiled = this.getCompiledExpression(processedExpr);
                         const scope = this.getEvaluationScope({x: worldX + h});
                         yPlus = compiled.evaluate(scope);
@@ -17918,7 +18354,7 @@ class Graphiti {
                                 variable = 't';
                             }
                             
-                            const derivativeResult = math.derivative(expr, variable);
+                            const derivativeResult = this.cleanMath.derivative(expr, variable);
                             processedExpression = processedExpression.substring(0, derivStart) + 
                                                   '(' + derivativeResult.toString() + ')' + 
                                                   processedExpression.substring(endParen + 1);
@@ -18891,7 +19327,7 @@ class Graphiti {
                                 variable = 't';
                             }
                             
-                            const derivativeResult = math.derivative(expr, variable);
+                            const derivativeResult = this.cleanMath.derivative(expr, variable);
                             processedExpression = processedExpression.substring(0, derivStart) + 
                                                   '(' + derivativeResult.toString() + ')' + 
                                                   processedExpression.substring(endParen + 1);
@@ -19219,7 +19655,7 @@ class Graphiti {
                                 }
                                 
                                 // Compute derivative using math.derivative()
-                                const derivativeResult = math.derivative(expr, variable);
+                                const derivativeResult = this.cleanMath.derivative(expr, variable);
                                 
                                 // Replace only the derivative() call with its result
                                 processedExpression = processedExpression.substring(0, derivStart) + 
@@ -22348,11 +22784,18 @@ class Graphiti {
         }
         processedExpression = processedExpression.toLowerCase();
         
-        // Handle derivative() - process once before all loops
+        // Handle derivative() - process from INNERMOST to outermost
         while (processedExpression.includes('derivative(')) {
             try {
-                const derivStart = processedExpression.indexOf('derivative(');
-                if (derivStart !== -1) {
+                let innermostStart = -1;
+                let innermostEnd = -1;
+                let innermostComma = -1;
+                
+                let searchPos = 0;
+                while (true) {
+                    const derivStart = processedExpression.indexOf('derivative(', searchPos);
+                    if (derivStart === -1) break;
+                    
                     let depth = 0;
                     let lastCommaPos = -1;
                     const start = derivStart + 'derivative('.length;
@@ -22374,14 +22817,26 @@ class Graphiti {
                     
                     if (lastCommaPos !== -1 && endParen !== -1) {
                         const expr = processedExpression.substring(start, lastCommaPos).trim();
-                        const variable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                        const derivativeResult = math.derivative(expr, variable);
-                        processedExpression = processedExpression.substring(0, derivStart) + 
-                                              '(' + derivativeResult.toString() + ')' + 
-                                              processedExpression.substring(endParen + 1);
-                    } else {
-                        break;
+                        
+                        if (!expr.includes('derivative(')) {
+                            innermostStart = derivStart;
+                            innermostEnd = endParen;
+                            innermostComma = lastCommaPos;
+                            break;
+                        }
                     }
+                    
+                    searchPos = derivStart + 1;
+                }
+                
+                if (innermostStart !== -1 && innermostEnd !== -1 && innermostComma !== -1) {
+                    const start = innermostStart + 'derivative('.length;
+                    const expr = processedExpression.substring(start, innermostComma).trim();
+                    const variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+                    const derivativeResult = this.cleanMath.derivative(expr, variable);
+                    processedExpression = processedExpression.substring(0, innermostStart) + 
+                                          '(' + derivativeResult.toString() + ')' + 
+                                          processedExpression.substring(innermostEnd + 1);
                 } else {
                     break;
                 }
@@ -26160,7 +26615,10 @@ class Graphiti {
                 
                 if (depth === 0) {
                     // Extract the expression
-                    const expr = expression.substring(exprStart, exprEnd);
+                    let expr = expression.substring(exprStart, exprEnd);
+                    
+                    // Recursively convert any nested derivative notations in the extracted expression
+                    expr = this.convertDerivativeNotation(expr);
                     
                     // Replace with derivative(expr, variable) - variable is inferred from d/dx notation
                     const replacement = `derivative(${expr},${variable})`;
