@@ -12444,8 +12444,7 @@ class Graphiti {
                     if (canShareFiles) {
                         await navigator.share({
                             files: [file],
-                            title: 'Graphiti Graph',
-                            text: 'Graph from Graphiti'
+                            title: 'Graphiti Graph'
                         });
                         console.log('Share successful');
                         
@@ -12546,8 +12545,6 @@ class Graphiti {
             if (isMobile && navigator.share) {
                 try {
                     await navigator.share({
-                        title: 'Graphiti Graph',
-                        text: 'Check out this graph',
                         url: shareUrl
                     });
                     console.log('Share successful via Web Share API');
