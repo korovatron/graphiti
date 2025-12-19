@@ -12454,16 +12454,13 @@ class Graphiti {
                     
                     console.log('Clipboard write successful');
                     
-                    // Show brief confirmation
+                    // Show DOM tooltip confirmation (above all panels)
                     const button = document.getElementById('share-image-button');
                     if (button) {
-                        const originalText = button.innerHTML;
-                        button.innerHTML = 'COPIED!';
-                        button.style.background = '#4A90E2';
-                        setTimeout(() => {
-                            button.innerHTML = originalText;
-                            button.style.background = '#2A3F5A';
-                        }, 1500);
+                        const rect = button.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top;
+                        this.showShareTooltip('Image copied to clipboard', centerX, centerY);
                     }
                     return; // Success - exit early
                 } catch (clipboardError) {
@@ -12534,16 +12531,13 @@ class Graphiti {
                     
                     console.log('Link copied to clipboard');
                     
-                    // Show brief confirmation
+                    // Show DOM tooltip confirmation (above all panels)
                     const button = document.getElementById('share-link-button');
                     if (button) {
-                        const originalText = button.innerHTML;
-                        button.innerHTML = 'COPIED!';
-                        button.style.background = '#4A90E2';
-                        setTimeout(() => {
-                            button.innerHTML = originalText;
-                            button.style.background = '#2A3F5A';
-                        }, 1500);
+                        const rect = button.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top;
+                        this.showShareTooltip('Link copied to clipboard', centerX, centerY);
                     }
                     return; // Success - exit early
                 } catch (clipboardError) {
@@ -20976,6 +20970,52 @@ class Graphiti {
         setTimeout(() => {
             indicator.remove();
         }, 3000);
+    }
+
+    showShareTooltip(text, x, y) {
+        // Show DOM-based tooltip above share buttons (appears above all panels)
+        const tooltip = document.createElement('div');
+        tooltip.textContent = text;
+        tooltip.style.cssText = `
+            position: fixed;
+            left: ${x}px;
+            top: ${y - 50}px;
+            transform: translateX(-50%);
+            font-size: 13px;
+            font-family: Inter, system-ui, sans-serif;
+            background: rgba(42, 63, 90, 0.95);
+            color: #E8F4FD;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(74, 144, 226, 0.5);
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            animation: tooltipFade 2s ease-in-out;
+            white-space: nowrap;
+        `;
+        
+        // Add fade animation if not already defined
+        if (!document.getElementById('share-tooltip-style')) {
+            const style = document.createElement('style');
+            style.id = 'share-tooltip-style';
+            style.textContent = `
+                @keyframes tooltipFade {
+                    0% { opacity: 0; transform: translate(-50%, -5px); }
+                    15% { opacity: 1; transform: translate(-50%, 0); }
+                    85% { opacity: 1; transform: translate(-50%, 0); }
+                    100% { opacity: 0; transform: translate(-50%, -5px); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(tooltip);
+        
+        // Remove tooltip after animation completes
+        setTimeout(() => {
+            tooltip.remove();
+        }, 2000);
     }
     
     // ================================
