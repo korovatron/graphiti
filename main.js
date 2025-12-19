@@ -33,6 +33,9 @@ class Graphiti {
         // Flag to prevent saving bounds during initial setup (before loadAndApplyViewportBounds runs)
         this.isInitialSetup = true;
         
+        // Flag for temporary session mode (when loaded from shared link)
+        this.tempSession = false;
+        
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
@@ -3100,6 +3103,11 @@ class Graphiti {
     
     // Save functions to localStorage
     saveFunctionsToLocalStorage() {
+        // Don't save if in temporary session mode
+        if (this.tempSession) {
+            return;
+        }
+        
         try {
             // Save cartesian functions (filter out empty ones)
             const cartesianData = this.cartesianFunctions
@@ -3166,6 +3174,11 @@ class Graphiti {
 
     // Save viewport bounds to localStorage
     saveViewportBounds() {
+        // Don't save if in temporary session mode
+        if (this.tempSession) {
+            return;
+        }
+        
         // Don't save if we're currently loading bounds from localStorage
         if (this.isLoadingBounds) {
             return;
@@ -9814,8 +9827,19 @@ class Graphiti {
         this.handleMobileLayout(true); // Force initial layout
         this.startAnimationLoop();
         
-        // Apply initial state to ensure UI elements are properly shown/hidden
-        this.changeState(this.states.TITLE);
+        // Check for shared state in URL hash
+        const sharedState = this.checkForSharedState();
+        if (sharedState) {
+            // Skip title screen and load shared state
+            this.tempSession = true;
+            this.hasInitialized = true;
+            this.changeState(this.states.GRAPHING);
+            this.applySharedState(sharedState);
+        } else {
+            // Normal startup - show title screen
+            this.tempSession = false;
+            this.changeState(this.states.TITLE);
+        }
         
         // Capture the actual initial viewport state after setup
         this.initialViewport = {
@@ -10470,11 +10494,19 @@ class Graphiti {
             });
         }
         
-        // Copy/Share Button
-        const copyShareButton = document.getElementById('copy-share-button');
-        if (copyShareButton) {
-            copyShareButton.addEventListener('click', async () => {
+        // Share Image Button (PNG to clipboard)
+        const shareImageButton = document.getElementById('share-image-button');
+        if (shareImageButton) {
+            shareImageButton.addEventListener('click', async () => {
                 await this.copyOrShareCanvas();
+            });
+        }
+        
+        // Share Link Button (Copy graph link)
+        const shareLinkButton = document.getElementById('share-link-button');
+        if (shareLinkButton) {
+            shareLinkButton.addEventListener('click', async () => {
+                await this.shareGraphLink();
             });
         }
         
@@ -12420,7 +12452,7 @@ class Graphiti {
                     console.log('Clipboard write successful');
                     
                     // Show brief confirmation
-                    const button = document.getElementById('copy-share-button');
+                    const button = document.getElementById('share-image-button');
                     if (button) {
                         const originalText = button.innerHTML;
                         button.innerHTML = 'COPIED!';
@@ -12451,6 +12483,359 @@ class Graphiti {
         } catch (error) {
             console.error('Failed to copy/share canvas:', error);
             alert('Failed to share image. Please try again.');
+        }
+    }
+    
+    async shareGraphLink() {
+        try {
+            // Encode current graph state
+            const state = this.encodeGraphState();
+            const compressed = LZString.compressToEncodedURIComponent(state);
+            
+            // Create shareable URL
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareUrl = `${baseUrl}#v=${compressed}`;
+            
+            // Detect mobile devices
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isIPad = (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+            const isMobile = isIOS || isIPad || /Android/i.test(navigator.userAgent);
+            
+            console.log('Device detection for link sharing:', { isIOS, isIPad, isMobile, userAgent: navigator.userAgent });
+            
+            // Try Web Share API first on mobile devices
+            if (isMobile && navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Graphiti Graph',
+                        text: 'Check out this graph',
+                        url: shareUrl
+                    });
+                    console.log('Share successful via Web Share API');
+                    return; // Success - exit early
+                } catch (shareError) {
+                    // User cancelled or share failed
+                    if (shareError.name === 'AbortError') {
+                        console.log('Share cancelled by user');
+                        return; // User cancelled, don't show error
+                    }
+                    console.log('Web Share API failed, trying clipboard:', shareError);
+                    // Fall through to clipboard
+                }
+            }
+            
+            // Try Clipboard API (works on desktop and some mobile browsers)
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    
+                    console.log('Link copied to clipboard');
+                    
+                    // Show brief confirmation
+                    const button = document.getElementById('share-link-button');
+                    if (button) {
+                        const originalText = button.innerHTML;
+                        button.innerHTML = 'COPIED!';
+                        button.style.background = '#4A90E2';
+                        setTimeout(() => {
+                            button.innerHTML = originalText;
+                            button.style.background = '#2A3F5A';
+                        }, 1500);
+                    }
+                    return; // Success - exit early
+                } catch (clipboardError) {
+                    console.log('Clipboard API failed:', clipboardError);
+                    // Fall through to manual copy
+                }
+            }
+            
+            // Fallback: Show URL in a prompt for manual copying
+            console.log('Using prompt fallback');
+            prompt('Copy this link to share your graph:', shareUrl);
+            
+        } catch (error) {
+            console.error('Failed to share link:', error);
+            alert('Failed to share link. Please try again.');
+        }
+    }
+    
+    encodeGraphState() {
+        // Collect all relevant state
+        const state = {
+            v: 1, // version for future compatibility
+            functions: this.getCurrentFunctions().map(func => ({
+                expression: func.expression,
+                color: func.color,
+                enabled: func.enabled,
+                hasIntegral: func.hasIntegral || false,
+                x: func.x, // For integral badges
+                integralLimitA: func.integralLimitA,
+                integralLimitB: func.integralLimitB
+            })),
+            viewport: {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY,
+                scale: this.viewport.scale
+            },
+            mode: this.plotMode,
+            settings: {
+                theme: document.documentElement.getAttribute('data-theme') || 'dark',
+                angleMode: this.angleMode,
+                showIntersections: document.getElementById('show-intersections')?.checked || false,
+                showIntercepts: document.getElementById('show-intercepts')?.checked || false,
+                showTurningPoints: document.getElementById('show-turning-points')?.checked || false
+            },
+            parameters: {
+                alpha: this.parameters.alpha.value,
+                beta: this.parameters.beta.value,
+                gamma: this.parameters.gamma.value,
+                delta: this.parameters.delta.value
+            }
+        };
+        
+        // Add polar-specific settings if in polar mode
+        if (this.plotMode === 'polar') {
+            state.polar = {
+                thetaMin: this.polarSettings.thetaMin,
+                thetaMax: this.polarSettings.thetaMax,
+                thetaMinLatex: this.polarSettings.thetaMinLatex,
+                thetaMaxLatex: this.polarSettings.thetaMaxLatex,
+                plotNegativeR: this.polarSettings.plotNegativeR
+            };
+        }
+        
+        return JSON.stringify(state);
+    }
+    
+    decodeGraphState(compressed) {
+        try {
+            const json = LZString.decompressFromEncodedURIComponent(compressed);
+            const state = JSON.parse(json);
+            
+            // Version check for future compatibility
+            if (state.v !== 1) {
+                console.warn('Unsupported state version:', state.v);
+                return null;
+            }
+            
+            return state;
+        } catch (error) {
+            console.error('Failed to decode graph state:', error);
+            return null;
+        }
+    }
+    
+    checkForSharedState() {
+        // Check if URL hash contains shared state
+        const hash = window.location.hash;
+        if (hash.startsWith('#v=')) {
+            const compressed = hash.slice(3);
+            return this.decodeGraphState(compressed);
+        }
+        return null;
+    }
+    
+    applySharedState(state) {
+        try {
+            // Set plot mode first
+            if (state.mode && state.mode !== this.plotMode) {
+                this.plotMode = state.mode;
+                this.updatePlotModeUI();
+            }
+            
+            // Apply settings
+            if (state.settings) {
+                if (state.settings.theme) {
+                    document.documentElement.setAttribute('data-theme', state.settings.theme);
+                }
+                if (state.settings.angleMode && state.settings.angleMode !== this.angleMode) {
+                    this.angleMode = state.settings.angleMode;
+                    this.updateAngleModeUI();
+                }
+                if (document.getElementById('show-intersections')) {
+                    document.getElementById('show-intersections').checked = state.settings.showIntersections;
+                }
+                if (document.getElementById('show-intercepts')) {
+                    document.getElementById('show-intercepts').checked = state.settings.showIntercepts;
+                }
+                if (document.getElementById('show-turning-points')) {
+                    document.getElementById('show-turning-points').checked = state.settings.showTurningPoints;
+                }
+            }
+            
+            // Apply parameters
+            if (state.parameters) {
+                this.parameters.alpha.value = state.parameters.alpha || 1;
+                this.parameters.beta.value = state.parameters.beta || 1;
+                this.parameters.gamma.value = state.parameters.gamma || 1;
+                this.parameters.delta.value = state.parameters.delta || 1;
+                this.updateParameterSliders();
+            }
+            
+            // Apply polar settings if in polar mode
+            if (state.polar && this.plotMode === 'polar') {
+                this.polarSettings.thetaMin = state.polar.thetaMin;
+                this.polarSettings.thetaMax = state.polar.thetaMax;
+                this.polarSettings.thetaMinLatex = state.polar.thetaMinLatex;
+                this.polarSettings.thetaMaxLatex = state.polar.thetaMaxLatex;
+                this.polarSettings.plotNegativeR = state.polar.plotNegativeR;
+                this.updatePolarRangeUI();
+            }
+            
+            // Clear existing functions
+            this.getCurrentFunctions().length = 0;
+            this.clearFunctionPanel();
+            
+            // Add functions from shared state
+            state.functions.forEach(funcData => {
+                const id = this.nextFunctionId++;
+                const func = {
+                    id: id,
+                    expression: funcData.expression,
+                    points: [],
+                    color: funcData.color,
+                    enabled: funcData.enabled,
+                    hasIntegral: funcData.hasIntegral,
+                    x: funcData.x,
+                    integralLimitA: funcData.integralLimitA,
+                    integralLimitB: funcData.integralLimitB,
+                    mode: this.plotMode
+                };
+                this.getCurrentFunctions().push(func);
+                this.createFunctionUI(func);
+            });
+            
+            // Update parameter sliders based on loaded functions
+            this.updateParameterSliders();
+            
+            // After updateParameterSliders() runs, restore the actual parameter values
+            // (updateParameterSliders resets to defaults, so we need to override)
+            if (state.parameters) {
+                const params = ['alpha', 'beta', 'gamma', 'delta'];
+                params.forEach(param => {
+                    const value = state.parameters[param] || 1;
+                    this.parameters[param].value = value;
+                    
+                    // Update slider element
+                    const slider = document.getElementById(`${param}-slider`);
+                    if (slider) {
+                        slider.value = value;
+                    }
+                    
+                    // Update value display
+                    const valueDisplay = document.getElementById(`${param}-value`);
+                    if (valueDisplay) {
+                        valueDisplay.textContent = parseFloat(value.toFixed(2)).toString();
+                    }
+                    
+                    // Update thumb position
+                    if (this.thumbUpdaters && this.thumbUpdaters[param]) {
+                        requestAnimationFrame(() => {
+                            this.thumbUpdaters[param]();
+                        });
+                    }
+                });
+            }
+            
+            this.updateParametricRangeVisibility();
+            
+            // Add a blank function at the end
+            const hasBlankFunction = this.getCurrentFunctions().some(func => !func.expression || func.expression.trim() === '');
+            if (!hasBlankFunction) {
+                this.addFunction('');
+            }
+            
+            // Apply viewport
+            if (state.viewport) {
+                this.viewport.minX = state.viewport.minX;
+                this.viewport.maxX = state.viewport.maxX;
+                this.viewport.minY = state.viewport.minY;
+                this.viewport.maxY = state.viewport.maxY;
+                this.viewport.scale = state.viewport.scale;
+                this.updateRangeInputs();
+            }
+            
+            // Plot all functions immediately
+            this.getCurrentFunctions().forEach(func => {
+                if (func.expression && func.enabled) {
+                    this.plotFunction(func);
+                }
+            });
+            
+            // Trigger full redraw and analysis
+            this.draw();
+            this.handleViewportChange();
+            
+            console.log('Shared state applied successfully');
+        } catch (error) {
+            console.error('Failed to apply shared state:', error);
+        }
+    }
+    
+    updatePlotModeUI() {
+        const modeToggle = document.getElementById('mode-toggle');
+        const cartesianRanges = document.getElementById('cartesian-ranges');
+        const cartesianRangesY = document.getElementById('cartesian-ranges-y');
+        const polarRanges = document.getElementById('polar-ranges');
+        const polarOptions = document.getElementById('polar-options');
+        
+        if (modeToggle) {
+            const cartesianIcon = document.getElementById('cartesian-icon');
+            const polarIcon = document.getElementById('polar-icon');
+            
+            if (cartesianIcon && polarIcon) {
+                if (this.plotMode === 'cartesian') {
+                    cartesianIcon.style.opacity = '1';
+                    polarIcon.style.opacity = '0.3';
+                } else {
+                    cartesianIcon.style.opacity = '0.3';
+                    polarIcon.style.opacity = '1';
+                }
+            }
+        }
+        
+        if (cartesianRanges && cartesianRangesY) {
+            cartesianRanges.style.display = this.plotMode === 'cartesian' ? 'flex' : 'none';
+            cartesianRangesY.style.display = this.plotMode === 'cartesian' ? 'flex' : 'none';
+        }
+        
+        if (polarRanges && polarOptions) {
+            polarRanges.style.display = this.plotMode === 'polar' ? 'flex' : 'none';
+            polarOptions.style.display = this.plotMode === 'polar' ? 'block' : 'none';
+        }
+        
+        this.updateDemoSetVisibility();
+    }
+    
+    updateAngleModeUI() {
+        const angleModeToggle = document.getElementById('angle-mode-toggle');
+        if (angleModeToggle) {
+            angleModeToggle.textContent = this.angleMode === 'radians' ? 'RAD' : 'DEG';
+        }
+    }
+    
+    updatePolarRangeUI() {
+        const thetaMinField = document.getElementById('theta-min');
+        const thetaMaxField = document.getElementById('theta-max');
+        const plotNegativeRCheckbox = document.getElementById('plot-negative-r');
+        
+        if (thetaMinField && this.polarSettings.thetaMinLatex) {
+            thetaMinField.value = this.polarSettings.thetaMinLatex;
+        }
+        if (thetaMaxField && this.polarSettings.thetaMaxLatex) {
+            thetaMaxField.value = this.polarSettings.thetaMaxLatex;
+        }
+        if (plotNegativeRCheckbox) {
+            plotNegativeRCheckbox.checked = this.polarSettings.plotNegativeR;
+        }
+    }
+    
+    clearFunctionPanel() {
+        const functionList = document.getElementById('function-list');
+        if (functionList) {
+            functionList.innerHTML = '';
         }
     }
     
