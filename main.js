@@ -20879,7 +20879,7 @@ class Graphiti {
         }
     }
 
-    handleAppResume() {
+    async handleAppResume() {
         // Consolidated resume handler for PWA and visibility changes
         // CRITICAL: Reset frame timing to prevent huge deltaTime spike on next frame
         // The animation loop may still be running but heavily throttled with stale lastFrameTime
@@ -20920,8 +20920,11 @@ class Graphiti {
         // In PWA mode, force replot all functions to ensure they're fresh
         if (this.isStandalonePWA()) {
             console.log('PWA mode - forcing complete function replot');
-            this.replotAllFunctions().catch(err => console.error('Replot error:', err));
+            await this.replotAllFunctions().catch(err => console.error('Replot error:', err));
         }
+        
+        // Recalculate integral pairs after functions are replotted
+        this.updateIntegralPairs();
         
         // Ensure animation loop is running (critical for responsiveness)
         this.ensureAnimationLoopRunning();
