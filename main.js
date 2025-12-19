@@ -27233,18 +27233,20 @@ class Graphiti {
         
         // Handle spaces: remove spaces that would break parameter-variable/function multiplication
         // e.g., "alpha x" -> "alphax", "beta y" -> "betay", "alpha sin" -> "alphasin"
-        expression = expression.replace(/\balpha\s+([xytrabcpi(])/g, 'alpha$1');
-        expression = expression.replace(/\bbeta\s+([xytrabcpi(])/g, 'beta$1');
-        expression = expression.replace(/\bgamma\s+([xytrabcpi(])/g, 'gamma$1');
-        expression = expression.replace(/\bdelta\s+([xytrabcpi(])/g, 'delta$1');
+        // Also handles "2alpha x" -> "2alphax" (without word boundary requirement)
+        expression = expression.replace(/alpha\s+([xytrabcpi(])/g, 'alpha$1');
+        expression = expression.replace(/beta\s+([xytrabcpi(])/g, 'beta$1');
+        expression = expression.replace(/gamma\s+([xytrabcpi(])/g, 'gamma$1');
+        expression = expression.replace(/delta\s+([xytrabcpi(])/g, 'delta$1');
         
         // Also remove spaces between parameters and function names
         // "alpha sin" -> "alphasin", "beta cos" -> "betacos"
+        // Also handles "2alpha sin" (without word boundary requirement)
         const funcPattern = '(asinh|acosh|atanh|asech|acsch|acoth|asin|acos|atan|asec|acsc|acot|sinh|cosh|tanh|sech|csch|coth|sin|cos|tan|sec|csc|cot|sqrt|cbrt|log|ln|exp|abs)';
-        expression = expression.replace(new RegExp(`\\balpha\\s+${funcPattern}`, 'g'), 'alpha$1');
-        expression = expression.replace(new RegExp(`\\bbeta\\s+${funcPattern}`, 'g'), 'beta$1');
-        expression = expression.replace(new RegExp(`\\bgamma\\s+${funcPattern}`, 'g'), 'gamma$1');
-        expression = expression.replace(new RegExp(`\\bdelta\\s+${funcPattern}`, 'g'), 'delta$1');
+        expression = expression.replace(new RegExp(`alpha\\s+${funcPattern}`, 'g'), 'alpha$1');
+        expression = expression.replace(new RegExp(`beta\\s+${funcPattern}`, 'g'), 'beta$1');
+        expression = expression.replace(new RegExp(`gamma\\s+${funcPattern}`, 'g'), 'gamma$1');
+        expression = expression.replace(new RegExp(`delta\\s+${funcPattern}`, 'g'), 'delta$1');
         
         // Inverse trigonometric functions (standard LaTeX)
         expression = expression.replace(/\\arcsin/g, 'asin');
