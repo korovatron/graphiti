@@ -1,10 +1,11 @@
-const CACHE_NAME = 'graphiti-v1.794';
+const CACHE_NAME = 'graphiti-v1.795';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './main.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js',
     './intersection-worker.js',
     './manifest.json',
     './sw.js',
