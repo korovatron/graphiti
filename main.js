@@ -9817,7 +9817,7 @@ class Graphiti {
     // INITIALIZATION AND SETUP
     // ================================
     
-    init() {
+    async init() {
         this.setupCanvas();
         this.setupEventListeners();
         this.registerServiceWorker();
@@ -9837,7 +9837,7 @@ class Graphiti {
             this.tempSession = true;
             this.hasInitialized = true;
             this.changeState(this.states.GRAPHING);
-            this.applySharedState(sharedState);
+            await this.applySharedState(sharedState);
         } else {
             // Normal startup - show title screen
             this.tempSession = false;
@@ -12567,6 +12567,7 @@ class Graphiti {
         const state = {
             v: 1, // version for future compatibility
             functions: this.getCurrentFunctions().map(func => ({
+                id: func.id, // Preserve function ID for badge matching
                 expression: func.expression,
                 color: func.color,
                 enabled: func.enabled,
@@ -12680,7 +12681,7 @@ class Graphiti {
         return null;
     }
     
-    applySharedState(state) {
+    async applySharedState(state) {
         try {
             // Set plot mode first
             if (state.mode && state.mode !== this.plotMode) {
@@ -12688,14 +12689,26 @@ class Graphiti {
                 this.updatePlotModeUI();
             }
             
-            // Apply settings
+            // Apply angle mode before polar settings (polar settings depend on angle mode)
+            if (state.settings && state.settings.angleMode && state.settings.angleMode !== this.angleMode) {
+                this.angleMode = state.settings.angleMode;
+                this.updateAngleModeUI();
+            }
+            
+            // Apply polar settings BEFORE viewport and functions (polar coords depend on these)
+            if (state.polar && this.plotMode === 'polar') {
+                this.polarSettings.thetaMin = state.polar.thetaMin;
+                this.polarSettings.thetaMax = state.polar.thetaMax;
+                this.polarSettings.thetaMinLatex = state.polar.thetaMinLatex;
+                this.polarSettings.thetaMaxLatex = state.polar.thetaMaxLatex;
+                this.polarSettings.plotNegativeR = state.polar.plotNegativeR;
+                this.updatePolarRangeUI();
+            }
+            
+            // Apply other settings
             if (state.settings) {
                 if (state.settings.theme) {
                     document.documentElement.setAttribute('data-theme', state.settings.theme);
-                }
-                if (state.settings.angleMode && state.settings.angleMode !== this.angleMode) {
-                    this.angleMode = state.settings.angleMode;
-                    this.updateAngleModeUI();
                 }
                 if (document.getElementById('show-intersections')) {
                     document.getElementById('show-intersections').checked = state.settings.showIntersections;
@@ -12717,25 +12730,14 @@ class Graphiti {
                 this.updateParameterSliders();
             }
             
-            // Apply polar settings if in polar mode
-            if (state.polar && this.plotMode === 'polar') {
-                this.polarSettings.thetaMin = state.polar.thetaMin;
-                this.polarSettings.thetaMax = state.polar.thetaMax;
-                this.polarSettings.thetaMinLatex = state.polar.thetaMinLatex;
-                this.polarSettings.thetaMaxLatex = state.polar.thetaMaxLatex;
-                this.polarSettings.plotNegativeR = state.polar.plotNegativeR;
-                this.updatePolarRangeUI();
-            }
-            
             // Clear existing functions
             this.getCurrentFunctions().length = 0;
             this.clearFunctionPanel();
             
             // Add functions from shared state
             state.functions.forEach(funcData => {
-                const id = this.nextFunctionId++;
                 const func = {
-                    id: id,
+                    id: funcData.id, // Use original ID to match badges
                     expression: funcData.expression,
                     points: [],
                     color: funcData.color,
@@ -12749,6 +12751,12 @@ class Graphiti {
                 this.getCurrentFunctions().push(func);
                 this.createFunctionUI(func);
             });
+            
+            // Update nextFunctionId to be higher than any restored function ID
+            if (state.functions.length > 0) {
+                const maxId = Math.max(...state.functions.map(f => f.id));
+                this.nextFunctionId = maxId + 1;
+            }
             
             // Update parameter sliders based on loaded functions
             this.updateParameterSliders();
@@ -12832,12 +12840,14 @@ class Graphiti {
                 }
             }
             
-            // Plot all functions immediately (needed before updateIntegralPairs)
+            // Plot all functions immediately (needed before updateIntegralPairs and slope calculations)
+            const plotPromises = [];
             this.getCurrentFunctions().forEach(func => {
                 if (func.expression && func.enabled) {
-                    this.plotFunction(func);
+                    plotPromises.push(this.plotFunction(func));
                 }
             });
+            await Promise.all(plotPromises);
             
             // Recalculate tangent slopes for badges with tangents or normals
             this.input.persistentBadges.forEach(badge => {
