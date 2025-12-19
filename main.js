@@ -7472,6 +7472,9 @@ class Graphiti {
                     this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
                 
+                // Update integral pairs after replots to refresh numerical calculations
+                this.updateIntegralPairs();
+                
                 // Update badge positions to match recalculated significant points
                 this.updateBadgesFromSignificantPoints();
             }
@@ -8029,7 +8032,7 @@ class Graphiti {
                         // Use polarTheta if available (from programmatic badges), otherwise theta (from manual tracing)
                         const aTheta = a.polarTheta !== null && a.polarTheta !== undefined ? a.polarTheta : a.theta;
                         const bTheta = b.polarTheta !== null && b.polarTheta !== undefined ? b.polarTheta : b.theta;
-                        if (aTheta !== null && bTheta !== null) {
+                        if (aTheta !== null && aTheta !== undefined && bTheta !== null && bTheta !== undefined) {
                             return aTheta - bTheta;
                         }
                     }
@@ -12601,6 +12604,9 @@ class Graphiti {
                     functionId: badge.functionId,
                     worldX: badge.worldX,
                     worldY: badge.worldY,
+                    theta: badge.theta,
+                    tValue: badge.tValue,
+                    polarTheta: badge.polarTheta,
                     hasTangent: badge.hasTangent || false,
                     hasNormal: badge.hasNormal || false,
                     hasIntegral: badge.hasIntegral || false,
@@ -12803,6 +12809,9 @@ class Graphiti {
                         functionId: badgeData.functionId,
                         worldX: badgeData.worldX,
                         worldY: badgeData.worldY,
+                        theta: badgeData.theta,
+                        tValue: badgeData.tValue,
+                        polarTheta: badgeData.polarTheta,
                         functionColor: func ? func.color : '#4A90E2',
                         screenX: 0, // Will be recalculated on draw
                         screenY: 0, // Will be recalculated on draw
@@ -12835,7 +12844,7 @@ class Graphiti {
                 if ((badge.hasTangent || badge.hasNormal) && badge.tangentSlope === null) {
                     const func = this.getCurrentFunctions().find(f => f.id === badge.functionId);
                     if (func && func.expression) {
-                        const slopeData = this.calculateSlopeAtPoint(func, badge.worldX, badge.worldY, null, null);
+                        const slopeData = this.calculateSlopeAtPoint(func, badge.worldX, badge.worldY, badge.theta, badge.tValue);
                         if (slopeData) {
                             badge.tangentSlope = slopeData;
                             badge.tangentExpression = slopeData.expression;
