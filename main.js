@@ -12592,7 +12592,44 @@ class Graphiti {
                 beta: this.parameters.beta.value,
                 gamma: this.parameters.gamma.value,
                 delta: this.parameters.delta.value
-            }
+            },
+            // Persistent badges (traces, tangents, normals, integrals)
+            badges: this.input.persistentBadges
+                .filter(badge => badge && badge.id !== undefined)
+                .map(badge => ({
+                    id: badge.id,
+                    functionId: badge.functionId,
+                    worldX: badge.worldX,
+                    worldY: badge.worldY,
+                    hasTangent: badge.hasTangent || false,
+                    hasNormal: badge.hasNormal || false,
+                    hasIntegral: badge.hasIntegral || false,
+                    neonTangent: badge.neonTangent || false,
+                    neonNormal: badge.neonNormal || false,
+                    neonIntegral: badge.neonIntegral || false
+                })),
+            // Integral pairs with settings
+            integralPairs: this.integralPairs
+                .filter(pair => pair && pair.badge1Id !== undefined && pair.badge2Id !== undefined)
+                .map(pair => ({
+                    badge1Id: pair.badge1Id,
+                    badge2Id: pair.badge2Id,
+                    showTrapeziumRule: pair.showTrapeziumRule || false,
+                    trapeziumStripCount: pair.trapeziumStripCount || 4,
+                    numericalMethod: pair.numericalMethod || 'trapezium'
+                })),
+            // Linked badge pairs for area between curves
+            linkedBadgePairs: this.linkedBadgePairs
+                .filter(linked => linked && linked.pair1 && linked.pair2 && 
+                        linked.pair1.badge1Id !== undefined && linked.pair1.badge2Id !== undefined && 
+                        linked.pair2.badge1Id !== undefined && linked.pair2.badge2Id !== undefined)
+                .map(linked => ({
+                    pair1Badge1Id: linked.pair1.badge1Id,
+                pair1Badge2Id: linked.pair1.badge2Id,
+                pair2Badge1Id: linked.pair2.badge1Id,
+                pair2Badge2Id: linked.pair2.badge2Id,
+                showAreaBetween: linked.showAreaBetween || false
+            }))
         };
         
         // Add polar-specific settings if in polar mode
@@ -12757,12 +12794,94 @@ class Graphiti {
                 this.updateRangeInputs();
             }
             
-            // Plot all functions immediately
+            // Restore persistent badges (traces, tangents, normals, integrals)
+            if (state.badges && Array.isArray(state.badges)) {
+                this.input.persistentBadges = state.badges.map(badgeData => {
+                    const func = this.getCurrentFunctions().find(f => f.id === badgeData.functionId);
+                    return {
+                        id: badgeData.id,
+                        functionId: badgeData.functionId,
+                        worldX: badgeData.worldX,
+                        worldY: badgeData.worldY,
+                        functionColor: func ? func.color : '#4A90E2',
+                        screenX: 0, // Will be recalculated on draw
+                        screenY: 0, // Will be recalculated on draw
+                        hasTangent: badgeData.hasTangent || false,
+                        hasNormal: badgeData.hasNormal || false,
+                        hasIntegral: badgeData.hasIntegral || false,
+                        neonTangent: badgeData.neonTangent || false,
+                        neonNormal: badgeData.neonNormal || false,
+                        neonIntegral: badgeData.neonIntegral || false,
+                        tangentSlope: null // Will be recalculated
+                    };
+                });
+                
+                // Update badge ID counter to avoid conflicts
+                if (state.badges.length > 0) {
+                    const maxId = Math.max(...state.badges.map(b => b.id));
+                    this.input.badgeIdCounter = maxId + 1;
+                }
+            }
+            
+            // Plot all functions immediately (needed before updateIntegralPairs)
             this.getCurrentFunctions().forEach(func => {
                 if (func.expression && func.enabled) {
                     this.plotFunction(func);
                 }
             });
+            
+            // Recalculate tangent slopes for badges with tangents or normals
+            this.input.persistentBadges.forEach(badge => {
+                if ((badge.hasTangent || badge.hasNormal) && badge.tangentSlope === null) {
+                    const func = this.getCurrentFunctions().find(f => f.id === badge.functionId);
+                    if (func && func.expression) {
+                        const slopeData = this.calculateSlopeAtPoint(func, badge.worldX, badge.worldY, null, null);
+                        if (slopeData) {
+                            badge.tangentSlope = slopeData;
+                            badge.tangentExpression = slopeData.expression;
+                            badge.secondDerivative = slopeData.secondDerivative;
+                        }
+                    }
+                }
+            });
+            
+            // Restore integral pairs after badges and functions are set up
+            if (state.integralPairs && Array.isArray(state.integralPairs)) {
+                // Pre-populate integralPairs with saved settings so updateIntegralPairs() can preserve them
+                this.integralPairs = state.integralPairs.map(savedPair => ({
+                    badge1Id: savedPair.badge1Id,
+                    badge2Id: savedPair.badge2Id,
+                    showTrapeziumRule: savedPair.showTrapeziumRule || false,
+                    trapeziumStripCount: savedPair.trapeziumStripCount || 4,
+                    numericalMethod: savedPair.numericalMethod || 'trapezium',
+                    start: 0, // Will be recalculated
+                    end: 0    // Will be recalculated
+                }));
+                
+                // Now updateIntegralPairs() will find these oldPairs and preserve their settings
+                this.updateIntegralPairs();
+            }
+            
+            // Restore linked badge pairs for area between curves
+            if (state.linkedBadgePairs && Array.isArray(state.linkedBadgePairs)) {
+                this.linkedBadgePairs = state.linkedBadgePairs.map(linkedData => {
+                    const pair1 = this.integralPairs.find(p =>
+                        p.badge1Id === linkedData.pair1Badge1Id && p.badge2Id === linkedData.pair1Badge2Id
+                    );
+                    const pair2 = this.integralPairs.find(p =>
+                        p.badge1Id === linkedData.pair2Badge1Id && p.badge2Id === linkedData.pair2Badge2Id
+                    );
+                    
+                    if (pair1 && pair2) {
+                        return {
+                            pair1: pair1,
+                            pair2: pair2,
+                            showAreaBetween: linkedData.showAreaBetween || false
+                        };
+                    }
+                    return null;
+                }).filter(linked => linked !== null);
+            }
             
             // Trigger full redraw and analysis
             this.draw();
