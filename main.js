@@ -10501,7 +10501,12 @@ class Graphiti {
         const shareImageButton = document.getElementById('share-image-button');
         if (shareImageButton) {
             shareImageButton.addEventListener('click', async () => {
-                await this.copyOrShareCanvas();
+                try {
+                    await this.copyOrShareCanvas();
+                } catch (error) {
+                    console.error('Share image error:', error);
+                    alert('Share failed: ' + error.message);
+                }
             });
         }
         
@@ -10509,7 +10514,12 @@ class Graphiti {
         const shareLinkButton = document.getElementById('share-link-button');
         if (shareLinkButton) {
             shareLinkButton.addEventListener('click', async () => {
-                await this.shareGraphLink();
+                try {
+                    await this.shareGraphLink();
+                } catch (error) {
+                    console.error('Share link error:', error);
+                    alert('Share failed: ' + error.message);
+                }
             });
         }
         
@@ -12438,9 +12448,23 @@ class Graphiti {
                             text: 'Graph from Graphiti'
                         });
                         console.log('Share successful');
+                        
+                        // Show success tooltip
+                        const button = document.getElementById('share-image-button');
+                        if (button) {
+                            const rect = button.getBoundingClientRect();
+                            const centerX = rect.left + rect.width / 2;
+                            const centerY = rect.top;
+                            this.showShareTooltip('Image shared', centerX, centerY);
+                        }
                         return; // Success - exit early
                     }
                 } catch (shareError) {
+                    // User cancelled or share failed
+                    if (shareError.name === 'AbortError') {
+                        console.log('Share cancelled by user');
+                        return; // User cancelled, don't show error
+                    }
                     console.log('Share API failed, trying clipboard:', shareError);
                     // Fall through to clipboard attempt
                 }
@@ -12480,6 +12504,15 @@ class Graphiti {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
+            // Show download tooltip
+            const button = document.getElementById('share-image-button');
+            if (button) {
+                const rect = button.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top;
+                this.showShareTooltip('Image downloaded', centerX, centerY);
+            }
+            
         } catch (error) {
             console.error('Failed to copy/share canvas:', error);
             alert('Failed to share image. Please try again.');
@@ -12488,6 +12521,12 @@ class Graphiti {
     
     async shareGraphLink() {
         try {
+            // Check if LZString is available
+            if (typeof LZString === 'undefined') {
+                alert('Compression library not loaded. Please refresh the page.');
+                return;
+            }
+            
             // Encode current graph state
             const state = this.encodeGraphState();
             const compressed = LZString.compressToEncodedURIComponent(state);
@@ -12512,6 +12551,15 @@ class Graphiti {
                         url: shareUrl
                     });
                     console.log('Share successful via Web Share API');
+                    
+                    // Show success tooltip
+                    const button = document.getElementById('share-link-button');
+                    if (button) {
+                        const rect = button.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top;
+                        this.showShareTooltip('Link shared', centerX, centerY);
+                    }
                     return; // Success - exit early
                 } catch (shareError) {
                     // User cancelled or share failed
@@ -12548,7 +12596,18 @@ class Graphiti {
             
             // Fallback: Show URL in a prompt for manual copying
             console.log('Using prompt fallback');
-            prompt('Copy this link to share your graph:', shareUrl);
+            const userCopied = prompt('Copy this link to share your graph:', shareUrl);
+            
+            // Show tooltip if user didn't cancel
+            if (userCopied !== null) {
+                const button = document.getElementById('share-link-button');
+                if (button) {
+                    const rect = button.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top;
+                    this.showShareTooltip('Link ready to copy', centerX, centerY);
+                }
+            }
             
         } catch (error) {
             console.error('Failed to share link:', error);
