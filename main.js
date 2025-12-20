@@ -2000,7 +2000,7 @@ class Graphiti {
         // Set placeholder based on the function's mode
         const placeholder = (func.mode === 'polar') 
             ? '\\text{Enter f(θ)}' 
-            : '\\text{Enter f(x) or f(x,y)}';
+            : '\\text{f(x) or f(x,y) or (f(t), g(t))}';
 
         funcDiv.innerHTML = `
             <div class="function-main-row">
@@ -10508,6 +10508,27 @@ class Graphiti {
             });
         }
         
+        // Virtual Keyboard Toggle Button
+        const virtualKeyboardToggle = document.getElementById('virtual-keyboard-toggle');
+        if (virtualKeyboardToggle) {
+            virtualKeyboardToggle.addEventListener('click', () => {
+                if (window.mathVirtualKeyboard) {
+                    if (window.mathVirtualKeyboard.visible) {
+                        window.mathVirtualKeyboard.hide({ animate: true });
+                    } else {
+                        // Focus on the currently focused math field, or the first one if none focused
+                        const focusedField = document.activeElement?.matches('math-field') 
+                            ? document.activeElement 
+                            : document.querySelector('math-field');
+                        if (focusedField) {
+                            focusedField.focus();
+                        }
+                        window.mathVirtualKeyboard.show({ animate: true });
+                    }
+                }
+            });
+        }
+        
         // Help Button (How to Use)
         const helpButtonPanel = document.getElementById('help-button');
         if (helpButtonPanel) {
@@ -14052,7 +14073,7 @@ class Graphiti {
             if (this.plotMode === 'polar') {
                 mathField.setAttribute('placeholder', '\\text{Enter f(θ)}');
             } else {
-                mathField.setAttribute('placeholder', '\\text{Enter f(x) or f(x,y)}');
+                mathField.setAttribute('placeholder', '\\text{f(x) or f(x,y) or (f(t), g(t))}');
             }
         });
     }

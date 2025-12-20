@@ -155,7 +155,7 @@
         
         /* Prevent text selection and dragging on UI elements (not input fields) */
         button, label, img, .logo, .range-label, .title-screen,
-        #help-button, #return-to-title, .color-indicator,
+        #help-button, #return-to-title, #virtual-keyboard-toggle, .color-indicator,
         .function-item .remove-btn, .split-button-dropdown,
         .parameter-slider-item .range-button, .parameter-slider-item .arrow-button,
         #function-panel, .function-item, .function-controls,
@@ -266,6 +266,7 @@
             
             /* Remove box-shadow from title/help buttons */
             #return-to-title:hover,
+            #virtual-keyboard-toggle:hover,
             #help-button:hover {
                 box-shadow: none;
             }
@@ -278,6 +279,7 @@
         }
         
         #return-to-title:active,
+        #virtual-keyboard-toggle:active,
         #help-button:active {
             box-shadow: none;
         }
@@ -850,12 +852,10 @@
             box-shadow: none !important;
         }
         
-        /* Hide virtual keyboard toggle on mobile since keyboard appears automatically */
-        @media (hover: none) and (pointer: coarse) {
-            .function-item math-field::part(virtual-keyboard-toggle),
-            .function-item math-field::part(keyboard-toggle) {
-                display: none !important;
-            }
+        /* Hide virtual keyboard toggle - using panel button instead */
+        .function-item math-field::part(virtual-keyboard-toggle),
+        .function-item math-field::part(keyboard-toggle) {
+            display: none !important;
         }
         
         /* Simple PWA safe area handling - no positioning interference */
@@ -996,12 +996,10 @@
             display: none;
         }
         
-        /* Hide virtual keyboard toggle on mobile for integral limit fields */
-        @media (hover: none) and (pointer: coarse) {
-            .integral-limit-field::part(virtual-keyboard-toggle),
-            .integral-limit-field::part(keyboard-toggle) {
-                display: none !important;
-            }
+        /* Hide virtual keyboard toggle - using panel button instead */
+        .integral-limit-field::part(virtual-keyboard-toggle),
+        .integral-limit-field::part(keyboard-toggle) {
+            display: none !important;
         }
 
         /* Landscape editing restriction overlay for mobile phones */
@@ -1171,14 +1169,12 @@
             display: none;
         }
         
-        /* Hide virtual keyboard toggle on mobile for Cartesian range fields */
-        @media (hover: none) and (pointer: coarse) {
-            #cartesian-ranges math-field::part(virtual-keyboard-toggle),
-            #cartesian-ranges math-field::part(keyboard-toggle),
-            #cartesian-ranges-y math-field::part(virtual-keyboard-toggle),
-            #cartesian-ranges-y math-field::part(keyboard-toggle) {
-                display: none !important;
-            }
+        /* Hide virtual keyboard toggle - using panel button instead */
+        #cartesian-ranges math-field::part(virtual-keyboard-toggle),
+        #cartesian-ranges math-field::part(keyboard-toggle),
+        #cartesian-ranges-y math-field::part(virtual-keyboard-toggle),
+        #cartesian-ranges-y math-field::part(keyboard-toggle) {
+            display: none !important;
         }
         
         /* Parametric t range styling - match Cartesian range fields exactly */
@@ -1223,12 +1219,10 @@
             display: none;
         }
         
-        /* Hide virtual keyboard toggle on mobile for parametric range fields */
-        @media (hover: none) and (pointer: coarse) {
-            #parametric-ranges math-field::part(virtual-keyboard-toggle),
-            #parametric-ranges math-field::part(keyboard-toggle) {
-                display: none !important;
-            }
+        /* Hide virtual keyboard toggle - using panel button instead */
+        #parametric-ranges math-field::part(virtual-keyboard-toggle),
+        #parametric-ranges math-field::part(keyboard-toggle) {
+            display: none !important;
         }
         
         /* Polar range MathLive field styling - match function input styling */
@@ -1274,12 +1268,10 @@
             display: none;
         }
         
-        /* Hide virtual keyboard toggle on mobile for polar range fields */
-        @media (hover: none) and (pointer: coarse) {
-            #polar-ranges math-field::part(virtual-keyboard-toggle),
-            #polar-ranges math-field::part(keyboard-toggle) {
-                display: none !important;
-            }
+        /* Hide virtual keyboard toggle - using panel button instead */
+        #polar-ranges math-field::part(virtual-keyboard-toggle),
+        #polar-ranges math-field::part(keyboard-toggle) {
+            display: none !important;
         }
         
 
@@ -2549,13 +2541,27 @@
                 
                 <!-- Bottom Row: Title Screen, Help, QR Code, and Copy/Share Buttons -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; margin-top: 10px; gap: 8px;">
-                    <!-- Home button - aligns with angle-mode-toggle -->
-                    <button id="return-to-title" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Return to Title Screen">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                        </svg>
-                    </button>
+                    <!-- Home and Keyboard buttons - aligns with angle-mode-toggle -->
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button id="return-to-title" style="padding: 8px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Return to Title Screen">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                        </button>
+                        <button id="virtual-keyboard-toggle" style="padding: 8px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Toggle Virtual Keyboard">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                                <line x1="6" y1="10" x2="6.01" y2="10"></line>
+                                <line x1="10" y1="10" x2="10.01" y2="10"></line>
+                                <line x1="14" y1="10" x2="14.01" y2="10"></line>
+                                <line x1="18" y1="10" x2="18.01" y2="10"></line>
+                                <line x1="6" y1="14" x2="6.01" y2="14"></line>
+                                <line x1="10" y1="14" x2="14" y2="14"></line>
+                                <line x1="18" y1="14" x2="18.01" y2="14"></line>
+                            </svg>
+                        </button>
+                    </div>
                     <!-- Help and Image buttons container - aligns with size-mode-toggle -->
                     <div style="display: flex; gap: 4px; align-items: center;">
                         <button id="help-button" style="padding: 8px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="How to Use">
