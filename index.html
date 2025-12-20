@@ -2041,7 +2041,63 @@
                     <!-- JavaScript will populate this with animated letters -->
                 </div>
                 
-                <button id="title-start-button" class="title-button">Start Graphing</button>
+                <svg viewBox="0 0 200 64" xmlns="http://www.w3.org/2000/svg" style="width: 150px; height: auto; margin-bottom: 20px;">
+                    <defs>
+                        <!-- Two full rainbows across the whole path, with lighter blues/purples -->
+                        <linearGradient id="rainbow"
+                            x1="0%" y1="0%" x2="200%" y2="0%"
+                            gradientUnits="userSpaceOnUse">
+
+                            <!-- Rainbow 1 -->
+                            <stop offset="0%"   stop-color="#ff0000" />
+                            <stop offset="8%"   stop-color="#ff7f00" />
+                            <stop offset="16%"  stop-color="#ffff00" />
+                            <stop offset="25%"  stop-color="#00ff00" />
+                            <stop offset="33%"  stop-color="#3f6fff" />   <!-- lighter blue -->
+                            <stop offset="41%"  stop-color="#7a33c8" />   <!-- lighter indigo -->
+                            <stop offset="50%"  stop-color="#b066ff" />   <!-- lighter violet -->
+
+                            <!-- Rainbow 2 -->
+                            <stop offset="50%"  stop-color="#ff0000" />
+                            <stop offset="58%"  stop-color="#ff7f00" />
+                            <stop offset="66%"  stop-color="#ffff00" />
+                            <stop offset="75%"  stop-color="#00ff00" />
+                            <stop offset="83%"  stop-color="#3f6fff" />   <!-- lighter blue -->
+                            <stop offset="91%"  stop-color="#7a33c8" />   <!-- lighter indigo -->
+                            <stop offset="100%" stop-color="#b066ff" />   <!-- lighter violet -->
+                        </linearGradient>
+                    </defs>
+
+                    <rect width="200" height="64" fill="none" />
+
+                    <!-- Identical double‑pulse path -->
+                    <path d="
+                        M 4   32
+                        L 24  32
+                        L 32  10
+                        L 40  54
+                        L 48  18
+                        L 56  48
+                        L 64  22
+                        L 84  32
+
+                        L 104 32
+                        L 112 10
+                        L 120 54
+                        L 128 18
+                        L 136 48
+                        L 144 22
+                        L 164 32
+                        L 196 32
+                    "
+                    fill="none"
+                    stroke="url(#rainbow)"
+                    stroke-width="4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+                
+                <button id="title-start-button" class="title-button">Start</button>
                 
                 <p class="copyright">© 2025 Neil Kendall<span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a></p>
             </div>
