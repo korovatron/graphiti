@@ -2475,28 +2475,42 @@
                     </button>
                 </div>
                 
-                <!-- Bottom Row: Title Screen, Help, and Copy/Share Buttons -->
+                <!-- Bottom Row: Title Screen, Help, QR Code, and Copy/Share Buttons -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; margin-top: 10px; gap: 8px;">
+                    <!-- Home button - aligns with angle-mode-toggle -->
                     <button id="return-to-title" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Return to Title Screen">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                             <polyline points="9 22 9 12 15 12 15 22"></polyline>
                         </svg>
                     </button>
-                    <button id="help-button" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="How to Use">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                        </svg>
-                    </button>
-                    <!-- Share buttons container -->
-                    <div style="display: flex; gap: 4px; align-items: center; justify-content: space-between;">
-                        <!-- Share Image Button (Camera icon) -->
+                    <!-- Help and Image buttons container - aligns with size-mode-toggle -->
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button id="help-button" style="padding: 8px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="How to Use">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                        </button>
                         <button id="share-image-button" style="padding: 6px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Copy image to clipboard or share">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                                 <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- QR and Link buttons container - aligns with theme-toggle -->
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button id="share-qr-button" style="padding: 8px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Share QR code">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="3" height="3"></rect>
+                                <rect x="18" y="14" width="3" height="3"></rect>
+                                <rect x="14" y="18" width="3" height="3"></rect>
+                                <rect x="18" y="18" width="3" height="3"></rect>
                             </svg>
                         </button>
                         <!-- Share Link Button (Share arrow icon) -->
@@ -2521,6 +2535,9 @@
     
     <!-- LZ-String library for URL compression -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    
+    <!-- QRious library for QR code generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     
     <!-- Custom power function to handle real-valued fractional powers -->
     <script>

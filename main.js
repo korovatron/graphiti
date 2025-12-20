@@ -10542,6 +10542,19 @@ class Graphiti {
             });
         }
         
+        // Share QR Code Button (Copy QR code image)
+        const shareQRButton = document.getElementById('share-qr-button');
+        if (shareQRButton) {
+            shareQRButton.addEventListener('click', async () => {
+                try {
+                    await this.shareQRCode();
+                } catch (error) {
+                    console.error('Share QR code error:', error);
+                    alert('QR share failed: ' + error.message);
+                }
+            });
+        }
+        
         // Keyboard Shortcuts Overlay
         const shortcutsOverlay = document.getElementById('shortcuts-overlay');
         if (shortcutsOverlay) {
@@ -12628,6 +12641,134 @@ class Graphiti {
         } catch (error) {
             console.error('Failed to share link:', error);
             alert('Failed to share link. Please try again.');
+        }
+    }
+    
+    async shareQRCode() {
+        try {
+            // Check if QRious library is available
+            if (typeof QRious === 'undefined') {
+                alert('QR code library not loaded. Please refresh the page.');
+                return;
+            }
+            
+            // Check if LZString is available
+            if (typeof LZString === 'undefined') {
+                alert('Compression library not loaded. Please refresh the page.');
+                return;
+            }
+            
+            // Encode current graph state (same as shareGraphLink)
+            const state = this.encodeGraphState();
+            const compressed = LZString.compressToEncodedURIComponent(state);
+            
+            // Create shareable URL
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareUrl = `${baseUrl}#v=${compressed}`;
+            
+            // Create QR code using QRious
+            const qr = new QRious({
+                value: shareUrl,
+                size: 512,
+                level: 'M'
+            });
+            
+            // Get the canvas and convert to blob
+            const canvas = qr.canvas;
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob(blob => {
+                    if (blob) {
+                        resolve(blob);
+                    } else {
+                        reject(new Error('Failed to create QR code image'));
+                    }
+                }, 'image/png');
+            });
+            
+            // Detect mobile devices
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const isIPad = (navigator.userAgent.includes('Mac') && 'ontouchend' in document);
+            const isMobile = isIOS || isIPad || /Android/i.test(navigator.userAgent);
+            
+            console.log('Device detection for QR sharing:', { isIOS, isIPad, isMobile, userAgent: navigator.userAgent });
+            
+            // Try Web Share API first on mobile devices
+            if (isMobile && navigator.share && navigator.canShare) {
+                const file = new File([blob], 'graphiti-qr.png', { type: 'image/png' });
+                const shareData = { files: [file] };
+                
+                if (navigator.canShare(shareData)) {
+                    try {
+                        await navigator.share(shareData);
+                        console.log('QR code shared successfully via Web Share API');
+                        
+                        // Show success tooltip
+                        const button = document.getElementById('share-qr-button');
+                        if (button) {
+                            const rect = button.getBoundingClientRect();
+                            const centerX = rect.left + rect.width / 2;
+                            const centerY = rect.top;
+                            this.showShareTooltip('QR code shared', centerX, centerY);
+                        }
+                        return; // Success - exit early
+                    } catch (shareError) {
+                        // User cancelled or share failed
+                        if (shareError.name === 'AbortError') {
+                            console.log('Share cancelled by user');
+                            return; // User cancelled, don't show error
+                        }
+                        console.log('Web Share API failed, trying clipboard:', shareError);
+                        // Fall through to clipboard
+                    }
+                }
+            }
+            
+            // Try Clipboard API (works on desktop and some mobile browsers)
+            if (navigator.clipboard && navigator.clipboard.write) {
+                try {
+                    const item = new ClipboardItem({ 'image/png': blob });
+                    await navigator.clipboard.write([item]);
+                    
+                    console.log('QR code copied to clipboard');
+                    
+                    // Show DOM tooltip confirmation
+                    const button = document.getElementById('share-qr-button');
+                    if (button) {
+                        const rect = button.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top;
+                        this.showShareTooltip('QR code copied to clipboard', centerX, centerY);
+                    }
+                    return; // Success - exit early
+                } catch (clipboardError) {
+                    console.log('Clipboard API failed:', clipboardError);
+                    // Fall through to download
+                }
+            }
+            
+            // Fallback: Download the QR code image
+            console.log('Using download fallback');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'graphiti-qr.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            // Show tooltip
+            const button = document.getElementById('share-qr-button');
+            if (button) {
+                const rect = button.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top;
+                this.showShareTooltip('QR code downloaded', centerX, centerY);
+            }
+            
+        } catch (error) {
+            console.error('Failed to share QR code:', error);
+            alert('Failed to share QR code. Please try again.');
         }
     }
     
