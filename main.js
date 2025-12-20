@@ -10399,24 +10399,26 @@ class Graphiti {
                 this.viewport.minY = smartViewport.minY;
                 this.viewport.maxY = smartViewport.maxY;
 
-                // Force recalculation of scale based on current viewport dimensions
-                this.updateViewportScale();
-                
                 // Enforce 1:1 aspect ratio for both modes to keep circles circular
                 // BUT skip this for regular trig functions which need different X and Y scales
                 const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
                 if (!hasRegularTrig) {
+                    // enforceSquareAspectRatio calculates the correct scale itself
                     this.enforceSquareAspectRatio();
+                } else {
+                    // Only update scale separately if we're not enforcing square aspect ratio
+                    this.updateViewportScale();
                 }
                 
-                // Update range inputs to reflect the reset
-                this.updateRangeInputs();
-
-                // Force a complete redraw to ensure viewport is current
-                this.draw();
+                // Update viewport to ensure bounds are correctly adjusted, then redraw
+                // This matches what happens during resize/orientation change
+                this.updateViewport();
                 
                 // Re-plot all functions with the reset viewport
                 this.replotAllFunctions();
+                
+                // Save the corrected viewport bounds
+                this.saveViewportBounds();
             });
         }
         
