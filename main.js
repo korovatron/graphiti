@@ -248,6 +248,10 @@ class Graphiti {
         
         // Integration system
         this.integralPairs = []; // Store pairs of integral badges for area calculation
+        
+        // Title screen animation loop timer (30 second restart)
+        this.titleAnimationTimer = 0; // Accumulated time in ms
+        this.titleAnimationLoopInterval = 30000; // 30 seconds in ms
         this.selectedBadgeForLinking = null; // Badge selected for linking to another integral badge
         this.linkedBadgePairs = []; // Store linked badge pairs for area-between-curves calculation
         this.pendingLabelClick = null; // Store pending click to check after next draw
@@ -14731,6 +14735,22 @@ class Graphiti {
         this.initSineWaveTagline();
     }
     
+    restartHeartbeatAnimation() {
+        // Restart the CSS heartbeat animation by removing and re-adding the element
+        const heartbeatPath = document.getElementById('title-heartbeat-path');
+        if (!heartbeatPath) return;
+        
+        // Clone the element to restart animation
+        const clone = heartbeatPath.cloneNode(true);
+        heartbeatPath.parentNode.replaceChild(clone, heartbeatPath);
+    }
+    
+    restartTitleAnimations() {
+        // Restart both sine wave and heartbeat animations
+        this.restartSineWaveAnimation();
+        this.restartHeartbeatAnimation();
+    }
+    
     changeState(newState) {
         this.previousState = this.currentState;
         this.currentState = newState;
@@ -14746,6 +14766,8 @@ class Graphiti {
                 if (functionPanel) functionPanel.classList.add('hidden');
                 if (hamburgerMenu) hamburgerMenu.style.display = 'none';
                 this.closeMobileMenu();
+                // Reset animation timer when entering title screen
+                this.titleAnimationTimer = 0;
                 // Restart sine wave animation when returning to title screen
                 this.restartSineWaveAnimation();
                 break;
@@ -21293,7 +21315,14 @@ class Graphiti {
     }
     
     updateTitleScreen(deltaTime) {
-        // Title screen animations or effects can go here
+        // Accumulate time spent on title screen
+        this.titleAnimationTimer += deltaTime;
+        
+        // Restart animations every 30 seconds
+        if (this.titleAnimationTimer >= this.titleAnimationLoopInterval) {
+            this.titleAnimationTimer = 0; // Reset timer
+            this.restartTitleAnimations();
+        }
     }
     
     updateGraphingScreen(deltaTime) {
