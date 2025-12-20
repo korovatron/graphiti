@@ -9843,6 +9843,8 @@ class Graphiti {
             this.hasInitialized = true;
             this.changeState(this.states.GRAPHING);
             await this.applySharedState(sharedState);
+            // Show temporary session banner
+            this.showTempSessionBanner();
         } else {
             // Normal startup - show title screen
             this.tempSession = false;
@@ -12972,6 +12974,22 @@ class Graphiti {
         } catch (error) {
             console.error('Failed to apply shared state:', error);
         }
+    }
+
+    showTempSessionBanner() {
+        const banner = document.getElementById('temp-session-banner');
+        if (!banner) return;
+        
+        // Show the banner
+        banner.style.display = 'block';
+        
+        // Set up click handler to exit temp mode and reload
+        banner.addEventListener('click', () => {
+            // Clear URL hash
+            window.location.hash = '';
+            // Reload page to exit temp mode and load saved functions
+            window.location.reload();
+        });
     }
     
     updatePlotModeUI() {
