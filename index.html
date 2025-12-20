@@ -2015,6 +2015,22 @@
                 box-shadow: 0 2px 12px rgba(157, 78, 221, 0.5), 0 0 20px rgba(199, 125, 255, 0.4);
             }
         }
+        
+        /* SVG heartbeat path drawing animation */
+        #title-heartbeat-path {
+            stroke-dasharray: 500;
+            stroke-dashoffset: 500;
+            animation: drawHeartbeat 3.5s ease-in-out 0.5s forwards;
+        }
+        
+        @keyframes drawHeartbeat {
+            from {
+                stroke-dashoffset: 500;
+            }
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
     </style>
 </head>
 <body theme="dark">
@@ -2071,7 +2087,7 @@
                     <rect width="200" height="64" fill="none" />
 
                     <!-- Identical double‑pulse path -->
-                    <path d="
+                    <path id="title-heartbeat-path" d="
                         M 4   32
                         L 24  32
                         L 32  10
