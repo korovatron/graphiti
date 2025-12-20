@@ -8185,6 +8185,13 @@ class Graphiti {
                     oldPair.start === start && oldPair.end === end) {
                     // When not changing viewport, preserve cache only if start/end unchanged
                     newPair.cachedNumericalResult = oldPair.cachedNumericalResult;
+                    // Also preserve shape paths and numerical result to prevent flicker during viewport changes
+                    if (oldPair.cachedShapePaths) {
+                        newPair.cachedShapePaths = oldPair.cachedShapePaths;
+                    }
+                    if (oldPair.numericalResult) {
+                        newPair.numericalResult = oldPair.numericalResult;
+                    }
                 }
                 
                 this.integralPairs.push(newPair);
@@ -25227,6 +25234,14 @@ class Graphiti {
                 
                 // Cache the shape paths in world coordinates for fast drawing during viewport changes
                 this.cacheNumericalShapePaths(pair);
+            } else if (pair.cachedNumericalResult && !pair.numericalResult) {
+                // During viewport changes, ensure numericalResult is set from cache for drawing
+                pair.numericalResult = pair.cachedNumericalResult.result;
+                
+                // Ensure cached shape paths exist for drawing during viewport changes
+                if (!pair.cachedShapePaths) {
+                    this.cacheNumericalShapePaths(pair);
+                }
             }
             
             // Always display UI if we have a numerical result (even if stale during viewport changes)
