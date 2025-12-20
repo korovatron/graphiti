@@ -10086,6 +10086,11 @@ class Graphiti {
                 
                 examplesDropdown.classList.toggle('show');
                 
+                // Reset scroll position to top when opening dropdown
+                if (examplesDropdown.classList.contains('show')) {
+                    examplesDropdown.scrollTop = 0;
+                }
+                
                 // Update examples based on current mode
                 this.updateExamplesForMode();
             });
