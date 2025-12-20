@@ -3100,6 +3100,23 @@ class Graphiti {
         // Save functions to localStorage
         this.saveFunctionsToLocalStorage();
     }
+
+    clearAllFunctions() {
+        // Get all functions in the current mode
+        const currentFunctions = this.getCurrentFunctions();
+        
+        // Create a copy of IDs to avoid modifying array while iterating
+        const functionIds = currentFunctions.map(f => f.id);
+        
+        // Remove each function using the same logic as the X button
+        for (const id of functionIds) {
+            // Clear badges for this function when removing
+            this.removeBadgesForFunction(id);
+            // Clear intersection badges that involve this function
+            this.removeIntersectionBadgesForFunction(id);
+            this.removeFunction(id);
+        }
+    }
     
     // Save functions to localStorage
     saveFunctionsToLocalStorage() {
@@ -3396,18 +3413,6 @@ class Graphiti {
             console.warn('Could not load viewport bounds from localStorage:', error);
             return false;
         }
-    }
-    
-    clearAllFunctions() {
-        // Clear all pending plot timers
-        this.plotTimers.forEach((timerId) => {
-            clearTimeout(timerId);
-        });
-        this.plotTimers.clear();
-        
-        this.getCurrentFunctions().length = 0; // Clear current mode functions
-        const container = document.getElementById('functions-container');
-        container.innerHTML = '';
     }
     
     async plotFunction(func) {
@@ -10094,8 +10099,15 @@ class Graphiti {
             examplesDropdown.addEventListener('click', (e) => {
                 const exampleItem = e.target.closest('.example-item, .blank-function-item');
                 const demoSetItem = e.target.closest('.demo-set-item');
+                const clearAllItem = e.target.closest('.clear-all-functions-item');
                 
-                if (demoSetItem) {
+                if (clearAllItem) {
+                    // Clear all functions in current mode
+                    this.clearAllFunctions();
+                    
+                    // Close dropdown
+                    examplesDropdown.classList.remove('show');
+                } else if (demoSetItem) {
                     const demoSetId = demoSetItem.dataset.demoSet;
                     
                     // Clear intersections when adding demo set
