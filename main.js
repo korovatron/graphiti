@@ -14775,8 +14775,8 @@ class Graphiti {
                 this.closeMobileMenu();
                 // Reset animation timer when entering title screen
                 this.titleAnimationTimer = 0;
-                // Restart sine wave animation when returning to title screen
-                this.restartSineWaveAnimation();
+                // Restart both sine wave and heartbeat animations when returning to title screen
+                this.restartTitleAnimations();
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
