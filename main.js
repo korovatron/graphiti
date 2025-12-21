@@ -9192,7 +9192,14 @@ class Graphiti {
         // Add implicit multiplication and convert to degree mode if needed
         processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
         processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
-        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Handle degree mode by preprocessing the expression
+        if (this.angleMode === 'degrees') {
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            if (hasRegularTrigWithX) {
+                processedExpression = this.convertTrigToDegreeMode(processedExpression);
+            }
+        }
         
         // Compile once
         const compiled = this.getCompiledExpression(processedExpression);
@@ -9321,7 +9328,14 @@ class Graphiti {
         // Add implicit multiplication and convert to degree mode if needed
         processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
         processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
-        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Handle degree mode by preprocessing the expression
+        if (this.angleMode === 'degrees') {
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            if (hasRegularTrigWithX) {
+                processedExpression = this.convertTrigToDegreeMode(processedExpression);
+            }
+        }
         
         // Compile once
         const compiled = this.getCompiledExpression(processedExpression);
@@ -9463,7 +9477,14 @@ class Graphiti {
         // Add implicit multiplication and convert to degree mode if needed
         processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
         processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
-        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Handle degree mode by preprocessing the expression
+        if (this.angleMode === 'degrees') {
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            if (hasRegularTrigWithX) {
+                processedExpression = this.convertTrigToDegreeMode(processedExpression);
+            }
+        }
         
         // Compile once
         const compiled = this.getCompiledExpression(processedExpression);
@@ -24171,7 +24192,14 @@ class Graphiti {
         // Add implicit multiplication and convert to degree mode if needed
         processedExpression = processedExpression.replace(/(\d)([a-z])/g, '$1*$2');
         processedExpression = processedExpression.replace(/(\))([a-z])/g, '$1*$2');
-        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+        
+        // Handle degree mode by preprocessing the expression
+        if (this.angleMode === 'degrees') {
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            if (hasRegularTrigWithX) {
+                processedExpression = this.convertTrigToDegreeMode(processedExpression);
+            }
+        }
         
         // Compile once for all evaluations
         const compiled = this.getCompiledExpression(processedExpression);
