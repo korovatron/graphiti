@@ -4,7 +4,7 @@
   "short_name": "Graphiti",
   "description": "Interactive mathematical function plotter with real-time graphing",
   "start_url": "./index.html",
-  "scope": "/",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#1A2F42",
   "theme_color": "#1A2F42",
