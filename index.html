@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Application Version -->
+    <script>
+        const APP_VERSION = '1.0.1';
+    </script>
+    
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-H5MT68XJY3"></script>
     <script>
@@ -2107,7 +2112,10 @@
                 
                 <button id="title-start-button" class="title-button">Set the Controls ...</button>
                 
-                <p class="copyright">© 2025-2026 Neil Kendall<span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a></p>
+                <p class="copyright">© 2025-2026 Neil Kendall <span id="app-version"></span><span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a></p>
+                <script>
+                    document.getElementById('app-version').textContent = 'V' + APP_VERSION;
+                </script>
             </div>
             
             <!-- Function Input Panel -->

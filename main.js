@@ -26192,7 +26192,7 @@ class Graphiti {
                 
                 // If in degree mode with trig functions, convert derivative back to standard mathematical form
                 let displaySlope = slopeValue;
-                if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic' && tangentSlope.degreeConversionApplied) {
                     // Multiply by 180/π to convert from per-degree to per-radian derivative
                     displaySlope = slopeValue * 180 / Math.PI;
                 }
@@ -26210,7 +26210,7 @@ class Graphiti {
                 if (secondDeriv !== null && isFinite(secondDeriv)) {
                     // Second derivative needs (180/π)² conversion
                     let displaySecondDeriv = secondDeriv;
-                    if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                    if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic' && tangentSlope.degreeConversionApplied) {
                         displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
                     }
                     const secondDerivStr = this.formatDerivative(displaySecondDeriv);
@@ -26233,7 +26233,7 @@ class Graphiti {
                 
                 // If in degree mode with trig functions, convert derivative back to standard mathematical form
                 let displaySlope = slopeValue;
-                if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic' && tangentSlope.degreeConversionApplied) {
                     // Multiply by 180/π to convert from per-degree to per-radian derivative
                     displaySlope = slopeValue * 180 / Math.PI;
                 }
@@ -26251,7 +26251,7 @@ class Graphiti {
                 if (secondDeriv !== null && isFinite(secondDeriv)) {
                     // Second derivative needs (180/π)² conversion
                     let displaySecondDeriv = secondDeriv;
-                    if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic') {
+                    if (this.angleMode === 'degrees' && tangentSlope.method === 'symbolic' && tangentSlope.degreeConversionApplied) {
                         displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
                     }
                     const secondDerivStr = this.formatDerivative(displaySecondDeriv);
