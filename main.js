@@ -22840,7 +22840,7 @@ class Graphiti {
         const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
         
         if (hasConnectedPoints) {
-            // For marching squares output, draw as individual line segments
+            // For marching squares output, build continuous paths from segments
             // Strict inequalities (<, >): dashed line
             // Non-strict inequalities (≤, ≥): solid colored line with black outline for distinction
             
@@ -22869,8 +22869,12 @@ class Graphiti {
                     }
                 }
                 
-                // Draw individual line segments (every pair of connected points)
-                for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
+                // Build continuous paths from marching squares segments for consistent dash patterns
+                // Connect segments that share endpoints to create smooth dash flow
+                const segments = [];
+                
+                // First, collect all visible segments with screen coordinates
+                for (let i = 0; i < pointsToUse.length - 1; i += 3) {
                     const startPoint = pointsToUse[i];
                     const endPoint = pointsToUse[i + 1];
                     
@@ -22881,19 +22885,74 @@ class Graphiti {
                         const startScreen = this.worldToScreen(startPoint.x, startPoint.y);
                         const endScreen = this.worldToScreen(endPoint.x, endPoint.y);
                         
-                        // Only draw if at least one endpoint is visible
+                        // Only include if at least one endpoint is visible
                         if ((startScreen.x >= -50 && startScreen.x <= this.viewport.width + 50 &&
                              startScreen.y >= -50 && startScreen.y <= this.viewport.height + 50) ||
                             (endScreen.x >= -50 && endScreen.x <= this.viewport.width + 50 &&
                              endScreen.y >= -50 && endScreen.y <= this.viewport.height + 50)) {
                             
-                            offscreenCtx.beginPath();
-                            offscreenCtx.moveTo(startScreen.x, startScreen.y);
-                            offscreenCtx.lineTo(endScreen.x, endScreen.y);
-                            offscreenCtx.stroke();
+                            segments.push({
+                                start: startScreen,
+                                end: endScreen,
+                                used: false
+                            });
                         }
                     }
                 }
+                
+                // Build continuous paths by connecting segments that share endpoints
+                offscreenCtx.beginPath();
+                const tolerance = 0.5; // Pixel tolerance for endpoint matching
+                
+                for (let i = 0; i < segments.length; i++) {
+                    if (segments[i].used) continue;
+                    
+                    // Start a new path
+                    const path = [segments[i]];
+                    segments[i].used = true;
+                    
+                    // Try to extend the path by finding connected segments
+                    let extended = true;
+                    while (extended) {
+                        extended = false;
+                        const lastSeg = path[path.length - 1];
+                        
+                        // Look for a segment that connects to the end of current path
+                        for (let j = 0; j < segments.length; j++) {
+                            if (segments[j].used) continue;
+                            
+                            const dx1 = Math.abs(lastSeg.end.x - segments[j].start.x);
+                            const dy1 = Math.abs(lastSeg.end.y - segments[j].start.y);
+                            const dx2 = Math.abs(lastSeg.end.x - segments[j].end.x);
+                            const dy2 = Math.abs(lastSeg.end.y - segments[j].end.y);
+                            
+                            if (dx1 < tolerance && dy1 < tolerance) {
+                                // segments[j] connects forward
+                                path.push(segments[j]);
+                                segments[j].used = true;
+                                extended = true;
+                                break;
+                            } else if (dx2 < tolerance && dy2 < tolerance) {
+                                // segments[j] connects backward, so reverse it
+                                path.push({ start: segments[j].end, end: segments[j].start, used: true });
+                                segments[j].used = true;
+                                extended = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Draw this continuous path
+                    if (path.length > 0) {
+                        offscreenCtx.moveTo(path[0].start.x, path[0].start.y);
+                        for (const seg of path) {
+                            offscreenCtx.lineTo(seg.end.x, seg.end.y);
+                        }
+                    }
+                }
+                
+                // Stroke all paths at once for consistent dashes
+                offscreenCtx.stroke();
             }
             
             // Reset line dash after drawing inequalities
