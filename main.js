@@ -22645,37 +22645,7 @@ class Graphiti {
             }
         }
         
-        // For non-strict inequalities, draw black outline first (solid line)
-        if (func._inequalityIsStrict === false) {
-            this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.lineWidth = this.getLineWidth(6);
-            this.ctx.setLineDash([]); // Solid line for non-strict
-            
-            this.ctx.beginPath();
-            let pathStarted = false;
-            
-            for (let i = 0; i < func.points.length; i++) {
-                const point = func.points[i];
-                
-                if (!isFinite(point.y)) {
-                    pathStarted = false;
-                    continue;
-                }
-                
-                const screenPos = this.worldToScreen(point.x, point.y);
-                
-                if (!pathStarted) {
-                    this.ctx.moveTo(screenPos.x, screenPos.y);
-                    pathStarted = true;
-                } else {
-                    this.ctx.lineTo(screenPos.x, screenPos.y);
-                }
-            }
-            
-            this.ctx.stroke();
-        }
-        
-        // Now draw the main colored line
+        // Draw the main colored line
         this.ctx.strokeStyle = func.color;
         this.ctx.lineWidth = this.getLineWidth(3);
         
@@ -22781,7 +22751,8 @@ class Graphiti {
             cached.color === func.color &&
             cached.isInequality === isInequality &&
             cached.isStrict === isStrict &&
-            cached.hasConnectedPoints === hasConnectedPoints) {
+            cached.hasConnectedPoints === hasConnectedPoints &&
+            cached.sizeMode === this.sizeMode) {
             
             // Check if viewport has changed but curve data hasn't
             if (cached.viewport !== viewportKey) {
@@ -22842,32 +22813,20 @@ class Graphiti {
         if (hasConnectedPoints) {
             // For marching squares output, build continuous paths from segments
             // Strict inequalities (<, >): dashed line
-            // Non-strict inequalities (≤, ≥): solid colored line with black outline for distinction
+            // Non-strict inequalities (≤, ≥): solid colored line (same as normal curves)
             
-            // For non-strict inequalities, draw black outline first, then colored line on top
-            // For regular equations (not inequalities), just draw once
-            const linesToDraw = !isInequality ? 1 : (isStrict ? 1 : 2);
+            // Set line style - all cases draw once now
+            offscreenCtx.strokeStyle = func.color;
+            offscreenCtx.lineWidth = this.getLineWidth(3);
             
-            for (let pass = 0; pass < linesToDraw; pass++) {
-                if (pass === 0 && isInequality && !isStrict) {
-                    // First pass for non-strict inequalities: draw black outline (wider, solid)
-                    offscreenCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-                    offscreenCtx.lineWidth = this.getLineWidth(6);
-                    offscreenCtx.setLineDash([]); // Solid line for outline
-                } else {
-                    // For all other cases: draw colored line
-                    offscreenCtx.strokeStyle = func.color;
-                    offscreenCtx.lineWidth = this.getLineWidth(3);
-                    
-                    // Set line style based on inequality type
-                    if (isInequality && isStrict) {
-                        // Strict inequality - use dashed line
-                        offscreenCtx.setLineDash([this.getLineWidth(8), this.getLineWidth(4)]);
-                    } else {
-                        // Non-strict inequality or regular function - use solid line
-                        offscreenCtx.setLineDash([]);
-                    }
-                }
+            // Set line dash based on inequality type
+            if (isInequality && isStrict) {
+                // Strict inequality - use dashed line
+                offscreenCtx.setLineDash([this.getLineWidth(8), this.getLineWidth(4)]);
+            } else {
+                // Non-strict inequality or regular function - use solid line
+                offscreenCtx.setLineDash([]);
+            }
                 
                 // Build continuous paths from marching squares segments for consistent dash patterns
                 // Connect segments that share endpoints to create smooth dash flow
@@ -22953,7 +22912,6 @@ class Graphiti {
                 
                 // Stroke all paths at once for consistent dashes
                 offscreenCtx.stroke();
-            }
             
             // Reset line dash after drawing inequalities
             offscreenCtx.setLineDash([]);
@@ -22986,7 +22944,8 @@ class Graphiti {
             color: func.color,
             isInequality: isInequality,
             isStrict: isStrict,
-            hasConnectedPoints: hasConnectedPoints
+            hasConnectedPoints: hasConnectedPoints,
+            sizeMode: this.sizeMode
         });
         
         // Draw to main canvas
