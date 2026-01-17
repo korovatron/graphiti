@@ -230,6 +230,12 @@ class Graphiti {
         this.implicitFunctionCache = new Map(); // Cache: functionId -> { viewport, points, timestamp }
         this.viewportChangeThreshold = 0.1; // Relative threshold for cache invalidation
         
+        // Implicit inequality shading cache - per-function offscreen canvas
+        this.implicitShadingCache = new Map(); // Cache: functionId -> { canvas, viewport, gridDataHash }
+        
+        // Implicit curve rendering cache - cache the rendered curve itself
+        this.implicitCurveCache = new Map(); // Cache: functionId -> { canvas, viewport, pointsHash, color, isInequality, isStrict }
+        
         // Extended viewport buffer configuration for smooth panning
         this.implicitBufferConfig = {
             extensionPercent: 0.40,          // Generate 40% beyond visible viewport (more pan range)
@@ -3063,6 +3069,12 @@ class Graphiti {
         // Invalidate inequality intersection cache when removing function
         this.invalidateInequalityIntersectionCache();
         
+        // Invalidate shading cache for this function
+        this.implicitShadingCache.delete(id);
+        
+        // Invalidate curve cache for this function
+        this.implicitCurveCache.delete(id);
+        
         // Remove from the appropriate function array
         this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
         this.polarFunctions = this.polarFunctions.filter(f => f.id !== id);
@@ -5587,6 +5599,71 @@ class Graphiti {
     drawImplicitInequality(func) {
         if (!func.gridData) return;
         
+        // Create cache key from viewport and grid data
+        const viewportKey = `${this.viewport.minX},${this.viewport.minY},${this.viewport.maxX},${this.viewport.maxY}`;
+        const gridDataHash = func.gridData.adaptiveCells 
+            ? func.gridData.adaptiveCells.length 
+            : (func.gridData.values ? func.gridData.values.length : 0);
+        
+        // Check cache
+        const cached = this.implicitShadingCache.get(func.id);
+        if (cached && cached.gridDataHash === gridDataHash) {
+            // Check if viewport has changed but grid data hasn't
+            if (cached.viewport !== viewportKey) {
+                // Viewport changed - check if we should regenerate or reuse with transform
+                const now = performance.now();
+                
+                // Track when viewport last changed
+                if (cached.viewport !== viewportKey && cached.lastTrackedViewport !== viewportKey) {
+                    cached.lastViewportChangeTime = now;
+                    cached.lastTrackedViewport = viewportKey;
+                }
+                
+                const timeSinceViewportChanged = now - (cached.lastViewportChangeTime || 0);
+                
+                // If viewport changed recently (during pan/zoom), transform cached canvas
+                if (timeSinceViewportChanged < 250) {
+                    // Parse cached and current viewport to calculate transform
+                    const cachedVp = cached.viewport.split(',');
+                    const cachedMinX = parseFloat(cachedVp[0]);
+                    const cachedMinY = parseFloat(cachedVp[1]);
+                    const cachedMaxX = parseFloat(cachedVp[2]);
+                    const cachedMaxY = parseFloat(cachedVp[3]);
+                    
+                    this.ctx.save();
+                    
+                    const cachedWorldWidth = cachedMaxX - cachedMinX;
+                    const cachedWorldHeight = cachedMaxY - cachedMinY;
+                    const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
+                    const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
+                    
+                    const scaleX = cachedWorldWidth / currentWorldWidth;
+                    const scaleY = cachedWorldHeight / currentWorldHeight;
+                    
+                    const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
+                    const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
+                    
+                    this.ctx.translate(offsetX, offsetY);
+                    this.ctx.scale(scaleX, scaleY);
+                    this.ctx.drawImage(cached.canvas, 0, 0);
+                    this.ctx.restore();
+                    
+                    return; // Don't regenerate yet
+                }
+                // Viewport has stabilized - fall through to regenerate
+            } else {
+                // Perfect cache hit - viewport and data match
+                this.ctx.drawImage(cached.canvas, 0, 0);
+                return;
+            }
+        }
+        
+        // Cache miss or viewport stabilized - need to render to offscreen canvas
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = this.viewport.width;
+        offscreenCanvas.height = this.viewport.height;
+        const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+        
         // Extract operator from expression
         const clean = this.convertFromLatex(func.expression).trim();
         let operator = null;
@@ -5604,7 +5681,7 @@ class Graphiti {
         if (!operator) return;
         
         const colorWithAlpha = this.addAlphaToColor(func.color, 0.25);
-        this.ctx.fillStyle = colorWithAlpha;
+        offscreenCtx.fillStyle = colorWithAlpha;
         
         // Handle adaptive grid (coarse cells + refined boundary cells)
         if (func.gridData.adaptiveCells) {
@@ -5631,7 +5708,7 @@ class Graphiti {
                     const rectWidth = bottomRight.x - topLeft.x;
                     const rectHeight = bottomRight.y - topLeft.y;
                     
-                    this.ctx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                    offscreenCtx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
                 }
             }
         } else {
@@ -5666,11 +5743,21 @@ class Graphiti {
                         const rectWidth = bottomRight.x - topLeft.x;
                         const rectHeight = bottomRight.y - topLeft.y;
                         
-                        this.ctx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
+                        offscreenCtx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
                     }
                 }
             }
         }
+        
+        // Store in cache
+        this.implicitShadingCache.set(func.id, {
+            canvas: offscreenCanvas,
+            viewport: viewportKey,
+            gridDataHash: gridDataHash
+        });
+        
+        // Draw to main canvas
+        this.ctx.drawImage(offscreenCanvas, 0, 0);
     }
 
     // ================================
@@ -5722,6 +5809,8 @@ class Graphiti {
                     // Invalidate intersection cache since grid data changed
                     if (functionType === 'implicit-inequality') {
                         this.invalidateInequalityIntersectionCache();
+                        // Invalidate shading cache for this function
+                        this.implicitShadingCache.delete(func.id);
                     }
                 }
             } else {
@@ -5738,6 +5827,8 @@ class Graphiti {
                         func.gridData = result.gridData;
                         // Invalidate intersection cache since grid data changed
                         this.invalidateInequalityIntersectionCache();
+                        // Invalidate shading cache for this function
+                        this.implicitShadingCache.delete(func.id);
                     }
                 } else {
                     const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
@@ -5752,6 +5843,8 @@ class Graphiti {
                         // Invalidate intersection cache since grid data changed
                         if (functionType === 'implicit-inequality') {
                             this.invalidateInequalityIntersectionCache();
+                            // Invalidate shading cache for this function
+                            this.implicitShadingCache.delete(func.id);
                         }
                     }
                 }
@@ -5773,6 +5866,9 @@ class Graphiti {
             
             // Also update func.points for backward compatibility (intersections, etc.)
             func.points = points;
+            
+            // Invalidate curve cache when points change
+            this.implicitCurveCache.delete(func.id);
             
             this.activeImplicitCalculations.delete(func.id);
             
@@ -22613,17 +22709,86 @@ class Graphiti {
         // Check if points should be connected (like for circles, ellipses, parabolas)
         const hasConnectedPoints = pointsToUse.some(p => p.connected);
         
+        // Create cache key
+        const viewportKey = `${this.viewport.minX},${this.viewport.minY},${this.viewport.maxX},${this.viewport.maxY}`;
+        const pointsHash = pointsToUse.length; // Simple hash - could be improved
+        
+        let isStrict = false;
+        if (isInequality) {
+            const clean = this.convertFromLatex(func.expression).trim();
+            isStrict = clean.includes('>') && !clean.includes('>=') || 
+                      clean.includes('<') && !clean.includes('<=');
+        }
+        
+        // Check curve cache
+        const cached = this.implicitCurveCache.get(func.id);
+        if (cached && 
+            cached.pointsHash === pointsHash &&
+            cached.color === func.color &&
+            cached.isInequality === isInequality &&
+            cached.isStrict === isStrict &&
+            cached.hasConnectedPoints === hasConnectedPoints) {
+            
+            // Check if viewport has changed but curve data hasn't
+            if (cached.viewport !== viewportKey) {
+                // Viewport changed - check if we should regenerate or reuse with transform
+                const now = performance.now();
+                
+                // Track when viewport last changed
+                if (cached.viewport !== viewportKey && cached.lastTrackedViewport !== viewportKey) {
+                    cached.lastViewportChangeTime = now;
+                    cached.lastTrackedViewport = viewportKey;
+                }
+                
+                const timeSinceViewportChanged = now - (cached.lastViewportChangeTime || 0);
+                
+                // If viewport changed recently (during pan/zoom), transform cached canvas
+                if (timeSinceViewportChanged < 250) {
+                    // Parse cached and current viewport to calculate transform
+                    const cachedVp = cached.viewport.split(',');
+                    const cachedMinX = parseFloat(cachedVp[0]);
+                    const cachedMinY = parseFloat(cachedVp[1]);
+                    const cachedMaxX = parseFloat(cachedVp[2]);
+                    const cachedMaxY = parseFloat(cachedVp[3]);
+                    
+                    this.ctx.save();
+                    
+                    const cachedWorldWidth = cachedMaxX - cachedMinX;
+                    const cachedWorldHeight = cachedMaxY - cachedMinY;
+                    const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
+                    const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
+                    
+                    const scaleX = cachedWorldWidth / currentWorldWidth;
+                    const scaleY = cachedWorldHeight / currentWorldHeight;
+                    
+                    const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
+                    const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
+                    
+                    this.ctx.translate(offsetX, offsetY);
+                    this.ctx.scale(scaleX, scaleY);
+                    this.ctx.drawImage(cached.canvas, 0, 0);
+                    this.ctx.restore();
+                    
+                    return; // Don't regenerate yet
+                }
+                // Viewport has stabilized - fall through to regenerate
+            } else {
+                // Perfect cache hit - viewport and data match
+                this.ctx.drawImage(cached.canvas, 0, 0);
+                return;
+            }
+        }
+        
+        // Cache miss or viewport stabilized - render to offscreen canvas
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = this.viewport.width;
+        offscreenCanvas.height = this.viewport.height;
+        const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+        
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
             // Strict inequalities (<, >): dashed line
             // Non-strict inequalities (≤, ≥): solid colored line with black outline for distinction
-            let isStrict = false;
-            
-            if (isInequality) {
-                const clean = this.convertFromLatex(func.expression).trim();
-                isStrict = clean.includes('>') && !clean.includes('>=') || 
-                          clean.includes('<') && !clean.includes('<=');
-            }
             
             // For non-strict inequalities, draw black outline first, then colored line on top
             // For regular equations (not inequalities), just draw once
@@ -22632,21 +22797,21 @@ class Graphiti {
             for (let pass = 0; pass < linesToDraw; pass++) {
                 if (pass === 0 && isInequality && !isStrict) {
                     // First pass for non-strict inequalities: draw black outline (wider, solid)
-                    this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-                    this.ctx.lineWidth = this.getLineWidth(6);
-                    this.ctx.setLineDash([]); // Solid line for outline
+                    offscreenCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+                    offscreenCtx.lineWidth = this.getLineWidth(6);
+                    offscreenCtx.setLineDash([]); // Solid line for outline
                 } else {
                     // For all other cases: draw colored line
-                    this.ctx.strokeStyle = func.color;
-                    this.ctx.lineWidth = this.getLineWidth(3);
+                    offscreenCtx.strokeStyle = func.color;
+                    offscreenCtx.lineWidth = this.getLineWidth(3);
                     
                     // Set line style based on inequality type
                     if (isInequality && isStrict) {
                         // Strict inequality - use dashed line
-                        this.ctx.setLineDash([this.getLineWidth(8), this.getLineWidth(4)]);
+                        offscreenCtx.setLineDash([this.getLineWidth(8), this.getLineWidth(4)]);
                     } else {
                         // Non-strict inequality or regular function - use solid line
-                        this.ctx.setLineDash([]);
+                        offscreenCtx.setLineDash([]);
                     }
                 }
                 
@@ -22668,20 +22833,20 @@ class Graphiti {
                             (endScreen.x >= -50 && endScreen.x <= this.viewport.width + 50 &&
                              endScreen.y >= -50 && endScreen.y <= this.viewport.height + 50)) {
                             
-                            this.ctx.beginPath();
-                            this.ctx.moveTo(startScreen.x, startScreen.y);
-                            this.ctx.lineTo(endScreen.x, endScreen.y);
-                            this.ctx.stroke();
+                            offscreenCtx.beginPath();
+                            offscreenCtx.moveTo(startScreen.x, startScreen.y);
+                            offscreenCtx.lineTo(endScreen.x, endScreen.y);
+                            offscreenCtx.stroke();
                         }
                     }
                 }
             }
             
             // Reset line dash after drawing inequalities
-            this.ctx.setLineDash([]);
+            offscreenCtx.setLineDash([]);
         } else {
             // Draw as discrete points (for hyperbolas or general implicit functions)
-            this.ctx.fillStyle = func.color;
+            offscreenCtx.fillStyle = func.color;
             const pointSize = 1.5;
             
             for (let i = 0; i < pointsToUse.length; i++) {
@@ -22693,12 +22858,26 @@ class Graphiti {
                 if (screenPos.x >= -10 && screenPos.x <= this.viewport.width + 10 &&
                     screenPos.y >= -10 && screenPos.y <= this.viewport.height + 10) {
                     
-                    this.ctx.beginPath();
-                    this.ctx.arc(screenPos.x, screenPos.y, pointSize, 0, 2 * Math.PI);
-                    this.ctx.fill();
+                    offscreenCtx.beginPath();
+                    offscreenCtx.arc(screenPos.x, screenPos.y, pointSize, 0, 2 * Math.PI);
+                    offscreenCtx.fill();
                 }
             }
         }
+        
+        // Store in cache
+        this.implicitCurveCache.set(func.id, {
+            canvas: offscreenCanvas,
+            viewport: viewportKey,
+            pointsHash: pointsHash,
+            color: func.color,
+            isInequality: isInequality,
+            isStrict: isStrict,
+            hasConnectedPoints: hasConnectedPoints
+        });
+        
+        // Draw to main canvas
+        this.ctx.drawImage(offscreenCanvas, 0, 0);
     }
     
     groupConnectedPoints(points) {
