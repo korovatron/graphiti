@@ -3868,6 +3868,13 @@ class Graphiti {
                 e: Math.E
             });
             
+            // Track starting position to detect when curve completes and starts overlapping
+            let startX = null;
+            let startY = null;
+            let hasValidStart = false;
+            const completionThreshold = 0.01; // Distance threshold to detect curve completion
+            let minThetaForCompletion = thetaMin + Math.PI / 4; // Don't check for completion too early
+            
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
                     // Convert theta to radians if in degree mode, since math.js trig functions expect radians
@@ -3899,6 +3906,26 @@ class Graphiti {
                     
                     // Check if point is within reasonable bounds
                     if (isFinite(x) && isFinite(y)) {
+                        // Store the first valid point as start position
+                        if (!hasValidStart) {
+                            startX = x;
+                            startY = y;
+                            hasValidStart = true;
+                        }
+                        
+                        // Check if we've returned to starting position (curve completed)
+                        // Only check after we've moved significantly away from start
+                        if (hasValidStart && theta > minThetaForCompletion) {
+                            const distanceFromStart = Math.sqrt((x - startX) ** 2 + (y - startY) ** 2);
+                            const radiusScale = Math.abs(r) || 1;
+                            
+                            // Scale threshold by curve size to work for curves of different radii
+                            if (distanceFromStart < completionThreshold * radiusScale) {
+                                // Curve has completed - stop to prevent overlapping dashes
+                                break;
+                            }
+                        }
+                        
                         // Store original theta (from loop, before adjustments) for integral shading
                         points.push({ x, y, connected: true, theta: theta });
                     } else {
@@ -4035,6 +4062,13 @@ class Graphiti {
                 e: Math.E
             });
             
+            // Track starting position to detect when curve completes and starts overlapping
+            let startX = null;
+            let startY = null;
+            let hasValidStart = false;
+            const completionThreshold = 0.01; // Distance threshold to detect curve completion
+            let minThetaForCompletion = thetaMin + Math.PI / 4; // Don't check for completion too early
+            
             // Plot the boundary curve
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
@@ -4060,6 +4094,26 @@ class Graphiti {
                     const y = r * Math.sin(adjustedThetaForEval);
                     
                     if (isFinite(x) && isFinite(y)) {
+                        // Store the first valid point as start position
+                        if (!hasValidStart) {
+                            startX = x;
+                            startY = y;
+                            hasValidStart = true;
+                        }
+                        
+                        // Check if we've returned to starting position (curve completed)
+                        // Only check after we've moved significantly away from start
+                        if (hasValidStart && theta > minThetaForCompletion) {
+                            const distanceFromStart = Math.sqrt((x - startX) ** 2 + (y - startY) ** 2);
+                            const radiusScale = Math.abs(r) || 1;
+                            
+                            // Scale threshold by curve size to work for curves of different radii
+                            if (distanceFromStart < completionThreshold * radiusScale) {
+                                // Curve has completed - stop to prevent overlapping dashes
+                                break;
+                            }
+                        }
+                        
                         points.push({ x, y, connected: true, theta: theta });
                     } else {
                         points.push({ x: NaN, y: NaN, connected: false, theta: theta });
