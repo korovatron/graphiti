@@ -22495,11 +22495,11 @@ class Graphiti {
             }
         }
         
-        // For non-strict inequalities, draw black outline first
+        // For non-strict inequalities, draw black outline first (solid line)
         if (func._inequalityIsStrict === false) {
             this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
             this.ctx.lineWidth = this.getLineWidth(6);
-            this.ctx.setLineDash([]);
+            this.ctx.setLineDash([]); // Solid line for non-strict
             
             this.ctx.beginPath();
             let pathStarted = false;
@@ -22528,7 +22528,15 @@ class Graphiti {
         // Now draw the main colored line
         this.ctx.strokeStyle = func.color;
         this.ctx.lineWidth = this.getLineWidth(3);
-        this.ctx.setLineDash([]);
+        
+        // Set line style based on inequality type
+        if (func._inequalityIsStrict === true) {
+            // Strict inequality (< or >) - use dashed line
+            this.ctx.setLineDash([this.getLineWidth(8), this.getLineWidth(4)]);
+        } else {
+            // Non-strict inequality (≤ or ≥) or regular function - use solid line
+            this.ctx.setLineDash([]);
+        }
         
         if (!func.expression.match(/[<>]/)) {
             this.ctx.setLineDash([]); // Ensure solid line for equations
@@ -22607,8 +22615,8 @@ class Graphiti {
         
         if (hasConnectedPoints) {
             // For marching squares output, draw as individual line segments
-            // Strict inequalities (<, >): simple solid line
-            // Non-strict inequalities (≤, ≥): colored line with black outline for distinction
+            // Strict inequalities (<, >): dashed line
+            // Non-strict inequalities (≤, ≥): solid colored line with black outline for distinction
             let isStrict = false;
             
             if (isInequality) {
@@ -22623,16 +22631,24 @@ class Graphiti {
             
             for (let pass = 0; pass < linesToDraw; pass++) {
                 if (pass === 0 && isInequality && !isStrict) {
-                    // First pass for non-strict inequalities: draw black outline (wider)
+                    // First pass for non-strict inequalities: draw black outline (wider, solid)
                     this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
                     this.ctx.lineWidth = this.getLineWidth(6);
+                    this.ctx.setLineDash([]); // Solid line for outline
                 } else {
                     // For all other cases: draw colored line
                     this.ctx.strokeStyle = func.color;
                     this.ctx.lineWidth = this.getLineWidth(3);
+                    
+                    // Set line style based on inequality type
+                    if (isInequality && isStrict) {
+                        // Strict inequality - use dashed line
+                        this.ctx.setLineDash([this.getLineWidth(8), this.getLineWidth(4)]);
+                    } else {
+                        // Non-strict inequality or regular function - use solid line
+                        this.ctx.setLineDash([]);
+                    }
                 }
-                
-                this.ctx.setLineDash([]);
                 
                 // Draw individual line segments (every pair of connected points)
                 for (let i = 0; i < pointsToUse.length - 1; i += 3) { // Skip by 3 (start, end, NaN)
@@ -22660,6 +22676,9 @@ class Graphiti {
                     }
                 }
             }
+            
+            // Reset line dash after drawing inequalities
+            this.ctx.setLineDash([]);
         } else {
             // Draw as discrete points (for hyperbolas or general implicit functions)
             this.ctx.fillStyle = func.color;
