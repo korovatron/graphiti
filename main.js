@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 
 class Graphiti {
     constructor() {
@@ -3251,6 +3251,8 @@ class Graphiti {
                 thetaMinLatex: this.polarSettings.thetaMinLatex || this.polarSettings.thetaMin.toString(),
                 thetaMaxLatex: this.polarSettings.thetaMaxLatex || this.polarSettings.thetaMax.toString(),
                 angleMode: this.angleMode, // Save angle mode to prevent unit mismatch on reload
+                // Save animation state to preserve original theta range even if interrupted mid-animation
+                storedThetaMax: this.polarAnimation.storedThetaMax,
                 viewportMinX: this.polarViewport.minX,
                 viewportMaxX: this.polarViewport.maxX,
                 viewportMinY: this.polarViewport.minY,
@@ -3370,7 +3372,22 @@ class Graphiti {
                     
                     if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin < thetaMax) {
                         this.polarSettings.thetaMin = thetaMin;
-                        this.polarSettings.thetaMax = thetaMax;
+                        
+                        // Restore storedThetaMax if available (preserves original range if animation was interrupted)
+                        if (bounds.storedThetaMax !== undefined && bounds.storedThetaMax !== 0) {
+                            const storedMax = parseFloat(bounds.storedThetaMax);
+                            if (!isNaN(storedMax) && storedMax > thetaMin) {
+                                // Use storedThetaMax as the actual thetaMax (original user-specified value)
+                                this.polarSettings.thetaMax = storedMax;
+                                this.polarAnimation.storedThetaMax = storedMax;
+                            } else {
+                                // Fallback to saved thetaMax if storedThetaMax is invalid
+                                this.polarSettings.thetaMax = thetaMax;
+                            }
+                        } else {
+                            // No storedThetaMax saved (backward compatibility)
+                            this.polarSettings.thetaMax = thetaMax;
+                        }
                         
                         // Also restore polar viewport ranges if they exist
                         if (bounds.viewportMinX !== undefined && bounds.viewportMaxX !== undefined &&
