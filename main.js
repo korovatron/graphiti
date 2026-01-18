@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.4';
+const VERSION = '1.0.5';
 
 class Graphiti {
     constructor() {
@@ -27221,13 +27221,21 @@ class Graphiti {
                     // For theta = constant functions, skip drawing point (it's a line)
                     return;
                 } else {
-                    // Standard r = f(theta) function
-                    // Process expression the same way as plotPolarFunction does
-                    let processedExpression = this.convertFromLatex(func.expression).trim();
-                    if (processedExpression.toLowerCase().startsWith('r=')) {
-                        processedExpression = processedExpression.substring(2).trim();
+                    // Check if this is an inequality (r > f(theta), r < f(theta), etc.)
+                    const inequality = this.parsePolarInequality(func.expression);
+                    let processedExpression;
+                    
+                    if (inequality && inequality.leftSide.toLowerCase() === 'r') {
+                        // Polar inequality: extract the boundary function
+                        processedExpression = inequality.rightSide.toLowerCase();
+                    } else {
+                        // Standard r = f(theta) function
+                        processedExpression = this.convertFromLatex(func.expression).trim();
+                        if (processedExpression.toLowerCase().startsWith('r=')) {
+                            processedExpression = processedExpression.substring(2).trim();
+                        }
+                        processedExpression = processedExpression.toLowerCase();
                     }
-                    processedExpression = processedExpression.toLowerCase();
                     
                     // Add implicit multiplication
                     processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
