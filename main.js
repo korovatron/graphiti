@@ -1,6 +1,8 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
+const VERSION = '1.0.3';
+
 class Graphiti {
     constructor() {
         // Fix iOS PWA 9-pixel viewport bug
@@ -12646,6 +12648,11 @@ class Graphiti {
             }
         } else {
             overlay.classList.add('show');
+            // Populate version number
+            const versionElement = document.getElementById('version-number');
+            if (versionElement) {
+                versionElement.textContent = VERSION;
+            }
         }
     }
     
@@ -28800,5 +28807,11 @@ class Graphiti {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Set version number in help overlay
+    const versionElement = document.getElementById('version-number');
+    if (versionElement) {
+        versionElement.textContent = VERSION;
+    }
+    
     window.graphiti = new Graphiti();
 });
