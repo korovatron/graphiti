@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.6';
+const VERSION = '1.0.7';
 
 class Graphiti {
     constructor() {
@@ -40,6 +40,7 @@ class Graphiti {
         
         // Google Analytics engagement tracking with throttling
         this.lastAnalyticsEvent = 0;
+        this.lastFunctionPanelEvent = 0;
         this.analyticsThrottleMs = 30000; // Send event max once per 30 seconds
         
         // Angle mode for trigonometric functions
@@ -7671,7 +7672,7 @@ class Graphiti {
         // Only sends event if gtag exists and throttle period has elapsed
         const now = Date.now();
         if (typeof gtag !== 'undefined' && (now - this.lastAnalyticsEvent) >= this.analyticsThrottleMs) {
-            gtag('event', 'graph_interaction', {
+            gtag('event', 'GRAPH_interaction', {
                 'event_category': 'engagement',
                 'event_label': this.plotMode
             });
@@ -10851,7 +10852,22 @@ class Graphiti {
         
         // Function Panel Touch Events - prevent touch events from bubbling to canvas
         if (functionPanel) {
+            // Track any interaction with function panel for analytics
+            const trackPanelInteraction = () => {
+                const now = Date.now();
+                if (typeof gtag !== 'undefined' && (now - this.lastFunctionPanelEvent) >= this.analyticsThrottleMs) {
+                    gtag('event', 'GRAPH_function_panel_interaction', {
+                        'event_category': 'engagement',
+                        'event_label': this.plotMode
+                    });
+                    this.lastFunctionPanelEvent = now;
+                }
+            };
+            
+            functionPanel.addEventListener('click', () => trackPanelInteraction(), { passive: true });
+            
             functionPanel.addEventListener('touchstart', (e) => {
+                trackPanelInteraction();
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
             
