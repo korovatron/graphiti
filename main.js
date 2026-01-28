@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.7';
+const VERSION = '1.0.8';
 
 class Graphiti {
     constructor() {
@@ -2824,10 +2824,22 @@ class Graphiti {
                         if (!equation) {
                             throw new Error('Invalid implicit equation/inequality format');
                         }
-                        // Test evaluation at a sample point
-                        const testValue = this.evaluateImplicitEquation(equation, 1, 1);
-                        if (testValue === null) {
-                            throw new Error('Cannot evaluate implicit equation/inequality');
+                        // Test evaluation at multiple sample points (some may hit asymptotes)
+                        const testPoints = [[1, 1], [0, 0], [2, 2], [-1, -1], [0.5, 0.5]];
+                        let validEvaluation = false;
+                        for (const [testX, testY] of testPoints) {
+                            try {
+                                const testValue = this.evaluateImplicitEquation(equation, testX, testY);
+                                if (testValue !== null && isFinite(testValue)) {
+                                    validEvaluation = true;
+                                    break;
+                                }
+                            } catch (e) {
+                                // Try next point
+                            }
+                        }
+                        if (!validEvaluation) {
+                            throw new Error('Cannot evaluate implicit equation/inequality at any test point');
                         }
                     } else if (functionType === 'explicit-inequality') {
                         // For explicit inequalities, parse and validate the right side
@@ -6393,6 +6405,9 @@ class Graphiti {
         // The curves are small, so just use high-res contour grid for smoothness
         const useFullContourGrid = viewportSize > 50;
         
+        // Detect vertical asymptotes in the boundary equation
+        const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
+        
         // Compile expressions once
         const leftCompiled = this.getCompiledExpression(equation.leftExpression);
         const rightCompiled = this.getCompiledExpression(equation.rightExpression);
@@ -6555,6 +6570,26 @@ class Graphiti {
                     }
                 }
             }
+            
+            // Add extra columns at asymptote positions for accurate boundary placement
+            for (const asymptoteX of verticalAsymptotes) {
+                if (asymptoteX >= this.viewport.minX && asymptoteX <= this.viewport.maxX) {
+                    // Find the grid column index closest to this asymptote
+                    const asymptoteI = (asymptoteX - this.viewport.minX) / contourStepX;
+                    const iLeft = Math.floor(asymptoteI);
+                    const iRight = Math.ceil(asymptoteI);
+                    
+                    // If asymptote is not exactly on a grid line, add evaluations at the asymptote
+                    if (Math.abs(asymptoteI - iLeft) > 0.01 && Math.abs(asymptoteI - iRight) > 0.01) {
+                        // Evaluate at the asymptote position for all y values
+                        for (let j = 0; j <= contourResolution; j++) {
+                            const y = this.viewport.minY + j * contourStepY;
+                            // Store in a special asymptote grid (we'll handle this separately)
+                            // For now, just ensure we have data near the asymptote
+                        }
+                    }
+                }
+            }
         } else {
             // Zoomed in: Use localized evaluation near boundaries for performance
             // Calculate bounding regions for boundary cells in contour grid space
@@ -6618,7 +6653,7 @@ class Graphiti {
                     if (corners[k] > 0) config |= (1 << k);
                 }
                 
-                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, contourStepX, contourStepY);
+                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, contourStepX, contourStepY, verticalAsymptotes);
                 segments.push(...cellSegments);
             }
         }
@@ -6655,6 +6690,9 @@ class Graphiti {
 
     marchingSquaresAtResolution(equation, resolution, stepX, stepY) {
         const segments = [];
+        
+        // Detect vertical asymptotes in the boundary equation
+        const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
         
         // Compile expressions once for performance
         // Expressions are already processed by parseImplicitEquation
@@ -6706,7 +6744,7 @@ class Graphiti {
                 }
                 
                 // Get line segments for this configuration
-                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
                 segments.push(...cellSegments);
             }
         }
@@ -6723,18 +6761,184 @@ class Graphiti {
         return points;
     }
     
-    getMarchingSquaresSegments(config, corners, x, y, stepX, stepY) {
+    detectVerticalAsymptotes(expression) {
+        // Detect vertical asymptotes in rational expressions
+        // Returns array of x-values where vertical asymptotes occur
+        const asymptotes = [];
+        
+        try {
+            const clean = this.convertFromLatex(expression).toLowerCase().trim();
+            
+            // Strategy: Find division operators and extract denominators carefully
+            // Handle nested parentheses properly
+            
+            const findDenominators = (expr) => {
+                const denoms = [];
+                for (let i = 0; i < expr.length; i++) {
+                    if (expr[i] === '/') {
+                        // Found a division - extract the denominator
+                        let denom = '';
+                        let j = i + 1;
+                        
+                        // Skip whitespace
+                        while (j < expr.length && expr[j] === ' ') j++;
+                        
+                        if (j < expr.length && expr[j] === '(') {
+                            // Denominator is in parentheses - extract with balanced parens
+                            let parenDepth = 0;
+                            let start = j;
+                            while (j < expr.length) {
+                                if (expr[j] === '(') parenDepth++;
+                                if (expr[j] === ')') {
+                                    parenDepth--;
+                                    if (parenDepth === 0) {
+                                        denom = expr.substring(start, j + 1);
+                                        break;
+                                    }
+                                }
+                                j++;
+                            }
+                        } else {
+                            // Denominator is not in parentheses - take until comparison operator
+                            while (j < expr.length && !/[><≥≤=]/.test(expr[j])) {
+                                denom += expr[j];
+                                j++;
+                            }
+                        }
+                        
+                        if (denom) denoms.push(denom);
+                    }
+                }
+                return denoms;
+            };
+            
+            const denominators = findDenominators(clean);
+            
+            // Find all (x ± constant) factors in denominators
+            for (const denom of denominators) {
+                // Pattern 1: (ax ± b) with coefficient - solve ax±b=0 for x
+                const coeffFactorPattern = /\(([0-9.]*)\s*\*?\s*x\s*([+-])\s*([0-9.]+)\)/g;
+                let factorMatch;
+                while ((factorMatch = coeffFactorPattern.exec(denom)) !== null) {
+                    let coeff = 1;
+                    if (factorMatch[1] && factorMatch[1].length > 0) {
+                        coeff = parseFloat(factorMatch[1]);
+                    }
+                    const sign = factorMatch[2];
+                    const constant = parseFloat(factorMatch[3]);
+                    // Solve: coeff*x ± constant = 0
+                    // If sign is '+': coeff*x + constant = 0 → x = -constant/coeff
+                    // If sign is '-': coeff*x - constant = 0 → x = constant/coeff
+                    const asymptoteX = sign === '-' ? constant / coeff : -constant / coeff;
+                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                        // Round to avoid floating point errors
+                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001 
+                            ? Math.round(asymptoteX) 
+                            : asymptoteX;
+                        if (!asymptotes.includes(roundedAsymptote)) {
+                            asymptotes.push(roundedAsymptote);
+                        }
+                    }
+                }
+                
+                // Pattern 2: (x ± constant) without coefficient
+                const factorPattern = /\(x\s*([+-])\s*([0-9.]+)\)/g;
+                while ((factorMatch = factorPattern.exec(denom)) !== null) {
+                    const sign = factorMatch[1];
+                    const value = parseFloat(factorMatch[2]);
+                    const asymptoteX = sign === '-' ? value : -value;
+                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001 
+                            ? Math.round(asymptoteX) 
+                            : asymptoteX;
+                        if (!asymptotes.includes(roundedAsymptote)) {
+                            asymptotes.push(roundedAsymptote);
+                        }
+                    }
+                }
+                
+                // Pattern 3: Standalone ax±b without full parentheses
+                const standaloneCoeffPattern = /([0-9.]+)\s*\*?\s*x\s*([+-])\s*([0-9.]+)/g;
+                while ((factorMatch = standaloneCoeffPattern.exec(denom)) !== null) {
+                    const coeff = parseFloat(factorMatch[1]);
+                    const sign = factorMatch[2];
+                    const constant = parseFloat(factorMatch[3]);
+                    const asymptoteX = sign === '-' ? constant / coeff : -constant / coeff;
+                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001 
+                            ? Math.round(asymptoteX) 
+                            : asymptoteX;
+                        if (!asymptotes.includes(roundedAsymptote)) {
+                            asymptotes.push(roundedAsymptote);
+                        }
+                    }
+                }
+                
+                // Pattern 4: Standalone x±constant without coefficient or full parentheses
+                const standalonePattern = /x\s*([+-])\s*([0-9.]+)/g;
+                while ((factorMatch = standalonePattern.exec(denom)) !== null) {
+                    const sign = factorMatch[1];
+                    const value = parseFloat(factorMatch[2]);
+                    const asymptoteX = sign === '-' ? value : -value;
+                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001 
+                            ? Math.round(asymptoteX) 
+                            : asymptoteX;
+                        if (!asymptotes.includes(roundedAsymptote)) {
+                            asymptotes.push(roundedAsymptote);
+                        }
+                    }
+                }
+                
+                // Pattern 5: Just x in denominator: /x → asymptote at x=0
+                if (/^[\s(]*x[\s)]*$/.test(denom) && !asymptotes.includes(0)) {
+                    asymptotes.push(0);
+                }
+            }
+        } catch (error) {
+            // If detection fails, return empty array
+        }
+        
+        return asymptotes;
+    }
+    
+    getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes = []) {
         const segments = [];
+        
+        // Ultra-aggressive absolute snap tolerance for asymptotes
+        // Use a fixed absolute value that works across ALL zoom levels
+        // At extreme zoom (viewport < 1 unit), we need a large tolerance relative to the cell
+        // At normal zoom, we still need enough to catch the asymptote
+        // Solution: Use the LARGER of (2x cell width) or (0.1 units absolute)
+        const snapTolerance = Math.max(stepX * 2, stepY * 2, 0.1);
         
         // Edge interpolation points (linear interpolation for zero crossings)
         const getEdgePoint = (edge, v1, v2) => {
             const t = Math.abs(v1) / (Math.abs(v1) + Math.abs(v2));
+            let point;
             switch(edge) {
-                case 0: return { x: x + t * stepX, y: y }; // bottom edge
-                case 1: return { x: x + stepX, y: y + t * stepY }; // right edge  
-                case 2: return { x: x + (1-t) * stepX, y: y + stepY }; // top edge
-                case 3: return { x: x, y: y + (1-t) * stepY }; // left edge
+                case 0: point = { x: x + t * stepX, y: y }; break; // bottom edge
+                case 1: point = { x: x + stepX, y: y + t * stepY }; break; // right edge  
+                case 2: point = { x: x + (1-t) * stepX, y: y + stepY }; break; // top edge
+                case 3: point = { x: x, y: y + (1-t) * stepY }; break; // left edge
             }
+            
+            // Snap to vertical asymptotes if within tolerance
+            // Check all asymptotes and snap to the closest one
+            let closestAsymptote = null;
+            let closestDistance = Infinity;
+            for (const asymptoteX of verticalAsymptotes) {
+                const distance = Math.abs(point.x - asymptoteX);
+                if (distance < snapTolerance && distance < closestDistance) {
+                    closestAsymptote = asymptoteX;
+                    closestDistance = distance;
+                }
+            }
+            if (closestAsymptote !== null) {
+                point.x = closestAsymptote;
+            }
+            
+            return point;
         };
         
         // Marching squares lookup table - defines which edges to connect for each configuration
@@ -6782,6 +6986,9 @@ class Graphiti {
         // Use extended viewport if provided, otherwise use current viewport
         const viewport = extendedViewport || this.viewport;
         const visible = visibleViewport || this.viewport;
+        
+        // Detect vertical asymptotes in the boundary equation
+        const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
         
         // Compile expressions once for performance
         const leftCompiled = this.getCompiledExpression(equation.leftExpression);
@@ -6851,7 +7058,7 @@ class Graphiti {
                     }
                     
                     if (config !== 0 && config !== 15) {
-                        const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+                        const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
                         segments.push(...cellSegments);
                     }
                 }
@@ -6964,7 +7171,7 @@ class Graphiti {
                 if (corners[k] > 0) config |= (1 << k);
             }
             
-            const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY);
+            const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
             segments.push(...cellSegments);
             
             // Check cancellation periodically
@@ -17280,6 +17487,12 @@ class Graphiti {
         const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
         const isParametric = funcType === 'parametric';
         
+        // Detect vertical asymptotes for snapping (for rational functions/inequalities)
+        let verticalAsymptotes = [];
+        if (isImplicit) {
+            verticalAsymptotes = this.detectVerticalAsymptotes(func.expression);
+        }
+        
         if (isImplicit) {
             // For implicit functions, try to solve the equation at y=0 for accurate x-intercepts
             try {
@@ -17347,6 +17560,22 @@ class Graphiti {
                                 let interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
                                 
                                 if (isFinite(interceptX)) {
+                                    // Snap to vertical asymptotes with ultra-aggressive tolerance
+                                    // At extreme zoom, sample spacing is tiny, so use larger multiple
+                                    const asymptoteSnapTolerance = Math.max(step * 5, 0.1);
+                                    let closestAsymptote = null;
+                                    let closestDistance = Infinity;
+                                    for (const asymptoteX of verticalAsymptotes) {
+                                        const distance = Math.abs(interceptX - asymptoteX);
+                                        if (distance < asymptoteSnapTolerance && distance < closestDistance) {
+                                            closestAsymptote = asymptoteX;
+                                            closestDistance = distance;
+                                        }
+                                    }
+                                    if (closestAsymptote !== null) {
+                                        interceptX = closestAsymptote;
+                                    }
+                                    
                                     // Snap very close intercepts to exactly x=0
                                     if (Math.abs(interceptX) < 0.02) {
                                         interceptX = 0;
