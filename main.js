@@ -17507,8 +17507,9 @@ class Graphiti {
                     const xMax = this.viewport.maxX;
                     const range = xMax - xMin;
                     
-                    // Adaptive sampling: maintain consistent resolution across zoom levels
-                    const sampleCount = Math.max(100, Math.min(500, Math.ceil(range * 10)));
+                    // High-resolution sampling to match marching squares precision
+                    // Use much finer sampling to ensure intercept markers align with plotted curves
+                    const sampleCount = Math.max(500, Math.min(2000, Math.ceil(range * 50)));
                     const step = range / sampleCount;
                     
                     const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
@@ -17560,20 +17561,20 @@ class Graphiti {
                                 let interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
                                 
                                 if (isFinite(interceptX)) {
-                                    // Snap to vertical asymptotes with ultra-aggressive tolerance
-                                    // At extreme zoom, sample spacing is tiny, so use larger multiple
-                                    const asymptoteSnapTolerance = Math.max(step * 5, 0.1);
-                                    let closestAsymptote = null;
-                                    let closestDistance = Infinity;
+                                    // Filter out intercepts AT asymptotes (fake crossings from discontinuities)
+                                    // Use small tolerance to identify intercepts at asymptote positions
+                                    let isAtAsymptote = false;
                                     for (const asymptoteX of verticalAsymptotes) {
-                                        const distance = Math.abs(interceptX - asymptoteX);
-                                        if (distance < asymptoteSnapTolerance && distance < closestDistance) {
-                                            closestAsymptote = asymptoteX;
-                                            closestDistance = distance;
+                                        if (Math.abs(interceptX - asymptoteX) < 0.05) {
+                                            isAtAsymptote = true;
+                                            break;
                                         }
                                     }
-                                    if (closestAsymptote !== null) {
-                                        interceptX = closestAsymptote;
+                                    
+                                    if (isAtAsymptote) {
+                                        prevValue = value;
+                                        prevX = x;
+                                        continue;
                                     }
                                     
                                     // Snap very close intercepts to exactly x=0
@@ -18697,10 +18698,23 @@ class Graphiti {
                                 }
                             }
                             
-                            const derivative = this.cleanMath.derivative(processedExpression, 'x');
-                            const derivativeStr = derivative.toString();
-                            const secondDerivative = this.cleanMath.derivative(derivative, 'x');
-                            const secondDerivativeStr = secondDerivative.toString();
+                            // Cache derivative computation to avoid expensive symbolic diff
+                            // Use consistent key format so cache is shared with slope calculation
+                            const cacheKey = `deriv_${func.id}_${cleanExpression}`;
+                            let derivativeStr, secondDerivativeStr;
+                            
+                            if (this.expressionCache.has(cacheKey)) {
+                                const cached = this.expressionCache.get(cacheKey);
+                                derivativeStr = cached.first;
+                                secondDerivativeStr = cached.second;
+                            } else {
+                                const derivative = this.cleanMath.derivative(processedExpression, 'x');
+                                derivativeStr = derivative.toString();
+                                const secondDerivative = this.cleanMath.derivative(derivative, 'x');
+                                secondDerivativeStr = secondDerivative.toString();
+                                this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                            }
+                            
                             const functionTurningPoints = this.findTurningPointsForFunction(boundaryFunc, derivativeStr, secondDerivativeStr, processedExpression);
                             turningPoints.push(...functionTurningPoints);
                         } catch (error) {
@@ -18849,13 +18863,22 @@ class Graphiti {
                     }
                 }
                 
-                // Get symbolic derivative using math.js
-                            const derivative = this.cleanMath.derivative(processedExpression, 'x');
-                const derivativeStr = derivative.toString();
+                // Get symbolic derivative using math.js (with caching)
+                // Use consistent key format so cache is shared with slope calculation
+                const cacheKey = `deriv_${func.id}_${cleanExpression}`;
+                let derivativeStr, secondDerivativeStr;
                 
-                // Also get second derivative for classification
-                const secondDerivative = this.cleanMath.derivative(derivative, 'x');
-                const secondDerivativeStr = secondDerivative.toString();
+                if (this.expressionCache.has(cacheKey)) {
+                    const cached = this.expressionCache.get(cacheKey);
+                    derivativeStr = cached.first;
+                    secondDerivativeStr = cached.second;
+                } else {
+                    const derivative = this.cleanMath.derivative(processedExpression, 'x');
+                    derivativeStr = derivative.toString();
+                    const secondDerivative = this.cleanMath.derivative(derivative, 'x');
+                    secondDerivativeStr = secondDerivative.toString();
+                    this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                }
                 
                 // Find turning points by finding roots of f'(x) = 0
                 // Pass the processed expression (after derivative computation) so y values are calculated correctly
@@ -19646,11 +19669,22 @@ class Graphiti {
         try {
             // Try symbolic derivative first (more accurate)
             try {
+                // Cache derivative computation per function to avoid expensive symbolic diff on every drag
+                // Use consistent key format so cache is shared with turning point detection
+                const cacheKey = `deriv_${func.id}_${cleanExpression}`;
+                let derivativeStr;
+                let derivative;
                 
-                // Use clean math instance for symbolic differentiation
-                const parsedExpression = cleanMath.parse(processedExpression);
-                const derivative = cleanMath.derivative(parsedExpression, 'x');
-                const derivativeStr = derivative.toString();
+                if (this.expressionCache.has(cacheKey)) {
+                    derivativeStr = this.expressionCache.get(cacheKey);
+                } else {
+                    // Use clean math instance for symbolic differentiation
+                    const parsedExpression = cleanMath.parse(processedExpression);
+                    derivative = cleanMath.derivative(parsedExpression, 'x');
+                    derivativeStr = derivative.toString();
+                    // Cache the derivative string for this function
+                    this.expressionCache.set(cacheKey, derivativeStr);
+                }
                 
                 // Check if first derivative has NaN - if so, use numerical first derivative
                 let slope;
