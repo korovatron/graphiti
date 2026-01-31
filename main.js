@@ -5380,7 +5380,7 @@ class Graphiti {
                 
                 const timeSinceViewportChanged = now - (this.inequalityIntersectionCache.lastViewportChangeTime || 0);
                 
-                // If viewport changed recently, use cached canvas but don't regenerate yet
+                // If viewport changed recently, use scaled cached canvas (acceptable for shading)
                 if (timeSinceViewportChanged < 250) {
                     // Parse cached and current viewport to calculate transform
                     const cachedVp = this.inequalityIntersectionCache.viewport.split(',');
@@ -5389,26 +5389,17 @@ class Graphiti {
                     const cachedMaxX = parseFloat(cachedVp[2]);
                     const cachedMaxY = parseFloat(cachedVp[3]);
                     
-                    // Calculate how world coordinates map to old canvas coordinates
-                    // Then map those to new screen coordinates
                     this.ctx.save();
                     this.ctx.globalAlpha = 0.25;
-                    
-                    // For any point in world space:
-                    // Old: screenX = (worldX - cachedMinX) / (cachedMaxX - cachedMinX) * canvasWidth
-                    // New: screenX = (worldX - currentMinX) / (currentMaxX - currentMinX) * canvasWidth
-                    // Transform: we need to shift and scale the cached canvas
                     
                     const cachedWorldWidth = cachedMaxX - cachedMinX;
                     const cachedWorldHeight = cachedMaxY - cachedMinY;
                     const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
                     const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
                     
-                    // Scale factor: how much bigger/smaller is current view vs cached
                     const scaleX = cachedWorldWidth / currentWorldWidth;
                     const scaleY = cachedWorldHeight / currentWorldHeight;
                     
-                    // Translation: where does the cached view's origin appear in current view
                     const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
                     const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
                     
@@ -5417,18 +5408,11 @@ class Graphiti {
                     this.ctx.drawImage(this.inequalityIntersectionCache.canvas, 0, 0);
                     this.ctx.restore();
                     
-                    // Schedule a regeneration for when viewport stabilizes
-                    clearTimeout(this.viewportChangeTimer);
-                    this.viewportChangeTimer = setTimeout(() => {
-                        this.scheduleChunkedDraw();
-                    }, 250);
-                    
-                    return; // Don't regenerate
-                } else {
-                    // Viewport has stabilized - regenerate at new viewport
+                    return; // Don't regenerate yet
                     // Reset tracking for next change
                     delete this.inequalityIntersectionCache.lastViewportChangeTime;
                     delete this.inequalityIntersectionCache.lastTrackedViewport;
+                    // Fall through to regeneration
                 }
             } else {
                 // Use cached canvas - perfect match
@@ -5700,47 +5684,49 @@ class Graphiti {
         if (cached && cached.gridDataHash === gridDataHash) {
             // Check if viewport has changed but grid data hasn't
             if (cached.viewport !== viewportKey) {
-                // Viewport changed - check if we should regenerate or reuse with transform
-                const now = performance.now();
-                
-                // Track when viewport last changed
-                if (cached.viewport !== viewportKey && cached.lastTrackedViewport !== viewportKey) {
-                    cached.lastViewportChangeTime = now;
-                    cached.lastTrackedViewport = viewportKey;
+                // For inequalities with shading, use scaled canvas (acceptable for regions)
+                // For curves/boundaries, redraw with cached points for crisp lines
+                if (isInequality) {
+                    // Inequality - scale the cached shading (acceptable quality for filled regions)
+                    const now = performance.now();
+                    
+                    if (cached.viewport !== viewportKey && cached.lastTrackedViewport !== viewportKey) {
+                        cached.lastViewportChangeTime = now;
+                        cached.lastTrackedViewport = viewportKey;
+                    }
+                    
+                    const timeSinceViewportChanged = now - (cached.lastViewportChangeTime || 0);
+                    
+                    if (timeSinceViewportChanged < 250) {
+                        const cachedVp = cached.viewport.split(',');
+                        const cachedMinX = parseFloat(cachedVp[0]);
+                        const cachedMinY = parseFloat(cachedVp[1]);
+                        const cachedMaxX = parseFloat(cachedVp[2]);
+                        const cachedMaxY = parseFloat(cachedVp[3]);
+                        
+                        this.ctx.save();
+                        this.ctx.globalAlpha = 0.25;
+                        
+                        const cachedWorldWidth = cachedMaxX - cachedMinX;
+                        const cachedWorldHeight = cachedMaxY - cachedMinY;
+                        const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
+                        const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
+                        
+                        const scaleX = cachedWorldWidth / currentWorldWidth;
+                        const scaleY = cachedWorldHeight / currentWorldHeight;
+                        
+                        const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
+                        const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
+                        
+                        this.ctx.translate(offsetX, offsetY);
+                        this.ctx.scale(scaleX, scaleY);
+                        this.ctx.drawImage(cached.canvas, 0, 0);
+                        this.ctx.restore();
+                        
+                        return;
+                    }
                 }
-                
-                const timeSinceViewportChanged = now - (cached.lastViewportChangeTime || 0);
-                
-                // If viewport changed recently (during pan/zoom), transform cached canvas
-                if (timeSinceViewportChanged < 250) {
-                    // Parse cached and current viewport to calculate transform
-                    const cachedVp = cached.viewport.split(',');
-                    const cachedMinX = parseFloat(cachedVp[0]);
-                    const cachedMinY = parseFloat(cachedVp[1]);
-                    const cachedMaxX = parseFloat(cachedVp[2]);
-                    const cachedMaxY = parseFloat(cachedVp[3]);
-                    
-                    this.ctx.save();
-                    
-                    const cachedWorldWidth = cachedMaxX - cachedMinX;
-                    const cachedWorldHeight = cachedMaxY - cachedMinY;
-                    const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
-                    const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
-                    
-                    const scaleX = cachedWorldWidth / currentWorldWidth;
-                    const scaleY = cachedWorldHeight / currentWorldHeight;
-                    
-                    const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
-                    const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
-                    
-                    this.ctx.translate(offsetX, offsetY);
-                    this.ctx.scale(scaleX, scaleY);
-                    this.ctx.drawImage(cached.canvas, 0, 0);
-                    this.ctx.restore();
-                    
-                    return; // Don't regenerate yet
-                }
-                // Viewport has stabilized - fall through to regenerate
+                // For non-inequalities or after viewport stabilizes, regenerate for crisp rendering
             } else {
                 // Perfect cache hit - viewport and data match
                 this.ctx.drawImage(cached.canvas, 0, 0);
@@ -23079,47 +23065,9 @@ class Graphiti {
             
             // Check if viewport has changed but curve data hasn't
             if (cached.viewport !== viewportKey) {
-                // Viewport changed - check if we should regenerate or reuse with transform
-                const now = performance.now();
-                
-                // Track when viewport last changed
-                if (cached.viewport !== viewportKey && cached.lastTrackedViewport !== viewportKey) {
-                    cached.lastViewportChangeTime = now;
-                    cached.lastTrackedViewport = viewportKey;
-                }
-                
-                const timeSinceViewportChanged = now - (cached.lastViewportChangeTime || 0);
-                
-                // If viewport changed recently (during pan/zoom), transform cached canvas
-                if (timeSinceViewportChanged < 250) {
-                    // Parse cached and current viewport to calculate transform
-                    const cachedVp = cached.viewport.split(',');
-                    const cachedMinX = parseFloat(cachedVp[0]);
-                    const cachedMinY = parseFloat(cachedVp[1]);
-                    const cachedMaxX = parseFloat(cachedVp[2]);
-                    const cachedMaxY = parseFloat(cachedVp[3]);
-                    
-                    this.ctx.save();
-                    
-                    const cachedWorldWidth = cachedMaxX - cachedMinX;
-                    const cachedWorldHeight = cachedMaxY - cachedMinY;
-                    const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
-                    const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
-                    
-                    const scaleX = cachedWorldWidth / currentWorldWidth;
-                    const scaleY = cachedWorldHeight / currentWorldHeight;
-                    
-                    const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
-                    const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
-                    
-                    this.ctx.translate(offsetX, offsetY);
-                    this.ctx.scale(scaleX, scaleY);
-                    this.ctx.drawImage(cached.canvas, 0, 0);
-                    this.ctx.restore();
-                    
-                    return; // Don't regenerate yet
-                }
-                // Viewport has stabilized - fall through to regenerate
+                // For inequality boundaries, redraw with cached points for crisp lines
+                // (Don't scale - we want crisp boundaries even during zoom)
+                // Viewport changed - regenerate at new viewport for crisp curve rendering
             } else {
                 // Perfect cache hit - viewport and data match
                 this.ctx.drawImage(cached.canvas, 0, 0);
