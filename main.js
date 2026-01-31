@@ -1492,7 +1492,6 @@ class Graphiti {
             'implicit-equations': {
                 expressions: [
                     '\\frac{x^2}{16}+\\frac{y^2}{9}=1',                 // Ellipse
-                    '(x^2+y^2)^2=2(x^2-y^2)',                          // Lemniscate
                     'x^3+y^3=3xy',                                      // Folium of Descartes
                     'y^2=x^3-x'                                         // Cubic curve
                 ],
