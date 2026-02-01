@@ -5672,6 +5672,9 @@ class Graphiti {
     drawImplicitInequality(func) {
         if (!func.gridData) return;
         
+        // Implicit inequality shading - always use canvas scaling for performance
+        const isInequality = true;
+        
         // Create cache key from viewport and grid data
         const viewportKey = `${this.viewport.minX},${this.viewport.minY},${this.viewport.maxX},${this.viewport.maxY}`;
         const gridDataHash = func.gridData.adaptiveCells 
