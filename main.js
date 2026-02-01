@@ -5683,50 +5683,16 @@ class Graphiti {
         
         // Check cache
         const cached = this.implicitShadingCache.get(func.id);
+        
         if (cached && cached.gridDataHash === gridDataHash) {
             // Check if viewport has changed but grid data hasn't
             if (cached.viewport !== viewportKey) {
-                // For inequalities with shading, use scaled canvas (acceptable for regions)
-                // For curves/boundaries, redraw with cached points for crisp lines
-                if (isInequality) {
-                    // Inequality - scale the cached shading (acceptable quality for filled regions)
-                    const now = performance.now();
-                    
-                    if (cached.viewport !== viewportKey && cached.lastTrackedViewport !== viewportKey) {
-                        cached.lastViewportChangeTime = now;
-                        cached.lastTrackedViewport = viewportKey;
-                    }
-                    
-                    const timeSinceViewportChanged = now - (cached.lastViewportChangeTime || 0);
-                    
-                    if (timeSinceViewportChanged < 250) {
-                        const cachedVp = cached.viewport.split(',');
-                        const cachedMinX = parseFloat(cachedVp[0]);
-                        const cachedMinY = parseFloat(cachedVp[1]);
-                        const cachedMaxX = parseFloat(cachedVp[2]);
-                        const cachedMaxY = parseFloat(cachedVp[3]);
-                        
-                        this.ctx.save();
-                        
-                        const cachedWorldWidth = cachedMaxX - cachedMinX;
-                        const cachedWorldHeight = cachedMaxY - cachedMinY;
-                        const currentWorldWidth = this.viewport.maxX - this.viewport.minX;
-                        const currentWorldHeight = this.viewport.maxY - this.viewport.minY;
-                        
-                        const scaleX = cachedWorldWidth / currentWorldWidth;
-                        const scaleY = cachedWorldHeight / currentWorldHeight;
-                        
-                        const offsetX = ((cachedMinX - this.viewport.minX) / currentWorldWidth) * this.viewport.width;
-                        const offsetY = ((this.viewport.maxY - cachedMaxY) / currentWorldHeight) * this.viewport.height;
-                        
-                        this.ctx.translate(offsetX, offsetY);
-                        this.ctx.scale(scaleX, scaleY);
-                        this.ctx.drawImage(cached.canvas, 0, 0);
-                        this.ctx.restore();
-                        
-                        return;
-                    }
-                }
+                // For inequalities with shading, we need to be careful with caching
+                // When the boundary moves outside the viewport, the shading pattern changes
+                // dramatically (from partial to full-viewport shading), so we can't just
+                // scale the cached canvas. Instead, regenerate immediately.
+                // This ensures correct behavior when panning past boundaries.
+                
                 // For non-inequalities or after viewport stabilizes, regenerate for crisp rendering
             } else {
                 // Perfect cache hit - viewport and data match
@@ -5740,6 +5706,10 @@ class Graphiti {
         offscreenCanvas.width = this.viewport.width;
         offscreenCanvas.height = this.viewport.height;
         const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+        
+        // Parse equation for full-viewport checking
+        const equation = this.parseImplicitInequality(func.expression);
+        if (!equation) return;
         
         // Extract operator from expression
         const clean = this.convertFromLatex(func.expression).trim();
@@ -5760,6 +5730,9 @@ class Graphiti {
         const colorWithAlpha = this.addAlphaToColor(func.color, 0.25);
         offscreenCtx.fillStyle = colorWithAlpha;
         
+        // Track whether any cells were actually shaded
+        let cellsShaded = false;
+        
         // Handle adaptive grid (coarse cells + refined boundary cells)
         if (func.gridData.adaptiveCells) {
             for (const cell of func.gridData.adaptiveCells) {
@@ -5778,6 +5751,7 @@ class Graphiti {
                 }
                 
                 if (satisfiesInequality) {
+                    cellsShaded = true;
                     // Convert to screen coordinates and draw
                     const topLeft = this.worldToScreen(worldX, worldY);
                     const bottomRight = this.worldToScreen(worldX + worldWidth, worldY + worldHeight);
@@ -5788,10 +5762,42 @@ class Graphiti {
                     offscreenCtx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
                 }
             }
+            
+            // If no cells were shaded (boundary outside viewport), check if entire viewport satisfies inequality
+            if (!cellsShaded) {
+                // Sample center of viewport to determine if entire region satisfies inequality
+                const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+                const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+                
+                try {
+                    const testValue = this.evaluateImplicitEquation(equation, centerX, centerY);
+                    
+                    if (testValue !== null && isFinite(testValue)) {
+                        let shouldShadeAll = false;
+                        if (operator === '>') {
+                            shouldShadeAll = testValue > 0;
+                        } else if (operator === '>=') {
+                            shouldShadeAll = testValue >= 0;
+                        } else if (operator === '<') {
+                            shouldShadeAll = testValue < 0;
+                        } else if (operator === '<=') {
+                            shouldShadeAll = testValue <= 0;
+                        }
+                        
+                        if (shouldShadeAll) {
+                            // Shade entire viewport
+                            offscreenCtx.fillRect(0, 0, this.viewport.width, this.viewport.height);
+                        }
+                    }
+                } catch (e) {
+                    // If evaluation fails, don't shade
+                }
+            }
         } else {
             // Handle uniform grid (legacy fallback)
             const { width, height, values, minX, minY, cellWidth, cellHeight } = func.gridData;
             
+            let cellsShaded = false;
             for (let i = 0; i < width - 1; i++) {
                 for (let j = 0; j < height - 1; j++) {
                     const value = values[i][j];
@@ -5809,6 +5815,7 @@ class Graphiti {
                     }
                     
                     if (satisfiesInequality) {
+                        cellsShaded = true;
                         // Convert grid position to world coordinates
                         const worldX = minX + i * cellWidth;
                         const worldY = minY + j * cellHeight;
@@ -5822,6 +5829,37 @@ class Graphiti {
                         
                         offscreenCtx.fillRect(topLeft.x, topLeft.y, rectWidth, rectHeight);
                     }
+                }
+            }
+            
+            // If no cells were shaded (boundary outside viewport), check if entire viewport satisfies inequality
+            if (!cellsShaded) {
+                // Sample center of viewport to determine if entire region satisfies inequality
+                const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
+                const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
+                
+                try {
+                    const testValue = this.evaluateImplicitEquation(equation, centerX, centerY);
+                    
+                    if (testValue !== null && isFinite(testValue)) {
+                        let shouldShadeAll = false;
+                        if (operator === '>') {
+                            shouldShadeAll = testValue > 0;
+                        } else if (operator === '>=') {
+                            shouldShadeAll = testValue >= 0;
+                        } else if (operator === '<') {
+                            shouldShadeAll = testValue < 0;
+                        } else if (operator === '<=') {
+                            shouldShadeAll = testValue <= 0;
+                        }
+                        
+                        if (shouldShadeAll) {
+                            // Shade entire viewport
+                            offscreenCtx.fillRect(0, 0, this.viewport.width, this.viewport.height);
+                        }
+                    }
+                } catch (e) {
+                    // If evaluation fails, don't shade
                 }
             }
         }
@@ -21965,7 +22003,9 @@ class Graphiti {
                 if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                     // Draw implicit functions/inequalities using displayPoints (stable during calculations)
                     const pointsToCheck = func.displayPoints || func.points;
-                    if (pointsToCheck && pointsToCheck.length > 0) {
+                    // For implicit inequalities, draw even if no boundary points (may need full-viewport shading)
+                    if ((pointsToCheck && pointsToCheck.length > 0) || 
+                        (functionType === 'implicit-inequality' && func.gridData)) {
                         this.drawImplicitFunction(func);
                     }
                 } else {
@@ -23026,11 +23066,17 @@ class Graphiti {
         // displayPoints won't change during viewport panning, eliminating "blink"
         const pointsToUse = func.displayPoints || func.points;
         
-        if (!pointsToUse || pointsToUse.length === 0) return;
-        
         // Check if this is an implicit inequality
         const functionType = this.detectFunctionType(func.expression);
         const isInequality = functionType === 'implicit-inequality';
+        
+        // For implicit inequalities with gridData but no points (boundary outside viewport),
+        // we still need to draw the shading, so don't return early
+        if (!pointsToUse || pointsToUse.length === 0) {
+            if (!(isInequality && func.gridData)) {
+                return; // Only return if not an inequality with gridData
+            }
+        }
         
         // Count inequalities to determine if we should use compositing or individual shading
         const inequalityCount = this.countEnabledInequalities();
@@ -23038,6 +23084,11 @@ class Graphiti {
         // For implicit inequalities, render shading first if grid data is available (only if single inequality)
         if (isInequality && func.gridData && inequalityCount === 1) {
             this.drawImplicitInequality(func);
+        }
+        
+        // If there are no points to draw (boundary outside viewport), we're done after shading
+        if (!pointsToUse || pointsToUse.length === 0) {
+            return;
         }
         
         // Check if points should be connected (like for circles, ellipses, parabolas)
