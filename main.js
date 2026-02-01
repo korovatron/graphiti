@@ -5707,7 +5707,6 @@ class Graphiti {
                         const cachedMaxY = parseFloat(cachedVp[3]);
                         
                         this.ctx.save();
-                        this.ctx.globalAlpha = 0.25;
                         
                         const cachedWorldWidth = cachedMaxX - cachedMinX;
                         const cachedWorldHeight = cachedMaxY - cachedMinY;
