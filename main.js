@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.15';
+const VERSION = '1.0.16';
 
 class Graphiti {
     constructor() {
@@ -1470,7 +1470,7 @@ class Graphiti {
                 expressions: [
                     'x^2+y^2<16',           // Strict: circle (no outline)
                     'y\\geq x-3',           // Non-strict: line (with outline)
-                    'x+y\\leq 4'            // Non-strict: line (with outline)
+                    'y\\leq2'               // Non-strict: horizontal line (with outline)
                 ],
                 description: 'Inequality Intersection Demo',
                 viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
