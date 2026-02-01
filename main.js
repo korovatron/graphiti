@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.13';
+const VERSION = '1.0.14';
 
 class Graphiti {
     constructor() {
@@ -6551,26 +6551,45 @@ class Graphiti {
         const totalEvals = (coarseResolution + 1) * (coarseResolution + 1) + (boundaryCells.size * refineFactor * refineFactor);
         
         // Phase 4: Contour generation
+        // Check if multiple inequalities are active - use lower resolution to improve performance
+        const inequalityCount = this.countEnabledInequalities();
+        const useReducedResolution = inequalityCount > 1;
+        
         // At wide zoom (viewport > 50), skip localized optimization and use full high-res grid
         // The curves are small, so localized approach is too sparse - full grid is still fast
-        // Use VERY HIGH resolution to match intercept marker precision and shading edge accuracy
+        // Use VERY HIGH resolution for single inequality/equation to match intercept marker precision
+        // Use LOWER resolution for multiple inequalities to improve performance
         let contourResolution;
-        if (viewportSize > 100) {
-            contourResolution = 800; // Very wide - ultra high precision
-        } else if (viewportSize > 50) {
-            contourResolution = 600; // Wide - very high precision
-        } else if (viewportSize > 20) {
-            contourResolution = 400; // Medium wide
-        } else if (viewportSize > 10) {
-            contourResolution = 300;
-        } else if (viewportSize > 5) {
-            contourResolution = 350; // Normal zoom - high precision
-        } else if (viewportSize > 2) {
-            contourResolution = 400;
-        } else if (viewportSize > 0.5) {
-            contourResolution = 450;
+        if (useReducedResolution) {
+            // Multiple inequalities: use old lower resolution for better performance
+            if (viewportSize > 100) {
+                contourResolution = 200;
+            } else if (viewportSize > 50) {
+                contourResolution = 180;
+            } else {
+                contourResolution = 160;
+            }
         } else {
-            contourResolution = 500; // Very close zoom
+            // Single inequality or equation: use high resolution for precision
+            if (viewportSize > 100) {
+                contourResolution = 800; // Very wide - ultra high precision
+            } else if (viewportSize > 50) {
+                contourResolution = 600; // Wide - very high precision
+            } else if (viewportSize > 20) {
+                contourResolution = 400; // Medium wide
+            } else if (viewportSize > 10) {
+                contourResolution = 300;
+            } else if (viewportSize > 5) {
+                contourResolution = 350; // Normal zoom - high precision
+            } else if (viewportSize > 2) {
+                contourResolution = 400;
+            } else if (viewportSize > 1) {
+                contourResolution = 450;
+            } else if (viewportSize > 0.5) {
+                contourResolution = 500;
+            } else {
+                contourResolution = 550; // Very close - maximum precision
+            }
         }
         
         const contourStepX = viewportWidth / contourResolution;
