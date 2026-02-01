@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.12';
+const VERSION = '1.0.13';
 
 class Graphiti {
     constructor() {
@@ -112,6 +112,9 @@ class Graphiti {
         // Expression compilation cache for performance optimization
         this.expressionCache = new Map(); // Map<string, CompiledExpression>
         this.parsedImplicitEquations = new Map(); // Map<string, {leftExpression, rightExpression}>
+        
+        // Turning points cache for implicit functions (expensive numerical differentiation)
+        this.turningPointsCache = new Map(); // Map<functionId, {expression, points, turningPoints}>
         
         // Regex pattern cache for performance optimization
         this.regexCache = new Map(); // Map<string, RegExp>
@@ -5880,6 +5883,7 @@ class Graphiti {
     // ================================
 
     async plotImplicitFunction(func, highResForIntersections = false, immediate = false) {
+        const startTime = performance.now();
         try {
             // Register this calculation and update debug overlay
             const calculationId = ++this.implicitCalculationId;
@@ -6549,24 +6553,24 @@ class Graphiti {
         // Phase 4: Contour generation
         // At wide zoom (viewport > 50), skip localized optimization and use full high-res grid
         // The curves are small, so localized approach is too sparse - full grid is still fast
-        // Use HIGHER resolution at wide zoom to capture small curve details
+        // Use VERY HIGH resolution to match intercept marker precision and shading edge accuracy
         let contourResolution;
         if (viewportSize > 100) {
-            contourResolution = 200; // Very wide - need high res for tiny curves
+            contourResolution = 800; // Very wide - ultra high precision
         } else if (viewportSize > 50) {
-            contourResolution = 180; // Wide - still need detail
+            contourResolution = 600; // Wide - very high precision
         } else if (viewportSize > 20) {
-            contourResolution = 150;
+            contourResolution = 400; // Medium wide
         } else if (viewportSize > 10) {
-            contourResolution = 180;
+            contourResolution = 300;
         } else if (viewportSize > 5) {
-            contourResolution = 200;
+            contourResolution = 350; // Normal zoom - high precision
         } else if (viewportSize > 2) {
-            contourResolution = 250;
+            contourResolution = 400;
         } else if (viewportSize > 0.5) {
-            contourResolution = 320;
+            contourResolution = 450;
         } else {
-            contourResolution = 360;
+            contourResolution = 500; // Very close zoom
         }
         
         const contourStepX = viewportWidth / contourResolution;
@@ -6930,13 +6934,6 @@ class Graphiti {
     getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes = []) {
         const segments = [];
         
-        // Ultra-aggressive absolute snap tolerance for asymptotes
-        // Use a fixed absolute value that works across ALL zoom levels
-        // At extreme zoom (viewport < 1 unit), we need a large tolerance relative to the cell
-        // At normal zoom, we still need enough to catch the asymptote
-        // Solution: Use the LARGER of (2x cell width) or (0.1 units absolute)
-        const snapTolerance = Math.max(stepX * 2, stepY * 2, 0.1);
-        
         // Edge interpolation points (linear interpolation for zero crossings)
         const getEdgePoint = (edge, v1, v2) => {
             const t = Math.abs(v1) / (Math.abs(v1) + Math.abs(v2));
@@ -6946,21 +6943,6 @@ class Graphiti {
                 case 1: point = { x: x + stepX, y: y + t * stepY }; break; // right edge  
                 case 2: point = { x: x + (1-t) * stepX, y: y + stepY }; break; // top edge
                 case 3: point = { x: x, y: y + (1-t) * stepY }; break; // left edge
-            }
-            
-            // Snap to vertical asymptotes if within tolerance
-            // Check all asymptotes and snap to the closest one
-            let closestAsymptote = null;
-            let closestDistance = Infinity;
-            for (const asymptoteX of verticalAsymptotes) {
-                const distance = Math.abs(point.x - asymptoteX);
-                if (distance < snapTolerance && distance < closestDistance) {
-                    closestAsymptote = asymptoteX;
-                    closestDistance = distance;
-                }
-            }
-            if (closestAsymptote !== null) {
-                point.x = closestAsymptote;
             }
             
             return point;
@@ -19234,6 +19216,14 @@ class Graphiti {
     // Find turning points for implicit functions F(x,y) = 0
     // These occur where horizontal tangents (∂F/∂x = 0) or vertical tangents (∂F/∂y = 0) exist
     findImplicitTurningPointsForFunction(func) {
+        // Check cache first - turning point calculation is expensive for implicit functions
+        // Use expression + point count as cache key (points array may be recreated with same data)
+        const cacheKey = `${func.expression}_${func.points ? func.points.length : 0}`;
+        const cached = this.turningPointsCache.get(func.id);
+        if (cached && cached.cacheKey === cacheKey) {
+            return cached.turningPoints;
+        }
+        
         const turningPoints = [];
         
         if (!func.points || func.points.length < 2) {
@@ -19414,6 +19404,12 @@ class Graphiti {
         } catch (error) {
             console.error('Error finding implicit turning points:', error);
         }
+        
+        // Cache the results for next frame
+        this.turningPointsCache.set(func.id, {
+            cacheKey: cacheKey,
+            turningPoints: turningPoints
+        });
         
         return turningPoints;
     }
@@ -23546,28 +23542,51 @@ class Graphiti {
             }
         }
         
-        // Apply density-based culling: skip markers too close to each other
+        // Apply density-based culling using spatial grid for O(n) performance
         const minDistance = 20; // Minimum pixel distance between markers
+        const gridSize = minDistance; // Use minDistance as grid cell size
+        const grid = new Map(); // Grid cells to store accepted markers
         const culledMarkers = [];
         
         for (const marker of markersInViewport) {
+            // Calculate grid cell coordinates
+            const cellX = Math.floor(marker.screenX / gridSize);
+            const cellY = Math.floor(marker.screenY / gridSize);
+            
             let tooClose = false;
             
-            // Check if this marker is too close to any already accepted marker
-            for (const accepted of culledMarkers) {
-                const distance = Math.sqrt(
-                    Math.pow(marker.screenX - accepted.screenX, 2) + 
-                    Math.pow(marker.screenY - accepted.screenY, 2)
-                );
-                
-                if (distance < minDistance) {
-                    tooClose = true;
-                    break;
+            // Check only neighboring cells (9 cells total including current)
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    const neighborKey = `${cellX + dx},${cellY + dy}`;
+                    const neighborsInCell = grid.get(neighborKey);
+                    
+                    if (neighborsInCell) {
+                        for (const accepted of neighborsInCell) {
+                            const distance = Math.sqrt(
+                                Math.pow(marker.screenX - accepted.screenX, 2) + 
+                                Math.pow(marker.screenY - accepted.screenY, 2)
+                            );
+                            
+                            if (distance < minDistance) {
+                                tooClose = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (tooClose) break;
                 }
+                if (tooClose) break;
             }
             
             // Only add marker if it's not too close to existing ones
             if (!tooClose) {
+                const cellKey = `${cellX},${cellY}`;
+                if (!grid.has(cellKey)) {
+                    grid.set(cellKey, []);
+                }
+                grid.get(cellKey).push(marker);
                 culledMarkers.push(marker);
             }
         }
