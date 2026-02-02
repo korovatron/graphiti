@@ -13321,7 +13321,20 @@ class Graphiti {
                     hasIntegral: badge.hasIntegral || false,
                     neonTangent: badge.neonTangent || false,
                     neonNormal: badge.neonNormal || false,
-                    neonIntegral: badge.neonIntegral || false
+                    neonIntegral: badge.neonIntegral || false,
+                    // Badge type and significant point type for special badges (intersections, turning points, etc.)
+                    badgeType: badge.badgeType,
+                    significantPointType: badge.significantPointType,
+                    // Function color (important for intersection badges which use pink, not function color)
+                    functionColor: badge.functionColor,
+                    // Custom text for special badges
+                    customText: badge.customText,
+                    // Function IDs for intersection badges (to track which two functions intersect)
+                    func1Id: badge.func1Id,
+                    func2Id: badge.func2Id,
+                    // Tangent and normal badge IDs for tracking related badges
+                    tangentBadgeId: badge.tangentBadgeId,
+                    normalBadgeId: badge.normalBadgeId
                 })),
             // Integral pairs with settings
             integralPairs: this.integralPairs
@@ -13528,7 +13541,8 @@ class Graphiti {
                         theta: badgeData.theta,
                         tValue: badgeData.tValue,
                         polarTheta: badgeData.polarTheta,
-                        functionColor: func ? func.color : '#4A90E2',
+                        // Use saved functionColor if available (for intersection badges), otherwise use function color
+                        functionColor: badgeData.functionColor || (func ? func.color : '#4A90E2'),
                         screenX: 0, // Will be recalculated on draw
                         screenY: 0, // Will be recalculated on draw
                         hasTangent: badgeData.hasTangent || false,
@@ -13537,7 +13551,18 @@ class Graphiti {
                         neonTangent: badgeData.neonTangent || false,
                         neonNormal: badgeData.neonNormal || false,
                         neonIntegral: badgeData.neonIntegral || false,
-                        tangentSlope: null // Will be recalculated
+                        tangentSlope: null, // Will be recalculated
+                        // Restore badge type and significant point type (critical for intersections, turning points, etc.)
+                        badgeType: badgeData.badgeType,
+                        significantPointType: badgeData.significantPointType,
+                        // Restore custom text for special badges
+                        customText: badgeData.customText,
+                        // Restore function IDs for intersection badges
+                        func1Id: badgeData.func1Id,
+                        func2Id: badgeData.func2Id,
+                        // Restore tangent and normal badge IDs
+                        tangentBadgeId: badgeData.tangentBadgeId,
+                        normalBadgeId: badgeData.normalBadgeId
                     };
                 });
                 
