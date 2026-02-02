@@ -2663,7 +2663,7 @@
                 // Try to detect if decimal is close to a simple fraction
                 const tolerance = 1e-10;
                 for (let denom = 2; denom <= 12; denom++) {
-                    for (let num = 1; num < denom; num++) {
+                    for (let num = 1; num <= denom * 2; num++) {
                         if (Math.abs(y - num/denom) < tolerance) {
                             const absX = Math.abs(x);
                             const result = Math.pow(absX, num / denom);
