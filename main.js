@@ -27611,12 +27611,12 @@ class Graphiti {
                     processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
                     processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
                     
-                    const scope = { 
+                    const scope = this.getEvaluationScope({ 
                         theta: thetaRad, 
                         t: thetaRad,
                         pi: Math.PI,
                         e: Math.E
-                    };
+                    });
                     const compiled = this.getCompiledExpression(processedExpression);
                     const result = compiled.evaluate(scope);
                     r = typeof result === 'number' ? result : (result.re !== undefined ? result.re : NaN);
