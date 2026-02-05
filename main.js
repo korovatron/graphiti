@@ -3909,9 +3909,11 @@ class Graphiti {
             // Track starting position to detect when curve completes and starts overlapping
             let startX = null;
             let startY = null;
+            let startTheta = null;
             let hasValidStart = false;
             const completionThreshold = 0.01; // Distance threshold to detect curve completion
             let minThetaForCompletion = thetaMin + Math.PI / 4; // Don't check for completion too early
+            const minThetaRange = Math.PI; // Require at least π radians of travel before checking completion
             
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
                 try {
@@ -3948,12 +3950,14 @@ class Graphiti {
                         if (!hasValidStart) {
                             startX = x;
                             startY = y;
+                            startTheta = theta;
                             hasValidStart = true;
                         }
                         
                         // Check if we've returned to starting position (curve completed)
-                        // Only check after we've moved significantly away from start
-                        if (hasValidStart && theta > minThetaForCompletion) {
+                        // Only check after we've moved significantly in theta AND significantly away from start
+                        // This prevents false completion detection when both ends of theta range map to same point
+                        if (hasValidStart && theta > minThetaForCompletion && (theta - startTheta) >= minThetaRange) {
                             const distanceFromStart = Math.sqrt((x - startX) ** 2 + (y - startY) ** 2);
                             const radiusScale = Math.abs(r) || 1;
                             
@@ -4103,9 +4107,11 @@ class Graphiti {
             // Track starting position to detect when curve completes and starts overlapping
             let startX = null;
             let startY = null;
+            let startTheta = null;
             let hasValidStart = false;
             const completionThreshold = 0.01; // Distance threshold to detect curve completion
             let minThetaForCompletion = thetaMin + Math.PI / 4; // Don't check for completion too early
+            const minThetaRange = Math.PI; // Require at least π radians of travel before checking completion
             
             // Plot the boundary curve
             for (let theta = thetaMin; theta <= thetaMax; theta += thetaStep) {
@@ -4136,12 +4142,14 @@ class Graphiti {
                         if (!hasValidStart) {
                             startX = x;
                             startY = y;
+                            startTheta = theta;
                             hasValidStart = true;
                         }
                         
                         // Check if we've returned to starting position (curve completed)
-                        // Only check after we've moved significantly away from start
-                        if (hasValidStart && theta > minThetaForCompletion) {
+                        // Only check after we've moved significantly in theta AND significantly away from start
+                        // This prevents false completion detection when both ends of theta range map to same point
+                        if (hasValidStart && theta > minThetaForCompletion && (theta - startTheta) >= minThetaRange) {
                             const distanceFromStart = Math.sqrt((x - startX) ** 2 + (y - startY) ** 2);
                             const radiusScale = Math.abs(r) || 1;
                             
