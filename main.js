@@ -15033,6 +15033,24 @@ class Graphiti {
         
         // Try to load saved viewport bounds from localStorage
         const hasSavedBounds = this.loadAndApplyViewportBounds();
+
+        // Mobile/tablet only: normalize aspect ratio after restore to prevent occasional
+        // non-circular circles when iOS/iPad viewport dimensions settle asynchronously.
+        // Keep desktop behavior unchanged.
+        if (hasSavedBounds) {
+            const isCoarsePointerDevice = window.matchMedia('(pointer: coarse)').matches;
+            const isFineHoverDesktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+            const isMobileOrTablet = isCoarsePointerDevice || this.isIOSSafari();
+
+            if (isMobileOrTablet && !isFineHoverDesktop) {
+                const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+                if (!hasRegularTrig) {
+                    this.enforceSquareAspectRatio();
+                } else {
+                    this.updateViewportScale();
+                }
+            }
+        }
         
         // Reset viewport if no saved bounds OR if we added default functions
         if (!hasSavedBounds || addedDefaultFunctions) {
