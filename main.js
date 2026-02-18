@@ -4320,6 +4320,75 @@ class Graphiti {
     // POLAR ANIMATION METHODS
     // ================================
 
+    getPolarAnimationStepSize() {
+        // Use π/48 in radians mode (or equivalent 3.75° in degrees mode)
+        return this.angleMode === 'degrees' ? (360 / 96) : (Math.PI / 48);
+    }
+
+    snapPolarAnimationThetaToStep(theta, mode = 'nearest') {
+        const thetaMin = this.polarSettings.thetaMin;
+        const hasValidStoredRange = Number.isFinite(this.polarAnimation.storedThetaMax) && this.polarAnimation.storedThetaMax > thetaMin;
+        const thetaMaxLimit = hasValidStoredRange ? this.polarAnimation.storedThetaMax : this.polarSettings.thetaMax;
+        const stepSize = this.getPolarAnimationStepSize();
+
+        if (!Number.isFinite(theta) || !Number.isFinite(stepSize) || stepSize <= 0) {
+            return theta;
+        }
+
+        const scaled = theta / stepSize;
+        let snappedIndex;
+
+        if (mode === 'up') {
+            snappedIndex = Math.ceil(scaled - 1e-10);
+        } else if (mode === 'down') {
+            snappedIndex = Math.floor(scaled + 1e-10);
+        } else {
+            snappedIndex = Math.round(scaled);
+        }
+
+        let snappedTheta = snappedIndex * stepSize;
+        snappedTheta = Math.min(Math.max(snappedTheta, thetaMin), thetaMaxLimit);
+
+        if (Math.abs(snappedTheta) < 1e-10) {
+            snappedTheta = 0;
+        }
+
+        return snappedTheta;
+    }
+
+    formatThetaAsPiFractionForAnimation(theta, baseDenominator = 48) {
+        if (Math.abs(theta) < 1e-10) {
+            return '0';
+        }
+
+        const rawNumerator = theta / Math.PI * baseDenominator;
+        const numerator = Math.round(rawNumerator);
+
+        // Fallback to numeric if value is unexpectedly off-grid
+        if (Math.abs(rawNumerator - numerator) > 1e-6) {
+            return theta.toFixed(4);
+        }
+
+        const gcd = (a, b) => b === 0 ? Math.abs(a) : gcd(b, a % b);
+        const divisor = gcd(Math.abs(numerator), baseDenominator);
+        const simplifiedNumerator = numerator / divisor;
+        const simplifiedDenominator = baseDenominator / divisor;
+
+        if (simplifiedDenominator === 1) {
+            if (simplifiedNumerator === 1) return 'π';
+            if (simplifiedNumerator === -1) return '-π';
+            return `${simplifiedNumerator}π`;
+        }
+
+        const sign = simplifiedNumerator < 0 ? '-' : '';
+        const absNumerator = Math.abs(simplifiedNumerator);
+        if (absNumerator === 1) {
+            return `${sign}π/${simplifiedDenominator}`;
+        }
+
+        return `${sign}${absNumerator}π/${simplifiedDenominator}`;
+    }
+
     startPolarAnimation() {
         if (this.polarAnimation.isAnimating) return;
         
@@ -4429,8 +4498,13 @@ class Graphiti {
             this.polarAnimation.animationFrameId = null;
         }
         
-        // Keep currentTheta where it is - don't restore full range
-        // This allows resuming from the paused position
+        // Snap paused position to nearest π/48 (or 3.75°) step for clean classroom stepping
+        const snappedTheta = this.snapPolarAnimationThetaToStep(this.polarAnimation.currentTheta, 'nearest');
+        this.polarAnimation.currentTheta = snappedTheta;
+        this.polarSettings.thetaMax = snappedTheta;
+
+        // Replot so paused view and display reflect snapped angle immediately
+        this.replotAllPolarFunctions();
     }
 
     stopPolarAnimation() {
@@ -4529,16 +4603,16 @@ class Graphiti {
     stepPolarAnimationForward() {
         // Only allow stepping when paused
         if (!this.polarAnimation.isPaused) return;
-        
-        // Calculate step size based on the full theta range
-        const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
-        const stepSize = thetaRange * 0.02; // 2% of total range per step
-        
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const hasValidStoredRange = Number.isFinite(this.polarAnimation.storedThetaMax) && this.polarAnimation.storedThetaMax > thetaMin;
+        const thetaMaxLimit = hasValidStoredRange ? this.polarAnimation.storedThetaMax : this.polarSettings.thetaMax;
+        const stepSize = this.getPolarAnimationStepSize();
+        const alignedTheta = this.snapPolarAnimationThetaToStep(this.polarAnimation.currentTheta, 'nearest');
+
         // Move forward one step
-        this.polarAnimation.currentTheta = Math.min(
-            this.polarAnimation.currentTheta + stepSize,
-            this.polarAnimation.storedThetaMax
-        );
+        const nextTheta = Math.min(alignedTheta + stepSize, thetaMaxLimit);
+        this.polarAnimation.currentTheta = this.snapPolarAnimationThetaToStep(nextTheta, 'nearest');
         
         // Update thetaMax for plotting
         this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
@@ -4550,16 +4624,14 @@ class Graphiti {
     stepPolarAnimationBackward() {
         // Only allow stepping when paused
         if (!this.polarAnimation.isPaused) return;
-        
-        // Calculate step size based on the full theta range
-        const thetaRange = this.polarAnimation.storedThetaMax - this.polarSettings.thetaMin;
-        const stepSize = thetaRange * 0.02; // 2% of total range per step
-        
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const stepSize = this.getPolarAnimationStepSize();
+        const alignedTheta = this.snapPolarAnimationThetaToStep(this.polarAnimation.currentTheta, 'nearest');
+
         // Move backward one step, but not before thetaMin
-        this.polarAnimation.currentTheta = Math.max(
-            this.polarAnimation.currentTheta - stepSize,
-            this.polarSettings.thetaMin
-        );
+        const prevTheta = Math.max(alignedTheta - stepSize, thetaMin);
+        this.polarAnimation.currentTheta = this.snapPolarAnimationThetaToStep(prevTheta, 'nearest');
         
         // Update thetaMax for plotting
         this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
@@ -27547,7 +27619,13 @@ class Graphiti {
             thetaDisplay = currentTheta.toFixed(1) + '°';
             thetaLabel = 'θ';
         } else {
-            thetaDisplay = currentTheta.toFixed(3);
+            if (this.polarAnimation.isPaused) {
+                // Paused mode: show simplified exact fractions (snapped to π/48 grid)
+                thetaDisplay = this.formatThetaAsPiFractionForAnimation(currentTheta, 48);
+            } else {
+                // Playing mode: keep smooth decimal readout
+                thetaDisplay = currentTheta.toFixed(3);
+            }
             thetaLabel = 'θ';
         }
         
