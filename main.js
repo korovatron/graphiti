@@ -4357,13 +4357,21 @@ class Graphiti {
         }
         
         // Only initialize if starting fresh (not resuming from pause)
-        if (this.polarAnimation.currentTheta === 0 || this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax) {
+        // IMPORTANT: do not use currentTheta===0 as a sentinel because thetaMin can legitimately be 0.
+        // If user steps back to thetaMin while paused, thetaMax is temporarily truncated to thetaMin;
+        // reinitializing from that state would incorrectly overwrite storedThetaMax with thetaMin.
+        const thetaMin = this.polarSettings.thetaMin;
+        const hasValidStoredRange = Number.isFinite(this.polarAnimation.storedThetaMax) && this.polarAnimation.storedThetaMax > thetaMin;
+        const hasCompletedCurrentRun = hasValidStoredRange && this.polarAnimation.currentTheta >= this.polarAnimation.storedThetaMax;
+        const shouldInitializeFromStart = !hasValidStoredRange || hasCompletedCurrentRun || this.polarAnimation.currentTheta < thetaMin;
+
+        if (shouldInitializeFromStart) {
             this.polarAnimation.storedThetaMax = this.polarSettings.thetaMax;
             
             // Start currentTheta slightly ahead of thetaMin to show initial curve
-            const thetaRange = this.polarSettings.thetaMax - this.polarSettings.thetaMin;
+            const thetaRange = this.polarSettings.thetaMax - thetaMin;
             const initialOffset = Math.min(thetaRange * 0.01, 0.1); // 1% of range or 0.1, whichever is smaller
-            this.polarAnimation.currentTheta = this.polarSettings.thetaMin + initialOffset;
+            this.polarAnimation.currentTheta = thetaMin + initialOffset;
             
             // Set initial thetaMax for first render
             this.polarSettings.thetaMax = this.polarAnimation.currentTheta;
