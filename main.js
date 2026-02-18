@@ -27635,7 +27635,8 @@ class Graphiti {
         this.ctx.save();
         
         // Set font and measure text
-        const fontSize = 14;
+        const isLargeMode = this.sizeMode === 'large';
+        const fontSize = isLargeMode ? 24 : 18;
         const fontFamily = 'Arial, sans-serif';
         this.ctx.font = `${fontSize}px ${fontFamily}`;
         
@@ -27643,7 +27644,7 @@ class Graphiti {
         
         // Position in bottom right corner with padding
         const padding = 15;
-        const innerPadding = 10;
+        const innerPadding = isLargeMode ? 16 : 12;
         const boxWidth = textWidth + (innerPadding * 2);
         const boxHeight = fontSize + (innerPadding * 2);
         const x = this.viewport.width - boxWidth - padding;
