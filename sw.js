@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-v1.0.20';
+const CACHE_NAME = 'graphiti-v1.0.21';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -12,7 +12,8 @@ const ASSETS_TO_CACHE = [
     './sw.js',
     './logo.png',
     './logoTrans.png',
-    './images/graphitiTitle.png'
+    './images/graphitiTitle.png',
+    './images/yt_icon_white_digital.png'
 ];
 
 // Install event - cache assets

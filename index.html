@@ -1726,11 +1726,35 @@
             }
         }
 
-        .shortcuts-content h2 {
+        .shortcuts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
             margin: 0 0 20px 0;
+            gap: 12px;
+        }
+
+        .shortcuts-content h2 {
+            margin: 0;
             color: #fff;
             font-size: 24px;
-            text-align: center;
+            text-align: left;
+            flex: 1;
+        }
+
+        .help-youtube-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            line-height: 0;
+        }
+
+        .help-youtube-icon {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            display: block;
         }
 
         .shortcuts-section {
@@ -2704,7 +2728,12 @@
     <!-- Help overlay (device-aware) -->
     <div id="shortcuts-overlay" class="shortcuts-overlay">
         <div class="shortcuts-content">
-            <h2>How to Use Graphiti</h2>
+            <div class="shortcuts-header">
+                <h2>How to use graphiti</h2>
+                <a class="help-youtube-link" href="https://www.youtube.com/watch?v=UMGwufip0LI&list=PL3qUa0OyFq5VsuEoxAtYPpAnkuMaFCaE5" target="_blank" rel="noopener noreferrer" title="Watch Graphiti tutorials on YouTube" aria-label="Watch Graphiti tutorials on YouTube">
+                    <img class="help-youtube-icon" src="images/yt_icon_white_digital.png" alt="">
+                </a>
+            </div>
             
             <!-- Interactive Features -->
             <div class="shortcuts-section">
