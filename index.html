@@ -609,7 +609,7 @@
             left: 50%;
             transform: translateX(-50%);
             font-size: 0.8em;
-            color: var(--text-secondary);
+            color: rgba(255, 255, 255, 0.6);
             margin: 0;
             text-align: center;
             line-height: 1.3;
@@ -619,15 +619,22 @@
         }
         
         .title-screen p.copyright a {
-            white-space: nowrap; /* Keep URL from breaking */
+            color: var(--accent-color);
+            text-decoration: none;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .title-screen p.copyright a:hover {
+            color: var(--text-primary);
         }
         
         .break-mobile {
             display: inline; /* Show break on mobile by default */
         }
         
-        .space-desktop {
-            display: none; /* Hide space on mobile by default */
+        .desktop-separator {
+            display: none;
         }
         
         /* On wider screens, try to keep copyright more compact */
@@ -635,14 +642,14 @@
             .break-mobile {
                 display: none; /* Hide break on desktop */
             }
-            .space-desktop {
-                display: inline; /* Show space on desktop */
+            .desktop-separator {
+                display: inline;
             }
             .title-screen p.copyright {
                 max-width: 70%;
             }
             .title-screen p.copyright .projects-text {
-                white-space: nowrap; /* Keep "Check out my other projects at" together on wide screens */
+                white-space: nowrap;
             }
         }
         
@@ -2131,7 +2138,7 @@
                 
                 <button id="title-start-button" class="title-button">Set the Controls ...</button>
                 
-                <p class="copyright">© 2025-2026 Neil Kendall<span class="break-mobile"><br></span><span class="space-desktop">. </span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a></p>
+                <p class="copyright">© 2025-2026 Neil Kendall<span class="desktop-separator"> | </span><span class="break-mobile"><br></span><span class="projects-text">More @ </span><a href="https://www.korovatron.co.uk/" target="_blank">www.korovatron.co.uk</a><span class="desktop-separator"> | </span><span class="break-mobile"><br></span><a href="mailto:unimatrix@korovatron.co.uk">Contact Me</a></p>
             </div>
             
             <!-- Function Input Panel -->
