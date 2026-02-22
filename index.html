@@ -24,12 +24,14 @@
     <title>Graphiti | Any Curve You Like</title>
     <meta name="description" content="Free online graphing calculator. Plot equations, find intersections and turning points, visualise calculus concepts with interactive tangents and integrals. Supports parametric, polar and implicit functions with inequalities. Perfect for GCSE and A-Level maths students and teachers. Works on any device - no download needed.">
     <meta name="keywords" content="graphing calculator, graphical calculator, graph plotter, function plotter, function graphing, mathematical functions, parametric equations, parametric curves, parametric graphs, polar graphs, polar plots, arc length, inequalities, inequality graphing, shaded regions, implicit inequalities, implicit functions, polar inequalities, area between curves, interactive graphs, maths visualisation, calculus visualisation, curve sketching, integration, definite integral, numerical integration, trapezium rule, Simpson's rule, mid-ordinate rule, tangent lines, normal lines, differentiation, derivatives, derivative calculator, turning points, stationary points, maxima and minima, critical points, intersections, intercepts, parameter sliders, A-level maths, GCSE maths, online graphing tool, free graphing calculator, math calculator, web calculator">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
     <meta name="author" content="Neil Kendall">
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://www.korovatron.co.uk/graphiti/">
     <meta property="og:title" content="Graphiti | Any Curve You Like">
+    <meta property="og:site_name" content="Graphiti">
     <meta property="og:description" content="Free online graphing calculator. Plot equations, find intersections and turning points, visualise calculus concepts with interactive tangents and integrals. Supports parametric, polar and implicit functions with inequalities. Perfect for GCSE and A-Level maths students and teachers. Works on any device - no download needed.">
     <meta property="og:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiShareImage.png">
     
@@ -242,6 +244,18 @@
         
         .hidden {
             display: none !important;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
         
         button {
@@ -2099,6 +2113,10 @@
     </style>
 </head>
 <body theme="dark">
+    <main class="sr-only" aria-label="Graphiti app description">
+        <h1>Graphiti Graphing Calculator</h1>
+        <p>Graphiti is a free online graphing calculator for plotting Cartesian, polar and implicit functions. It includes intersection detection, turning points, tangents, normals, and integration visualisation for GCSE and A-Level maths students and teachers.</p>
+    </main>
     <div id="app-container">
         <canvas id="canvas"></canvas>
         
