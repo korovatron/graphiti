@@ -4595,6 +4595,12 @@ class Graphiti {
         // Reset animation state so next play starts fresh
         this.polarAnimation.currentTheta = 0;
         this.polarAnimation.storedThetaMax = 0;
+
+        // Intercept markers use cached screen coordinates; refresh cache in case
+        // viewport changed while markers were hidden during animation.
+        if (this.showIntercepts && this.intercepts.length > 0) {
+            this.cullInterceptMarkers();
+        }
         
         // Replot all functions with full range and re-enable badge calculations
         this.replotAllPolarFunctions();
