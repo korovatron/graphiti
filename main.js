@@ -16641,6 +16641,12 @@ class Graphiti {
             if (!func.enabled || !func.expression.trim()) continue;
             
             const functionType = this.detectFunctionType(func.expression);
+
+            // Theta-constant rays are display-only guides; they should not be traceable
+            // and must never create draggable badges/tangent/normal/integral tools.
+            if (functionType === 'theta-constant') {
+                continue;
+            }
             
             // Handle implicit functions and implicit inequalities with segment-based detection
             if (functionType === 'implicit' || functionType === 'implicit-inequality') {
@@ -21247,6 +21253,11 @@ class Graphiti {
     }
 
     findClosestPolarPoint(func, screenX, screenY, tolerance) {
+        // Theta-constant rays are intentionally excluded from tracing/tool badges
+        if (this.detectFunctionType(func.expression) === 'theta-constant') {
+            return null;
+        }
+
         try {
             let closestDistance = Infinity;
             let closestWorldX = 0;
@@ -21549,6 +21560,11 @@ class Graphiti {
         try {
             // Check if this is an implicit function
             const functionType = this.detectFunctionType(func.expression);
+
+            // Theta-constant rays are not traceable/tool-enabled by design
+            if (functionType === 'theta-constant') {
+                return null;
+            }
             
             if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                 // For implicit functions and inequalities, find closest point on curve to (worldX, worldY)
