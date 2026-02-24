@@ -18452,6 +18452,181 @@ class Graphiti {
         
         return (x1 + x2) / 2;
     }
+
+    getProcessedPolarExpression(func) {
+        // For polar inequalities, use pre-processed boundary expression when available
+        if (func.inequality && func.inequality.expression) {
+            return func.inequality.expression;
+        }
+
+        // Convert from LaTeX and strip leading r= / r>, r<, r≥, r≤ forms
+        let processedExpression = this.convertFromLatex(func.expression).trim();
+        const polarPrefixMatch = processedExpression.match(/^r\s*[=><≥≤]\s*(.+)$/i);
+        if (polarPrefixMatch) {
+            processedExpression = polarPrefixMatch[1].trim();
+        }
+
+        processedExpression = processedExpression.toLowerCase();
+
+        // Resolve derivative() calls from innermost to outermost
+        while (processedExpression.includes('derivative(')) {
+            try {
+                let innermostStart = -1;
+                let innermostEnd = -1;
+                let innermostComma = -1;
+                let searchIndex = 0;
+
+                while (true) {
+                    const derivStart = processedExpression.indexOf('derivative(', searchIndex);
+                    if (derivStart === -1) break;
+
+                    const start = derivStart + 'derivative('.length;
+                    let depth = 0;
+                    let endParen = -1;
+                    let lastCommaPos = -1;
+
+                    for (let i = start; i < processedExpression.length; i++) {
+                        if (processedExpression[i] === '(') depth++;
+                        else if (processedExpression[i] === ')') {
+                            if (depth === 0) {
+                                endParen = i;
+                                break;
+                            }
+                            depth--;
+                        }
+                        else if (processedExpression[i] === ',' && depth === 0) {
+                            lastCommaPos = i;
+                        }
+                    }
+
+                    if (lastCommaPos !== -1 && endParen !== -1) {
+                        const expr = processedExpression.substring(start, lastCommaPos).trim();
+                        if (!expr.includes('derivative(')) {
+                            innermostStart = derivStart;
+                            innermostEnd = endParen;
+                            innermostComma = lastCommaPos;
+                            break;
+                        }
+                    }
+
+                    searchIndex = derivStart + 1;
+                }
+
+                if (innermostStart !== -1) {
+                    const start = innermostStart + 'derivative('.length;
+                    const expr = processedExpression.substring(start, innermostComma).trim();
+                    let variable = processedExpression.substring(innermostComma + 1, innermostEnd).trim();
+
+                    // In polar mode, theta is frequently represented as t in evaluation scope
+                    if (variable === 'theta') {
+                        variable = 't';
+                    }
+
+                    const derivativeResult = this.cleanMath.derivative(expr, variable);
+                    processedExpression = processedExpression.substring(0, innermostStart) +
+                        '(' + derivativeResult.toString() + ')' +
+                        processedExpression.substring(innermostEnd + 1);
+                } else {
+                    break;
+                }
+            } catch (err) {
+                break;
+            }
+        }
+
+        // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+        processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+        processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+        return processedExpression;
+    }
+
+    evaluatePolarPointAtTheta(compiledExpression, theta) {
+        try {
+            const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+            const scope = this.getEvaluationScope({
+                theta: thetaForEval,
+                t: thetaForEval,
+                pi: Math.PI,
+                e: Math.E
+            });
+
+            let r = compiledExpression.evaluate(scope);
+            if (!isFinite(r)) {
+                return null;
+            }
+
+            let adjustedThetaForEval = thetaForEval;
+            if (r < 0) {
+                if (this.polarSettings.plotNegativeR) {
+                    r = Math.abs(r);
+                    adjustedThetaForEval = thetaForEval + Math.PI;
+                } else {
+                    return null;
+                }
+            }
+
+            const x = r * Math.cos(adjustedThetaForEval);
+            const y = r * Math.sin(adjustedThetaForEval);
+
+            if (!isFinite(x) || !isFinite(y)) {
+                return null;
+            }
+
+            return { x, y };
+        } catch {
+            return null;
+        }
+    }
+
+    refinePolarAxisCrossing(compiledExpression, theta1, theta2, axis = 'x') {
+        const maxIterations = 35;
+        const tolerance = 1e-12;
+
+        let a = theta1;
+        let b = theta2;
+
+        const pa = this.evaluatePolarPointAtTheta(compiledExpression, a);
+        const pb = this.evaluatePolarPointAtTheta(compiledExpression, b);
+        if (!pa || !pb) {
+            return null;
+        }
+
+        const va0 = axis === 'x' ? pa.y : pa.x;
+        const vb0 = axis === 'x' ? pb.y : pb.x;
+
+        if (Math.abs(va0) < tolerance) return pa;
+        if (Math.abs(vb0) < tolerance) return pb;
+
+        // No sign change => no reliable bisection bracket
+        if (va0 * vb0 > 0) {
+            return null;
+        }
+
+        let va = va0;
+
+        for (let i = 0; i < maxIterations; i++) {
+            const mid = (a + b) / 2;
+            const pm = this.evaluatePolarPointAtTheta(compiledExpression, mid);
+            if (!pm) {
+                return null;
+            }
+
+            const vm = axis === 'x' ? pm.y : pm.x;
+            if (Math.abs(vm) < tolerance || Math.abs(b - a) < tolerance) {
+                return pm;
+            }
+
+            if (va * vm <= 0) {
+                b = mid;
+            } else {
+                a = mid;
+                va = vm;
+            }
+        }
+
+        return this.evaluatePolarPointAtTheta(compiledExpression, (a + b) / 2);
+    }
     
     findPolarAxisIntercepts() {
         const intercepts = [];
@@ -18473,6 +18648,14 @@ class Graphiti {
         // For each function, find where it crosses the Cartesian axes
         // (positive x-axis at θ=0°, positive y-axis at θ=90°, negative x-axis at θ=180°, negative y-axis at θ=270°)
         for (const func of enabledFunctions) {
+            let compiledPolarExpression = null;
+            try {
+                const processedPolarExpression = this.getProcessedPolarExpression(func);
+                compiledPolarExpression = this.getCompiledExpression(processedPolarExpression);
+            } catch {
+                compiledPolarExpression = null;
+            }
+
             const points = func.points;
             
             // Look for crossings near each axis angle
@@ -18490,16 +18673,22 @@ class Graphiti {
                 const yTolerance = 0.001;
                 if (p1.y * p2.y <= 0 && !(p1.y === 0 && p2.y === 0)) {
                     let x, y;
+                    const refined = (compiledPolarExpression && isFinite(p1.theta) && isFinite(p2.theta))
+                        ? this.refinePolarAxisCrossing(compiledPolarExpression, p1.theta, p2.theta, 'x')
+                        : null;
                     
-                    // Check if either point is already on the axis
-                    if (Math.abs(p1.y) < yTolerance) {
+                    // Prefer numerically refined crossing; fall back to sampled/interpolated crossing
+                    if (refined) {
+                        x = refined.x;
+                        y = 0;
+                    } else if (Math.abs(p1.y) < yTolerance) {
                         x = p1.x;
                         y = 0;
                     } else if (Math.abs(p2.y) < yTolerance) {
                         x = p2.x;
                         y = 0;
                     } else {
-                        // Linear interpolation to find crossing point
+                        // Fallback: linear interpolation in Cartesian space
                         const t = -p1.y / (p2.y - p1.y);
                         x = p1.x + t * (p2.x - p1.x);
                         y = 0;
@@ -18521,16 +18710,22 @@ class Graphiti {
                 const xTolerance = 0.001;
                 if (p1.x * p2.x <= 0 && !(p1.x === 0 && p2.x === 0)) {
                     let x, y;
+                    const refined = (compiledPolarExpression && isFinite(p1.theta) && isFinite(p2.theta))
+                        ? this.refinePolarAxisCrossing(compiledPolarExpression, p1.theta, p2.theta, 'y')
+                        : null;
                     
-                    // Check if either point is already on the axis
-                    if (Math.abs(p1.x) < xTolerance) {
+                    // Prefer numerically refined crossing; fall back to sampled/interpolated crossing
+                    if (refined) {
+                        x = 0;
+                        y = refined.y;
+                    } else if (Math.abs(p1.x) < xTolerance) {
                         x = 0;
                         y = p1.y;
                     } else if (Math.abs(p2.x) < xTolerance) {
                         x = 0;
                         y = p2.y;
                     } else {
-                        // Linear interpolation to find crossing point
+                        // Fallback: linear interpolation in Cartesian space
                         const t = -p1.x / (p2.x - p1.x);
                         x = 0;
                         y = p1.y + t * (p2.y - p1.y);
