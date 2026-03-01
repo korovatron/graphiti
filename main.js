@@ -29041,6 +29041,38 @@ class Graphiti {
         
         return result;
     }
+
+    applyConstantImplicitMultiplication(expression, postWhitespace = false) {
+        // Handle pi adjacency
+        expression = expression.replace(/\bpi\s+([xytrabc(])/g, 'pi*$1');
+        expression = expression.replace(/\bpi([xytrabc(])/g, 'pi*$1');
+        expression = expression.replace(/(\d)pi([xytrabc(])/g, '$1*pi*$2');
+        expression = expression.replace(/(\))pi([xytrabc(])/g, '$1*pi*$2');
+
+        // Handle e adjacency, but avoid splitting exp(...)
+        expression = expression.replace(/\be\s+(?=x(?!p)|[ytrabc(])/g, 'e*');
+        expression = expression.replace(/\be(?=x(?!p)|[ytrabc(])/g, 'e*');
+        expression = expression.replace(/(\d)e(?=x(?!p)|[ytrabc(])/g, '$1*e');
+        expression = expression.replace(/(\))e(?=x(?!p)|[ytrabc(])/g, '$1*e');
+
+        if (postWhitespace) {
+            expression = expression.replace(/(\d)pi/g, '$1*pi');
+            expression = expression.replace(/(\))pi/g, '$1*pi');
+            expression = expression.replace(/(?<![a-z])pi([xytrabc(])/g, 'pi*$1');
+
+            expression = expression.replace(/(\d)e(?=x(?!p)|[ytrabc(])/g, '$1*e');
+            expression = expression.replace(/(\))e(?=x(?!p)|[ytrabc(])/g, '$1*e');
+            expression = expression.replace(/(?<![a-z])e(?=x(?!p)|[ytrabc(])/g, 'e*');
+        }
+
+        return expression;
+    }
+
+    applyFunctionImplicitMultiplication(expression, functionToken) {
+        const escapedToken = functionToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const tokenRegex = new RegExp(`([a-zA-Z0-9\\)])\\s*(${escapedToken})`, 'g');
+        return expression.replace(tokenRegex, '$1*$2');
+    }
     
     convertFromLatex(latex) {
         if (!latex) return '';
@@ -29252,15 +29284,29 @@ class Graphiti {
         
         // Convert \log to base-10 logarithm marker
         expression = expression.replace(/\\log/g, 'log10_');  // log(x) -> log10_(x) marker
-        expression = expression.replace(/e\^/g, 'exp');
+        // Exponential forms: e^(...) and e^x -> exp(...)
+        expression = expression.replace(/e\^\(([^)]+)\)/g, 'exp($1)');
+        // For unbraced exponents, only consume a single token (TeX semantics):
+        // e^1x -> exp(1)*x, e^x -> exp(x), e^\pi -> exp(pi)
+        expression = expression.replace(/e\^(-?\d+(?:\.\d+)?)/g, 'exp($1)');
+        expression = expression.replace(/e\^\\pi/g, 'exp(pi)');
+        expression = expression.replace(/e\^([a-zA-Z])/g, 'exp($1)');
         
         // Absolute value: \left|x\right| -> abs(x)
         expression = expression.replace(/\\left\|([^|]+)\\right\|/g, 'abs($1)');
         
         // Constants
         expression = expression.replace(/\\pi/g, 'pi');
+        expression = expression.replace(/\\mathrm\{e\}/g, 'e');
+        expression = expression.replace(/\\exponentialE/g, 'e');
         // Convert theta to 't' for evaluation (math.js doesn't treat 't' as a unit in this context)
         expression = expression.replace(/\\theta/g, 't');
+
+        // Protect exp() from implicit multiplication rules on constant e
+        expression = expression.replace(/\bexp\(/g, '__EXP__(');
+
+        // Add implicit multiplication for constants followed by common variables/parentheses
+        expression = this.applyConstantImplicitMultiplication(expression);
         
         // Multiplication symbols
         expression = expression.replace(/\\cdot/g, '*');
@@ -29371,9 +29417,27 @@ class Graphiti {
         // Use negative lookbehind to avoid matching function names
         expression = expression.replace(/(?<![a-zA-Z]{2})([a-zA-Z0-9])(\()/g, '$1*$2');
         expression = expression.replace(/(\))(\()/g, '$1*$2');
+
+        // Keep implicit multiplication working while exp() is temporarily protected
+        // e.g., 2__EXP__(x) -> 2*__EXP__(x), x__EXP__(x) -> x*__EXP__(x)
+        expression = this.applyFunctionImplicitMultiplication(expression, '__EXP__(');
         
         // Remove spaces
         expression = expression.replace(/\s+/g, '');
+
+        // Safety pass after whitespace removal for protected exp()
+        expression = this.applyFunctionImplicitMultiplication(expression, '__EXP__(');
+
+        // Final pass for implicit multiplication around constants after whitespace removal
+        // Handles cases like "2\pi x" -> "2*pix" -> "2*pi*x"
+        expression = this.applyConstantImplicitMultiplication(expression, true);
+
+        // Restore protected exp()
+        expression = expression.replace(/__EXP__\(/g, 'exp(');
+
+        // Final safeguard: ensure implicit multiplication before exp()
+        // e.g., 2exp(x) -> 2*exp(x), xexp(x) -> x*exp(x), )exp(x) -> )*exp(x)
+        expression = this.applyFunctionImplicitMultiplication(expression, 'exp(');
         
         // Convert log10_ marker to log(x, 10)
         expression = expression.replace(/log10_\(([^)]+)\)/g, 'log($1, 10)');
