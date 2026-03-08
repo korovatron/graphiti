@@ -38,11 +38,6 @@ class Graphiti {
         // Flag for temporary session mode (when loaded from shared link)
         this.tempSession = false;
         
-        // Google Analytics engagement tracking with throttling
-        this.lastAnalyticsEvent = 0;
-        this.lastFunctionPanelEvent = 0;
-        this.analyticsThrottleMs = 30000; // Send event max once per 30 seconds
-        
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
@@ -7938,9 +7933,6 @@ class Graphiti {
         
         this.isViewportChanging = true;
         
-        // Track user engagement with throttled Google Analytics event
-        this.trackEngagement();
-        
         // Schedule implicit intersection recalculation after viewport changes settle
         this.scheduleImplicitIntersectionCalculation();
         
@@ -7992,19 +7984,6 @@ class Graphiti {
                 this.updateBadgesFromSignificantPoints();
             }
         }, 50); // Short delay optimized for fast implicit plotting
-    }
-    
-    trackEngagement() {
-        // Throttled Google Analytics event for user engagement tracking
-        // Only sends event if gtag exists and throttle period has elapsed
-        const now = Date.now();
-        if (typeof gtag !== 'undefined' && (now - this.lastAnalyticsEvent) >= this.analyticsThrottleMs) {
-            gtag('event', 'GRAPH_interaction', {
-                'event_category': 'engagement',
-                'event_label': this.plotMode
-            });
-            this.lastAnalyticsEvent = now;
-        }
     }
     
     findIntersections() {
@@ -11179,22 +11158,7 @@ class Graphiti {
         
         // Function Panel Touch Events - prevent touch events from bubbling to canvas
         if (functionPanel) {
-            // Track any interaction with function panel for analytics
-            const trackPanelInteraction = () => {
-                const now = Date.now();
-                if (typeof gtag !== 'undefined' && (now - this.lastFunctionPanelEvent) >= this.analyticsThrottleMs) {
-                    gtag('event', 'GRAPH_function_panel_interaction', {
-                        'event_category': 'engagement',
-                        'event_label': this.plotMode
-                    });
-                    this.lastFunctionPanelEvent = now;
-                }
-            };
-            
-            functionPanel.addEventListener('click', () => trackPanelInteraction(), { passive: true });
-            
             functionPanel.addEventListener('touchstart', (e) => {
-                trackPanelInteraction();
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
             
