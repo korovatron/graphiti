@@ -1423,19 +1423,19 @@
             transition: left 0.3s ease;
             overflow-y: scroll; /* Always scroll to prevent iOS PWA touch fall-through */
             border-radius: 0 !important;
-            padding: 20px !important; /* Normal padding for desktop/browser */
+            padding: 20px !important; /* Base panel padding */
+            padding-top: max(20px, calc(var(--safe-area-top, 0px) + 20px)) !important;
+            padding-bottom: max(20px, calc(var(--safe-area-bottom, 0px) + 20px)) !important;
             backdrop-filter: blur(10px);
             background: rgba(26, 47, 66, 0.95) !important;
         }
         
-        /* NOTE: The following media query adds extra top padding in PWA mode to avoid rendering 
-           under the iPhone notch/status bar. It was temporarily disabled due to an iOS 26.1 bug 
-           that caused content to shift down by ~70px (the logo height) when running as a PWA
-           at mobile widths. iOS 26.2 fixed this issue on 13th December 2025, so this code has 
-           been re-enabled. Test thoroughly on iPhone PWA in portrait mode if issues occur. */
-        @media (max-width: 500px) and (display-mode: standalone) {
+        /* iOS can report installed PWAs as either standalone or fullscreen.
+           Keep the top panel clear of the notch in both installed modes. */
+        @media (max-width: 500px) and (display-mode: standalone),
+               (max-width: 500px) and (display-mode: fullscreen) {
             #function-panel {
-                padding: 70px 20px 20px 20px !important;
+                padding-top: max(70px, calc(var(--safe-area-top, 0px) + 20px)) !important;
             }
         }
         

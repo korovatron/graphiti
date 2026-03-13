@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.28';
+const VERSION = '1.0.29';
 
 class Graphiti {
     constructor() {
@@ -28613,7 +28613,9 @@ class Graphiti {
 
     isStandalonePWA() {
         // Check if the app is running as a standalone PWA
-        return window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+        return window.navigator.standalone === true ||
+               window.matchMedia('(display-mode: standalone)').matches ||
+               window.matchMedia('(display-mode: fullscreen)').matches;
     }
 
     fixIOSSafariElementsVisibility() {
@@ -29426,7 +29428,8 @@ class Graphiti {
             }
             
             // 2. Detect PWA mode (bug only occurs in PWA, not Safari browser)
-            const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+                          window.matchMedia('(display-mode: fullscreen)').matches ||
                           window.navigator.standalone === true;
             
             // 3. Portrait mode compensation (iPhone & iPad)
