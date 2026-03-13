@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.29';
+const VERSION = '1.0.30';
 
 class Graphiti {
     constructor() {
@@ -17135,6 +17135,7 @@ class Graphiti {
         // Need at least one implicit function and another function
         if (implicitFunctions.length === 0 || allFunctions.length < 2) {
             this.implicitIntersections = [];
+            this.implicitIntersectionsPending = false;
             this.updateCombinedIntersections();
             return;
         }
