@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.30';
+const VERSION = '1.0.31';
 
 class Graphiti {
     constructor() {
@@ -15525,17 +15525,17 @@ class Graphiti {
         const lightIcon = document.getElementById('light-icon');
         const darkIcon = document.getElementById('dark-icon');
         
-        if (savedTheme === 'light') {
-            document.documentElement.setAttribute('data-theme', 'light');
-            if (lightIcon && darkIcon) {
-                lightIcon.style.opacity = '1';    // Bright light icon
-                darkIcon.style.opacity = '0.3';   // Dim dark icon
-            }
-        } else {
+        if (savedTheme === 'dark') {
             document.documentElement.removeAttribute('data-theme');
             if (lightIcon && darkIcon) {
                 lightIcon.style.opacity = '0.3';  // Dim light icon
                 darkIcon.style.opacity = '1';     // Bright dark icon
+            }
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            if (lightIcon && darkIcon) {
+                lightIcon.style.opacity = '1';    // Bright light icon
+                darkIcon.style.opacity = '0.3';   // Dim dark icon
             }
         }
         
