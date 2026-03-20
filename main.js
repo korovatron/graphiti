@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.31';
+const VERSION = '1.0.32';
 
 class Graphiti {
     constructor() {
@@ -22054,9 +22054,18 @@ class Graphiti {
         // Ensure animation loop is running (critical for responsiveness)
         this.ensureAnimationLoopRunning();
         
-        // Recalculate intersections if needed
-        if (this.showIntersections && this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0)) {
+        const hasPlottedFunctions = this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0);
+
+        // Recalculate significant points so markers are rebuilt after resume
+        if (hasPlottedFunctions && this.showIntersections) {
             this.calculateIntersectionsWithWorker(true);
+        }
+        if (hasPlottedFunctions && this.showTurningPoints) {
+            this.turningPoints = this.findTurningPoints();
+        }
+        if (hasPlottedFunctions && this.showIntercepts) {
+            this.intercepts = this.findAxisIntercepts();
+            this.cullInterceptMarkers();
         }
     }
 
