@@ -259,7 +259,12 @@ When typing functions on a physical keyboard, use these formats. MathLive will a
 
 ## License
 
-MIT License - See LICENSE file for details
+Graphiti Non-Commercial License v1.0.
+
+You may use, copy, modify, and share this project for personal, educational, and other non-commercial purposes.
+Commercial use is not allowed without prior written permission from the copyright holder.
+
+See the LICENSE file for full terms.
 
 ## Author
 
