@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.32';
+const VERSION = '1.0.33';
 
 class Graphiti {
     constructor() {
@@ -940,9 +940,10 @@ class Graphiti {
                                 };
                             }
                             
-                            // Force all existing math fields to dark mode
+                            // Force all existing math fields to dark mode, and clear menu
                             document.querySelectorAll('math-field').forEach(field => {
                                 field.setAttribute('color-scheme', 'dark');
+                                field.menuItems = [];
                             });
                         }, 100);
                         
@@ -963,6 +964,21 @@ class Graphiti {
         } else {
             setupKeyboard();
         }
+
+        // Disable MathLive's context menu on every instance the moment it mounts.
+        // Must be set per-instance (class-level assignment is ignored after upgrade).
+        document.addEventListener('mount', (e) => {
+            if (e.target && e.target.tagName === 'MATH-FIELD') {
+                e.target.menuItems = [];
+            }
+        }, true);
+
+        // Also suppress the browser's native context menu as a backstop.
+        document.addEventListener('contextmenu', (e) => {
+            if (e.composedPath().some(el => el.tagName === 'MATH-FIELD')) {
+                e.preventDefault();
+            }
+        });
     }
     
     // Initialize polar range MathLive fields with proper styling
