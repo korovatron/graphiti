@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.0.35';
+const VERSION = '1.0.36';
 
 class Graphiti {
     constructor() {
@@ -12652,6 +12652,9 @@ class Graphiti {
         
         // Only apply zoom if rectangle is large enough
         if (width > minSize && height > minSize) {
+            const minZoomRange = 0.0001;
+            const maxZoomRange = 100000;
+
             // Get corner points in screen coordinates
             const x1 = Math.min(rect.startX, rect.endX);
             const y1 = Math.min(rect.startY, rect.endY);
@@ -12661,12 +12664,77 @@ class Graphiti {
             // Convert to world coordinates
             const world1 = this.screenToWorld(x1, y1);
             const world2 = this.screenToWorld(x2, y2);
+
+            const selectedXRange = Math.abs(world2.x - world1.x);
+            const selectedYRange = Math.abs(world2.y - world1.y);
+            const boxCenterX = (x1 + x2) / 2;
+            const boxCenterY = (y1 + y2) / 2;
+
+            // Clamp to the same zoom limits as wheel and +/- keyboard zoom while
+            // preserving the drawn rectangle's aspect ratio and center.
+            const selectedCenterX = (world1.x + world2.x) / 2;
+            const selectedCenterY = (world1.y + world2.y) / 2;
+            const aspectRatio = selectedYRange > 0 ? selectedXRange / selectedYRange : 1;
+
+            let finalXRange = selectedXRange;
+            let finalYRange = selectedYRange;
+            let clampedMessage = null;
+
+            if (selectedXRange < minZoomRange || selectedYRange < minZoomRange) {
+                clampedMessage = 'Maximum zoom-in reached';
+                if (selectedXRange <= selectedYRange) {
+                    finalXRange = minZoomRange;
+                    finalYRange = minZoomRange / Math.max(aspectRatio, 1e-12);
+                } else {
+                    finalYRange = minZoomRange;
+                    finalXRange = minZoomRange * aspectRatio;
+                }
+
+                // Secondary clamp in case the aspect-ratio-preserving resize leaves the
+                // other dimension still under the minimum.
+                if (finalXRange < minZoomRange) {
+                    const scaleUp = minZoomRange / finalXRange;
+                    finalXRange *= scaleUp;
+                    finalYRange *= scaleUp;
+                }
+                if (finalYRange < minZoomRange) {
+                    const scaleUp = minZoomRange / finalYRange;
+                    finalXRange *= scaleUp;
+                    finalYRange *= scaleUp;
+                }
+            } else if (selectedXRange > maxZoomRange || selectedYRange > maxZoomRange) {
+                clampedMessage = 'Maximum zoom-out reached';
+                if (selectedXRange >= selectedYRange) {
+                    finalXRange = maxZoomRange;
+                    finalYRange = maxZoomRange / Math.max(aspectRatio, 1e-12);
+                } else {
+                    finalYRange = maxZoomRange;
+                    finalXRange = maxZoomRange * aspectRatio;
+                }
+
+                // Secondary clamp in case the aspect-ratio-preserving resize leaves the
+                // other dimension still over the maximum.
+                if (finalXRange > maxZoomRange) {
+                    const scaleDown = maxZoomRange / finalXRange;
+                    finalXRange *= scaleDown;
+                    finalYRange *= scaleDown;
+                }
+                if (finalYRange > maxZoomRange) {
+                    const scaleDown = maxZoomRange / finalYRange;
+                    finalXRange *= scaleDown;
+                    finalYRange *= scaleDown;
+                }
+            }
+
+            if (clampedMessage) {
+                this.showBadgeTooltip(clampedMessage, boxCenterX, boxCenterY);
+            }
             
-            // Update viewport ranges (allowing aspect ratio change)
-            this.viewport.minX = Math.min(world1.x, world2.x);
-            this.viewport.maxX = Math.max(world1.x, world2.x);
-            this.viewport.minY = Math.min(world1.y, world2.y);
-            this.viewport.maxY = Math.max(world1.y, world2.y);
+            // Update viewport ranges using clamped box centered on the original selection.
+            this.viewport.minX = selectedCenterX - finalXRange / 2;
+            this.viewport.maxX = selectedCenterX + finalXRange / 2;
+            this.viewport.minY = selectedCenterY - finalYRange / 2;
+            this.viewport.maxY = selectedCenterY + finalYRange / 2;
             
             // Update scale and range inputs (same as zoom does)
             this.updateViewportScale();
@@ -14795,6 +14863,39 @@ class Graphiti {
         // Use a reasonable tolerance to account for positions before recalculation
         const snapTolerance = 0.05; // 5% of a unit - loose enough to find matches
         
+        const normalizeId = (id) => {
+            return id === null || id === undefined ? null : String(id);
+        };
+        
+        const getIntersectionEndpointIds = (intersection) => {
+            const endpoint1 = intersection.func1Id !== undefined && intersection.func1Id !== null
+                ? intersection.func1Id
+                : (intersection.func1 && intersection.func1.id !== undefined ? intersection.func1.id : null);
+            const endpoint2 = intersection.func2Id !== undefined && intersection.func2Id !== null
+                ? intersection.func2Id
+                : (intersection.func2 && intersection.func2.id !== undefined ? intersection.func2.id : null);
+            
+            return {
+                a: normalizeId(endpoint1),
+                b: normalizeId(endpoint2)
+            };
+        };
+        
+        const isSameIntersectionPair = (badge, intersection) => {
+            const badgeA = normalizeId(badge.func1Id);
+            const badgeB = normalizeId(badge.func2Id);
+            if (!badgeA || !badgeB) {
+                return false;
+            }
+            
+            const { a, b } = getIntersectionEndpointIds(intersection);
+            if (!a || !b) {
+                return false;
+            }
+            
+            return (badgeA === a && badgeB === b) || (badgeA === b && badgeB === a);
+        };
+        
         this.input.persistentBadges.forEach(badge => {
             // Skip badges that don't have a significant point type
             if (!badge.significantPointType) return;
@@ -14832,12 +14933,32 @@ class Graphiti {
                     this.updateBadgeTValueIfParametric(badge);
                 }
             } else if (badge.significantPointType === 'intersection') {
-                // Find the matching intersection
-                const match = this.intersections.find(intersection => {
-                    const dx = Math.abs(intersection.x - badge.worldX);
-                    const dy = Math.abs(intersection.y - badge.worldY);
-                    return dx < snapTolerance && dy < snapTolerance;
-                });
+                // First match by endpoint identity (func1/func2) so badges follow moved implicit intersections.
+                // If no identity metadata is available, fall back to all intersections.
+                const pairCandidates = this.intersections.filter(intersection => isSameIntersectionPair(badge, intersection));
+                const candidates = pairCandidates.length > 0 ? pairCandidates : this.intersections;
+                
+                // Preserve which of multiple intersections was selected by picking nearest candidate.
+                let match = null;
+                let closestDistance = Infinity;
+                for (const intersection of candidates) {
+                    const dx = intersection.x - badge.worldX;
+                    const dy = intersection.y - badge.worldY;
+                    const distanceSq = dx * dx + dy * dy;
+                    if (distanceSq < closestDistance) {
+                        closestDistance = distanceSq;
+                        match = intersection;
+                    }
+                }
+                
+                // Last fallback for legacy cases where no candidates were found.
+                if (!match) {
+                    match = this.intersections.find(intersection => {
+                        const dx = Math.abs(intersection.x - badge.worldX);
+                        const dy = Math.abs(intersection.y - badge.worldY);
+                        return dx < snapTolerance && dy < snapTolerance;
+                    });
+                }
                 
                 if (match) {
                     badge.worldX = match.x;
@@ -17221,6 +17342,13 @@ class Graphiti {
         
         // Combine explicit, implicit, tangent, and normal intersections for display
         this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections, ...this.normalIntersections];
+        
+        // Rebind any significant-point badges (especially intersections) to recalculated points.
+        // This is critical for async implicit recalculations where marker locations update later.
+        if (!this.implicitIntersectionsPending) {
+            this.updateBadgesFromSignificantPoints();
+            this.updateBadgeScreenPositions();
+        }
         
         // Only trigger redraw if viewport is not changing AND no implicit intersections are pending
         // During viewport changes, we use frozen cache for visual continuity
@@ -24572,6 +24700,38 @@ class Graphiti {
         
         // Calculate screen position for duplicate check
         const screenPos = this.worldToScreen(snappedX, snappedY);
+        
+        // Prefer pair-aware toggle so an existing drifted badge doesn't create duplicates.
+        const pairBadgeCandidates = this.input.persistentBadges.filter(badge => {
+            if (badge.badgeType !== 'intersection') return false;
+            const sameOrder = badge.func1Id === func1.id && badge.func2Id === func2.id;
+            const swappedOrder = badge.func1Id === func2.id && badge.func2Id === func1.id;
+            return sameOrder || swappedOrder;
+        });
+        
+        if (pairBadgeCandidates.length > 0) {
+            // Use a world-space tolerance that scales with current zoom.
+            const worldTolerance = Math.max(0.03, (this.viewport.maxX - this.viewport.minX) * 0.02);
+            let nearestPairBadge = null;
+            let nearestDistance = Infinity;
+            
+            for (const badge of pairBadgeCandidates) {
+                const dx = badge.worldX - snappedX;
+                const dy = badge.worldY - snappedY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestPairBadge = badge;
+                }
+            }
+            
+            if (nearestPairBadge && nearestDistance <= worldTolerance) {
+                // Toggle off existing badge at this intersection (even if prior screen coords drifted).
+                this.removeBadgeById(nearestPairBadge.id);
+                this.draw();
+                return;
+            }
+        }
         
         // Check if a badge already exists at this location (within tolerance)
         const existingBadge = this.findBadgeAtScreenPosition(screenPos.x, screenPos.y, 20);
