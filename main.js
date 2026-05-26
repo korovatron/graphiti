@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.3';
+const VERSION = '1.1.4';
 
 class Graphiti {
     constructor() {
@@ -2763,10 +2763,10 @@ class Graphiti {
     // Regex pattern cache helpers for performance optimization
     initializeRegexCache() {
         // Cache commonly used regex patterns
-        this.regexCache.set('regularTrigWithX', /\b(sin|cos|tan)\s*\(\s*[^)]*x[^)]*\)/i);
-        this.regexCache.set('inverseTrigWithX', /\b(asin|acos|atan)\s*\(\s*[^)]*x[^)]*\)/i);
-        this.regexCache.set('inverseTrig', /\b(asin|acos|atan)\s*\(/i);
-        this.regexCache.set('regularTrig', /\b(sin|cos|tan)\s*\(/i);
+        this.regexCache.set('regularTrigWithX', /\b(sin|cos|tan|sec|csc|cot)\s*\(\s*[^)]*x[^)]*\)/i);
+        this.regexCache.set('inverseTrigWithX', /\b(asin|acos|atan|asec|acsc|acot|arcsin|arccos|arctan|arcsec|arccsc|arccot)\s*\(\s*[^)]*x[^)]*\)/i);
+        this.regexCache.set('inverseTrig', /\b(asin|acos|atan|asec|acsc|acot|arcsin|arccos|arctan|arcsec|arccsc|arccot)\s*\(/i);
+        this.regexCache.set('regularTrig', /\b(sin|cos|tan|sec|csc|cot)\s*\(/i);
         this.regexCache.set('operatorEnd', /[+\-*/^]$/);
         this.regexCache.set('android', /android/i);
         this.regexCache.set('mobile', /mobile/i);
@@ -3759,7 +3759,7 @@ class Graphiti {
             
             // Compile expression ONCE
             const compiledExpression = this.getCompiledExpression(processedExpression);
-            const hasInverseTrig = this.angleMode === 'degrees' && this.getCachedRegex('inverseTrig').test(func.expression.toLowerCase());
+            const hasInverseTrig = this.angleMode === 'degrees' && this.getCachedRegex('inverseTrig').test(processedExpression.toLowerCase());
             const scope = this.getEvaluationScope({});
             
             // Calculate points for the current viewport
@@ -17036,7 +17036,7 @@ class Graphiti {
             if (typeof result === 'number' && isFinite(result)) {
                 // Convert result for inverse trig functions if in degree mode
                 if (this.angleMode === 'degrees') {
-                    const hasInverseTrig = this.getCachedRegex('inverseTrig').test(expression.toLowerCase());
+                    const hasInverseTrig = this.getCachedRegex('inverseTrig').test(processedExpression.toLowerCase());
                     if (hasInverseTrig) {
                         const convertedResult = result * 180 / Math.PI; // Convert radians to degrees
                         return convertedResult;
