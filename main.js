@@ -6055,7 +6055,36 @@ class Graphiti {
                         this.implicitShadingCache.delete(func.id);
                     }
                 } else {
-                    const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId);
+                    // Progressive rendering for implicit equations:
+                    // show a coarse contour quickly, then refine if still current.
+                    if (!immediate) {
+                        const coarseResult = await this.marchingSquaresAsync(equation, true, func.id, calculationId, 0.45);
+                        if (!coarseResult) {
+                            console.warn('Coarse marching squares returned undefined');
+                            this.activeImplicitCalculations.delete(func.id);
+                            return;
+                        }
+
+                        const coarsePoints = coarseResult.points || coarseResult;
+
+                        if (this.isCalculationCancelled(func.id, calculationId)) {
+                            this.activeImplicitCalculations.delete(func.id);
+                            return;
+                        }
+
+                        this.applyImplicitFunctionPoints(func, coarsePoints);
+                        this.draw();
+
+                        // Yield to keep UI responsive before refinement starts.
+                        await new Promise(resolve => setTimeout(resolve, 0));
+
+                        if (this.isCalculationCancelled(func.id, calculationId)) {
+                            this.activeImplicitCalculations.delete(func.id);
+                            return;
+                        }
+                    }
+
+                    const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId, 1.0);
                     if (!result) {
                         console.warn('Standard marching squares returned undefined');
                         this.activeImplicitCalculations.delete(func.id);
@@ -6081,18 +6110,7 @@ class Graphiti {
                 return;
             }
             
-            // Double-buffering: Calculate into working buffer, then atomically swap to display buffer
-            // This eliminates race conditions and ensures stable display during viewport changes
-            const oldCount = func.displayPoints?.length || 0;
-            func.calculatingPoints = points;
-            func.displayPoints = func.calculatingPoints;
-            func.calculatingPoints = null;
-            
-            // Also update func.points for backward compatibility (intersections, etc.)
-            func.points = points;
-            
-            // Invalidate curve cache when points change
-            this.implicitCurveCache.delete(func.id);
+            this.applyImplicitFunctionPoints(func, points);
             
             this.activeImplicitCalculations.delete(func.id);
             
@@ -6107,6 +6125,19 @@ class Graphiti {
             // Don't clear existing points on error - keep them visible
             this.activeImplicitCalculations.delete(func.id);
         }
+    }
+
+    applyImplicitFunctionPoints(func, points) {
+        // Double-buffering: calculate into working buffer, then atomically swap.
+        func.calculatingPoints = points;
+        func.displayPoints = func.calculatingPoints;
+        func.calculatingPoints = null;
+
+        // Keep legacy readers in sync.
+        func.points = points;
+
+        // Invalidate curve cache when points change.
+        this.implicitCurveCache.delete(func.id);
     }
 
     isCircleEquation(expr) {
@@ -6412,7 +6443,7 @@ class Graphiti {
         }
     }
 
-    async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null) {
+    async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null, resolutionScale = 1) {
         // Get visible viewport and calculate extended viewport with buffer
         const visibleViewport = this.viewport;
         const extendedViewport = this.getExtendedViewport(visibleViewport, this.implicitBufferConfig.extensionPercent);
@@ -6464,7 +6495,7 @@ class Graphiti {
         // This gives ~2.2x cells total vs 3.24x with full scaling (much faster)
         // Buffer has slightly lower quality but regenerates quickly on pan stop
         const extensionFactor = 1 + this.implicitBufferConfig.extensionPercent * 2;
-        const scaledResolution = Math.ceil(resolution * Math.pow(extensionFactor, 0.7));
+        const scaledResolution = Math.max(40, Math.ceil(resolution * resolutionScale * Math.pow(extensionFactor, 0.7)));
         const stepX = viewportWidth / scaledResolution;
         const stepY = viewportHeight / scaledResolution;
         
@@ -6791,9 +6822,11 @@ class Graphiti {
         const segments = [];
         const segmentBudget = this.getImplicitSegmentBudget();
         let reachedSegmentBudget = false;
-        for (let i = 0; i < contourResolution; i++) {
+        const contourIOrder = this.getBalancedIndexOrder(contourResolution);
+        const contourJOrder = this.getBalancedIndexOrder(contourResolution);
+        for (const i of contourIOrder) {
             if (reachedSegmentBudget) break;
-            for (let j = 0; j < contourResolution; j++) {
+            for (const j of contourJOrder) {
                 // Skip if missing corner data
                 if (!contourGrid[i][j] && contourGrid[i][j] !== 0) continue;
                 if (!contourGrid[i+1][j] && contourGrid[i+1][j] !== 0) continue;
@@ -6895,9 +6928,11 @@ class Graphiti {
         }
         
         // Process each cell for marching squares
-        for (let i = 0; i < resolution; i++) {
+        const iOrder = this.getBalancedIndexOrder(resolution);
+        const jOrder = this.getBalancedIndexOrder(resolution);
+        for (const i of iOrder) {
             if (reachedSegmentBudget) break;
-            for (let j = 0; j < resolution; j++) {
+            for (const j of jOrder) {
                 const x = this.viewport.minX + i * stepX;
                 const y = this.viewport.minY + j * stepY;
                 
@@ -7163,6 +7198,27 @@ class Graphiti {
         return true;
     }
 
+    getBalancedIndexOrder(size) {
+        const order = [];
+        const centreLeft = Math.floor((size - 1) / 2);
+        const centreRight = Math.ceil((size - 1) / 2);
+
+        let left = centreLeft;
+        let right = centreRight;
+        while (left >= 0 || right < size) {
+            if (left >= 0) {
+                order.push(left);
+                left--;
+            }
+            if (right < size && right !== left + 1) {
+                order.push(right);
+            }
+            right++;
+        }
+
+        return order;
+    }
+
     async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null, extendedViewport = null, visibleViewport = null) {
         const startTime = performance.now();
         
@@ -7231,9 +7287,11 @@ class Graphiti {
             const segments = [];
             const segmentBudget = this.getImplicitSegmentBudget();
             let reachedSegmentBudget = false;
-            for (let i = 0; i < resolution; i++) {
+            const iOrder = this.getBalancedIndexOrder(resolution);
+            const jOrder = this.getBalancedIndexOrder(resolution);
+            for (const i of iOrder) {
                 if (reachedSegmentBudget) break;
-                for (let j = 0; j < resolution; j++) {
+                for (const j of jOrder) {
                     const x = viewport.minX + i * stepX;
                     const y = viewport.minY + j * stepY;
                     
@@ -7342,38 +7400,43 @@ class Graphiti {
         let reachedSegmentBudget = false;
         
         // Generate segments only from cells with all corners evaluated
-        for (const regionKey of fineRegions) {
+        const localIOrder = this.getBalancedIndexOrder(resolution);
+        const localJOrder = this.getBalancedIndexOrder(resolution);
+        let processedCells = 0;
+        for (const i of localIOrder) {
             if (reachedSegmentBudget) break;
-            const [i, j] = regionKey.split(',').map(Number);
-            
-            if (i >= resolution || j >= resolution) continue;
-            if (!grid[i][j] && grid[i][j] !== 0) continue;
-            if (!grid[i+1][j] && grid[i+1][j] !== 0) continue;
-            if (!grid[i+1][j+1] && grid[i+1][j+1] !== 0) continue;
-            if (!grid[i][j+1] && grid[i][j+1] !== 0) continue;
-            
-            const x = viewport.minX + i * stepX;
-            const y = viewport.minY + j * stepY;
-            
-            const corners = [
-                grid[i][j],
-                grid[i+1][j],
-                grid[i+1][j+1],
-                grid[i][j+1]
-            ];
-            
-            let config = 0;
-            for (let k = 0; k < 4; k++) {
-                if (corners[k] > 0) config |= (1 << k);
-            }
-            
-            const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
-            reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
-            if (reachedSegmentBudget) break;
-            
-            // Check cancellation periodically
-            if (segments.length % 100 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                return { points: [], gridData: null };
+            for (const j of localJOrder) {
+                if (!fineRegions.has(`${i},${j}`)) continue;
+                if (i >= resolution || j >= resolution) continue;
+                if (!grid[i][j] && grid[i][j] !== 0) continue;
+                if (!grid[i+1][j] && grid[i+1][j] !== 0) continue;
+                if (!grid[i+1][j+1] && grid[i+1][j+1] !== 0) continue;
+                if (!grid[i][j+1] && grid[i][j+1] !== 0) continue;
+
+                const x = viewport.minX + i * stepX;
+                const y = viewport.minY + j * stepY;
+
+                const corners = [
+                    grid[i][j],
+                    grid[i+1][j],
+                    grid[i+1][j+1],
+                    grid[i][j+1]
+                ];
+
+                let config = 0;
+                for (let k = 0; k < 4; k++) {
+                    if (corners[k] > 0) config |= (1 << k);
+                }
+
+                const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
+                reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
+                if (reachedSegmentBudget) break;
+
+                // Check cancellation periodically based on inspected cells.
+                processedCells++;
+                if (processedCells % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                    return { points: [], gridData: null };
+                }
             }
         }
         
