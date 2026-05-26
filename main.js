@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.8';
+const VERSION = '1.1.9';
 
 class Graphiti {
     constructor() {
@@ -1562,8 +1562,15 @@ class Graphiti {
                 }
             }
             
-            // Plot the function and wait for it to complete
-            await this.plotFunction(emptyFunc);
+            // Plot the function and wait for it to complete.
+            // For implicit examples selected from the dropdown, render directly at
+            // full quality to avoid showing a coarse first frame.
+            const functionType = this.detectFunctionType(expression);
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                await this.plotImplicitFunction(emptyFunc, false, true);
+            } else {
+                await this.plotFunction(emptyFunc);
+            }
             
             // Update parameter sliders and parametric range visibility
             this.updateParameterSliders();
@@ -6338,6 +6345,8 @@ class Graphiti {
             
             func.implicitRenderMode = implicitRenderMode;
             this.applyImplicitFunctionPoints(func, points);
+            // Ensure the refined implicit result is visible immediately, not only after next interaction.
+            this.draw();
             
             this.activeImplicitCalculations.delete(func.id);
             
@@ -6925,17 +6934,17 @@ class Graphiti {
         
         let resolution;
         if (viewportSize > 100) {
-            // Extremely zoomed out - need very high res for tiny curves
-            resolution = 300;
+            // Extremely zoomed out - keep enough samples for small, high-curvature loops.
+            resolution = 420;
         } else if (viewportSize > 80) {
-            // Very zoomed out - high res with full grid
-            resolution = 250;
+            // Very zoomed out - still needs dense sampling to avoid faceting.
+            resolution = 360;
         } else if (viewportSize > 50) {
-            // Zoomed out - good quality
-            resolution = 140;
+            // Zoomed out - increased to preserve smoothness around compact features.
+            resolution = 300;
         } else if (viewportSize > 20) {
-            // Normal zoom - high quality
-            resolution = 160;
+            // Normal zoom - slightly higher baseline for cleaner implicit contours.
+            resolution = 220;
         } else if (viewportSize > 10) {
             // Zoomed in - higher detail
             resolution = 180;
@@ -24207,7 +24216,23 @@ class Graphiti {
         
         // Create cache key
         const viewportKey = `${this.viewport.minX},${this.viewport.minY},${this.viewport.maxX},${this.viewport.maxY}`;
-        const pointsHash = pointsToUse.length; // Simple hash - could be improved
+        // Hash both count and sampled point content so coarse/refined curves do not collide.
+        let hashAccumulator = 2166136261; // FNV-1a 32-bit offset basis
+        const sampleCount = Math.min(32, pointsToUse.length);
+        const sampleStep = Math.max(1, Math.floor(pointsToUse.length / Math.max(1, sampleCount)));
+        for (let i = 0; i < pointsToUse.length; i += sampleStep) {
+            const p = pointsToUse[i];
+            const qx = Number.isFinite(p.x) ? Math.round(p.x * 1000) : 2147483647;
+            const qy = Number.isFinite(p.y) ? Math.round(p.y * 1000) : 2147483647;
+            const qc = p.connected ? 1 : 0;
+            hashAccumulator ^= qx;
+            hashAccumulator = Math.imul(hashAccumulator, 16777619);
+            hashAccumulator ^= qy;
+            hashAccumulator = Math.imul(hashAccumulator, 16777619);
+            hashAccumulator ^= qc;
+            hashAccumulator = Math.imul(hashAccumulator, 16777619);
+        }
+        const pointsHash = `${pointsToUse.length}:${hashAccumulator >>> 0}`;
         
         let isStrict = false;
         if (isInequality) {
