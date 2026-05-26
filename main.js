@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 
 class Graphiti {
     constructor() {
@@ -980,6 +980,103 @@ class Graphiti {
             }
         });
     }
+
+    selectMathFieldContent(mathField) {
+        if (!mathField) {
+            return;
+        }
+
+        // Delay until focus transfer finishes so selection applies to the new field.
+        setTimeout(() => {
+            try {
+                if (typeof mathField.executeCommand === 'function') {
+                    mathField.executeCommand('selectAll');
+                    return;
+                }
+
+                mathField.selection = { ranges: [[-Infinity, Infinity]] };
+            } catch (error) {
+                // Selection can fail for stale/unmounted fields; safe to ignore.
+            }
+        }, 0);
+    }
+
+    isRangeFieldTabbable(field) {
+        if (!field || field.disabled) {
+            return false;
+        }
+
+        const style = window.getComputedStyle(field);
+        if (style.display === 'none' || style.visibility === 'hidden') {
+            return false;
+        }
+
+        return field.getClientRects().length > 0;
+    }
+
+    initialiseRangeTabTracking() {
+        if (this.rangeTabTrackingInitialised) {
+            return;
+        }
+
+        this.rangeTabTrackingInitialised = true;
+        this.lastRangeTabKeyTime = 0;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                this.lastRangeTabKeyTime = performance.now();
+            }
+        }, true);
+    }
+
+    wasRecentTabNavigation() {
+        if (!this.lastRangeTabKeyTime) {
+            return false;
+        }
+
+        return (performance.now() - this.lastRangeTabKeyTime) < 400;
+    }
+
+    setupRangeFieldTabSelection(fields) {
+        this.initialiseRangeTabTracking();
+
+        fields.forEach(field => {
+            if (!field || field.dataset.tabSelectInitialised === 'true') {
+                return;
+            }
+
+            field.dataset.tabSelectInitialised = 'true';
+            field.addEventListener('focusin', () => {
+                if (!this.wasRecentTabNavigation()) {
+                    return;
+                }
+
+                this.selectMathFieldContent(field);
+            });
+
+            field.addEventListener('keydown', (e) => {
+                if (e.key !== 'Tab') {
+                    return;
+                }
+
+                const tabbableFields = fields.filter(candidate => this.isRangeFieldTabbable(candidate));
+                const currentIndex = tabbableFields.indexOf(field);
+                if (currentIndex === -1) {
+                    return;
+                }
+
+                const targetIndex = e.shiftKey ? currentIndex - 1 : currentIndex + 1;
+                const targetField = tabbableFields[targetIndex];
+                if (!targetField) {
+                    return;
+                }
+
+                e.preventDefault();
+                targetField.focus();
+                this.selectMathFieldContent(targetField);
+            });
+        });
+    }
     
     // Initialize polar range MathLive fields with proper styling
     initializePolarRangeFields() {
@@ -996,6 +1093,7 @@ class Graphiti {
             
             // Force style properties directly on the element
             const fields = [thetaMin, thetaMax];
+            this.setupRangeFieldTabSelection(fields);
             fields.forEach(field => {
                 // Set via style attribute for direct properties
                 field.style.setProperty('background', inputBg, 'important');
@@ -1087,6 +1185,7 @@ class Graphiti {
             if (tMin && tMax) {
                 fields.push(tMin, tMax);
             }
+            this.setupRangeFieldTabSelection(fields);
             
             fields.forEach(field => {
                 // Set via style attribute for direct properties
