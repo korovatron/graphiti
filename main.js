@@ -6789,7 +6789,10 @@ class Graphiti {
         
         // Generate contour segments
         const segments = [];
+        const segmentBudget = this.getImplicitSegmentBudget();
+        let reachedSegmentBudget = false;
         for (let i = 0; i < contourResolution; i++) {
+            if (reachedSegmentBudget) break;
             for (let j = 0; j < contourResolution; j++) {
                 // Skip if missing corner data
                 if (!contourGrid[i][j] && contourGrid[i][j] !== 0) continue;
@@ -6813,7 +6816,8 @@ class Graphiti {
                 }
                 
                 const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, contourStepX, contourStepY, verticalAsymptotes);
-                segments.push(...cellSegments);
+                reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
+                if (reachedSegmentBudget) break;
             }
         }
         
@@ -6849,6 +6853,8 @@ class Graphiti {
 
     marchingSquaresAtResolution(equation, resolution, stepX, stepY) {
         const segments = [];
+        const segmentBudget = this.getImplicitSegmentBudget();
+        let reachedSegmentBudget = false;
         
         // Detect vertical asymptotes in the boundary equation
         const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
@@ -6890,6 +6896,7 @@ class Graphiti {
         
         // Process each cell for marching squares
         for (let i = 0; i < resolution; i++) {
+            if (reachedSegmentBudget) break;
             for (let j = 0; j < resolution; j++) {
                 const x = this.viewport.minX + i * stepX;
                 const y = this.viewport.minY + j * stepY;
@@ -6910,7 +6917,8 @@ class Graphiti {
                 
                 // Get line segments for this configuration
                 const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
-                segments.push(...cellSegments);
+                reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
+                if (reachedSegmentBudget) break;
             }
         }
         
@@ -7123,6 +7131,38 @@ class Graphiti {
         return segments;
     }
 
+    getImplicitSegmentBudget() {
+        // Guardrail to prevent contour-heavy implicit plots from freezing the UI.
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        const viewportHeight = this.viewport.maxY - this.viewport.minY;
+        const viewportSize = Math.max(viewportWidth, viewportHeight);
+
+        if (viewportSize > 500) return 8000;
+        if (viewportSize > 200) return 10000;
+        if (viewportSize > 100) return 12000;
+        if (viewportSize > 50) return 14000;
+        return 18000;
+    }
+
+    addSegmentsWithBudget(targetSegments, newSegments, budget) {
+        if (!newSegments || newSegments.length === 0) {
+            return false;
+        }
+
+        const remaining = budget - targetSegments.length;
+        if (remaining <= 0) {
+            return true;
+        }
+
+        if (newSegments.length <= remaining) {
+            targetSegments.push(...newSegments);
+            return false;
+        }
+
+        targetSegments.push(...newSegments.slice(0, remaining));
+        return true;
+    }
+
     async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null, extendedViewport = null, visibleViewport = null) {
         const startTime = performance.now();
         
@@ -7189,7 +7229,10 @@ class Graphiti {
             
             // Generate contour segments from full grid
             const segments = [];
+            const segmentBudget = this.getImplicitSegmentBudget();
+            let reachedSegmentBudget = false;
             for (let i = 0; i < resolution; i++) {
+                if (reachedSegmentBudget) break;
                 for (let j = 0; j < resolution; j++) {
                     const x = viewport.minX + i * stepX;
                     const y = viewport.minY + j * stepY;
@@ -7208,7 +7251,8 @@ class Graphiti {
                     
                     if (config !== 0 && config !== 15) {
                         const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
-                        segments.push(...cellSegments);
+                        reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
+                        if (reachedSegmentBudget) break;
                     }
                 }
             }
@@ -7294,9 +7338,12 @@ class Graphiti {
         }
         
         const segments = [];
+        const segmentBudget = this.getImplicitSegmentBudget();
+        let reachedSegmentBudget = false;
         
         // Generate segments only from cells with all corners evaluated
         for (const regionKey of fineRegions) {
+            if (reachedSegmentBudget) break;
             const [i, j] = regionKey.split(',').map(Number);
             
             if (i >= resolution || j >= resolution) continue;
@@ -7321,7 +7368,8 @@ class Graphiti {
             }
             
             const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
-            segments.push(...cellSegments);
+            reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
+            if (reachedSegmentBudget) break;
             
             // Check cancellation periodically
             if (segments.length % 100 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
