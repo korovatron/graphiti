@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.1';
+const VERSION = '1.1.2';
 
 class Graphiti {
     constructor() {
@@ -376,27 +376,30 @@ class Graphiti {
                             
                             // Inline shortcuts to recognize typed function names
                             const functionShortcuts = {
-                                // Explicitly disable "a" prefix shortcuts to prevent conflicts with "alphasin"
+                                // Disable short a-prefixed inverse trig shortcuts to avoid
+                                // alpha+sin style input being rewritten as asin(...).
                                 'asin': false,
                                 'acos': false,
                                 'atan': false,
                                 'asec': false,
                                 'acsc': false,
                                 'acot': false,
-                                'asinh': false,
-                                'acosh': false,
-                                'atanh': false,
-                                'asech': false,
-                                'acsch': false,
-                                'acoth': false,
-                                // Inverse trig (arc notation only - no "asin" shortcuts to avoid conflicts with "alphasin")
+                                // Inverse trig (arc notation)
                                 'arcsin': '\\operatorname{arcsin}',
                                 'arccos': '\\operatorname{arccos}',
                                 'arctan': '\\operatorname{arctan}',
                                 'arcsec': '\\operatorname{arcsec}',
                                 'arccsc': '\\operatorname{arccsc}',
                                 'arccot': '\\operatorname{arccot}',
-                                // Inverse hyperbolic (arc notation only)
+                                // Disable short a-prefixed inverse hyperbolic shortcuts for
+                                // the same reason as inverse trig.
+                                'asinh': false,
+                                'acosh': false,
+                                'atanh': false,
+                                'asech': false,
+                                'acsch': false,
+                                'acoth': false,
+                                // Inverse hyperbolic (arc notation)
                                 'arcsinh': '\\operatorname{arcsinh}',
                                 'arccosh': '\\operatorname{arccosh}',
                                 'arctanh': '\\operatorname{arctanh}',
@@ -2218,27 +2221,30 @@ class Graphiti {
                         // Square root
                         'sqrt': '\\sqrt{#0}',
                         'sqrt(': '\\sqrt{#0}',
-                        // Disable "a" prefix shortcuts to prevent "alphasin" conflicts
+                        // Disable short a-prefixed inverse trig shortcuts to avoid
+                        // alpha+sin style input being rewritten as asin(...).
                         'asin': false,
                         'acos': false,
                         'atan': false,
                         'asec': false,
                         'acsc': false,
                         'acot': false,
-                        'asinh': false,
-                        'acosh': false,
-                        'atanh': false,
-                        'asech': false,
-                        'acsch': false,
-                        'acoth': false,
-                        // Inverse trig (arc notation only)
+                        // Inverse trig (arc notation)
                         'arcsin': '\\operatorname{arcsin}',
                         'arccos': '\\operatorname{arccos}',
                         'arctan': '\\operatorname{arctan}',
                         'arcsec': '\\operatorname{arcsec}',
                         'arccsc': '\\operatorname{arccsc}',
                         'arccot': '\\operatorname{arccot}',
-                        // Inverse hyperbolic (arc notation only)
+                        // Disable short a-prefixed inverse hyperbolic shortcuts for
+                        // the same reason as inverse trig.
+                        'asinh': false,
+                        'acosh': false,
+                        'atanh': false,
+                        'asech': false,
+                        'acsch': false,
+                        'acoth': false,
+                        // Inverse hyperbolic (arc notation)
                         'arcsinh': '\\operatorname{arcsinh}',
                         'arccosh': '\\operatorname{arccosh}',
                         'arctanh': '\\operatorname{arctanh}',
@@ -28100,7 +28106,7 @@ class Graphiti {
         if (isParametric && tValue !== null && tValue !== undefined) {
             // For parametric functions, show (x, y) | t = value with 3 sig figs for t
             // But still check for common trig values if the function contains trig
-            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot)\}\}/i;
             const hasTrig = func.expression && trigRegex.test(func.expression);
             
             let xStr, yStr;
@@ -28124,7 +28130,7 @@ class Graphiti {
             shouldUsePiFractions = this.angleMode === 'radians';
             shouldUseCommonValues = true; // Also check common values for r
         } else {
-            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot)\}\}/i;
             
             if (func && func.expression) {
                 // Check if the primary function contains trig
@@ -28818,9 +28824,10 @@ class Graphiti {
     
     containsTrigFunctions() {
         // Check if any enabled function contains trigonometric functions
-        // Include all trig functions: basic, reciprocal, inverse, and hyperbolic
+        // Include only circular trig functions (basic, reciprocal, inverse).
+        // Hyperbolic functions are not angle-based and should not trigger pi formatting.
         // Matches both basic format: sin( and LaTeX format: \sin\left(
-        const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()/i;
+        const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(\s*\(|\\left\()/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -28830,8 +28837,8 @@ class Graphiti {
 
     containsInverseTrigFunctions() {
         // Check if any enabled function contains inverse trigonometric functions
-        // Matches: \operatorname{\mathrm{arcsin}} format that MathLive produces
-        const inverseTrigRegex = /\\operatorname\{\\mathrm\{arc(sin|cos|tan|sec|csc|cot)\}\}|\\operatorname\{\\mathrm\{a(sin|cos|tan|sec|csc|cot)\}\}/i;
+        // Supports plain forms (asin(...), arcsin(...)) and MathLive LaTeX forms.
+        const inverseTrigRegex = /\b(?:asin|acos|atan|asec|acsc|acot|arcsin|arccos|arctan|arcsec|arccsc|arccot)\s*\(|\\(?:asin|acos|atan|asec|acsc|acot|arcsin|arccos|arctan|arcsec|arccsc|arccot)\s*\\left\(|\\operatorname\{\\mathrm\{arc(sin|cos|tan|sec|csc|cot)\}\}|\\operatorname\{\\mathrm\{a(sin|cos|tan|sec|csc|cot)\}\}/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -28841,8 +28848,9 @@ class Graphiti {
 
     containsRegularTrigFunctions() {
         // Check if any enabled function contains regular (non-inverse) trigonometric functions
-        // Matches both basic format: sin( and LaTeX format: \sin\left(
-        const regularTrigRegex = /\\?(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)(\s*\(|\\left\()/i;
+        // Matches plain regular trig (sin(...)) and LaTeX commands (\sin\left(...)).
+        // Word-boundary matching prevents asin/arcsin from being misclassified as regular trig.
+        const regularTrigRegex = /(?:\b(?:sin|cos|tan|sec|csc|cot)\s*\(|\\(?:sin|cos|tan|sec|csc|cot)\s*\\left\()/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -28853,8 +28861,9 @@ class Graphiti {
     // Check trig functions in current mode only (for axis formatting)
     currentModeContainsRegularTrigFunctions() {
         // Check if any enabled function in current mode contains regular (non-inverse) trig functions
-        // Matches both basic format: sin( and LaTeX format: \sin\left(
-        const regularTrigRegex = /\\?(sin|cos|tan|sinh|cosh|tanh|sec|csc|cot|sech|csch|coth)(\s*\(|\\left\()/i;
+        // Matches plain regular trig (sin(...)) and LaTeX commands (\sin\left(...)).
+        // Word-boundary matching prevents asin/arcsin from being misclassified as regular trig.
+        const regularTrigRegex = /(?:\b(?:sin|cos|tan|sec|csc|cot)\s*\(|\\(?:sin|cos|tan|sec|csc|cot)\s*\\left\()/i;
         return this.getCurrentFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -28864,8 +28873,8 @@ class Graphiti {
     
     currentModeContainsInverseTrigFunctions() {
         // Check if any enabled function in current mode contains inverse trig functions
-        // Matches: \operatorname{\mathrm{arcsin}} or \operatorname{\mathrm{asin}}
-        const inverseTrigRegex = /\\operatorname\{\\mathrm\{arc(sin|cos|tan|sec|csc|cot)\}\}|\\operatorname\{\\mathrm\{a(sin|cos|tan|sec|csc|cot)\}\}/i;
+        // Supports plain forms (asin(...), arcsin(...)) and MathLive LaTeX forms.
+        const inverseTrigRegex = /\b(?:asin|acos|atan|asec|acsc|acot|arcsin|arccos|arctan|arcsec|arccsc|arccot)\s*\(|\\(?:asin|acos|atan|asec|acsc|acot|arcsin|arccos|arctan|arcsec|arccsc|arccot)\s*\\left\(|\\operatorname\{\\mathrm\{arc(sin|cos|tan|sec|csc|cot)\}\}|\\operatorname\{\\mathrm\{a(sin|cos|tan|sec|csc|cot)\}\}/i;
         return this.getCurrentFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -29769,6 +29778,13 @@ class Graphiti {
         // Convert d/dx notation to derivative(expr, x) BEFORE cleaning up LaTeX parentheses
         // This needs to handle nested expressions properly and requires \left( \right) to still be present
         expression = this.convertDerivativeNotation(expression);
+
+        // Preserve implicit multiplication for LaTeX trig commands before backslashes are removed.
+        // Example: a\sin\left(x\right) should become a*\sin\left(x\right), not asin(x).
+        expression = expression.replace(
+            /([a-zA-Z0-9\)])\s*\\(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\b/g,
+            '$1*\\$2'
+        );
         
         // Now handle LaTeX parentheses
         expression = expression.replace(/\\left\(/g, '(');
@@ -29849,6 +29865,10 @@ class Graphiti {
         expression = expression.replace(new RegExp(`beta\\s+${funcPattern}`, 'g'), 'beta$1');
         expression = expression.replace(new RegExp(`gamma\\s+${funcPattern}`, 'g'), 'gamma$1');
         expression = expression.replace(new RegExp(`delta\\s+${funcPattern}`, 'g'), 'delta$1');
+
+        // Preserve intended multiplication for single-letter coefficients before trig/log functions.
+        // Without this, inputs like "a sin(x)" collapse to "asin(x)" when whitespace is removed.
+        expression = expression.replace(new RegExp(`\\b([a-zA-Z])\\s+${funcPattern}\\(`, 'g'), '$1*$2(');
         
         // Inverse trigonometric functions (standard LaTeX)
         expression = expression.replace(/\\arcsin/g, 'asin');
