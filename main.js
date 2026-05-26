@@ -6542,9 +6542,15 @@ class Graphiti {
         // Detect vertical asymptotes in the boundary equation
         const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
         
-        // Compile expressions once
-        const leftCompiled = this.getCompiledExpression(equation.leftExpression);
-        const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+        // Compile expressions once (respect angle mode for trig functions)
+        let leftExpressionForEval = equation.leftExpression;
+        let rightExpressionForEval = equation.rightExpression;
+        if (this.angleMode === 'degrees') {
+            leftExpressionForEval = this.convertTrigToDegreeMode(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeMode(rightExpressionForEval);
+        }
+        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
+        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
         const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
         
         // Helper to evaluate grid point
@@ -6847,10 +6853,16 @@ class Graphiti {
         // Detect vertical asymptotes in the boundary equation
         const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
         
-        // Compile expressions once for performance
+        // Compile expressions once for performance (respect angle mode for trig functions)
         // Expressions are already processed by parseImplicitEquation
-        const leftCompiled = this.getCompiledExpression(equation.leftExpression);
-        const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+        let leftExpressionForEval = equation.leftExpression;
+        let rightExpressionForEval = equation.rightExpression;
+        if (this.angleMode === 'degrees') {
+            leftExpressionForEval = this.convertTrigToDegreeMode(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeMode(rightExpressionForEval);
+        }
+        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
+        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
         
         // Create scope once and reuse it
         const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
@@ -7121,9 +7133,15 @@ class Graphiti {
         // Detect vertical asymptotes in the boundary equation
         const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
         
-        // Compile expressions once for performance
-        const leftCompiled = this.getCompiledExpression(equation.leftExpression);
-        const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+        // Compile expressions once for performance (respect angle mode for trig functions)
+        let leftExpressionForEval = equation.leftExpression;
+        let rightExpressionForEval = equation.rightExpression;
+        if (this.angleMode === 'degrees') {
+            leftExpressionForEval = this.convertTrigToDegreeMode(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeMode(rightExpressionForEval);
+        }
+        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
+        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
         const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
         
         // Helper to evaluate grid point
@@ -7810,6 +7828,17 @@ class Graphiti {
             Object.keys(constantPlaceholders).forEach(placeholder => {
                 processedExpression = processedExpression.replace(new RegExp(placeholder, 'g'), constantPlaceholders[placeholder]);
             });
+
+            // Match explicit-function behaviour: in degree mode, convert trig input arguments
+            // from degrees to radians before math.js evaluation.
+            let hasInverseTrig = false;
+            if (this.angleMode === 'degrees') {
+                const hasRegularTrig = /\b(sin|cos|tan|sec|csc|cosec|cot)\s*\(/i.test(processedExpression);
+                hasInverseTrig = this.getCachedRegex('inverseTrig').test(processedExpression);
+                if (hasRegularTrig) {
+                    processedExpression = this.convertTrigToDegreeMode(processedExpression);
+                }
+            }
             
             // Basic math.js compatible conversions
             processedExpression = processedExpression.replace(/\^/g, '^'); // Keep power notation
@@ -7820,6 +7849,9 @@ class Graphiti {
             const result = math.evaluate(processedExpression, scope);
             
             if (typeof result === 'number' && isFinite(result)) {
+                if (hasInverseTrig) {
+                    return result * 180 / Math.PI;
+                }
                 return result;
             }
             
