@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.6';
+const VERSION = '1.1.7';
 
 class Graphiti {
     constructor() {
@@ -855,7 +855,10 @@ class Graphiti {
                         }, 1000);
                         
                         // Configure virtual keyboard behavior for mobile
-                        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                        // iPadOS may report a desktop-like UA (MacIntel), so include touch-capable
+                        // Mac platform detection to ensure mobile keyboard fixes apply on iPad.
+                        const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+                        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || isIPadOS;
                         if (isMobile) {
                             window.mathVirtualKeyboard.container = document.body;
                             
@@ -931,21 +934,33 @@ class Graphiti {
                                 screen.orientation.addEventListener('change', closeKeyboardOnOrientationChange);
                             }
 
-                            // iOS shift-latch fix:
-                            // After pointerup on the shift key correctly latches shift, iOS fires a
-                            // synthetic mouseup on window which MathLive handles by resetting
-                            // shiftPressCount to 0, cancelling the latch. We intercept that mouseup
-                            // in the capturing phase (before MathLive's bubble-phase listener) and
-                            // suppress it when it originated from a shift keycap tap.
+                            // iOS/iPadOS shift-latch fix:
+                            // After touch pointerup on shift, Safari can emit a synthetic mouseup that
+                            // MathLive handles by resetting shiftPressCount to 0. We suppress that
+                            // mouseup in capture phase before MathLive's listener runs.
+                            let suppressSyntheticShiftMouseUpUntil = 0;
+                            const isShiftTarget = (event) => {
+                                if (!event || typeof event.composedPath !== 'function') return false;
+                                return event.composedPath().some(node =>
+                                    node && node.classList && node.classList.contains('shift')
+                                );
+                            };
+
+                            window.addEventListener('pointerdown', (e) => {
+                                if (!window.mathVirtualKeyboard?.visible) return;
+                                if (e.pointerType === 'touch' && isShiftTarget(e)) {
+                                    suppressSyntheticShiftMouseUpUntil = Date.now() + 700;
+                                }
+                            }, { capture: true });
+
                             window.addEventListener('mouseup', (e) => {
                                 if (!window.mathVirtualKeyboard?.visible) return;
-                                let node = e.target;
-                                while (node && node !== document.body) {
-                                    if (node.classList && node.classList.contains('shift')) {
-                                        e.stopImmediatePropagation();
-                                        return;
-                                    }
-                                    node = node.parentElement;
+
+                                const fromShiftKey = isShiftTarget(e);
+                                const isLikelySyntheticFollowup = Date.now() <= suppressSyntheticShiftMouseUpUntil;
+
+                                if (fromShiftKey || isLikelySyntheticFollowup) {
+                                    e.stopImmediatePropagation();
                                 }
                             }, { capture: true });
                         }
