@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.2';
+const VERSION = '1.1.3';
 
 class Graphiti {
     constructor() {
@@ -28106,7 +28106,7 @@ class Graphiti {
         if (isParametric && tValue !== null && tValue !== undefined) {
             // For parametric functions, show (x, y) | t = value with 3 sig figs for t
             // But still check for common trig values if the function contains trig
-            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot)\}\}/i;
+            const trigRegex = /(?:\\?(?:sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(?:\s*\(|\\left\())|(?:\\operatorname\{(?:\\mathrm\{)?(?:arc)?(?:sin|cos|tan|sec|csc|cot)(?:\})?\})/i;
             const hasTrig = func.expression && trigRegex.test(func.expression);
             
             let xStr, yStr;
@@ -28130,7 +28130,7 @@ class Graphiti {
             shouldUsePiFractions = this.angleMode === 'radians';
             shouldUseCommonValues = true; // Also check common values for r
         } else {
-            const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot)\}\}/i;
+            const trigRegex = /(?:\\?(?:sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(?:\s*\(|\\left\())|(?:\\operatorname\{(?:\\mathrm\{)?(?:arc)?(?:sin|cos|tan|sec|csc|cot)(?:\})?\})/i;
             
             if (func && func.expression) {
                 // Check if the primary function contains trig
@@ -28826,8 +28826,8 @@ class Graphiti {
         // Check if any enabled function contains trigonometric functions
         // Include only circular trig functions (basic, reciprocal, inverse).
         // Hyperbolic functions are not angle-based and should not trigger pi formatting.
-        // Matches both basic format: sin( and LaTeX format: \sin\left(
-        const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(\s*\(|\\left\()/i;
+        // Matches plain forms, LaTeX command forms, and MathLive \operatorname forms.
+        const trigRegex = /(?:\\?(?:sin|cos|tan|asin|acos|atan|sec|csc|cot|asec|acsc|acot)(?:\s*\(|\\left\())|(?:\\operatorname\{(?:\\mathrm\{)?(?:arc)?(?:sin|cos|tan|sec|csc|cot)(?:\})?\})/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -28848,9 +28848,9 @@ class Graphiti {
 
     containsRegularTrigFunctions() {
         // Check if any enabled function contains regular (non-inverse) trigonometric functions
-        // Matches plain regular trig (sin(...)) and LaTeX commands (\sin\left(...)).
+        // Matches plain regular trig, LaTeX commands, and MathLive \operatorname forms.
         // Word-boundary matching prevents asin/arcsin from being misclassified as regular trig.
-        const regularTrigRegex = /(?:\b(?:sin|cos|tan|sec|csc|cot)\s*\(|\\(?:sin|cos|tan|sec|csc|cot)\s*\\left\()/i;
+        const regularTrigRegex = /(?:\b(?:sin|cos|tan|sec|csc|cot)\s*\(|\\(?:sin|cos|tan|sec|csc|cot)\s*\\left\(|\\operatorname\{(?:\\mathrm\{)?(?:sin|cos|tan|sec|csc|cot)(?:\})?\})/i;
         return this.getAllFunctions().some(func => 
             func.enabled && 
             func.expression && 
@@ -28861,9 +28861,9 @@ class Graphiti {
     // Check trig functions in current mode only (for axis formatting)
     currentModeContainsRegularTrigFunctions() {
         // Check if any enabled function in current mode contains regular (non-inverse) trig functions
-        // Matches plain regular trig (sin(...)) and LaTeX commands (\sin\left(...)).
+        // Matches plain regular trig, LaTeX commands, and MathLive \operatorname forms.
         // Word-boundary matching prevents asin/arcsin from being misclassified as regular trig.
-        const regularTrigRegex = /(?:\b(?:sin|cos|tan|sec|csc|cot)\s*\(|\\(?:sin|cos|tan|sec|csc|cot)\s*\\left\()/i;
+        const regularTrigRegex = /(?:\b(?:sin|cos|tan|sec|csc|cot)\s*\(|\\(?:sin|cos|tan|sec|csc|cot)\s*\\left\(|\\operatorname\{(?:\\mathrm\{)?(?:sin|cos|tan|sec|csc|cot)(?:\})?\})/i;
         return this.getCurrentFunctions().some(func => 
             func.enabled && 
             func.expression && 
