@@ -43,7 +43,7 @@ class Graphiti {
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
         
         // Size mode for display elements
-        this.sizeMode = 'large'; // 'normal' or 'large'
+        this.sizeMode = 'normal'; // 'normal' or 'large'
         
         // Plotting mode
         this.plotMode = 'cartesian'; // 'cartesian' or 'polar'
@@ -16302,14 +16302,14 @@ class Graphiti {
     }
     
     initializeSizeMode() {
-        // Always default to large size mode (no localStorage persistence)
+        // Always default to normal (small) size mode (no localStorage persistence)
         const normalIcon = document.getElementById('normal-size-icon');
         const largeIcon = document.getElementById('large-size-icon');
         
-        this.sizeMode = 'large';
+        this.sizeMode = 'normal';
         if (normalIcon && largeIcon) {
-            normalIcon.style.opacity = '0.3';  // Dim normal icon
-            largeIcon.style.opacity = '1';     // Bright large icon
+            normalIcon.style.opacity = '1';    // Bright normal icon
+            largeIcon.style.opacity = '0.3';   // Dim large icon
         }
     }
     
