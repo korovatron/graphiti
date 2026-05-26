@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.7';
+const VERSION = '1.1.8';
 
 class Graphiti {
     constructor() {
@@ -43,7 +43,7 @@ class Graphiti {
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
         
         // Size mode for display elements
-        this.sizeMode = 'normal'; // 'normal' or 'large'
+        this.sizeMode = 'large'; // 'normal' or 'large'
         
         // Plotting mode
         this.plotMode = 'cartesian'; // 'cartesian' or 'polar'
@@ -16216,14 +16216,14 @@ class Graphiti {
     }
     
     initializeSizeMode() {
-        // Always default to normal size mode (no localStorage persistence)
+        // Always default to large size mode (no localStorage persistence)
         const normalIcon = document.getElementById('normal-size-icon');
         const largeIcon = document.getElementById('large-size-icon');
         
-        this.sizeMode = 'normal';
+        this.sizeMode = 'large';
         if (normalIcon && largeIcon) {
-            normalIcon.style.opacity = '1';    // Bright normal icon
-            largeIcon.style.opacity = '0.3';   // Dim large icon
+            normalIcon.style.opacity = '0.3';  // Dim normal icon
+            largeIcon.style.opacity = '1';     // Bright large icon
         }
     }
     
