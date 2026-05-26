@@ -24018,42 +24018,75 @@ class Graphiti {
         }
         
         let pathStarted = false;
-        
+        let previousScreenPos = null;
+
+        // Use an expanded viewport so edge-crossing segments are not dropped.
+        const buffer = 100;
+        const clipMinX = -buffer;
+        const clipMaxX = this.viewport.width + buffer;
+        const clipMinY = -buffer;
+        const clipMaxY = this.viewport.height + buffer;
+
+        const pointInExpandedViewport = (p) => {
+            return p.x >= clipMinX && p.x <= clipMaxX && p.y >= clipMinY && p.y <= clipMaxY;
+        };
+
+        const segmentIntersectsExpandedViewport = (a, b) => {
+            if (pointInExpandedViewport(a) || pointInExpandedViewport(b)) {
+                return true;
+            }
+
+            // Fast reject using segment AABB against expanded viewport AABB.
+            const segMinX = Math.min(a.x, b.x);
+            const segMaxX = Math.max(a.x, b.x);
+            const segMinY = Math.min(a.y, b.y);
+            const segMaxY = Math.max(a.y, b.y);
+
+            if (segMaxX < clipMinX || segMinX > clipMaxX || segMaxY < clipMinY || segMinY > clipMaxY) {
+                return false;
+            }
+
+            return true;
+        };
+
         for (let i = 0; i < func.points.length; i++) {
             const point = func.points[i];
-            
+
             // Skip NaN points (discontinuities)
-            if (!isFinite(point.y)) {
-                // End current path if one was started
+            if (!isFinite(point.x) || !isFinite(point.y)) {
                 if (pathStarted) {
                     this.ctx.stroke();
                     pathStarted = false;
                 }
+                previousScreenPos = null;
                 continue;
             }
-            
+
             const screenPos = this.worldToScreen(point.x, point.y);
-            
-            // Be more inclusive for drawing points, especially for function boundaries
-            // Allow points that are slightly outside the viewport to be drawn
-            const buffer = 100; // Increased buffer for better boundary visibility
-            if (screenPos.x >= -buffer && screenPos.x <= this.viewport.width + buffer &&
-                screenPos.y >= -buffer && screenPos.y <= this.viewport.height + buffer) {
-                
-                if (!pathStarted || point.connected === false) {
-                    // Start a new path
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(screenPos.x, screenPos.y);
-                    pathStarted = true;
-                } else {
-                    // Continue the current path
-                    this.ctx.lineTo(screenPos.x, screenPos.y);
+
+            // A false connected flag marks the start of a new segment.
+            if (point.connected === false || !previousScreenPos) {
+                if (pathStarted) {
+                    this.ctx.stroke();
+                    pathStarted = false;
                 }
+                previousScreenPos = screenPos;
+                continue;
+            }
+
+            if (segmentIntersectsExpandedViewport(previousScreenPos, screenPos)) {
+                if (!pathStarted) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(previousScreenPos.x, previousScreenPos.y);
+                    pathStarted = true;
+                }
+                this.ctx.lineTo(screenPos.x, screenPos.y);
             } else if (pathStarted) {
-                // Point is outside viewport, end current path
                 this.ctx.stroke();
                 pathStarted = false;
             }
+
+            previousScreenPos = screenPos;
         }
         
         // Stroke the final path if one was started
