@@ -6248,8 +6248,10 @@ class Graphiti {
         }
 
         const { trigType, a, b, c } = trigData;
-        const pi = Math.PI;
-        const baseRoot = trigType === 'cos' ? (pi / 2) : 0;
+        // Keep zero-set spacing in radians; degree-mode adjustment is encoded by
+        // coefficient extraction from trig arguments.
+        const periodHalfTurn = Math.PI;
+        const baseRoot = trigType === 'cos' ? (periodHalfTurn / 2) : 0;
 
         const corners = [
             { x: this.viewport.minX, y: this.viewport.minY },
@@ -6266,8 +6268,8 @@ class Graphiti {
             if (s > sMax) sMax = s;
         }
 
-        const nMin = Math.ceil((sMin + c - baseRoot) / pi) - 1;
-        const nMax = Math.floor((sMax + c - baseRoot) / pi) + 1;
+        const nMin = Math.ceil((sMin + c - baseRoot) / periodHalfTurn) - 1;
+        const nMax = Math.floor((sMax + c - baseRoot) / periodHalfTurn) + 1;
         if (!isFinite(nMin) || !isFinite(nMax) || nMin > nMax) {
             return null;
         }
@@ -6283,7 +6285,7 @@ class Graphiti {
         for (const index of nOrder) {
             if (segmentsAdded >= segmentBudget) break;
             const n = nMin + index;
-            const d = (baseRoot + n * pi) - c;
+            const d = (baseRoot + n * periodHalfTurn) - c;
             const segment = this.clipLineToViewport(a, b, d, eps);
             if (segment) {
                 points.push({ x: segment.start.x, y: segment.start.y, connected: true });
@@ -6361,7 +6363,14 @@ class Graphiti {
     }
 
     extractLinearCoefficients(expression) {
-        const compiled = this.getCompiledExpression(expression);
+        let expressionForEval = expression;
+        if (this.angleMode === 'degrees') {
+            // Trig arguments are interpreted in degrees, so convert the full
+            // linear argument to radians before coefficient extraction.
+            expressionForEval = `((${expressionForEval})*pi/180)`;
+        }
+
+        const compiled = this.getCompiledExpression(expressionForEval);
         const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
 
         const evalAt = (x, y) => {
@@ -6921,8 +6930,8 @@ class Graphiti {
         let leftExpressionForEval = equation.leftExpression;
         let rightExpressionForEval = equation.rightExpression;
         if (this.angleMode === 'degrees') {
-            leftExpressionForEval = this.convertTrigToDegreeMode(leftExpressionForEval);
-            rightExpressionForEval = this.convertTrigToDegreeMode(rightExpressionForEval);
+            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
         }
         const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
         const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
@@ -7241,8 +7250,8 @@ class Graphiti {
         let leftExpressionForEval = equation.leftExpression;
         let rightExpressionForEval = equation.rightExpression;
         if (this.angleMode === 'degrees') {
-            leftExpressionForEval = this.convertTrigToDegreeMode(leftExpressionForEval);
-            rightExpressionForEval = this.convertTrigToDegreeMode(rightExpressionForEval);
+            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
         }
         const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
         const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
@@ -7577,8 +7586,8 @@ class Graphiti {
         let leftExpressionForEval = equation.leftExpression;
         let rightExpressionForEval = equation.rightExpression;
         if (this.angleMode === 'degrees') {
-            leftExpressionForEval = this.convertTrigToDegreeMode(leftExpressionForEval);
-            rightExpressionForEval = this.convertTrigToDegreeMode(rightExpressionForEval);
+            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
         }
         const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
         const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
@@ -8291,7 +8300,7 @@ class Graphiti {
                 const hasRegularTrig = /\b(sin|cos|tan|sec|csc|cosec|cot)\s*\(/i.test(processedExpression);
                 hasInverseTrig = this.getCachedRegex('inverseTrig').test(processedExpression);
                 if (hasRegularTrig) {
-                    processedExpression = this.convertTrigToDegreeMode(processedExpression);
+                    processedExpression = this.convertTrigToDegreeModeImplicitCartesian(processedExpression);
                 }
             }
             
@@ -16799,22 +16808,8 @@ class Graphiti {
             }
         }
         
-        // Only adjust viewport if there are trig functions that would be affected
-        // BUT: Don't adjust viewport in polar mode - must maintain equal aspect ratio
-        if (this.plotMode !== 'polar' && this.containsTrigFunctions()) {
-            // Use the same smart viewport logic as the reset button for consistency
-            const smartViewport = this.getSmartResetViewport();
-            this.viewport.minX = smartViewport.minX;
-            this.viewport.maxX = smartViewport.maxX;
-            this.viewport.minY = smartViewport.minY;
-            this.viewport.maxY = smartViewport.maxY;
-            
-            // Update scale for consistent grid/label spacing
-            this.updateViewportScale();
-            
-            // Update range inputs to reflect the new ranges
-            this.updateRangeInputs();
-        }
+        // Keep cartesian viewport numerically unchanged when toggling RAD/DEG.
+        // Angle mode only changes trig interpretation, not axis bounds.
         
         // Convert parametric t-range when switching angle modes
         if (this.plotMode === 'cartesian') {
@@ -17098,6 +17093,12 @@ class Graphiti {
         }
         
         return result;
+    }
+
+    convertTrigToDegreeModeImplicitCartesian(expression) {
+        // Cartesian implicit trig uses the same degree conversion as explicit trig:
+        // trig arguments are interpreted in degrees uniformly.
+        return this.convertTrigToDegreeMode(expression);
     }
     
     worldToScreen(worldX, worldY) {
