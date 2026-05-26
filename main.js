@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.4';
+const VERSION = '1.1.5';
 
 class Graphiti {
     constructor() {
@@ -821,38 +821,6 @@ class Graphiti {
                         
                         // Force dark mode on all math fields
                         this.updateMathFieldColorSchemes();
-                        
-                        // Monitor for layout tab clicks to reset shift state on numeric layout
-                        const observer = new MutationObserver(() => {
-                            // Check if we're on the numeric layout
-                            const activeTab = document.querySelector('.ML__tab--active');
-                            if (activeTab && activeTab.textContent === '123') {
-                                // We're on the numeric layout, ensure no shift state
-                                const shiftButtons = document.querySelectorAll('.ML__keycap[data-command="toggleShift"]');
-                                shiftButtons.forEach(button => {
-                                    button.classList.remove('ML__keycap--pressed', 'ML__keycap--active');
-                                });
-                                
-                                // Also clear any shift-related styling on other buttons
-                                const allButtons = document.querySelectorAll('.ML__keycap');
-                                allButtons.forEach(button => {
-                                    button.classList.remove('ML__keycap--shifted');
-                                });
-                            }
-                        });
-                        
-                        // Start observing when keyboard is available
-                        setTimeout(() => {
-                            const keyboardElement = document.querySelector('.ML__keyboard');
-                            if (keyboardElement) {
-                                observer.observe(keyboardElement, {
-                                    childList: true,
-                                    subtree: true,
-                                    attributes: true,
-                                    attributeFilter: ['class']
-                                });
-                            }
-                        }, 1000);
                         
                         // Configure virtual keyboard behavior for mobile
                         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
