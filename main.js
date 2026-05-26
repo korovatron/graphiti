@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.9';
+const VERSION = '1.1.10';
 
 class Graphiti {
     constructor() {
@@ -7647,11 +7647,13 @@ class Graphiti {
         const viewportHeight = this.viewport.maxY - this.viewport.minY;
         const viewportSize = Math.max(viewportWidth, viewportHeight);
 
-        if (viewportSize > 500) return 8000;
-        if (viewportSize > 200) return 10000;
-        if (viewportSize > 100) return 12000;
-        if (viewportSize > 50) return 14000;
-        return 18000;
+        // Higher budgets reduce "missing segment" artefacts in wide views where
+        // compact high-curvature features need many short contour segments.
+        if (viewportSize > 500) return 20000;
+        if (viewportSize > 200) return 30000;
+        if (viewportSize > 100) return 45000;
+        if (viewportSize > 50) return 60000;
+        return 80000;
     }
 
     addSegmentsWithBudget(targetSegments, newSegments, budget) {
@@ -7729,14 +7731,15 @@ class Graphiti {
         };
         
         // Optimization strategy depends on VISIBLE viewport size (not extended)
-        // At very wide zoom (>80 units), curves are tiny - use full high-res grid
+        // At wide zoom (>40 units), curves are tiny and alignment-sensitive,
+        // so prefer full high-res grid to avoid missing features.
         // At normal/close zoom, use localized optimization for speed
         const viewportWidth = viewport.maxX - viewport.minX;
         const viewportHeight = viewport.maxY - viewport.minY;
         const visibleWidth = visible.maxX - visible.minX;
         const visibleHeight = visible.maxY - visible.minY;
         const visibleSize = Math.max(visibleWidth, visibleHeight);
-        const useFullGrid = visibleSize > 80;
+        const useFullGrid = visibleSize > 40;
         
         if (useFullGrid) {
             // Wide zoom: Full grid evaluation for reliability
