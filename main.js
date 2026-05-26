@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.4';
+const VERSION = '1.1.5';
 
 class Graphiti {
     constructor() {
@@ -930,6 +930,24 @@ class Graphiti {
                             if (screen.orientation) {
                                 screen.orientation.addEventListener('change', closeKeyboardOnOrientationChange);
                             }
+
+                            // iOS shift-latch fix:
+                            // After pointerup on the shift key correctly latches shift, iOS fires a
+                            // synthetic mouseup on window which MathLive handles by resetting
+                            // shiftPressCount to 0, cancelling the latch. We intercept that mouseup
+                            // in the capturing phase (before MathLive's bubble-phase listener) and
+                            // suppress it when it originated from a shift keycap tap.
+                            window.addEventListener('mouseup', (e) => {
+                                if (!window.mathVirtualKeyboard?.visible) return;
+                                let node = e.target;
+                                while (node && node !== document.body) {
+                                    if (node.classList && node.classList.contains('shift')) {
+                                        e.stopImmediatePropagation();
+                                        return;
+                                    }
+                                    node = node.parentElement;
+                                }
+                            }, { capture: true });
                         }
                         
                         // Force dark mode on the virtual keyboard after everything is set up
