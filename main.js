@@ -4425,35 +4425,109 @@ class Graphiti {
             const tMax = this.cartesianViewport.tMax;
             const tRange = tMax - tMin;
             
-            // Use adaptive sampling based on range
-            const numPoints = Math.min(2000, Math.max(200, Math.ceil(tRange * 50)));
-            const tStep = tRange / numPoints;
-            
+            // Adaptive sampling: start coarse then refine where screen-space error is high.
+            // This keeps curves smooth when zooming into high-curvature regions.
+            const initialSegments = Math.min(1200, Math.max(240, Math.ceil(tRange * 40)));
+            const initialStep = tRange / initialSegments;
+
             // Create scope once and reuse
             const scope = this.getEvaluationScope({
                 t: 0,
                 pi: Math.PI,
                 e: Math.E
             });
-            
-            const points = [];
-            for (let i = 0; i <= numPoints; i++) {
-                const tParam = tMin + i * tStep;
-                // Convert t to radians if in degree mode (similar to polar mode)
+
+            const evaluateAt = (tParam) => {
                 scope.t = this.angleMode === 'degrees' ? (tParam * Math.PI / 180) : tParam;
-                
                 try {
                     const x = compiledX.evaluate(scope);
                     const y = compiledY.evaluate(scope);
-                    
                     if (isFinite(x) && isFinite(y)) {
-                        points.push({ x, y, connected: true });
-                    } else {
-                        // Discontinuity
-                        points.push({ x: NaN, y: NaN, connected: false });
+                        return { t: tParam, x, y, valid: true };
                     }
                 } catch (e) {
-                    // Evaluation error at this t value
+                    // Treat evaluation failures as discontinuities.
+                }
+                return { t: tParam, x: NaN, y: NaN, valid: false };
+            };
+
+            const samples = [];
+            for (let i = 0; i <= initialSegments; i++) {
+                const tParam = tMin + i * initialStep;
+                samples.push(evaluateAt(tParam));
+            }
+
+            const distancePointToSegment = (px, py, ax, ay, bx, by) => {
+                const dx = bx - ax;
+                const dy = by - ay;
+                const lenSq = dx * dx + dy * dy;
+                if (lenSq < 1e-9) return Math.hypot(px - ax, py - ay);
+                const u = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+                const clamped = Math.max(0, Math.min(1, u));
+                const cx = ax + clamped * dx;
+                const cy = ay + clamped * dy;
+                return Math.hypot(px - cx, py - cy);
+            };
+
+            const maxRefinePasses = 4;
+            const maxPoints = 12000;
+            const minTStep = tRange / 50000;
+            const maxSegmentPx = 14;
+            const maxSagittaPx = 1.0;
+
+            let refined = samples;
+            for (let pass = 0; pass < maxRefinePasses && refined.length < maxPoints; pass++) {
+                const next = [refined[0]];
+                let inserted = 0;
+
+                for (let i = 0; i < refined.length - 1; i++) {
+                    const a = refined[i];
+                    const b = refined[i + 1];
+                    const dt = b.t - a.t;
+
+                    let shouldRefine = false;
+
+                    if (dt > minTStep) {
+                        const midT = (a.t + b.t) * 0.5;
+                        const mid = evaluateAt(midT);
+
+                        if (a.valid && b.valid && mid.valid) {
+                            const aScreen = this.worldToScreen(a.x, a.y);
+                            const bScreen = this.worldToScreen(b.x, b.y);
+                            const mScreen = this.worldToScreen(mid.x, mid.y);
+
+                            const segLen = Math.hypot(bScreen.x - aScreen.x, bScreen.y - aScreen.y);
+                            const sagitta = distancePointToSegment(
+                                mScreen.x, mScreen.y,
+                                aScreen.x, aScreen.y,
+                                bScreen.x, bScreen.y
+                            );
+
+                            shouldRefine = segLen > maxSegmentPx || sagitta > maxSagittaPx;
+                        } else if (a.valid !== b.valid || !mid.valid) {
+                            // Refine near discontinuities to improve edge fidelity.
+                            shouldRefine = true;
+                        }
+
+                        if (shouldRefine && next.length < maxPoints - 1) {
+                            next.push(mid);
+                            inserted++;
+                        }
+                    }
+
+                    next.push(b);
+                    if (next.length >= maxPoints) break;
+                }
+
+                refined = next;
+                if (inserted === 0) break;
+            }
+
+            const points = [];
+            for (const sample of refined) {
+                if (sample.valid) {
+                    points.push({ x: sample.x, y: sample.y, connected: true });
+                } else {
                     points.push({ x: NaN, y: NaN, connected: false });
                 }
             }
