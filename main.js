@@ -16850,55 +16850,8 @@ class Graphiti {
         // Keep cartesian viewport numerically unchanged when toggling RAD/DEG.
         // Angle mode only changes trig interpretation, not axis bounds.
         
-        // Convert parametric t-range when switching angle modes
-        if (this.plotMode === 'cartesian') {
-            const tMinInput = document.getElementById('t-min');
-            const tMaxInput = document.getElementById('t-max');
-            
-            if (oldMode === 'radians' && this.angleMode === 'degrees') {
-                // Convert radians to degrees: multiply by 180/π
-                const oldTMin = this.cartesianViewport.tMin;
-                const oldTMax = this.cartesianViewport.tMax;
-                this.cartesianViewport.tMin = oldTMin * 180 / Math.PI;
-                this.cartesianViewport.tMax = oldTMax * 180 / Math.PI;
-                
-                if (tMinInput && tMaxInput) {
-                    // Update the input fields with converted values
-                    this.setRangeValue(tMinInput, this.cartesianViewport.tMin.toFixed(2));
-                    this.setRangeValue(tMaxInput, this.cartesianViewport.tMax.toFixed(2));
-                    this.cartesianViewport.tMinLatex = this.cartesianViewport.tMin.toFixed(2);
-                    this.cartesianViewport.tMaxLatex = this.cartesianViewport.tMax.toFixed(2);
-                }
-            } else if (oldMode === 'degrees' && this.angleMode === 'radians') {
-                // Convert degrees to radians: multiply by π/180
-                const oldTMin = this.cartesianViewport.tMin;
-                const oldTMax = this.cartesianViewport.tMax;
-                this.cartesianViewport.tMin = oldTMin * Math.PI / 180;
-                this.cartesianViewport.tMax = oldTMax * Math.PI / 180;
-                
-                if (tMinInput && tMaxInput) {
-                    // Use symbolic form for common values
-                    let minValue, maxValue;
-                    
-                    // Common t-min values
-                    if (Math.abs(oldTMin - 0) < 0.01) minValue = '0';
-                    else if (Math.abs(oldTMin - (-360)) < 0.01) minValue = '-2\\pi';
-                    else if (Math.abs(oldTMin - (-180)) < 0.01) minValue = '-\\pi';
-                    else minValue = this.cartesianViewport.tMin.toFixed(6);
-                    
-                    // Common t-max values
-                    if (Math.abs(oldTMax - 360) < 0.01) maxValue = '2\\pi';
-                    else if (Math.abs(oldTMax - 720) < 0.01) maxValue = '4\\pi';
-                    else if (Math.abs(oldTMax - 180) < 0.01) maxValue = '\\pi';
-                    else maxValue = this.cartesianViewport.tMax.toFixed(6);
-                    
-                    this.setRangeValue(tMinInput, minValue);
-                    this.setRangeValue(tMaxInput, maxValue);
-                    this.cartesianViewport.tMinLatex = minValue;
-                    this.cartesianViewport.tMaxLatex = maxValue;
-                }
-            }
-        }
+        // Keep parametric t-range numerically unchanged when toggling RAD/DEG.
+        // Angle mode changes trig interpretation only.
         
         // Always replot functions since angle mode affects trig function evaluation
         // But axis labels will only change if trig functions are present
