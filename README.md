@@ -191,6 +191,7 @@ An advanced Progressive Web App (PWA) for plotting and exploring mathematical fu
 7. **Tracing**: Click any function curve to place a coordinate trace marker
 8. **Tangent Lines**: Hold Shift while clicking to trace the tangent line and see the slope
 9. **Typing Functions**: See Function Reference below for supported syntax when typing on keyboard
+10. **Cross-Tool Checks**: Some difficult implicit transcendental relations can render blank in external plotters (for example Desmos) even when valid solutions exist. If this happens, compare with Graphiti output and, where useful, a symbolic tool such as Wolfram|Alpha.
 
 ## Function Reference
 

@@ -5996,6 +5996,7 @@ class Graphiti {
             this.activeImplicitCalculations.add(func.id);
             
             let points = [];
+            let implicitRenderMode = 'marching';
             
             // Parse the implicit equation/inequality f(x,y) = g(x,y) into f(x,y) - g(x,y) = 0
             const functionType = this.detectFunctionType(func.expression);
@@ -6019,78 +6020,25 @@ class Graphiti {
                 // Don't clear existing points - keep them visible during cancellation
                 return;
             }
-            
-            if (highResForIntersections) {
-                const result = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
-                if (!result) {
-                    console.warn('High-res marching squares returned undefined');
-                    this.activeImplicitCalculations.delete(func.id);
-                    return;
-                }
-                points = result.points || result; // Handle both old and new format
-                if (result.gridData) {
-                    func.gridData = result.gridData;
-                    // Invalidate intersection cache since grid data changed
-                    if (functionType === 'implicit-inequality') {
-                        this.invalidateInequalityIntersectionCache();
-                        // Invalidate shading cache for this function
-                        this.implicitShadingCache.delete(func.id);
-                    }
-                }
+
+            // Optimisation 3 fast path:
+            // Detect periodic line-family implicit forms like sin(ax+by+c)=0,
+            // cos(ax+by+c)=0, tan(ax+by+c)=0 and draw analytically.
+            const analyticPoints = this.tryAnalyticTrigLineFamily(equation, func.id, calculationId);
+            if (analyticPoints) {
+                points = analyticPoints;
+                implicitRenderMode = 'analytic';
             } else {
-                // Use adaptive resolution for inequalities (much faster), standard for equations
-                if (functionType === 'implicit-inequality') {
-                    const result = await this.marchingSquaresAdaptiveAsync(equation, immediate, func.id, calculationId);
+            
+                if (highResForIntersections) {
+                    const result = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
                     if (!result) {
-                        console.warn('Adaptive marching squares returned undefined');
+                        console.warn('High-res marching squares returned undefined');
                         this.activeImplicitCalculations.delete(func.id);
                         return;
                     }
-                    points = result.points || result;
-                    if (result.gridData) {
-                        func.gridData = result.gridData;
-                        // Invalidate intersection cache since grid data changed
-                        this.invalidateInequalityIntersectionCache();
-                        // Invalidate shading cache for this function
-                        this.implicitShadingCache.delete(func.id);
-                    }
-                } else {
-                    // Progressive rendering for implicit equations:
-                    // show a coarse contour quickly, then refine if still current.
-                    if (!immediate) {
-                        const coarseResult = await this.marchingSquaresAsync(equation, true, func.id, calculationId, 0.45);
-                        if (!coarseResult) {
-                            console.warn('Coarse marching squares returned undefined');
-                            this.activeImplicitCalculations.delete(func.id);
-                            return;
-                        }
-
-                        const coarsePoints = coarseResult.points || coarseResult;
-
-                        if (this.isCalculationCancelled(func.id, calculationId)) {
-                            this.activeImplicitCalculations.delete(func.id);
-                            return;
-                        }
-
-                        this.applyImplicitFunctionPoints(func, coarsePoints);
-                        this.draw();
-
-                        // Yield to keep UI responsive before refinement starts.
-                        await new Promise(resolve => setTimeout(resolve, 0));
-
-                        if (this.isCalculationCancelled(func.id, calculationId)) {
-                            this.activeImplicitCalculations.delete(func.id);
-                            return;
-                        }
-                    }
-
-                    const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId, 1.0);
-                    if (!result) {
-                        console.warn('Standard marching squares returned undefined');
-                        this.activeImplicitCalculations.delete(func.id);
-                        return;
-                    }
-                    points = result.points || result;
+                    points = result.points || result; // Handle both old and new format
+                    implicitRenderMode = 'marching-highres';
                     if (result.gridData) {
                         func.gridData = result.gridData;
                         // Invalidate intersection cache since grid data changed
@@ -6100,9 +6048,75 @@ class Graphiti {
                             this.implicitShadingCache.delete(func.id);
                         }
                     }
+                } else {
+                    // Use adaptive resolution for inequalities (much faster), standard for equations
+                    if (functionType === 'implicit-inequality') {
+                        const result = await this.marchingSquaresAdaptiveAsync(equation, immediate, func.id, calculationId);
+                        if (!result) {
+                            console.warn('Adaptive marching squares returned undefined');
+                            this.activeImplicitCalculations.delete(func.id);
+                            return;
+                        }
+                        points = result.points || result;
+                        implicitRenderMode = 'marching-adaptive';
+                        if (result.gridData) {
+                            func.gridData = result.gridData;
+                            // Invalidate intersection cache since grid data changed
+                            this.invalidateInequalityIntersectionCache();
+                            // Invalidate shading cache for this function
+                            this.implicitShadingCache.delete(func.id);
+                        }
+                    } else {
+                        // Progressive rendering for implicit equations:
+                        // show a coarse contour quickly, then refine if still current.
+                        if (!immediate) {
+                            const coarseResult = await this.marchingSquaresAsync(equation, true, func.id, calculationId, 0.45);
+                            if (!coarseResult) {
+                                console.warn('Coarse marching squares returned undefined');
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
+
+                            const coarsePoints = coarseResult.points || coarseResult;
+
+                            if (this.isCalculationCancelled(func.id, calculationId)) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
+
+                            this.applyImplicitFunctionPoints(func, coarsePoints);
+                            this.draw();
+
+                            // Yield to keep UI responsive before refinement starts.
+                            await new Promise(resolve => setTimeout(resolve, 0));
+
+                            if (this.isCalculationCancelled(func.id, calculationId)) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
+                        }
+
+                        const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId, 1.0);
+                        if (!result) {
+                            console.warn('Standard marching squares returned undefined');
+                            this.activeImplicitCalculations.delete(func.id);
+                            return;
+                        }
+                        points = result.points || result;
+                        implicitRenderMode = 'marching-standard';
+                        if (result.gridData) {
+                            func.gridData = result.gridData;
+                            // Invalidate intersection cache since grid data changed
+                            if (functionType === 'implicit-inequality') {
+                                this.invalidateInequalityIntersectionCache();
+                                // Invalidate shading cache for this function
+                                this.implicitShadingCache.delete(func.id);
+                            }
+                        }
+                    }
                 }
             }
-            
+
             // Final cancellation check before setting results
             if (this.isCalculationCancelled(func.id, calculationId)) {
                 this.activeImplicitCalculations.delete(func.id);
@@ -6110,6 +6124,7 @@ class Graphiti {
                 return;
             }
             
+            func.implicitRenderMode = implicitRenderMode;
             this.applyImplicitFunctionPoints(func, points);
             
             this.activeImplicitCalculations.delete(func.id);
@@ -6125,6 +6140,236 @@ class Graphiti {
             // Don't clear existing points on error - keep them visible
             this.activeImplicitCalculations.delete(func.id);
         }
+    }
+
+    tryAnalyticTrigLineFamily(equation, functionId = null, calculationId = null) {
+        const trigData = this.extractTrigLineFamilyEquation(equation);
+        if (!trigData) {
+            return null;
+        }
+
+        const { trigType, a, b, c } = trigData;
+        const pi = Math.PI;
+        const baseRoot = trigType === 'cos' ? (pi / 2) : 0;
+
+        const corners = [
+            { x: this.viewport.minX, y: this.viewport.minY },
+            { x: this.viewport.minX, y: this.viewport.maxY },
+            { x: this.viewport.maxX, y: this.viewport.minY },
+            { x: this.viewport.maxX, y: this.viewport.maxY }
+        ];
+
+        let sMin = Infinity;
+        let sMax = -Infinity;
+        for (const p of corners) {
+            const s = a * p.x + b * p.y;
+            if (s < sMin) sMin = s;
+            if (s > sMax) sMax = s;
+        }
+
+        const nMin = Math.ceil((sMin + c - baseRoot) / pi) - 1;
+        const nMax = Math.floor((sMax + c - baseRoot) / pi) + 1;
+        if (!isFinite(nMin) || !isFinite(nMax) || nMin > nMax) {
+            return null;
+        }
+
+        const nCount = nMax - nMin + 1;
+        const nOrder = this.getBalancedIndexOrder(nCount);
+        const points = [];
+        const segmentBudget = this.getImplicitSegmentBudget();
+        const eps = 1e-9;
+
+        let segmentsAdded = 0;
+        let inspected = 0;
+        for (const index of nOrder) {
+            if (segmentsAdded >= segmentBudget) break;
+            const n = nMin + index;
+            const d = (baseRoot + n * pi) - c;
+            const segment = this.clipLineToViewport(a, b, d, eps);
+            if (segment) {
+                points.push({ x: segment.start.x, y: segment.start.y, connected: true });
+                points.push({ x: segment.end.x, y: segment.end.y, connected: true });
+                points.push({ x: NaN, y: NaN, connected: false });
+                segmentsAdded++;
+            }
+
+            inspected++;
+            if (inspected % 200 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
+                return [];
+            }
+        }
+
+        return points;
+    }
+
+    extractTrigLineFamilyEquation(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const left = equation.leftExpression.replace(/\s+/g, '');
+        const right = equation.rightExpression.replace(/\s+/g, '');
+
+        let trigSide = null;
+        if (this.isConstantZeroExpression(left)) {
+            trigSide = right;
+        } else if (this.isConstantZeroExpression(right)) {
+            trigSide = left;
+        } else {
+            return null;
+        }
+
+        // Only accept a pure single trig call with a non-nested argument,
+        // e.g. sin(ax+by+c), cos(ax+by+c), tan(ax+by+c).
+        const trigMatch = trigSide.match(/^([+-]?(?:\d+(?:\.\d+)?(?:e[+-]?\d+)?)?\*?)?(sin|cos|tan)\(([^()]+)\)$/i);
+        if (!trigMatch) {
+            return null;
+        }
+
+        const trigType = trigMatch[2].toLowerCase();
+        const argExpr = trigMatch[3];
+        const linear = this.extractLinearCoefficients(argExpr);
+        if (!linear) {
+            return null;
+        }
+
+        const magnitude = Math.hypot(linear.a, linear.b);
+        if (!isFinite(magnitude) || magnitude < 1e-10) {
+            return null;
+        }
+
+        return {
+            trigType,
+            a: linear.a,
+            b: linear.b,
+            c: linear.c
+        };
+    }
+
+    isConstantZeroExpression(expression) {
+        if (!expression) return false;
+        const compact = expression.replace(/\s+/g, '');
+        if (compact === '0' || compact === '+0' || compact === '-0') {
+            return true;
+        }
+
+        try {
+            const value = math.evaluate(compact, { pi: Math.PI, e: Math.E });
+            return typeof value === 'number' && isFinite(value) && Math.abs(value) < 1e-12;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    extractLinearCoefficients(expression) {
+        const compiled = this.getCompiledExpression(expression);
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+
+        const evalAt = (x, y) => {
+            scope.x = x;
+            scope.y = y;
+            try {
+                const value = compiled.evaluate(scope);
+                return (typeof value === 'number' && isFinite(value)) ? value : null;
+            } catch (error) {
+                return null;
+            }
+        };
+
+        const c = evalAt(0, 0);
+        const x1 = evalAt(1, 0);
+        const y1 = evalAt(0, 1);
+        if (c === null || x1 === null || y1 === null) {
+            return null;
+        }
+
+        const a = x1 - c;
+        const b = y1 - c;
+
+        const testX = 0.37;
+        const testY = -0.22;
+        const testValue = evalAt(testX, testY);
+        if (testValue === null) {
+            return null;
+        }
+
+        const reconstructed = a * testX + b * testY + c;
+        const scale = Math.max(1, Math.abs(testValue), Math.abs(reconstructed));
+        if (Math.abs(testValue - reconstructed) > (1e-8 * scale)) {
+            return null;
+        }
+
+        return { a, b, c };
+    }
+
+    clipLineToViewport(a, b, d, eps = 1e-9) {
+        const points = [];
+        const minX = this.viewport.minX;
+        const maxX = this.viewport.maxX;
+        const minY = this.viewport.minY;
+        const maxY = this.viewport.maxY;
+
+        const pushUniquePoint = (x, y) => {
+            for (const p of points) {
+                if (Math.abs(p.x - x) < 1e-8 && Math.abs(p.y - y) < 1e-8) {
+                    return;
+                }
+            }
+            points.push({ x, y });
+        };
+
+        if (Math.abs(b) > eps) {
+            const yAtMinX = (d - a * minX) / b;
+            if (isFinite(yAtMinX) && yAtMinX >= minY - eps && yAtMinX <= maxY + eps) {
+                pushUniquePoint(minX, Math.max(minY, Math.min(maxY, yAtMinX)));
+            }
+
+            const yAtMaxX = (d - a * maxX) / b;
+            if (isFinite(yAtMaxX) && yAtMaxX >= minY - eps && yAtMaxX <= maxY + eps) {
+                pushUniquePoint(maxX, Math.max(minY, Math.min(maxY, yAtMaxX)));
+            }
+        }
+
+        if (Math.abs(a) > eps) {
+            const xAtMinY = (d - b * minY) / a;
+            if (isFinite(xAtMinY) && xAtMinY >= minX - eps && xAtMinY <= maxX + eps) {
+                pushUniquePoint(Math.max(minX, Math.min(maxX, xAtMinY)), minY);
+            }
+
+            const xAtMaxY = (d - b * maxY) / a;
+            if (isFinite(xAtMaxY) && xAtMaxY >= minX - eps && xAtMaxY <= maxX + eps) {
+                pushUniquePoint(Math.max(minX, Math.min(maxX, xAtMaxY)), maxY);
+            }
+        }
+
+        if (points.length < 2) {
+            return null;
+        }
+
+        let bestStart = points[0];
+        let bestEnd = points[1];
+        let bestDistSq = -1;
+        for (let i = 0; i < points.length; i++) {
+            for (let j = i + 1; j < points.length; j++) {
+                const dx = points[i].x - points[j].x;
+                const dy = points[i].y - points[j].y;
+                const distSq = dx * dx + dy * dy;
+                if (distSq > bestDistSq) {
+                    bestDistSq = distSq;
+                    bestStart = points[i];
+                    bestEnd = points[j];
+                }
+            }
+        }
+
+        if (bestDistSq <= eps * eps) {
+            return null;
+        }
+
+        return {
+            start: bestStart,
+            end: bestEnd
+        };
     }
 
     applyImplicitFunctionPoints(func, points) {
@@ -10669,7 +10914,8 @@ class Graphiti {
                 fps: document.getElementById('perf-fps'),
                 loop: document.getElementById('perf-loop'),
                 state: document.getElementById('perf-state'),
-                frame: document.getElementById('perf-frame')
+                frame: document.getElementById('perf-frame'),
+                implicit: document.getElementById('perf-implicit')
             };
         }
         
@@ -22542,7 +22788,7 @@ class Graphiti {
         this.performance.lastOverlayUpdate = now;
         
         const elements = this.performance.overlayElements;
-        if (!elements.fps || !elements.loop || !elements.state || !elements.frame) return;
+        if (!elements.fps || !elements.loop || !elements.state || !elements.frame || !elements.implicit) return;
         
         // Update FPS - color coded
         const fps = this.performance.fps;
@@ -22563,6 +22809,48 @@ class Graphiti {
         const frameTime = this.deltaTime || 0;
         elements.frame.textContent = frameTime > 0 ? `${frameTime.toFixed(1)}ms` : '--';
         elements.frame.className = 'perf-value ' + (frameTime <= 16 ? 'good' : frameTime <= 33 ? 'warning' : 'error');
+
+        // Update implicit render mode summary (fast path vs marching squares)
+        const implicitFunctions = this.getCurrentFunctions().filter(func => {
+            if (!func || !func.enabled || !func.expression) return false;
+            const functionType = this.detectFunctionType(func.expression);
+            return functionType === 'implicit' || functionType === 'implicit-inequality';
+        });
+
+        if (implicitFunctions.length === 0) {
+            elements.implicit.textContent = '--';
+            elements.implicit.className = 'perf-value';
+            return;
+        }
+
+        let analyticCount = 0;
+        let marchingCount = 0;
+        let pendingCount = 0;
+
+        for (const func of implicitFunctions) {
+            const mode = func.implicitRenderMode;
+            if (mode === 'analytic') {
+                analyticCount++;
+            } else if (typeof mode === 'string' && mode.startsWith('marching')) {
+                marchingCount++;
+            } else {
+                pendingCount++;
+            }
+        }
+
+        if (analyticCount > 0 && marchingCount === 0 && pendingCount === 0) {
+            elements.implicit.textContent = `Fast ${analyticCount}/${implicitFunctions.length}`;
+            elements.implicit.className = 'perf-value good';
+        } else if (marchingCount > 0 && analyticCount === 0 && pendingCount === 0) {
+            elements.implicit.textContent = `March ${marchingCount}/${implicitFunctions.length}`;
+            elements.implicit.className = 'perf-value warning';
+        } else if (pendingCount === implicitFunctions.length) {
+            elements.implicit.textContent = 'Pending';
+            elements.implicit.className = 'perf-value warning';
+        } else {
+            elements.implicit.textContent = `Mix A${analyticCount} M${marchingCount} P${pendingCount}`;
+            elements.implicit.className = 'perf-value warning';
+        }
     }
     
     // ================================
