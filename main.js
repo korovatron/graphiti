@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.10';
+const VERSION = '1.1.11';
 
 class Graphiti {
     constructor() {
@@ -4533,9 +4533,9 @@ class Graphiti {
             const points = [];
             for (const sample of refined) {
                 if (sample.valid) {
-                    points.push({ x: sample.x, y: sample.y, connected: true });
+                    points.push({ x: sample.x, y: sample.y, t: sample.t, connected: true });
                 } else {
-                    points.push({ x: NaN, y: NaN, connected: false });
+                    points.push({ x: NaN, y: NaN, t: sample.t, connected: false });
                 }
             }
             
@@ -22096,79 +22096,112 @@ class Graphiti {
     
     findClosestParametricPoint(func, screenX, screenY, tolerance) {
         try {
-            let closestDistance = Infinity;
-            let closestWorldX = 0;
-            let closestWorldY = 0;
-            let closestT = 0;
-            
-            // Parse parametric equation
+            // Use the already-plotted points (which include t values) for segment-based
+            // detection. This fills the dead zones that discrete point sampling creates
+            // when zoomed in, because each segment is tested continuously rather than
+            // only at its endpoints.
+            const points = func.points;
+            if (points && points.length >= 2) {
+                let closestDistance = Infinity;
+                let closestWorldX = 0;
+                let closestWorldY = 0;
+                let closestT = 0;
+
+                for (let i = 0; i < points.length - 1; i++) {
+                    const a = points[i];
+                    const b = points[i + 1];
+
+                    if (!a || !b || !isFinite(a.x) || !isFinite(a.y) ||
+                        !isFinite(b.x) || !isFinite(b.y)) continue;
+
+                    const result = this.closestPointOnSegment(a.x, a.y, b.x, b.y, screenX, screenY);
+
+                    if (result.distance < closestDistance) {
+                        closestDistance = result.distance;
+                        closestWorldX = result.worldX;
+                        closestWorldY = result.worldY;
+
+                        // Interpolate t along the segment using the fraction
+                        // closestPointOnSegment returns the world coords; back out the
+                        // fraction by comparing to segment endpoints in world space.
+                        const segDx = b.x - a.x;
+                        const segDy = b.y - a.y;
+                        const segLenSq = segDx * segDx + segDy * segDy;
+                        let frac = 0;
+                        if (segLenSq > 0) {
+                            frac = ((result.worldX - a.x) * segDx + (result.worldY - a.y) * segDy) / segLenSq;
+                            frac = Math.max(0, Math.min(1, frac));
+                        }
+                        const tA = (a.t !== undefined) ? a.t : 0;
+                        const tB = (b.t !== undefined) ? b.t : tA;
+                        closestT = tA + frac * (tB - tA);
+                    }
+                }
+
+                if (closestDistance < tolerance) {
+                    return {
+                        distance: closestDistance,
+                        worldX: closestWorldX,
+                        worldY: closestWorldY,
+                        tValue: closestT
+                    };
+                }
+
+                return null;
+            }
+
+            // Fallback: func.points not yet available - sample the curve directly.
+            // (This path is rarely reached; plotting happens before any interaction.)
             const parsed = this.parseParametricEquation(func.expression);
             if (!parsed) return null;
-            
+
             let xExpr = parsed.xExpr.toLowerCase();
             let yExpr = parsed.yExpr.toLowerCase();
-            
-            // Add implicit multiplication
             xExpr = xExpr.replace(/(\d)([a-z])/g, '$1*$2');
             xExpr = xExpr.replace(/(\))([a-z])/g, '$1*$2');
             yExpr = yExpr.replace(/(\d)([a-z])/g, '$1*$2');
             yExpr = yExpr.replace(/(\))([a-z])/g, '$1*$2');
-            
+
             const compiledX = this.getCompiledExpression(xExpr);
             const compiledY = this.getCompiledExpression(yExpr);
-            
+
             const tMin = this.cartesianViewport.tMin;
             const tMax = this.cartesianViewport.tMax;
             const tRange = tMax - tMin;
-            
-            // Use higher resolution for detection (similar to polar)
             const numSamples = Math.min(1000, Math.max(200, Math.ceil(tRange * 50)));
             const tStep = tRange / numSamples;
-            
-            const scope = this.getEvaluationScope({
-                t: 0,
-                pi: Math.PI,
-                e: Math.E
-            });
-            
+
+            const scope = this.getEvaluationScope({ t: 0, pi: Math.PI, e: Math.E });
+
+            let closestDistance = Infinity;
+            let closestWorldX = 0;
+            let closestWorldY = 0;
+            let closestT = 0;
+
             for (let i = 0; i <= numSamples; i++) {
                 const tParam = tMin + i * tStep;
-                // Convert t to radians if in degree mode
                 scope.t = this.angleMode === 'degrees' ? (tParam * Math.PI / 180) : tParam;
-                
                 try {
                     const worldX = compiledX.evaluate(scope);
                     const worldY = compiledY.evaluate(scope);
-                    
                     if (!isFinite(worldX) || !isFinite(worldY)) continue;
-                    
-                    // Convert to screen coordinates and check distance
                     const screenPos = this.worldToScreen(worldX, worldY);
                     const distance = Math.sqrt(
-                        Math.pow(screenPos.x - screenX, 2) + 
+                        Math.pow(screenPos.x - screenX, 2) +
                         Math.pow(screenPos.y - screenY, 2)
                     );
-                    
                     if (distance < tolerance && distance < closestDistance) {
                         closestDistance = distance;
                         closestWorldX = worldX;
                         closestWorldY = worldY;
-                        closestT = tParam; // Store t parameter value
+                        closestT = tParam;
                     }
-                } catch (e) {
-                    // Skip invalid points
-                }
+                } catch (e) { /* skip */ }
             }
-            
+
             if (closestDistance < tolerance) {
-                return {
-                    distance: closestDistance,
-                    worldX: closestWorldX,
-                    worldY: closestWorldY,
-                    tValue: closestT
-                };
+                return { distance: closestDistance, worldX: closestWorldX, worldY: closestWorldY, tValue: closestT };
             }
-            
             return null;
         } catch (error) {
             return null;
