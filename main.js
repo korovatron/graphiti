@@ -25234,6 +25234,11 @@ class Graphiti {
             !isFinite(refinedIntersection.x) || !isFinite(refinedIntersection.y)) {
             return;
         }
+
+        // Keep the displayed marker aligned with the refined coordinate that the
+        // badge will use so the user doesn't see two different intersection positions.
+        intersection.x = refinedIntersection.x;
+        intersection.y = refinedIntersection.y;
         
         // Create a badge at the refined intersection point
         this.addIntersectionBadge(
@@ -25259,8 +25264,14 @@ class Graphiti {
         const func1IsImplicit = !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality' || func1Type === 'parametric';
         const func2IsImplicit = !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality' || func2Type === 'parametric';
         
-        // If either function is implicit or parametric, don't refine - the line segment intersection is already accurate
+        // Refine Cartesian intersections involving implicit curves against the actual
+        // equation residuals so a tapped badge uses a better local solution.
         if (func1IsImplicit || func2IsImplicit) {
+            const implicitRefined = this.refineCartesianImplicitIntersection(intersection, func1Type, func2Type);
+            if (implicitRefined) {
+                return implicitRefined;
+            }
+
             return { x: intersection.x, y: intersection.y };
         }
         
@@ -25294,6 +25305,166 @@ class Graphiti {
         const refinedY = this.evaluateFunction(func1.expression, refinedX);
         
         return { x: refinedX, y: refinedY };
+    }
+
+    refineCartesianImplicitIntersection(intersection, func1Type = null, func2Type = null) {
+        const func1 = intersection.func1;
+        const func2 = intersection.func2;
+
+        const residual1 = this.createCartesianIntersectionResidual(func1, func1Type);
+        const residual2 = this.createCartesianIntersectionResidual(func2, func2Type);
+        if (!residual1 || !residual2) {
+            return null;
+        }
+
+        let x = intersection.x;
+        let y = intersection.y;
+        let bestPoint = { x, y };
+        let bestResidual = Infinity;
+
+        const evaluatePair = (testX, testY) => {
+            const value1 = residual1(testX, testY);
+            const value2 = residual2(testX, testY);
+            if (!isFinite(value1) || !isFinite(value2)) {
+                return null;
+            }
+
+            return {
+                value1,
+                value2,
+                norm: Math.hypot(value1, value2)
+            };
+        };
+
+        const initial = evaluatePair(x, y);
+        if (!initial) {
+            return null;
+        }
+        bestResidual = initial.norm;
+
+        const viewportSpan = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY, 1);
+        const step = Math.max(1e-5, viewportSpan * 1e-6);
+        const maxStep = Math.max(0.5, viewportSpan * 0.05);
+
+        for (let iteration = 0; iteration < 10; iteration++) {
+            const current = evaluatePair(x, y);
+            if (!current) {
+                break;
+            }
+
+            if (current.norm < bestResidual) {
+                bestResidual = current.norm;
+                bestPoint = { x, y };
+            }
+
+            if (current.norm < 1e-9) {
+                break;
+            }
+
+            const fx1 = residual1(x + step, y);
+            const fy1 = residual1(x, y + step);
+            const fx2 = residual2(x + step, y);
+            const fy2 = residual2(x, y + step);
+            if (![fx1, fy1, fx2, fy2].every(Number.isFinite)) {
+                break;
+            }
+
+            const j11 = (fx1 - current.value1) / step;
+            const j12 = (fy1 - current.value1) / step;
+            const j21 = (fx2 - current.value2) / step;
+            const j22 = (fy2 - current.value2) / step;
+            const det = j11 * j22 - j12 * j21;
+            if (!isFinite(det) || Math.abs(det) < 1e-12) {
+                break;
+            }
+
+            let deltaX = (-current.value1 * j22 + j12 * current.value2) / det;
+            let deltaY = (j21 * current.value1 - j11 * current.value2) / det;
+
+            const deltaNorm = Math.hypot(deltaX, deltaY);
+            if (!isFinite(deltaNorm) || deltaNorm < 1e-12) {
+                break;
+            }
+
+            if (deltaNorm > maxStep) {
+                const scale = maxStep / deltaNorm;
+                deltaX *= scale;
+                deltaY *= scale;
+            }
+
+            let improved = false;
+            for (const damping of [1, 0.5, 0.25, 0.125]) {
+                const candidateX = x + deltaX * damping;
+                const candidateY = y + deltaY * damping;
+                const candidate = evaluatePair(candidateX, candidateY);
+                if (!candidate || candidate.norm >= current.norm) {
+                    continue;
+                }
+
+                x = candidateX;
+                y = candidateY;
+                improved = true;
+                break;
+            }
+
+            if (!improved) {
+                break;
+            }
+        }
+
+        if (!isFinite(bestPoint.x) || !isFinite(bestPoint.y)) {
+            return null;
+        }
+
+        if (!isFinite(bestResidual) || bestResidual > initial.norm) {
+            return null;
+        }
+
+        return bestPoint;
+    }
+
+    createCartesianIntersectionResidual(func, functionType = null) {
+        if (!func || !func.expression) {
+            return null;
+        }
+
+        const type = functionType || this.detectFunctionType(func.expression);
+        if (type === 'parametric' || type === 'polar' || type === 'polar-inequality' || type === 'theta-constant') {
+            return null;
+        }
+
+        if (type === 'implicit' || type === 'implicit-inequality') {
+            const equation = type === 'implicit-inequality'
+                ? this.parseImplicitInequality(func.expression)
+                : this.parseImplicitEquation(func.expression);
+            if (!equation) {
+                return null;
+            }
+
+            return (x, y) => this.evaluateImplicitEquation(equation, x, y);
+        }
+
+        if (type === 'explicit-inequality') {
+            const inequality = this.parseInequality(func.expression);
+            if (!inequality || inequality.leftSide.toLowerCase() !== 'y') {
+                return null;
+            }
+
+            const boundaryExpression = `y=${inequality.rightSide}`;
+            return (x, y) => {
+                const boundaryY = this.evaluateFunction(boundaryExpression, x);
+                return isFinite(boundaryY) ? (y - boundaryY) : null;
+            };
+        }
+
+        if (type === 'explicit') {
+            return (x, y) => {
+                const explicitY = this.evaluateFunction(func.expression, x);
+                return isFinite(explicitY) ? (y - explicitY) : null;
+            };
+        }
+
+        return null;
     }
     
     addIntersectionBadge(worldX, worldY, func1, func2) {
