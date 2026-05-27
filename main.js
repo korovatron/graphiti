@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.11';
+const VERSION = '1.1.12';
 
 class Graphiti {
     constructor() {
@@ -24657,21 +24657,7 @@ class Graphiti {
         // Draw a small, unobtrusive marker
         this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
         this.ctx.save();
-        
-        const outerRadius = this.getMarkerRadius(6);
-        const innerRadius = this.getMarkerRadius(3);
-        
-        // Outer circle (white/light background for contrast)
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
-        this.ctx.fill();
-        
-        // Inner circle (darker color to indicate intersection)
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
-        this.ctx.fill();
+        this.drawNeutralMarker(screenX, screenY);
         
         this.ctx.restore();
     }
@@ -24777,21 +24763,7 @@ class Graphiti {
         // Draw a marker with same neutral color as intersections
         this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
         this.ctx.save();
-        
-        const outerRadius = this.getMarkerRadius(6);
-        const innerRadius = this.getMarkerRadius(3);
-        
-        // Outer circle (white/light background for contrast)
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
-        this.ctx.fill();
-        
-        // Inner circle (same neutral color as intersections)
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
-        this.ctx.fill();
+        this.drawNeutralMarker(screenX, screenY);
         
         this.ctx.restore();
     }
@@ -24846,21 +24818,7 @@ class Graphiti {
             // Draw as simple markers (same neutral color as intersections)
             this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
             this.ctx.save();
-            
-            const outerRadius = this.getMarkerRadius(6);
-            const innerRadius = this.getMarkerRadius(3);
-            
-            // Outer circle (white/light background for contrast)
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            this.ctx.beginPath();
-            this.ctx.arc(marker.screenX, marker.screenY, outerRadius, 0, 2 * Math.PI);
-            this.ctx.fill();
-            
-            // Inner circle (same neutral color as intersections)
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.beginPath();
-            this.ctx.arc(marker.screenX, marker.screenY, innerRadius, 0, 2 * Math.PI);
-            this.ctx.fill();
+            this.drawNeutralMarker(marker.screenX, marker.screenY);
             
             this.ctx.restore();
         }
@@ -24932,21 +24890,7 @@ class Graphiti {
         // Draw a marker with same style as turning points/intersections
         this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
         this.ctx.save();
-        
-        const outerRadius = this.getMarkerRadius(6);
-        const innerRadius = this.getMarkerRadius(3);
-        
-        // Outer circle (white/light background for contrast)
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
-        this.ctx.fill();
-        
-        // Inner circle (same neutral color as intersections)
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
-        this.ctx.fill();
+        this.drawNeutralMarker(screenX, screenY);
         
         this.ctx.restore();
     }
@@ -25003,21 +24947,7 @@ class Graphiti {
             // Draw as simple markers
             this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
             this.ctx.save();
-            
-            const outerRadius = this.getMarkerRadius(6);
-            const innerRadius = this.getMarkerRadius(3);
-            
-            // Outer circle (white/light background for contrast)
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            this.ctx.beginPath();
-            this.ctx.arc(marker.screenX, marker.screenY, outerRadius, 0, 2 * Math.PI);
-            this.ctx.fill();
-            
-            // Inner circle (same neutral color as intersections)
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.beginPath();
-            this.ctx.arc(marker.screenX, marker.screenY, innerRadius, 0, 2 * Math.PI);
-            this.ctx.fill();
+            this.drawNeutralMarker(marker.screenX, marker.screenY);
             
             this.ctx.restore();
         }
@@ -25073,21 +25003,7 @@ class Graphiti {
             // Draw intersection marker (same style as normal intersections)
             this.ctx.setLineDash([]); // Reset any dashed line style BEFORE save
             this.ctx.save();
-            
-            const outerRadius = this.getMarkerRadius(6);
-            const innerRadius = this.getMarkerRadius(3);
-            
-            // Outer circle (white/light background for contrast)
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            this.ctx.beginPath();
-            this.ctx.arc(marker.screenX, marker.screenY, outerRadius, 0, 2 * Math.PI);
-            this.ctx.fill();
-            
-            // Inner circle (darker color to indicate intersection)
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.beginPath();
-            this.ctx.arc(marker.screenX, marker.screenY, innerRadius, 0, 2 * Math.PI);
-            this.ctx.fill();
+            this.drawNeutralMarker(marker.screenX, marker.screenY);
             
             this.ctx.restore();
         }
@@ -27362,6 +27278,38 @@ class Graphiti {
         }
         return baseRadius * 0.75; // 25% smaller in normal mode
     }
+
+    getNeutralMarkerColors() {
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+
+        if (isLightMode) {
+            return {
+                outer: 'rgba(0, 0, 0, 0.85)',
+                inner: 'rgba(255, 255, 255, 0.95)'
+            };
+        }
+
+        return {
+            outer: 'rgba(255, 255, 255, 0.9)',
+            inner: 'rgba(0, 0, 0, 0.7)'
+        };
+    }
+
+    drawNeutralMarker(screenX, screenY) {
+        const outerRadius = this.getMarkerRadius(6);
+        const innerRadius = this.getMarkerRadius(3);
+        const colors = this.getNeutralMarkerColors();
+
+        this.ctx.fillStyle = colors.outer;
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, outerRadius, 0, 2 * Math.PI);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = colors.inner;
+        this.ctx.beginPath();
+        this.ctx.arc(screenX, screenY, innerRadius, 0, 2 * Math.PI);
+        this.ctx.fill();
+    }
     
     getPanelScale() {
         // Return scale factor for UI panels based on size mode
@@ -27585,7 +27533,7 @@ class Graphiti {
                 ? badge.tValue 
                 : null;
             
-            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue, tValueParam);
+            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue, tValueParam, badge.significantPointType);
             
             // Store close button bounds for click detection
             if (badgeInfo && badgeInfo.closeButton) {
@@ -27877,7 +27825,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null, tValue = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null, tValue = null, significantPointType = null) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -27888,8 +27836,27 @@ class Graphiti {
         if (isActive) radius = this.getMarkerRadius(10);
         if (isBeingHeld) radius = this.getMarkerRadius(9);
         
-        this.ctx.strokeStyle = isBeingHeld ? '#FFD700' : '#FFFFFF'; // Gold border when being held
-        this.ctx.fillStyle = color;
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+
+        let outerCircleColor = color;
+        let innerDotColor = '#FFFFFF';
+        let circleStrokeColor = '#FFFFFF';
+
+        // Reverse marker colours in light mode only:
+        // dark mode: coloured outer + white inner (original)
+        // light mode: white outer + coloured inner (reversed)
+        if (isLightMode) {
+            outerCircleColor = '#FFFFFF';
+            innerDotColor = color;
+            circleStrokeColor = color;
+        } else {
+            outerCircleColor = color;
+            innerDotColor = '#FFFFFF';
+            circleStrokeColor = '#FFFFFF';
+        }
+
+        this.ctx.strokeStyle = isBeingHeld ? '#FFD700' : circleStrokeColor; // Gold border when being held
+        this.ctx.fillStyle = outerCircleColor;
         this.ctx.lineWidth = isBeingHeld ? 3 : 2; // Thicker border when being held
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, radius, 0, 2 * Math.PI);
@@ -27898,27 +27865,10 @@ class Graphiti {
         
         // Inner dot - slightly larger when being held
         const innerDotRadius = this.getMarkerRadius(isBeingHeld ? 3 : 2);
-        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillStyle = innerDotColor;
         this.ctx.beginPath();
         this.ctx.arc(screenX, screenY, innerDotRadius, 0, 2 * Math.PI);
         this.ctx.fill();
-        
-        // Draw integral symbol if badge has integral
-        if (hasIntegral) {
-            this.ctx.font = 'bold 20px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillStyle = '#FFFFFF';
-            
-            if (neonIntegral) {
-                // Add glow effect for neon mode
-                this.ctx.shadowBlur = 10;
-                this.ctx.shadowColor = color;
-            }
-            
-            this.ctx.fillText('∫', screenX, screenY);
-            this.ctx.shadowBlur = 0; // Reset shadow
-        }
         
         // Coordinate label with background
         let labelText;
