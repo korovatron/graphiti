@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.12';
+const VERSION = '1.1.13';
 
 class Graphiti {
     constructor() {
@@ -27271,12 +27271,12 @@ class Graphiti {
     
     getMarkerRadius(baseRadius) {
         // Return adjusted marker radius based on size mode
-        // Current size (6 outer, 3 inner) becomes large mode size
-        // Normal mode is slightly smaller
+        // Large mode uses the previous small-mode marker sizing.
+        // Small mode is reduced further to keep unselected markers unobtrusive.
         if (this.sizeMode === 'large') {
-            return baseRadius;
+            return baseRadius * 0.75;
         }
-        return baseRadius * 0.75; // 25% smaller in normal mode
+        return baseRadius * 0.6;
     }
 
     getNeutralMarkerColors() {
