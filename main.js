@@ -1685,10 +1685,10 @@ class Graphiti {
                 description: 'Area Between Curves Demo',
                 viewport: { minX: -2, maxX: 5, minY: -2, maxY: 16 },
                 badges: [
-                    { expression: 'y=x^2', x: -1, hasIntegral: true },
-                    { expression: 'y=x^2', x: 3, hasIntegral: true },
-                    { expression: 'y=2x+3', x: -1, hasIntegral: true },
-                    { expression: 'y=2x+3', x: 3, hasIntegral: true }
+                    { expression: 'y=x^2', x: -1, hasIntegral: true, significantPointType: 'intersection' },
+                    { expression: 'y=x^2', x: 3, hasIntegral: true, significantPointType: 'intersection' },
+                    { expression: 'y=2x+3', x: -1, hasIntegral: true, significantPointType: 'intersection' },
+                    { expression: 'y=2x+3', x: 3, hasIntegral: true, significantPointType: 'intersection' }
                 ]
             },
             'numerical-integration': {
@@ -1902,7 +1902,8 @@ class Graphiti {
                         badgeSpec.hasNormal || false,
                         badgeSpec.neonTangent || false,
                         badgeSpec.neonNormal || false,
-                        badgeSpec.hasIntegral || false
+                        badgeSpec.hasIntegral || false,
+                        badgeSpec.significantPointType || null
                     );
                     
                     // Track integral badges for pairing
@@ -1989,7 +1990,7 @@ class Graphiti {
     }
 
     // Helper method to programmatically add a badge with tangent/normal to a function
-    addBadgeWithTangentOrNormal(func, coordinate, hasTangent, hasNormal, neonTangent = false, neonNormal = false, hasIntegral = false) {
+    addBadgeWithTangentOrNormal(func, coordinate, hasTangent, hasNormal, neonTangent = false, neonNormal = false, hasIntegral = false, significantPointType = null) {
         // Determine if this is a polar function
         const functionType = this.detectFunctionType(func.expression);
         const isPolar = functionType === 'polar' || functionType === 'polar-inequality' || functionType === 'theta-constant';
@@ -2064,6 +2065,11 @@ class Graphiti {
                 badge.hasNormal = false;
                 // Store the original theta value for polar integrals
                 badge.polarTheta = coordinate;
+                if (significantPointType) {
+                    badge.significantPointType = significantPointType;
+                    badge.snapRefX = badge.worldX;
+                    badge.snapRefY = badge.worldY;
+                }
             }
             
             return badgeId;
@@ -2100,6 +2106,11 @@ class Graphiti {
                 badge.hasNormal = false;
                 // Ensure exact x coordinate for integrals
                 badge.worldX = coordinate;
+                if (significantPointType) {
+                    badge.significantPointType = significantPointType;
+                    badge.snapRefX = badge.worldX;
+                    badge.snapRefY = badge.worldY;
+                }
             }
             // For tangent/normal badges
             else if (hasTangent || hasNormal) {
@@ -12181,7 +12192,9 @@ class Graphiti {
                     neonTangent: targetBadge.neonTangent || false,
                     significantPointType: targetBadge.significantPointType || null,
                     func1Id: targetBadge.func1Id || null,
-                    func2Id: targetBadge.func2Id || null
+                    func2Id: targetBadge.func2Id || null,
+                    snapRefX: targetBadge.snapRefX,
+                    snapRefY: targetBadge.snapRefY
                 };
                 
                 // Store badge ID for integral pair removal if needed
@@ -12470,7 +12483,7 @@ class Graphiti {
                                             const dist = Math.sqrt(dx * dx + dy * dy);
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: tp.x, worldY: tp.y, type: 'turning' };
+                                                nearestSignificantPoint = { worldX: tp.x, worldY: tp.y, type: 'turning', id: tp.id };
                                             }
                                         }
                                     }
@@ -12485,7 +12498,7 @@ class Graphiti {
                                             const dist = Math.sqrt(dx * dx + dy * dy);
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: intercept.x, worldY: intercept.y, type: 'intercept' };
+                                                nearestSignificantPoint = { worldX: intercept.x, worldY: intercept.y, type: 'intercept', id: intercept.id };
                                             }
                                         }
                                     }
@@ -12505,7 +12518,7 @@ class Graphiti {
                                             const dist = Math.sqrt(dx * dx + dy * dy);
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: intersection.x, worldY: intersection.y, type: 'intersection', func1Id: func1Id, func2Id: func2Id };
+                                                nearestSignificantPoint = { worldX: intersection.x, worldY: intersection.y, type: 'intersection', func1Id: func1Id, func2Id: func2Id, id: intersection.id };
                                             }
                                         }
                                     }
@@ -12529,7 +12542,8 @@ class Graphiti {
                                                     worldX: tp.x, 
                                                     worldY: tp.y, 
                                                     theta: theta,
-                                                    type: 'turning' 
+                                                    type: 'turning',
+                                                    id: tp.id
                                                 };
                                             }
                                         }
@@ -12553,7 +12567,8 @@ class Graphiti {
                                                     worldX: intercept.x, 
                                                     worldY: intercept.y, 
                                                     theta: theta,
-                                                    type: 'intercept' 
+                                                    type: 'intercept',
+                                                    id: intercept.id
                                                 };
                                             }
                                         }
@@ -12582,7 +12597,8 @@ class Graphiti {
                                                     theta: theta,
                                                     type: 'intersection',
                                                     func1Id: func1Id,
-                                                    func2Id: func2Id
+                                                    func2Id: func2Id,
+                                                    id: intersection.id
                                                 };
                                             }
                                         }
@@ -12917,17 +12933,24 @@ class Graphiti {
                         newBadge.significantPointType = prevState.significantPointType || null;
                         newBadge.func1Id = prevState.func1Id || null;
                         newBadge.func2Id = prevState.func2Id || null;
+                        newBadge.snapRefX = prevState.snapRefX;
+                        newBadge.snapRefY = prevState.snapRefY;
                     } else if (!wasQuickTap && snapState.isSnapped && snapState.snappedPoint) {
                         // Dropped while snapped - link to the significant point
                         const snapType = snapState.snappedPoint.type;
                         newBadge.significantPointType = snapType === 'turning' ? 'turningPoint' : snapType;
                         newBadge.func1Id = snapState.snappedPoint.func1Id || null;
                         newBadge.func2Id = snapState.snappedPoint.func2Id || null;
+                        // Store the snap position as the reference - updated each time the point is re-found
+                        newBadge.snapRefX = snapState.snappedPoint.worldX;
+                        newBadge.snapRefY = snapState.snappedPoint.worldY;
                     } else if (!wasQuickTap) {
                         // Dropped without a snap - clear any previous link
                         newBadge.significantPointType = null;
                         newBadge.func1Id = null;
                         newBadge.func2Id = null;
+                        newBadge.snapRefX = undefined;
+                        newBadge.snapRefY = undefined;
                     }
                 }
             }
@@ -15518,115 +15541,73 @@ class Graphiti {
     
     updateBadgesFromSignificantPoints() {
         // Update badges that were created from significant points (turning points, intercepts, intersections)
-        // to match their new, more accurate positions after viewport changes
-        // Use a reasonable tolerance to account for positions before recalculation
-        const snapTolerance = 0.05; // 5% of a unit - loose enough to find matches
+        // to match their new, more accurate positions after viewport changes.
+        //
+        // Strategy: each badge with a significantPointType stores snapRefX/snapRefY - the last known
+        // world position of the linked significant point. We match by proximity to that reference
+        // (not to the badge's current position). If a match is found within tolerance we update
+        // both the badge and the reference to the freshest computed coordinates. If no match is
+        // found within tolerance the point is off-screen - the badge stays put and the reference
+        // is not changed, so the next time the point comes into view it will be found again.
+        //
+        // Tolerance: generous enough to absorb solver drift across zoom levels (typically < 1e-4)
+        // but tight enough to distinguish two separate significant points.
+        const refTolerance = 0.1;
         
-        const normalizeId = (id) => {
-            return id === null || id === undefined ? null : String(id);
-        };
-        
-        const getIntersectionEndpointIds = (intersection) => {
-            const endpoint1 = intersection.func1Id !== undefined && intersection.func1Id !== null
-                ? intersection.func1Id
-                : (intersection.func1 && intersection.func1.id !== undefined ? intersection.func1.id : null);
-            const endpoint2 = intersection.func2Id !== undefined && intersection.func2Id !== null
-                ? intersection.func2Id
-                : (intersection.func2 && intersection.func2.id !== undefined ? intersection.func2.id : null);
-            
-            return {
-                a: normalizeId(endpoint1),
-                b: normalizeId(endpoint2)
-            };
-        };
-        
-        const isSameIntersectionPair = (badge, intersection) => {
-            const badgeA = normalizeId(badge.func1Id);
-            const badgeB = normalizeId(badge.func2Id);
-            if (!badgeA || !badgeB) {
-                return false;
-            }
-            
-            const { a, b } = getIntersectionEndpointIds(intersection);
-            if (!a || !b) {
-                return false;
-            }
-            
-            return (badgeA === a && badgeB === b) || (badgeA === b && badgeB === a);
-        };
+        const normalizeId = id => (id === null || id === undefined ? null : String(id));
         
         this.input.persistentBadges.forEach(badge => {
             // Skip badges that don't have a significant point type
             if (!badge.significantPointType) return;
             
+            // Reference position: last known location of this significant point.
+            // Fall back to current badge position for badges that predate this system.
+            const refX = badge.snapRefX !== undefined ? badge.snapRefX : badge.worldX;
+            const refY = badge.snapRefY !== undefined ? badge.snapRefY : badge.worldY;
+            
+            let candidates = [];
+            
             if (badge.significantPointType === 'turningPoint') {
-                // Find the matching turning point
-                const match = this.turningPoints.find(tp => {
-                    if (tp.func && tp.func.id !== badge.functionId) return false;
-                    const dx = Math.abs(tp.x - badge.worldX);
-                    const dy = Math.abs(tp.y - badge.worldY);
-                    return dx < snapTolerance && dy < snapTolerance;
-                });
-                
-                if (match) {
-                    badge.worldX = match.x;
-                    badge.worldY = match.y;
-                    
-                    // Update tValue for parametric functions
-                    this.updateBadgeTValueIfParametric(badge);
-                }
+                candidates = this.turningPoints.filter(tp =>
+                    !tp.func || tp.func.id === badge.functionId
+                );
             } else if (badge.significantPointType === 'intercept') {
-                // Find the matching intercept
-                const match = this.intercepts.find(intercept => {
-                    if (intercept.functionId !== badge.functionId) return false;
-                    const dx = Math.abs(intercept.x - badge.worldX);
-                    const dy = Math.abs(intercept.y - badge.worldY);
-                    return dx < snapTolerance && dy < snapTolerance;
-                });
-                
-                if (match) {
-                    badge.worldX = match.x;
-                    badge.worldY = match.y;
-                    
-                    // Update tValue for parametric functions
-                    this.updateBadgeTValueIfParametric(badge);
-                }
+                candidates = this.intercepts.filter(pt => pt.functionId === badge.functionId);
             } else if (badge.significantPointType === 'intersection') {
-                // First match by endpoint identity (func1/func2) so badges follow moved implicit intersections.
-                // If no identity metadata is available, fall back to all intersections.
-                const pairCandidates = this.intersections.filter(intersection => isSameIntersectionPair(badge, intersection));
-                const candidates = pairCandidates.length > 0 ? pairCandidates : this.intersections;
-                
-                // Preserve which of multiple intersections was selected by picking nearest candidate.
-                let match = null;
-                let closestDistance = Infinity;
-                for (const intersection of candidates) {
-                    const dx = intersection.x - badge.worldX;
-                    const dy = intersection.y - badge.worldY;
-                    const distanceSq = dx * dx + dy * dy;
-                    if (distanceSq < closestDistance) {
-                        closestDistance = distanceSq;
-                        match = intersection;
-                    }
-                }
-                
-                // Last fallback for legacy cases where no candidates were found.
-                if (!match) {
-                    match = this.intersections.find(intersection => {
-                        const dx = Math.abs(intersection.x - badge.worldX);
-                        const dy = Math.abs(intersection.y - badge.worldY);
-                        return dx < snapTolerance && dy < snapTolerance;
+                // Narrow by function pair when IDs are available
+                const ba = normalizeId(badge.func1Id);
+                const bb = normalizeId(badge.func2Id);
+                if (ba && bb) {
+                    const pairCandidates = this.intersections.filter(pt => {
+                        const a = normalizeId(pt.func1Id !== undefined ? pt.func1Id : (pt.func1 && pt.func1.id));
+                        const b = normalizeId(pt.func2Id !== undefined ? pt.func2Id : (pt.func2 && pt.func2.id));
+                        return (ba === a && bb === b) || (ba === b && bb === a);
                     });
-                }
-                
-                if (match) {
-                    badge.worldX = match.x;
-                    badge.worldY = match.y;
-                    
-                    // Update tValue for parametric functions
-                    this.updateBadgeTValueIfParametric(badge);
+                    candidates = pairCandidates.length > 0 ? pairCandidates : this.intersections;
+                } else {
+                    candidates = this.intersections;
                 }
             }
+            
+            // Find the candidate closest to the reference position
+            let match = null;
+            let closestDist = Infinity;
+            for (const pt of candidates) {
+                const dx = pt.x - refX;
+                const dy = pt.y - refY;
+                const d = dx * dx + dy * dy;
+                if (d < closestDist) { closestDist = d; match = pt; }
+            }
+            
+            // Reject if beyond tolerance - point is off-screen; leave badge exactly where it is
+            if (!match || Math.sqrt(closestDist) > refTolerance) return;
+            
+            badge.worldX = match.x;
+            badge.worldY = match.y;
+            // Update reference to the freshest computed coordinates so next lookup stays accurate
+            badge.snapRefX = match.x;
+            badge.snapRefY = match.y;
+            this.updateBadgeTValueIfParametric(badge);
         });
     }
     
@@ -17936,6 +17917,22 @@ class Graphiti {
         });
     }
 
+    // Generate a stable string ID for a significant point, robust to small numerical variation
+    // across zoom levels. Quantises coordinates to 4 decimal places.
+    generateSignificantPointId(type, funcId1, funcId2, x, y) {
+        const qx = Math.round(x * 10000) / 10000;
+        const qy = Math.round(y * 10000) / 10000;
+        if (type === 'intersection') {
+            const [a, b] = [String(funcId1 ?? ''), String(funcId2 ?? '')].sort();
+            return `intersect_${a}_${b}_${qx}_${qy}`;
+        } else if (type === 'turningPoint') {
+            return `tp_${funcId1}_${type}_${qx}_${qy}`;
+        } else {
+            // intercept types: 'x-intercept', 'y-intercept', polar variants, etc.
+            return `intercept_${funcId1}_${type}_${qx}_${qy}`;
+        }
+    }
+
     updateCombinedIntersections() {
         // Only recalculate tangent and normal intersections if implicit intersections are not pending
         // This prevents recalculating with stale data when explicit intersections finish early
@@ -17946,6 +17943,15 @@ class Graphiti {
         
         // Combine explicit, implicit, tangent, and normal intersections for display
         this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections, ...this.normalIntersections];
+        
+        // Stamp stable IDs onto each intersection so snapped badges can look up by ID
+        for (const pt of this.intersections) {
+            if (!pt.id) {
+                const f1 = pt.func1Id !== undefined ? pt.func1Id : (pt.func1 ? pt.func1.id : null);
+                const f2 = pt.func2Id !== undefined ? pt.func2Id : (pt.func2 ? pt.func2.id : null);
+                pt.id = this.generateSignificantPointId('intersection', f1, f2, pt.x, pt.y);
+            }
+        }
         
         // Rebind any significant-point badges (especially intersections) to recalculated points.
         // This is critical for async implicit recalculations where marker locations update later.
@@ -18139,13 +18145,20 @@ class Graphiti {
             return [];
         }
         
+        let result;
         if (this.plotMode === 'cartesian') {
-            return this.findCartesianAxisIntercepts();
+            result = this.findCartesianAxisIntercepts();
         } else if (this.plotMode === 'polar') {
-            return this.findPolarAxisIntercepts();
+            result = this.findPolarAxisIntercepts();
+        } else {
+            result = [];
         }
         
-        return [];
+        // Stamp stable IDs onto each intercept
+        for (const pt of result) {
+            pt.id = this.generateSignificantPointId(pt.type, pt.functionId, null, pt.x, pt.y);
+        }
+        return result;
     }
     
     findCartesianAxisIntercepts() {
@@ -19656,12 +19669,19 @@ class Graphiti {
             return [];
         }
         
-        // Route to appropriate method based on plot mode
+        let result;
         if (this.plotMode === 'polar') {
-            return this.findPolarTurningPoints();
+            result = this.findPolarTurningPoints();
         } else {
-            return this.findCartesianTurningPoints();
+            result = this.findCartesianTurningPoints();
         }
+        
+        // Stamp stable IDs onto each turning point
+        for (const pt of result) {
+            const funcId = pt.func ? pt.func.id : null;
+            pt.id = this.generateSignificantPointId('turningPoint', funcId, null, pt.x, pt.y);
+        }
+        return result;
     }
     
     findCartesianTurningPoints() {
