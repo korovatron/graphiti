@@ -12178,7 +12178,10 @@ class Graphiti {
                     neonIntegral: targetBadge.neonIntegral,
                     tangentSlope: targetBadge.tangentSlope,
                     tangentExpression: targetBadge.tangentExpression,
-                    neonTangent: targetBadge.neonTangent || false
+                    neonTangent: targetBadge.neonTangent || false,
+                    significantPointType: targetBadge.significantPointType || null,
+                    func1Id: targetBadge.func1Id || null,
+                    func2Id: targetBadge.func2Id || null
                 };
                 
                 // Store badge ID for integral pair removal if needed
@@ -12502,7 +12505,7 @@ class Graphiti {
                                             const dist = Math.sqrt(dx * dx + dy * dy);
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: intersection.x, worldY: intersection.y, type: 'intersection' };
+                                                nearestSignificantPoint = { worldX: intersection.x, worldY: intersection.y, type: 'intersection', func1Id: func1Id, func2Id: func2Id };
                                             }
                                         }
                                     }
@@ -12577,7 +12580,9 @@ class Graphiti {
                                                     worldX: intersection.x, 
                                                     worldY: intersection.y, 
                                                     theta: theta,
-                                                    type: 'intersection' 
+                                                    type: 'intersection',
+                                                    func1Id: func1Id,
+                                                    func2Id: func2Id
                                                 };
                                             }
                                         }
@@ -12900,6 +12905,33 @@ class Graphiti {
                 }
             }
             
+            // Link badge to significant point if snapped, or restore/clear the link
+            {
+                const newBadge = this.input.persistentBadges.find(b => b.id === badgeId);
+                const snapState = this.input.badgeInteraction.snapState;
+                const wasQuickTap = this.input.badgeInteraction.wasTap;
+                const prevState = this.input.badgeInteraction.originalBadgeState;
+                if (newBadge) {
+                    if (wasQuickTap && prevState) {
+                        // Badge didn't move - restore the link it had before
+                        newBadge.significantPointType = prevState.significantPointType || null;
+                        newBadge.func1Id = prevState.func1Id || null;
+                        newBadge.func2Id = prevState.func2Id || null;
+                    } else if (!wasQuickTap && snapState.isSnapped && snapState.snappedPoint) {
+                        // Dropped while snapped - link to the significant point
+                        const snapType = snapState.snappedPoint.type;
+                        newBadge.significantPointType = snapType === 'turning' ? 'turningPoint' : snapType;
+                        newBadge.func1Id = snapState.snappedPoint.func1Id || null;
+                        newBadge.func2Id = snapState.snappedPoint.func2Id || null;
+                    } else if (!wasQuickTap) {
+                        // Dropped without a snap - clear any previous link
+                        newBadge.significantPointType = null;
+                        newBadge.func1Id = null;
+                        newBadge.func2Id = null;
+                    }
+                }
+            }
+            
             // Handle tangent based on original badge state
             const originalState = this.input.badgeInteraction.originalBadgeState;
             const wasTap = this.input.badgeInteraction.wasTap;
@@ -13182,6 +13214,11 @@ class Graphiti {
         this.input.tracing.neonTangent = false;
         this.input.tracing.hasNormal = false;
         this.input.tracing.neonNormal = false;
+        
+        // Reset snap state so next drag starts fresh
+        this.input.badgeInteraction.snapState.isSnapped = false;
+        this.input.badgeInteraction.snapState.snappedPoint = null;
+        this.input.badgeInteraction.snapState.snapStartTime = 0;
         
         // Clear dragging flag
         this.isDraggingBadge = false;
