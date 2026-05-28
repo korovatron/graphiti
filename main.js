@@ -2139,7 +2139,7 @@ class Graphiti {
         // For explicit functions, evaluate at exact x
         const functionType = this.detectFunctionType(func.expression);
         if (functionType === 'explicit' || functionType === 'explicit-inequality') {
-            const y = this.evaluateFunction(func, targetX);
+            const y = this.evaluateFunction(func.expression, targetX);
             if (y !== null && isFinite(y)) {
                 return { worldX: targetX, worldY: y, function: func };
             }
