@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.14';
+const VERSION = '1.1.15';
 
 class Graphiti {
     constructor() {
@@ -9560,6 +9560,69 @@ class Graphiti {
             
             // Update the appropriate badge
             const badgeToUpdate = limitType === 'lower' ? integralBadges[0] : integralBadges[1];
+
+            // After the badge position is updated, check if it coincides with a known
+            // significant point. If so, establish the link so pan/zoom/parameter changes
+            // will continue to track it. If not, clear any stale link.
+            const updateSignificantPointLink = () => {
+                const wx = badgeToUpdate.worldX;
+                const wy = badgeToUpdate.worldY;
+                const snapTol = 0.01; // tight: only auto-link when the typed value lands on the point
+                const normalizeId = id => (id === null || id === undefined ? null : String(id));
+                const fStr = String(funcId);
+
+                let bestMatch = null;
+                let bestDist = Infinity;
+                let bestType = null;
+                let bestFunc1Id = null;
+                let bestFunc2Id = null;
+
+                // Check turning points for this function
+                for (const tp of this.turningPoints) {
+                    if (tp.func && tp.func.id !== funcId) continue;
+                    const d = Math.sqrt((tp.x - wx) ** 2 + (tp.y - wy) ** 2);
+                    if (d < snapTol && d < bestDist) {
+                        bestDist = d; bestMatch = tp;
+                        bestType = 'turningPoint'; bestFunc1Id = null; bestFunc2Id = null;
+                    }
+                }
+
+                // Check axis intercepts for this function
+                for (const pt of this.intercepts) {
+                    if (pt.functionId !== funcId) continue;
+                    const d = Math.sqrt((pt.x - wx) ** 2 + (pt.y - wy) ** 2);
+                    if (d < snapTol && d < bestDist) {
+                        bestDist = d; bestMatch = pt;
+                        bestType = 'intercept'; bestFunc1Id = null; bestFunc2Id = null;
+                    }
+                }
+
+                // Check intersections that involve this function
+                for (const pt of this.intersections) {
+                    const f1 = normalizeId(pt.func1Id !== undefined ? pt.func1Id : (pt.func1 && pt.func1.id));
+                    const f2 = normalizeId(pt.func2Id !== undefined ? pt.func2Id : (pt.func2 && pt.func2.id));
+                    if (f1 !== fStr && f2 !== fStr) continue;
+                    const d = Math.sqrt((pt.x - wx) ** 2 + (pt.y - wy) ** 2);
+                    if (d < snapTol && d < bestDist) {
+                        bestDist = d; bestMatch = pt;
+                        bestType = 'intersection'; bestFunc1Id = f1; bestFunc2Id = f2;
+                    }
+                }
+
+                if (bestMatch) {
+                    badgeToUpdate.significantPointType = bestType;
+                    badgeToUpdate.func1Id = bestFunc1Id;
+                    badgeToUpdate.func2Id = bestFunc2Id;
+                    badgeToUpdate.snapRefX = bestMatch.x;
+                    badgeToUpdate.snapRefY = bestMatch.y;
+                } else {
+                    badgeToUpdate.significantPointType = null;
+                    badgeToUpdate.func1Id = null;
+                    badgeToUpdate.func2Id = null;
+                    badgeToUpdate.snapRefX = undefined;
+                    badgeToUpdate.snapRefY = undefined;
+                }
+            };
             
             // Get the function to evaluate the new position
             const func = this.findFunctionById(funcId);
@@ -9654,6 +9717,7 @@ class Graphiti {
                     // Calculate cartesian coordinates
                     badgeToUpdate.worldX = r * Math.cos(numericValue);
                     badgeToUpdate.worldY = r * Math.sin(numericValue);
+                    updateSignificantPointLink();
                 }
             } else if (functionType === 'parametric') {
                 // Update t value for parametric functions
@@ -9683,6 +9747,7 @@ class Graphiti {
                             badgeToUpdate.tValue = numericValue;
                             badgeToUpdate.worldX = x;
                             badgeToUpdate.worldY = y;
+                            updateSignificantPointLink();
                         }
                     } catch (error) {
                         console.warn('Error evaluating parametric function:', error);
@@ -9694,6 +9759,7 @@ class Graphiti {
                 if (y !== null && isFinite(y)) {
                     badgeToUpdate.worldX = numericValue;
                     badgeToUpdate.worldY = y;
+                    updateSignificantPointLink();
                 }
             }
             
@@ -15550,10 +15616,6 @@ class Graphiti {
         // found within tolerance the point is off-screen - the badge stays put and the reference
         // is not changed, so the next time the point comes into view it will be found again.
         //
-        // Tolerance: generous enough to absorb solver drift across zoom levels (typically < 1e-4)
-        // but tight enough to distinguish two separate significant points.
-        const refTolerance = 0.1;
-        
         const normalizeId = id => (id === null || id === undefined ? null : String(id));
         
         this.input.persistentBadges.forEach(badge => {
@@ -15599,8 +15661,12 @@ class Graphiti {
                 if (d < closestDist) { closestDist = d; match = pt; }
             }
             
-            // Reject if beyond tolerance - point is off-screen; leave badge exactly where it is
-            if (!match || Math.sqrt(closestDist) > refTolerance) return;
+            // No candidates means the point is off-screen; leave badge exactly where it is.
+            // When candidates exist, always use the closest one - the function-pair / function-ID
+            // filter already scopes the set to the correct significant point, so no distance cap
+            // is needed. This allows badges to follow their linked point even when a parameter
+            // change moves the intersection by more than the old zoom-drift tolerance.
+            if (!match) return;
             
             badge.worldX = match.x;
             badge.worldY = match.y;
