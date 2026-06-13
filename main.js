@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.15';
+const VERSION = '1.1.16';
 
 class Graphiti {
     constructor() {
@@ -11944,6 +11944,7 @@ class Graphiti {
             } else {
                 this.handlePointerStart(e.clientX, e.clientY);
             }
+            this.updateCanvasCursorFromClient(e.clientX, e.clientY);
         });
         this.canvas.addEventListener('mousemove', (e) => {
             if (this.input.zoomRect.active) {
@@ -11951,12 +11952,22 @@ class Graphiti {
             } else {
                 this.handlePointerMove(e.clientX, e.clientY);
             }
+            this.updateCanvasCursorFromClient(e.clientX, e.clientY);
         });
         this.canvas.addEventListener('mouseup', (e) => {
             if (e.button === 2 && this.input.zoomRect.active) {
                 this.handleRightClickEnd();
             } else {
                 this.handlePointerEnd();
+            }
+            this.updateCanvasCursorFromClient(e.clientX, e.clientY);
+        });
+        this.canvas.addEventListener('mouseenter', (e) => {
+            this.updateCanvasCursorFromClient(e.clientX, e.clientY);
+        });
+        this.canvas.addEventListener('mouseleave', () => {
+            if (this.shouldUseDesktopCursorFeedback()) {
+                this.canvas.style.cursor = 'default';
             }
         });
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent context menu
@@ -11969,6 +11980,7 @@ class Graphiti {
             } else {
                 this.handlePointerEnd();
             }
+            this.updateCanvasCursorFromClient(e.clientX, e.clientY);
         });
         document.addEventListener('mousemove', (e) => {
             // Handle zoom rectangle drag outside canvas
@@ -11978,6 +11990,7 @@ class Graphiti {
             // Only handle if mouse is down and cursor is outside canvas
             if (this.input.mouse.down) {
                 this.handlePointerMove(e.clientX, e.clientY);
+                this.updateCanvasCursorFromClient(e.clientX, e.clientY);
             }
         });
         
@@ -12198,6 +12211,84 @@ class Graphiti {
             }
         });
     }
+
+    shouldUseDesktopCursorFeedback() {
+        return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    }
+
+    updateCanvasCursorFromClient(clientX, clientY) {
+        if (!this.canvas || !this.shouldUseDesktopCursorFeedback()) {
+            return;
+        }
+
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasX = clientX - rect.left;
+        const canvasY = clientY - rect.top;
+        this.updateCanvasCursor(canvasX, canvasY);
+    }
+
+    updateCanvasCursor(canvasX, canvasY) {
+        if (!this.canvas || !this.shouldUseDesktopCursorFeedback()) {
+            return;
+        }
+
+        const cursor = this.resolveCanvasCursor(canvasX, canvasY);
+        if (this.canvas.style.cursor !== cursor) {
+            this.canvas.style.cursor = cursor;
+        }
+    }
+
+    resolveCanvasCursor(canvasX, canvasY) {
+        if (this.currentState !== this.states.GRAPHING) {
+            return 'default';
+        }
+
+        if (this.input.mouse.down && !this.input.tracing.active) {
+            return 'grabbing';
+        }
+
+        // Keep drag affordance while moving an active trace/badge interaction.
+        if (this.input.mouse.down && (this.input.tracing.active || this.input.badgeInteraction.targetBadge)) {
+            return 'grabbing';
+        }
+
+        this.updateBadgeScreenPositions();
+
+        if (this.findIntegralLabelAtPoint(canvasX, canvasY)) {
+            return 'pointer';
+        }
+
+        for (const badge of this.input.persistentBadges) {
+            if (!badge.closeButton) {
+                continue;
+            }
+
+            const cb = badge.closeButton;
+            if (canvasX >= cb.x && canvasX <= cb.x + cb.width &&
+                canvasY >= cb.y && canvasY <= cb.y + cb.height) {
+                return 'pointer';
+            }
+        }
+
+        const hoveredBadge = this.findBadgeAtScreenPosition(canvasX, canvasY, 25);
+        if (hoveredBadge && hoveredBadge.isDraggable !== false) {
+            return 'grab';
+        }
+
+        if (this.showIntersections && this.findIntersectionAtScreenPoint(canvasX, canvasY, this.getSignificantPointHitTolerance(true))) {
+            return 'pointer';
+        }
+
+        if (this.showIntercepts && this.findInterceptAtScreenPoint(canvasX, canvasY, this.getSignificantPointHitTolerance(true))) {
+            return 'pointer';
+        }
+
+        if (this.showTurningPoints && this.findTurningPointAtScreenPoint(canvasX, canvasY, this.getSignificantPointHitTolerance(true))) {
+            return 'pointer';
+        }
+
+        return 'crosshair';
+    }
     
     handlePointerStart(x, y) {
         // Convert client coordinates to canvas coordinates
@@ -12362,7 +12453,7 @@ class Graphiti {
             }
             
             // Third, check for intersection marker tap (only if no badge/label was clicked)
-            const tappedIntersection = this.findIntersectionAtScreenPoint(x, y);
+            const tappedIntersection = this.findIntersectionAtScreenPoint(canvasX, canvasY);
             if (tappedIntersection) {
                 // Handle intersection tap and exit early
                 this.handleIntersectionTap(tappedIntersection, x, y);
@@ -12370,7 +12461,7 @@ class Graphiti {
             }
             
             // Fourth, check for intercept marker tap (only if no intersection was clicked)
-            const tappedIntercept = this.findInterceptAtScreenPoint(x, y);
+            const tappedIntercept = this.findInterceptAtScreenPoint(canvasX, canvasY);
             if (tappedIntercept) {
                 // Handle intercept tap and exit early
                 this.handleInterceptTap(tappedIntercept, x, y);
@@ -12378,7 +12469,7 @@ class Graphiti {
             }
             
             // Fifth, check for turning point marker tap (only if no intersection/intercept was clicked)
-            const tappedTurningPoint = this.findTurningPointAtScreenPoint(x, y);
+            const tappedTurningPoint = this.findTurningPointAtScreenPoint(canvasX, canvasY);
             if (tappedTurningPoint) {
                 // Handle turning point tap and exit early
                 this.handleTurningPointTap(tappedTurningPoint, x, y);
@@ -24785,8 +24876,16 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    findIntersectionAtScreenPoint(screenX, screenY) {
-        const tolerance = 15; // pixels - tolerance for tap detection
+    getSignificantPointHitTolerance(isHover = false) {
+        // Keep touch interactions forgiving while tightening desktop precision.
+        if (this.input.touch.active) {
+            return isHover ? 14 : 18;
+        }
+        return isHover ? 8 : 10;
+    }
+
+    findIntersectionAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // Check regular intersections
         for (const intersection of this.intersections) {
@@ -25132,8 +25231,8 @@ class Graphiti {
         }
     }
     
-    findTurningPointAtScreenPoint(screenX, screenY) {
-        const tolerance = 15; // pixels - tolerance for tap detection
+    findTurningPointAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // First check regular turning points (when viewport is stable)
         if (!this.isViewportChanging) {
@@ -25168,8 +25267,8 @@ class Graphiti {
         return null;
     }
     
-    findInterceptAtScreenPoint(screenX, screenY) {
-        const tolerance = 15; // pixels - tolerance for tap detection
+    findInterceptAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // First check regular intercepts (when viewport is stable)
         if (!this.isViewportChanging) {
