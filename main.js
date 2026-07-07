@@ -4205,6 +4205,15 @@ class Graphiti {
                     
                     // If there's a sudden large jump, insert a break
                     if (yDiff > jumpThreshold || hasDiscontinuity) {
+                        if (hasForcedAsymptoteBreak) {
+                            // Known asymptote crossings are already split during sampling.
+                            // Use a hard break only and avoid synthetic edge points that can
+                            // collapse into a vertical bar at extreme zoom levels.
+                            processedPoints.push({ x: prevPoint.x, y: NaN, connected: false });
+                            processedPoints.push({ x: point.x, y: point.y, connected: false });
+                            continue;
+                        }
+
                         const leftPreferredBound = prevPoint.y >= 0 ? 'max' : 'min';
                         const rightPreferredBound = point.y >= 0 ? 'max' : 'min';
 
