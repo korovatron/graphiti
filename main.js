@@ -7844,10 +7844,55 @@ class Graphiti {
             const expressionCore = expressionRhsMatch && expressionRhsMatch[1]
                 ? expressionRhsMatch[1].trim()
                 : normalizedExpression;
-            const logArgumentPattern = /\b(?:ln|log)\s*\(([^()]+)\)/g;
-            let logMatch;
-            while ((logMatch = logArgumentPattern.exec(expressionCore)) !== null) {
-                const argumentExpression = logMatch[1].trim();
+            const extractLogFirstArguments = (expr) => {
+                const args = [];
+
+                for (let i = 0; i < expr.length; i++) {
+                    if (expr.slice(i, i + 3) !== 'log') continue;
+
+                    const before = i === 0 ? '' : expr[i - 1];
+                    if (/[a-z0-9_]/.test(before)) continue;
+
+                    let j = i + 3;
+                    while (j < expr.length && /\s/.test(expr[j])) j++;
+                    if (j >= expr.length || expr[j] !== '(') continue;
+
+                    const innerStart = j + 1;
+                    let depth = 0;
+                    let commaAtDepth0 = -1;
+                    let closeIndex = -1;
+
+                    for (let k = innerStart; k < expr.length; k++) {
+                        const ch = expr[k];
+                        if (ch === '(') {
+                            depth++;
+                        } else if (ch === ')') {
+                            if (depth === 0) {
+                                closeIndex = k;
+                                break;
+                            }
+                            depth--;
+                        } else if (ch === ',' && depth === 0 && commaAtDepth0 === -1) {
+                            commaAtDepth0 = k;
+                        }
+                    }
+
+                    if (closeIndex === -1) continue;
+
+                    const argEnd = commaAtDepth0 !== -1 ? commaAtDepth0 : closeIndex;
+                    const firstArg = expr.substring(innerStart, argEnd).trim();
+                    if (firstArg) {
+                        args.push(firstArg);
+                    }
+
+                    i = closeIndex;
+                }
+
+                return args;
+            };
+
+            const logArguments = extractLogFirstArguments(expressionCore);
+            for (const argumentExpression of logArguments) {
                 if (!argumentExpression) continue;
 
                 try {
