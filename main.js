@@ -3818,7 +3818,21 @@ class Graphiti {
             // Apply adaptive resolution based on function count (balanced for quality and performance)
             const functionCount = this.getCurrentFunctions().filter(f => f.enabled).length;
             const adaptiveResolution = functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
-            const maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
+            const expressionForSampling = processedExpression.toLowerCase();
+            const hasXVariable = /\bx\b/.test(expressionForSampling);
+            const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
+            const baseAsymptoteSpacing = this.angleMode === 'degrees' ? 180 : Math.PI;
+
+            let frequencyMultiplier = 1;
+            const multiplierMatch = expressionForSampling.match(/(?:tan|cot|sec|csc)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/);
+            if (multiplierMatch) {
+                const parsed = parseFloat(multiplierMatch[1]);
+                if (isFinite(parsed) && parsed > 0) {
+                    frequencyMultiplier = parsed;
+                }
+            }
+
+            const asymptoteSpacing = hasAsymptoteTrigWithX ? (baseAsymptoteSpacing / frequencyMultiplier) : null;
             
             // Add buffer zone for smooth panning - calculate extra points beyond visible viewport
             // Buffer is 50% of viewport width on each side, giving smooth panning until you exceed it
@@ -3826,6 +3840,18 @@ class Graphiti {
             const bufferSize = viewportWidth * 0.5;
             const bufferedMinX = this.viewport.minX - bufferSize;
             const bufferedMaxX = this.viewport.maxX + bufferSize;
+
+            const bufferedRange = bufferedMaxX - bufferedMinX;
+            let maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
+
+            if (hasAsymptoteTrigWithX && isFinite(asymptoteSpacing) && asymptoteSpacing > 0) {
+                // Keep enough points per asymptote interval so tan/cot/sec/csc stay stable when zoomed far out.
+                const asymptoteIntervals = bufferedRange / asymptoteSpacing;
+                const samplesPerInterval = functionCount > 6 ? 18 : 26;
+                const asymptoteResolution = Math.ceil(asymptoteIntervals * samplesPerInterval);
+                const asymptoteResolutionCap = functionCount > 10 ? 24000 : functionCount > 6 ? 32000 : 60000;
+                maxPlotResolution = Math.min(Math.max(adaptiveResolution, asymptoteResolution), asymptoteResolutionCap);
+            }
             
             const step = (bufferedMaxX - bufferedMinX) / maxPlotResolution;
             
@@ -3894,6 +3920,153 @@ class Graphiti {
             const processedPoints = [];
             const viewportHeight = this.viewport.maxY - this.viewport.minY;
             const jumpThreshold = viewportHeight * 2; // If jump is larger than 2x viewport height
+            const suspiciousJumpThreshold = viewportHeight * 0.25; // Trigger extra checks for potentially discontinuous segments
+            const viewportMagnitude = Math.max(Math.abs(this.viewport.minY), Math.abs(this.viewport.maxY), 1);
+            const outsideMargin = viewportHeight * 0.1;
+            let segmentSampleCount = 14;
+            if (hasAsymptoteTrigWithX && isFinite(asymptoteSpacing) && asymptoteSpacing > 0) {
+                const relativeStep = Math.abs(step) / asymptoteSpacing;
+                segmentSampleCount = Math.max(14, Math.min(48, Math.ceil(relativeStep * 40)));
+            }
+
+            const evaluateAtX = (xValue) => {
+                try {
+                    scope.x = xValue;
+                    const result = compiledExpression.evaluate(scope);
+                    const yValue = hasInverseTrig ? result * 180 / Math.PI : result;
+                    return isFinite(yValue) ? yValue : null;
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const findFirstOutsideViewport = (xStart, xEnd, fromLeft, preferredBound = null) => {
+                const dx = xEnd - xStart;
+                if (dx <= 0) {
+                    return null;
+                }
+
+                let bestPoint = null;
+                const steps = 24;
+
+                for (let stepIndex = 1; stepIndex <= steps; stepIndex++) {
+                    const t = stepIndex / steps;
+                    const x = fromLeft ? (xStart + dx * t) : (xEnd - dx * t);
+                    const y = evaluateAtX(x);
+
+                    if (y === null) {
+                        continue;
+                    }
+
+                    if (bestPoint === null || Math.abs(y) > Math.abs(bestPoint.y)) {
+                        bestPoint = { x, y };
+                    }
+
+                    const aboveMax = y > this.viewport.maxY;
+                    const belowMin = y < this.viewport.minY;
+                    const isOutside = aboveMax || belowMin;
+
+                    if (isOutside) {
+                        if (preferredBound === 'max' && aboveMax) {
+                            return { x, y };
+                        }
+                        if (preferredBound === 'min' && belowMin) {
+                            return { x, y };
+                        }
+                        if (preferredBound !== 'max' && preferredBound !== 'min') {
+                            return { x, y };
+                        }
+
+                        // Keep searching for preferred boundary crossing, but remember fallback.
+                        if (!bestPoint || Math.abs(y) > Math.abs(bestPoint.y)) {
+                            bestPoint = { x, y };
+                        }
+                    }
+                }
+
+                // Fallback: if we never leave the viewport, still return the most extreme sampled value.
+                return bestPoint;
+            };
+
+            const analyseSegment = (xStart, yStart, xEnd, yEnd) => {
+                const dx = xEnd - xStart;
+                if (dx <= 0) {
+                    return {
+                        hasDiscontinuity: false,
+                        leftOutside: null,
+                        rightOutside: null
+                    };
+                }
+
+                let hasNonFiniteInterior = false;
+                let hasAboveMax = false;
+                let hasBelowMin = false;
+                let hasPositiveInterior = yStart > 0 || yEnd > 0;
+                let hasNegativeInterior = yStart < 0 || yEnd < 0;
+                let maxInteriorMagnitude = Math.max(Math.abs(yStart), Math.abs(yEnd));
+                let minAbsY = Math.min(Math.abs(yStart), Math.abs(yEnd));
+                let leftOutside = null;
+                let rightOutside = null;
+                const nearZeroThreshold = Math.max(0.12, viewportHeight * 0.004);
+
+                for (let s = 1; s < segmentSampleCount; s++) {
+                    const t = s / segmentSampleCount;
+                    const sampleX = xStart + dx * t;
+                    const sampleY = evaluateAtX(sampleX);
+
+                    if (sampleY === null) {
+                        hasNonFiniteInterior = true;
+                        continue;
+                    }
+
+                    const absY = Math.abs(sampleY);
+                    if (absY > maxInteriorMagnitude) {
+                        maxInteriorMagnitude = absY;
+                    }
+                    if (absY < minAbsY) {
+                        minAbsY = absY;
+                    }
+
+                    if (sampleY > 0) hasPositiveInterior = true;
+                    if (sampleY < 0) hasNegativeInterior = true;
+
+                    const aboveMax = sampleY > this.viewport.maxY;
+                    const belowMin = sampleY < this.viewport.minY;
+                    const outsideViewport = aboveMax || belowMin;
+
+                    if (aboveMax) hasAboveMax = true;
+                    if (belowMin) hasBelowMin = true;
+
+                    if (outsideViewport) {
+                        if (!leftOutside) {
+                            leftOutside = { x: sampleX, y: sampleY };
+                        }
+                        rightOutside = { x: sampleX, y: sampleY };
+                    }
+                }
+
+                const straddlesTopAndBottom = hasAboveMax && hasBelowMin;
+                const endpointSignFlip = yStart * yEnd < 0;
+                const endpointLarge = Math.abs(yStart) > suspiciousJumpThreshold && Math.abs(yEnd) > suspiciousJumpThreshold;
+                const interiorSpike = maxInteriorMagnitude > Math.max(viewportMagnitude * 6, Math.max(Math.abs(yStart), Math.abs(yEnd), 1) * 5);
+                const hasNearZero = minAbsY <= nearZeroThreshold;
+                const signFlipWithoutZero = endpointSignFlip && !hasNearZero;
+                const mixedSignsWithoutZero = hasPositiveInterior && hasNegativeInterior && !hasNearZero;
+
+                const hasDiscontinuity =
+                    hasNonFiniteInterior ||
+                    straddlesTopAndBottom ||
+                    interiorSpike ||
+                    (endpointSignFlip && endpointLarge) ||
+                    signFlipWithoutZero ||
+                    mixedSignsWithoutZero;
+
+                return {
+                    hasDiscontinuity,
+                    leftOutside,
+                    rightOutside
+                };
+            };
             
             for (let i = 0; i < points.length; i++) {
                 const point = points[i];
@@ -3906,11 +4079,48 @@ class Graphiti {
                 const prevPoint = points[i - 1];
                 if (isFinite(prevPoint.y) && isFinite(point.y)) {
                     const yDiff = Math.abs(point.y - prevPoint.y);
+                    const segmentAnalysis = analyseSegment(prevPoint.x, prevPoint.y, point.x, point.y);
+                    const hasDiscontinuity = segmentAnalysis.hasDiscontinuity;
                     
                     // If there's a sudden large jump, insert a break
-                    if (yDiff > jumpThreshold) {
+                    if (yDiff > jumpThreshold || hasDiscontinuity) {
+                        const leftPreferredBound = prevPoint.y >= 0 ? 'max' : 'min';
+                        const rightPreferredBound = point.y >= 0 ? 'max' : 'min';
+
+                        let leftEdgePoint = segmentAnalysis.leftOutside;
+                        if (!leftEdgePoint) {
+                            leftEdgePoint = findFirstOutsideViewport(prevPoint.x, point.x, true, leftPreferredBound);
+                        }
+                        if (!leftEdgePoint) {
+                            leftEdgePoint = {
+                                x: prevPoint.x + (point.x - prevPoint.x) * 0.45,
+                                y: prevPoint.y >= 0 ? (this.viewport.maxY + outsideMargin) : (this.viewport.minY - outsideMargin)
+                            };
+                        }
+
+                        if (leftEdgePoint && leftEdgePoint.x > prevPoint.x && leftEdgePoint.x < point.x) {
+                            processedPoints.push({ x: leftEdgePoint.x, y: leftEdgePoint.y, connected: true });
+                        }
+
                         processedPoints.push({ x: prevPoint.x, y: NaN, connected: false });
-                        processedPoints.push({ x: point.x, y: point.y, connected: false });
+
+                        let rightEdgePoint = segmentAnalysis.rightOutside;
+                        if (!rightEdgePoint) {
+                            rightEdgePoint = findFirstOutsideViewport(prevPoint.x, point.x, false, rightPreferredBound);
+                        }
+                        if (!rightEdgePoint) {
+                            rightEdgePoint = {
+                                x: point.x - (point.x - prevPoint.x) * 0.45,
+                                y: point.y >= 0 ? (this.viewport.maxY + outsideMargin) : (this.viewport.minY - outsideMargin)
+                            };
+                        }
+
+                        if (rightEdgePoint && rightEdgePoint.x > prevPoint.x && rightEdgePoint.x < point.x) {
+                            processedPoints.push({ x: rightEdgePoint.x, y: rightEdgePoint.y, connected: false });
+                            processedPoints.push({ x: point.x, y: point.y, connected: true });
+                        } else {
+                            processedPoints.push({ x: point.x, y: point.y, connected: false });
+                        }
                     } else {
                         processedPoints.push(point);
                     }
@@ -24352,6 +24562,7 @@ class Graphiti {
         
         let pathStarted = false;
         let previousScreenPos = null;
+        let previousWorldPoint = null;
 
         // Use an expanded viewport so edge-crossing segments are not dropped.
         const buffer = 100;
@@ -24382,6 +24593,35 @@ class Graphiti {
             return true;
         };
 
+        const isLikelyAsymptoteBridge = (prevWorld, nextWorld, prevScreen, nextScreen) => {
+            if (!prevWorld || !nextWorld || !prevScreen || !nextScreen) {
+                return false;
+            }
+
+            const worldDx = Math.abs(nextWorld.x - prevWorld.x);
+            if (worldDx <= 0) {
+                return false;
+            }
+
+            const worldDy = Math.abs(nextWorld.y - prevWorld.y);
+            const screenDx = Math.abs(nextScreen.x - prevScreen.x);
+            const viewportYSpan = this.viewport.maxY - this.viewport.minY;
+
+            const crossesTopToBottom =
+                (prevWorld.y > this.viewport.maxY && nextWorld.y < this.viewport.minY) ||
+                (prevWorld.y < this.viewport.minY && nextWorld.y > this.viewport.maxY);
+
+            const oppositeLargeSigns =
+                (prevWorld.y * nextWorld.y < 0) &&
+                (Math.abs(prevWorld.y) > viewportYSpan * 0.7) &&
+                (Math.abs(nextWorld.y) > viewportYSpan * 0.7);
+
+            const narrowInX = screenDx < Math.max(14, this.getLineWidth(18));
+            const hugeJump = worldDy > viewportYSpan * 1.25;
+
+            return (crossesTopToBottom && narrowInX) || (oppositeLargeSigns && narrowInX && hugeJump);
+        };
+
         for (let i = 0; i < func.points.length; i++) {
             const point = func.points[i];
 
@@ -24392,6 +24632,7 @@ class Graphiti {
                     pathStarted = false;
                 }
                 previousScreenPos = null;
+                previousWorldPoint = null;
                 continue;
             }
 
@@ -24404,6 +24645,17 @@ class Graphiti {
                     pathStarted = false;
                 }
                 previousScreenPos = screenPos;
+                previousWorldPoint = point;
+                continue;
+            }
+
+            if (isLikelyAsymptoteBridge(previousWorldPoint, point, previousScreenPos, screenPos)) {
+                if (pathStarted) {
+                    this.ctx.stroke();
+                    pathStarted = false;
+                }
+                previousScreenPos = screenPos;
+                previousWorldPoint = point;
                 continue;
             }
 
@@ -24420,6 +24672,7 @@ class Graphiti {
             }
 
             previousScreenPos = screenPos;
+            previousWorldPoint = point;
         }
         
         // Stroke the final path if one was started
