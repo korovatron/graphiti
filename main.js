@@ -3884,6 +3884,123 @@ class Graphiti {
                 criticalPoints.push(0);
             }
 
+            const addLinearLogDomainBoundaryProbes = () => {
+                if (!processedExpression.includes('log')) {
+                    return;
+                }
+
+                const extractLogFirstArguments = (expr) => {
+                    const args = [];
+
+                    for (let i = 0; i < expr.length; i++) {
+                        if (expr.slice(i, i + 3) !== 'log') continue;
+
+                        const before = i === 0 ? '' : expr[i - 1];
+                        if (/[a-z0-9_]/.test(before)) continue;
+
+                        let j = i + 3;
+                        while (j < expr.length && /\s/.test(expr[j])) j++;
+                        if (j >= expr.length || expr[j] !== '(') continue;
+
+                        const innerStart = j + 1;
+                        let depth = 0;
+                        let commaAtDepth0 = -1;
+                        let closeIndex = -1;
+
+                        for (let k = innerStart; k < expr.length; k++) {
+                            const ch = expr[k];
+                            if (ch === '(') {
+                                depth++;
+                            } else if (ch === ')') {
+                                if (depth === 0) {
+                                    closeIndex = k;
+                                    break;
+                                }
+                                depth--;
+                            } else if (ch === ',' && depth === 0 && commaAtDepth0 === -1) {
+                                commaAtDepth0 = k;
+                            }
+                        }
+
+                        if (closeIndex === -1) continue;
+
+                        const argEnd = commaAtDepth0 !== -1 ? commaAtDepth0 : closeIndex;
+                        const firstArg = expr.substring(innerStart, argEnd).trim();
+                        if (firstArg) {
+                            args.push(firstArg);
+                        }
+
+                        i = closeIndex;
+                    }
+
+                    return args;
+                };
+
+                const logArguments = extractLogFirstArguments(processedExpression);
+                if (logArguments.length === 0) {
+                    return;
+                }
+
+                const probeOffsets = [1e-2, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12, 1e-16, 1e-24, 1e-40, 1e-80, 1e-160, 1e-300];
+
+                for (const argumentExpression of logArguments) {
+                    try {
+                        const compiledArg = this.getCompiledExpression(argumentExpression);
+                        const argScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                        argScope.x = 0;
+                        const v0 = compiledArg.evaluate(argScope);
+                        argScope.x = 1;
+                        const v1 = compiledArg.evaluate(argScope);
+                        argScope.x = 2;
+                        const v2 = compiledArg.evaluate(argScope);
+
+                        if (!isFinite(v0) || !isFinite(v1) || !isFinite(v2)) {
+                            continue;
+                        }
+
+                        // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                        const b = v0;
+                        const a = v1 - v0;
+                        if (Math.abs(a) < 1e-12) {
+                            continue;
+                        }
+
+                        const expectedV2 = 2 * a + b;
+                        const linearResidual = Math.abs(v2 - expectedV2);
+                        const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                        if (linearResidual > linearScale * 1e-8) {
+                            continue;
+                        }
+
+                        const boundaryX = -b / a;
+                        if (!isFinite(boundaryX)) {
+                            continue;
+                        }
+
+                        const validDirection = a > 0 ? 1 : -1;
+                        for (const offset of probeOffsets) {
+                            const probeX = boundaryX + validDirection * offset;
+                            if (probeX < bufferedMinX || probeX > bufferedMaxX) {
+                                continue;
+                            }
+
+                            argScope.x = probeX;
+                            const argValue = compiledArg.evaluate(argScope);
+                            if (!isFinite(argValue) || argValue <= 0) {
+                                continue;
+                            }
+
+                            criticalPoints.push(probeX);
+                        }
+                    } catch {
+                        // Ignore parse/evaluation failures for this log argument.
+                    }
+                }
+            };
+
+            addLinearLogDomainBoundaryProbes();
+
             const pushEvaluatedSample = (x) => {
                 try {
                     scope.x = x;
@@ -7838,8 +7955,11 @@ class Graphiti {
         try {
             normalizedExpression = this.convertFromLatex(expression).toLowerCase().trim();
 
-            // Detect log-family asymptotes from linear arguments in ln(arg)/log(arg).
-            // Covers families such as ln(x+1), 2ln(x), -2log(x), ln(2x-3).
+            // Detect log-family asymptotes from linear arguments in ln(arg)/log(arg)
+            // only when the full expression is an affine log family.
+            // Covers families such as ln(x+1), 2ln(x), -2log(x), ln(2x-3), 2log(x)+1.
+            // This intentionally excludes reciprocal/composed forms like -2/log(x)
+            // where the asymptote is driven by log(arg)=0, not arg=0.
             const expressionRhsMatch = normalizedExpression.match(/^\s*y\s*[=><≥≤]\s*(.+)$/i);
             const expressionCore = expressionRhsMatch && expressionRhsMatch[1]
                 ? expressionRhsMatch[1].trim()
@@ -7891,50 +8011,55 @@ class Graphiti {
                 return args;
             };
 
-            const logArguments = extractLogFirstArguments(expressionCore);
-            for (const argumentExpression of logArguments) {
-                if (!argumentExpression) continue;
+            const compactCore = expressionCore.replace(/\s+/g, '');
+            const affineLogFamilyPattern = /^[+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)\*?)?log\([^()]+\)(?:[+-](?:\d+(?:\.\d+)?|\.\d+))?$/;
 
-                try {
-                    const compiledArg = this.getCompiledExpression(argumentExpression);
-                    const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            if (affineLogFamilyPattern.test(compactCore)) {
+                const logArguments = extractLogFirstArguments(expressionCore);
+                for (const argumentExpression of logArguments) {
+                    if (!argumentExpression) continue;
 
-                    scope.x = 0;
-                    const v0 = compiledArg.evaluate(scope);
-                    scope.x = 1;
-                    const v1 = compiledArg.evaluate(scope);
-                    scope.x = 2;
-                    const v2 = compiledArg.evaluate(scope);
+                    try {
+                        const compiledArg = this.getCompiledExpression(argumentExpression);
+                        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
 
-                    if (!isFinite(v0) || !isFinite(v1) || !isFinite(v2)) {
-                        continue;
-                    }
+                        scope.x = 0;
+                        const v0 = compiledArg.evaluate(scope);
+                        scope.x = 1;
+                        const v1 = compiledArg.evaluate(scope);
+                        scope.x = 2;
+                        const v2 = compiledArg.evaluate(scope);
 
-                    // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
-                    const b = v0;
-                    const a = v1 - v0;
-                    if (Math.abs(a) < 1e-12) {
-                        continue;
-                    }
-
-                    const expectedV2 = 2 * a + b;
-                    const linearResidual = Math.abs(v2 - expectedV2);
-                    const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
-                    if (linearResidual > linearScale * 1e-8) {
-                        continue;
-                    }
-
-                    const asymptoteX = -b / a;
-                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
-                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001
-                            ? Math.round(asymptoteX)
-                            : asymptoteX;
-                        if (!asymptotes.includes(roundedAsymptote)) {
-                            asymptotes.push(roundedAsymptote);
+                        if (!isFinite(v0) || !isFinite(v1) || !isFinite(v2)) {
+                            continue;
                         }
+
+                        // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                        const b = v0;
+                        const a = v1 - v0;
+                        if (Math.abs(a) < 1e-12) {
+                            continue;
+                        }
+
+                        const expectedV2 = 2 * a + b;
+                        const linearResidual = Math.abs(v2 - expectedV2);
+                        const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                        if (linearResidual > linearScale * 1e-8) {
+                            continue;
+                        }
+
+                        const asymptoteX = -b / a;
+                        if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                            const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001
+                                ? Math.round(asymptoteX)
+                                : asymptoteX;
+                            if (!asymptotes.includes(roundedAsymptote)) {
+                                asymptotes.push(roundedAsymptote);
+                            }
+                        }
+                    } catch {
+                        // Ignore argument parse failures and continue with other candidates.
                     }
-                } catch {
-                    // Ignore argument parse failures and continue with other candidates.
                 }
             }
             
