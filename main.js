@@ -7971,6 +7971,32 @@ class Graphiti {
                         }
                     }
                 }
+
+                // Pattern 7: Cubic-times-linear form x^3 ± a*x = x(x^2 ± a)
+                // For x^3 - a*x, real roots are x=0 and x=±sqrt(a).
+                // For x^3 + a*x, only real root is x=0.
+                const cubicLinearPattern = /x\s*\^\s*3\s*([+-])\s*([0-9.]+)\s*\*?\s*x/g;
+                while ((factorMatch = cubicLinearPattern.exec(denom)) !== null) {
+                    const sign = factorMatch[1];
+                    const coefficient = parseFloat(factorMatch[2]);
+
+                    if (!asymptotes.includes(0)) {
+                        asymptotes.push(0);
+                    }
+
+                    if (isFinite(coefficient) && coefficient > 0 && sign === '-') {
+                        const root = Math.sqrt(coefficient);
+                        const candidates = [root, -root];
+                        for (const candidate of candidates) {
+                            const roundedAsymptote = Math.abs(candidate - Math.round(candidate)) < 0.0001
+                                ? Math.round(candidate)
+                                : candidate;
+                            if (!asymptotes.includes(roundedAsymptote)) {
+                                asymptotes.push(roundedAsymptote);
+                            }
+                        }
+                    }
+                }
             }
         } catch (error) {
             // If detection fails, return empty array
