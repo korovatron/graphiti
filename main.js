@@ -3821,9 +3821,6 @@ class Graphiti {
             const expressionForSampling = processedExpression.toLowerCase();
             const hasXVariable = /\bx\b/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
-            const explicitVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression);
-            func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
-            const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
             const baseAsymptoteSpacing = this.angleMode === 'degrees' ? 180 : Math.PI;
 
             let frequencyMultiplier = 1;
@@ -3843,6 +3840,9 @@ class Graphiti {
             const bufferSize = viewportWidth * 0.5;
             const bufferedMinX = this.viewport.minX - bufferSize;
             const bufferedMaxX = this.viewport.maxX + bufferSize;
+            const explicitVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
+            func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
+            const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
 
             const bufferedRange = bufferedMaxX - bufferedMinX;
             let maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
@@ -7802,10 +7802,11 @@ class Graphiti {
         return points;
     }
     
-    detectVerticalAsymptotes(expression) {
+    detectVerticalAsymptotes(expression, rangeMinX = null, rangeMaxX = null) {
         // Detect vertical asymptotes in rational expressions
         // Returns array of x-values where vertical asymptotes occur
         const asymptotes = [];
+        let denominators = [];
         
         try {
             const clean = this.convertFromLatex(expression).toLowerCase().trim();
@@ -7853,7 +7854,7 @@ class Graphiti {
                 return denoms;
             };
             
-            const denominators = findDenominators(clean);
+            denominators = findDenominators(clean);
             
             // Find all (x ± constant) factors in denominators
             for (const denom of denominators) {
@@ -8000,6 +8001,194 @@ class Graphiti {
             }
         } catch (error) {
             // If detection fails, return empty array
+        }
+
+        // Range-aware numerical fallback: scan denominator roots in the current x window.
+        // This catches forms that pattern matching misses without needing bespoke regexes.
+        if (Number.isFinite(rangeMinX) && Number.isFinite(rangeMaxX) && rangeMaxX > rangeMinX && denominators.length > 0) {
+            const addAsymptote = (xValue) => {
+                if (!isFinite(xValue) || Math.abs(xValue) > 1e10) {
+                    return;
+                }
+
+                const rounded = Math.abs(xValue - Math.round(xValue)) < 0.0001
+                    ? Math.round(xValue)
+                    : xValue;
+
+                const duplicate = asymptotes.some(existing => Math.abs(existing - rounded) < 1e-4);
+                if (!duplicate) {
+                    asymptotes.push(rounded);
+                }
+            };
+
+            const evaluateDenominatorAtX = (compiled, scope, x) => {
+                try {
+                    scope.x = x;
+                    const value = compiled.evaluate(scope);
+                    return isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            const refineRootBisection = (compiled, scope, leftX, rightX, maxIterations = 40) => {
+                let a = leftX;
+                let b = rightX;
+                let fa = evaluateDenominatorAtX(compiled, scope, a);
+                let fb = evaluateDenominatorAtX(compiled, scope, b);
+
+                if (fa === null || fb === null) {
+                    return null;
+                }
+                if (fa === 0) return a;
+                if (fb === 0) return b;
+                if (fa * fb > 0) {
+                    return null;
+                }
+
+                for (let i = 0; i < maxIterations; i++) {
+                    const mid = (a + b) / 2;
+                    const fm = evaluateDenominatorAtX(compiled, scope, mid);
+                    if (fm === null) {
+                        break;
+                    }
+                    if (Math.abs(fm) < 1e-10 || Math.abs(b - a) < 1e-8) {
+                        return mid;
+                    }
+
+                    if (fa * fm <= 0) {
+                        b = mid;
+                        fb = fm;
+                    } else {
+                        a = mid;
+                        fa = fm;
+                    }
+                }
+
+                return (a + b) / 2;
+            };
+
+            const scanCount = Math.max(400, Math.min(4000, Math.ceil((rangeMaxX - rangeMinX) * 4)));
+            const dx = (rangeMaxX - rangeMinX) / scanCount;
+            const zeroTolerance = 1e-7;
+
+            for (const rawDenominator of denominators) {
+                const denominatorExpression = rawDenominator.trim();
+                if (!denominatorExpression) continue;
+
+                let compiledDenominator;
+                try {
+                    compiledDenominator = this.getCompiledExpression(denominatorExpression);
+                } catch {
+                    continue;
+                }
+
+                const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                let prevX = rangeMinX;
+                let prevVal = evaluateDenominatorAtX(compiledDenominator, scope, prevX);
+
+                for (let i = 1; i <= scanCount; i++) {
+                    const x = i === scanCount ? rangeMaxX : (rangeMinX + i * dx);
+                    const val = evaluateDenominatorAtX(compiledDenominator, scope, x);
+
+                    if (prevVal !== null && val !== null) {
+                        if (Math.abs(prevVal) < zeroTolerance) {
+                            addAsymptote(prevX);
+                        }
+                        if (Math.abs(val) < zeroTolerance) {
+                            addAsymptote(x);
+                        }
+
+                        if (prevVal * val < 0) {
+                            const refinedRoot = refineRootBisection(compiledDenominator, scope, prevX, x);
+                            if (refinedRoot !== null) {
+                                addAsymptote(refinedRoot);
+                            }
+                        }
+                    }
+
+                    prevX = x;
+                    prevVal = val;
+                }
+            }
+        }
+
+        // Validate candidates as true poles (vertical asymptotes) vs removable discontinuities (holes).
+        // A true asymptote should show blow-up behavior in nearby samples of the full expression.
+        if (asymptotes.length > 0) {
+            try {
+                let evalExpression = clean;
+
+                // For explicit forms like y=f(x), y>f(x), y<f(x), evaluate only the RHS expression.
+                const explicitMatch = evalExpression.match(/^\s*y\s*[=><≥≤]\s*(.+)$/i);
+                if (explicitMatch && explicitMatch[1]) {
+                    evalExpression = explicitMatch[1].trim();
+                }
+
+                if (this.angleMode === 'degrees') {
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(evalExpression);
+                    if (hasRegularTrigWithX) {
+                        evalExpression = this.convertTrigToDegreeMode(evalExpression);
+                    }
+                }
+
+                const compiledFull = this.getCompiledExpression(evalExpression);
+                const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+                const xSpan = Number.isFinite(rangeMinX) && Number.isFinite(rangeMaxX)
+                    ? Math.abs(rangeMaxX - rangeMinX)
+                    : 20;
+                const baseEps = Math.max(1e-8, Math.min(1e-2, xSpan * 1e-6));
+                const offsets = [1, 2, 4, 8].map(m => m * baseEps);
+                const blowupThreshold = 500;
+
+                const validatedAsymptotes = [];
+
+                for (const candidate of asymptotes) {
+                    if (!isFinite(candidate)) continue;
+
+                    let hasNonFinite = false;
+                    let maxAbs = 0;
+                    let minAbsFinite = Infinity;
+                    let finiteSamples = 0;
+
+                    for (const offset of offsets) {
+                        for (const sign of [-1, 1]) {
+                            const sampleX = candidate + sign * offset;
+                            try {
+                                scope.x = sampleX;
+                                const sampleY = compiledFull.evaluate(scope);
+                                if (!isFinite(sampleY)) {
+                                    hasNonFinite = true;
+                                    continue;
+                                }
+
+                                const absY = Math.abs(sampleY);
+                                finiteSamples++;
+                                if (absY > maxAbs) maxAbs = absY;
+                                if (absY < minAbsFinite) minAbsFinite = absY;
+                            } catch {
+                                hasNonFinite = true;
+                            }
+                        }
+                    }
+
+                    const strongGrowth = finiteSamples > 0 && maxAbs > blowupThreshold;
+                    const growthRatio = (finiteSamples > 0 && minAbsFinite < Infinity)
+                        ? (maxAbs / Math.max(minAbsFinite, 1e-9))
+                        : 0;
+                    const relativeBlowup = finiteSamples > 0 && maxAbs > 20 && growthRatio > 50;
+
+                    if (hasNonFinite || strongGrowth || relativeBlowup) {
+                        validatedAsymptotes.push(candidate);
+                    }
+                }
+
+                asymptotes.length = 0;
+                asymptotes.push(...validatedAsymptotes);
+            } catch {
+                // If validation fails, keep detected candidates as-is.
+            }
         }
         
         return asymptotes;
