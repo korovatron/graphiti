@@ -3847,9 +3847,11 @@ class Graphiti {
             if (hasAsymptoteTrigWithX && isFinite(asymptoteSpacing) && asymptoteSpacing > 0) {
                 // Keep enough points per asymptote interval so tan/cot/sec/csc stay stable when zoomed far out.
                 const asymptoteIntervals = bufferedRange / asymptoteSpacing;
-                const samplesPerInterval = functionCount > 6 ? 18 : 26;
+                const extremeZoomFactor = Math.max(1, Math.min(8, Math.ceil(viewportWidth / 250)));
+                const baseSamplesPerInterval = functionCount > 6 ? 18 : 26;
+                const samplesPerInterval = baseSamplesPerInterval * extremeZoomFactor;
                 const asymptoteResolution = Math.ceil(asymptoteIntervals * samplesPerInterval);
-                const asymptoteResolutionCap = functionCount > 10 ? 24000 : functionCount > 6 ? 32000 : 60000;
+                const asymptoteResolutionCap = functionCount > 10 ? 90000 : functionCount > 6 ? 140000 : 280000;
                 maxPlotResolution = Math.min(Math.max(adaptiveResolution, asymptoteResolution), asymptoteResolutionCap);
             }
             
@@ -3926,7 +3928,8 @@ class Graphiti {
             let segmentSampleCount = 14;
             if (hasAsymptoteTrigWithX && isFinite(asymptoteSpacing) && asymptoteSpacing > 0) {
                 const relativeStep = Math.abs(step) / asymptoteSpacing;
-                segmentSampleCount = Math.max(14, Math.min(48, Math.ceil(relativeStep * 40)));
+                const extremeZoomFactor = Math.max(1, Math.min(8, Math.ceil(viewportWidth / 250)));
+                segmentSampleCount = Math.max(14, Math.min(160, Math.ceil(relativeStep * 40 * extremeZoomFactor)));
             }
 
             const evaluateAtX = (xValue) => {
