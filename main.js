@@ -3874,55 +3874,129 @@ class Graphiti {
             
             // Collect critical points that must be included (domain boundaries)
             const criticalPoints = [];
-            if (func.expression.toLowerCase().includes('asin') || func.expression.toLowerCase().includes('acos')) {
+            if (!hasExplicitVerticalAsymptotes && (func.expression.toLowerCase().includes('asin') || func.expression.toLowerCase().includes('acos'))) {
                 // For inverse trig functions, ensure we include x = ±1 if they're in buffered range
                 if (bufferedMinX <= 1 && bufferedMaxX >= 1) criticalPoints.push(1);
                 if (bufferedMinX <= -1 && bufferedMaxX >= -1) criticalPoints.push(-1);
             }
 
-            // Add dense sample anchors around known vertical asymptotes so each branch is captured
-            // on both sides, even at very wide zoom levels.
-            if (hasExplicitVerticalAsymptotes) {
-                const delta = Math.max(step * 0.25, 1e-4);
-                const multipliers = [-8, -4, -2, -1, 1, 2, 4, 8];
-                for (const asymptoteX of explicitVerticalAsymptotes) {
-                    if (asymptoteX < bufferedMinX || asymptoteX > bufferedMaxX) continue;
-                    for (const m of multipliers) {
-                        const candidateX = asymptoteX + m * delta;
-                        if (candidateX >= bufferedMinX && candidateX <= bufferedMaxX) {
-                            criticalPoints.push(candidateX);
-                        }
-                    }
-                }
-            }
-            
-            for (let i = 0; i <= numSteps; i++) {
-                let x = bufferedMinX + (i * step);
-                
-                // Ensure we hit the exact endpoint on the last iteration
-                if (i === numSteps) {
-                    x = bufferedMaxX;
-                }
-                
+            const pushEvaluatedSample = (x) => {
                 try {
                     scope.x = x;
                     const result = compiledExpression.evaluate(scope);
                     const y = hasInverseTrig ? result * 180 / Math.PI : result;
-                    
+
                     if (isFinite(y)) {
                         points.push({ x, y, connected: true });
-                    } else {
-                        // Add a break point for discontinuities
-                        if (points.length > 0) {
-                            points.push({ x, y: NaN, connected: false });
-                        }
+                    } else if (points.length > 0) {
+                        points.push({ x, y: NaN, connected: false });
                     }
                 } catch (e) {
-                    // Add a break point for evaluation errors
                     if (points.length > 0) {
                         points.push({ x, y: NaN, connected: false });
                     }
                 }
+            };
+
+            const sampleInterval = (xStart, xEnd) => {
+                if (!isFinite(xStart) || !isFinite(xEnd) || xEnd <= xStart) {
+                    return;
+                }
+
+                const intervalRatio = (xEnd - xStart) / (bufferedMaxX - bufferedMinX);
+                const intervalSteps = Math.max(8, Math.ceil(numSteps * intervalRatio));
+
+                for (let i = 0; i <= intervalSteps; i++) {
+                    let x = xStart + (i * (xEnd - xStart) / intervalSteps);
+                    if (i === intervalSteps) {
+                        x = xEnd;
+                    }
+                    pushEvaluatedSample(x);
+                }
+            };
+
+            const getAsymptoteApproachPoint = (asymptoteX, direction, intervalMin, intervalMax, baseGap) => {
+                const multipliers = [1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125];
+                const viewportPad = Math.max((this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
+                let bestPoint = null;
+
+                for (const m of multipliers) {
+                    const offset = Math.max(baseGap * m, 1e-8);
+                    const x = asymptoteX + direction * offset;
+                    if (x < intervalMin || x > intervalMax) continue;
+
+                    try {
+                        scope.x = x;
+                        const result = compiledExpression.evaluate(scope);
+                        const y = hasInverseTrig ? result * 180 / Math.PI : result;
+                        if (!isFinite(y)) continue;
+
+                        if (!bestPoint || Math.abs(y) > Math.abs(bestPoint.y)) {
+                            bestPoint = { x, y };
+                        }
+
+                        if (y > this.viewport.maxY || y < this.viewport.minY) {
+                            return { x, y, isOutside: true };
+                        }
+                    } catch (e) {
+                        // Ignore and try closer sample.
+                    }
+                }
+
+                if (bestPoint) {
+                    return {
+                        x: bestPoint.x,
+                        y: bestPoint.y >= 0 ? this.viewport.maxY + viewportPad : this.viewport.minY - viewportPad,
+                        isOutside: false
+                    };
+                }
+
+                return null;
+            };
+
+            if (hasExplicitVerticalAsymptotes) {
+                const sortedAsymptotes = explicitVerticalAsymptotes
+                    .filter(x => isFinite(x) && x > bufferedMinX && x < bufferedMaxX)
+                    .sort((a, b) => a - b);
+
+                // Keep a tiny exclusion band around the asymptote to avoid evaluating exactly at poles,
+                // but sample close enough to let branches naturally run off-screen.
+                const asymptoteGap = Math.max(Math.abs(step) * 0.15, Math.abs(bufferedRange) * 1e-7, 1e-7);
+                let currentStart = bufferedMinX;
+
+                for (let ai = 0; ai < sortedAsymptotes.length; ai++) {
+                    const asymptoteX = sortedAsymptotes[ai];
+                    const nextAsymptote = ai < sortedAsymptotes.length - 1 ? sortedAsymptotes[ai + 1] : null;
+                    const leftEnd = Math.min(bufferedMaxX, asymptoteX - asymptoteGap);
+                    sampleInterval(currentStart, leftEnd);
+
+                    const leftApproachMin = currentStart;
+                    const leftApproachMax = Math.min(leftEnd, asymptoteX - asymptoteGap * 0.5);
+                    const leftApproach = getAsymptoteApproachPoint(asymptoteX, -1, leftApproachMin, leftApproachMax, asymptoteGap);
+                    if (leftApproach) {
+                        points.push({ x: leftApproach.x, y: leftApproach.y, connected: true });
+                    }
+
+                    if (points.length > 0) {
+                        points.push({ x: asymptoteX, y: NaN, connected: false });
+                    }
+
+                    currentStart = Math.max(bufferedMinX, asymptoteX + asymptoteGap);
+
+                    const rightLimit = nextAsymptote !== null
+                        ? Math.min(bufferedMaxX, nextAsymptote - asymptoteGap)
+                        : bufferedMaxX;
+                    const rightApproachMin = Math.max(currentStart, asymptoteX + asymptoteGap * 0.5);
+                    const rightApproachMax = rightLimit;
+                    const rightApproach = getAsymptoteApproachPoint(asymptoteX, 1, rightApproachMin, rightApproachMax, asymptoteGap);
+                    if (rightApproach) {
+                        points.push({ x: rightApproach.x, y: rightApproach.y, connected: false });
+                    }
+                }
+
+                sampleInterval(currentStart, bufferedMaxX);
+            } else {
+                sampleInterval(bufferedMinX, bufferedMaxX);
             }
             
             // Add critical points that might have been missed due to step size
@@ -4146,7 +4220,11 @@ class Graphiti {
                         }
 
                         if (leftEdgePoint && alignedAsymptoteX !== null) {
-                            leftEdgePoint.x = alignedAsymptoteX;
+                            const sideOffset = Math.max(Math.abs(step) * 0.05, 1e-6);
+                            leftEdgePoint.x = alignedAsymptoteX - sideOffset;
+                            if (leftEdgePoint.x <= prevPoint.x || leftEdgePoint.x >= point.x) {
+                                leftEdgePoint.x = prevPoint.x + (point.x - prevPoint.x) * 0.4;
+                            }
                         }
 
                         if (leftEdgePoint && leftEdgePoint.x > prevPoint.x && leftEdgePoint.x < point.x) {
@@ -4167,7 +4245,11 @@ class Graphiti {
                         }
 
                         if (rightEdgePoint && alignedAsymptoteX !== null) {
-                            rightEdgePoint.x = alignedAsymptoteX;
+                            const sideOffset = Math.max(Math.abs(step) * 0.05, 1e-6);
+                            rightEdgePoint.x = alignedAsymptoteX + sideOffset;
+                            if (rightEdgePoint.x <= prevPoint.x || rightEdgePoint.x >= point.x) {
+                                rightEdgePoint.x = prevPoint.x + (point.x - prevPoint.x) * 0.6;
+                            }
                         }
 
                         if (rightEdgePoint && rightEdgePoint.x > prevPoint.x && rightEdgePoint.x < point.x) {
