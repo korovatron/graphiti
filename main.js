@@ -18981,14 +18981,24 @@ class Graphiti {
             }
         } else {
             // For explicit functions (y = f(x)) and explicit inequalities (y > f(x)), find where y crosses zero
+            const viewportHeight = this.viewport.maxY - this.viewport.minY;
+            const largeMagnitudeThreshold = Math.max(1, viewportHeight * 0.35);
+            const nearZeroThreshold = Math.max(0.02, viewportHeight * 0.01);
+
             for (let i = 0; i < points.length - 1; i++) {
                 // Stop if we've searched enough
                 if (allIntercepts.length >= maxInterceptsToSearch) break;
                 
-                const x1 = points[i].x;
-                const y1 = points[i].y;
-                const x2 = points[i + 1].x;
-                const y2 = points[i + 1].y;
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const x1 = p1.x;
+                const y1 = p1.y;
+                const x2 = p2.x;
+                const y2 = p2.y;
+
+                // A `connected:false` endpoint is a segment break marker and is not drawn as a line segment.
+                // Ignore it for intercept detection to avoid phantom roots at discontinuities/asymptotes.
+                if (p2.connected === false) continue;
                 
                 // Check for valid points
                 if (!isFinite(y1) || !isFinite(y2)) continue;
@@ -19008,6 +19018,54 @@ class Graphiti {
                     } else if (exprForBisection.includes('=')) {
                         // For regular equations (y=f(x)), extract after '='
                         exprForBisection = exprForBisection.split('=')[1];
+                    }
+
+                    // Guard against discontinuity bridges (e.g. near tan asymptotes):
+                    // if endpoints have opposite signs and both are large, but interior samples
+                    // never approach zero (or become non-finite), this is not a real intercept.
+                    if (y1 * y2 < 0 && Math.abs(y1) > largeMagnitudeThreshold && Math.abs(y2) > largeMagnitudeThreshold) {
+                        let likelyDiscontinuity = false;
+                        let minAbsInteriorY = Infinity;
+
+                        try {
+                            let samplingExpression = this.convertFromLatex(exprForBisection);
+                            if (this.angleMode === 'degrees') {
+                                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(samplingExpression.toLowerCase());
+                                if (hasRegularTrigWithX) {
+                                    samplingExpression = this.convertTrigToDegreeMode(samplingExpression);
+                                }
+                            }
+
+                            const samplingCompiled = this.getCompiledExpression(samplingExpression);
+                            const samplingScope = this.getEvaluationScope({ x: 0 });
+                            const sampleRatios = [0.25, 0.5, 0.75];
+
+                            for (const ratio of sampleRatios) {
+                                const sampleX = x1 + (x2 - x1) * ratio;
+                                samplingScope.x = sampleX;
+                                const sampleY = samplingCompiled.evaluate(samplingScope);
+
+                                if (!isFinite(sampleY)) {
+                                    likelyDiscontinuity = true;
+                                    break;
+                                }
+
+                                const absY = Math.abs(sampleY);
+                                if (absY < minAbsInteriorY) {
+                                    minAbsInteriorY = absY;
+                                }
+                            }
+
+                            if (!likelyDiscontinuity && minAbsInteriorY > nearZeroThreshold) {
+                                likelyDiscontinuity = true;
+                            }
+                        } catch (error) {
+                            likelyDiscontinuity = true;
+                        }
+
+                        if (likelyDiscontinuity) {
+                            continue;
+                        }
                     }
                     
                     // Use bisection method to find more accurate zero
