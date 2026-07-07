@@ -7813,9 +7813,10 @@ class Graphiti {
         // - (x^2-1)/(x^2-x) [hole vs pole discrimination]
         const asymptotes = [];
         let denominators = [];
+        let normalizedExpression = '';
         
         try {
-            const clean = this.convertFromLatex(expression).toLowerCase().trim();
+            normalizedExpression = this.convertFromLatex(expression).toLowerCase().trim();
             
             // Strategy: Find division operators and extract denominators carefully
             // Handle nested parentheses properly
@@ -7860,7 +7861,7 @@ class Graphiti {
                 return denoms;
             };
             
-            denominators = findDenominators(clean);
+            denominators = findDenominators(normalizedExpression);
             
             // Find all (x ± constant) factors in denominators
             for (const denom of denominators) {
@@ -8124,7 +8125,7 @@ class Graphiti {
         // A true asymptote should show blow-up behavior in nearby samples of the full expression.
         if (asymptotes.length > 0) {
             try {
-                let evalExpression = clean;
+                let evalExpression = normalizedExpression;
 
                 // For explicit forms like y=f(x), y>f(x), y<f(x), evaluate only the RHS expression.
                 const explicitMatch = evalExpression.match(/^\s*y\s*[=><≥≤]\s*(.+)$/i);
@@ -8196,6 +8197,8 @@ class Graphiti {
                 // If validation fails, keep detected candidates as-is.
             }
         }
+
+        asymptotes.sort((a, b) => a - b);
         
         return asymptotes;
     }
