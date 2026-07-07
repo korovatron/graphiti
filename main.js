@@ -3821,6 +3821,9 @@ class Graphiti {
             const expressionForSampling = processedExpression.toLowerCase();
             const hasXVariable = /\bx\b/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
+            const explicitVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression);
+            func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
+            const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
             const baseAsymptoteSpacing = this.angleMode === 'degrees' ? 180 : Math.PI;
 
             let frequencyMultiplier = 1;
@@ -3854,6 +3857,15 @@ class Graphiti {
                 const asymptoteResolutionCap = functionCount > 10 ? 90000 : functionCount > 6 ? 140000 : 280000;
                 maxPlotResolution = Math.min(Math.max(adaptiveResolution, asymptoteResolution), asymptoteResolutionCap);
             }
+
+            if (hasExplicitVerticalAsymptotes) {
+                // Rational-style asymptotes can still alias into diagonals at wide zoom.
+                // Increase baseline sampling density when explicit asymptotes are detected.
+                const asymptoteZoomFactor = Math.max(1, Math.min(6, Math.ceil(viewportWidth / 200)));
+                const asymptoteDrivenResolution = adaptiveResolution * (2 + asymptoteZoomFactor);
+                const explicitAsymptoteCap = functionCount > 10 ? 70000 : functionCount > 6 ? 100000 : 180000;
+                maxPlotResolution = Math.min(Math.max(maxPlotResolution, asymptoteDrivenResolution), explicitAsymptoteCap);
+            }
             
             const step = (bufferedMaxX - bufferedMinX) / maxPlotResolution;
             
@@ -3866,6 +3878,22 @@ class Graphiti {
                 // For inverse trig functions, ensure we include x = ±1 if they're in buffered range
                 if (bufferedMinX <= 1 && bufferedMaxX >= 1) criticalPoints.push(1);
                 if (bufferedMinX <= -1 && bufferedMaxX >= -1) criticalPoints.push(-1);
+            }
+
+            // Add dense sample anchors around known vertical asymptotes so each branch is captured
+            // on both sides, even at very wide zoom levels.
+            if (hasExplicitVerticalAsymptotes) {
+                const delta = Math.max(step * 0.25, 1e-4);
+                const multipliers = [-8, -4, -2, -1, 1, 2, 4, 8];
+                for (const asymptoteX of explicitVerticalAsymptotes) {
+                    if (asymptoteX < bufferedMinX || asymptoteX > bufferedMaxX) continue;
+                    for (const m of multipliers) {
+                        const candidateX = asymptoteX + m * delta;
+                        if (candidateX >= bufferedMinX && candidateX <= bufferedMaxX) {
+                            criticalPoints.push(candidateX);
+                        }
+                    }
+                }
             }
             
             for (let i = 0; i <= numSteps; i++) {
@@ -4083,7 +4111,23 @@ class Graphiti {
                 if (isFinite(prevPoint.y) && isFinite(point.y)) {
                     const yDiff = Math.abs(point.y - prevPoint.y);
                     const segmentAnalysis = analyseSegment(prevPoint.x, prevPoint.y, point.x, point.y);
-                    const hasDiscontinuity = segmentAnalysis.hasDiscontinuity;
+                    const segmentMinX = Math.min(prevPoint.x, point.x);
+                    const segmentMaxX = Math.max(prevPoint.x, point.x);
+
+                    let alignedAsymptoteX = null;
+                    if (explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0) {
+                        const midpointX = (prevPoint.x + point.x) / 2;
+                        for (const asymptoteX of explicitVerticalAsymptotes) {
+                            if (asymptoteX > segmentMinX && asymptoteX < segmentMaxX) {
+                                if (alignedAsymptoteX === null || Math.abs(asymptoteX - midpointX) < Math.abs(alignedAsymptoteX - midpointX)) {
+                                    alignedAsymptoteX = asymptoteX;
+                                }
+                            }
+                        }
+                    }
+
+                    const hasForcedAsymptoteBreak = alignedAsymptoteX !== null;
+                    const hasDiscontinuity = segmentAnalysis.hasDiscontinuity || hasForcedAsymptoteBreak;
                     
                     // If there's a sudden large jump, insert a break
                     if (yDiff > jumpThreshold || hasDiscontinuity) {
@@ -4101,6 +4145,10 @@ class Graphiti {
                             };
                         }
 
+                        if (leftEdgePoint && alignedAsymptoteX !== null) {
+                            leftEdgePoint.x = alignedAsymptoteX;
+                        }
+
                         if (leftEdgePoint && leftEdgePoint.x > prevPoint.x && leftEdgePoint.x < point.x) {
                             processedPoints.push({ x: leftEdgePoint.x, y: leftEdgePoint.y, connected: true });
                         }
@@ -4116,6 +4164,10 @@ class Graphiti {
                                 x: point.x - (point.x - prevPoint.x) * 0.45,
                                 y: point.y >= 0 ? (this.viewport.maxY + outsideMargin) : (this.viewport.minY - outsideMargin)
                             };
+                        }
+
+                        if (rightEdgePoint && alignedAsymptoteX !== null) {
+                            rightEdgePoint.x = alignedAsymptoteX;
                         }
 
                         if (rightEdgePoint && rightEdgePoint.x > prevPoint.x && rightEdgePoint.x < point.x) {
@@ -7800,6 +7852,42 @@ class Graphiti {
                 // Pattern 5: Just x in denominator: /x → asymptote at x=0
                 if (/^[\s(]*x[\s)]*$/.test(denom) && !asymptotes.includes(0)) {
                     asymptotes.push(0);
+                }
+
+                // Pattern 6: Quadratic difference forms x^2 - a or a - x^2 -> asymptotes at x = ±sqrt(a)
+                // Handles variants with optional spaces and optional surrounding parentheses.
+                const quadMinusPattern = /x\s*\^\s*2\s*-\s*([0-9.]+)/g;
+                while ((factorMatch = quadMinusPattern.exec(denom)) !== null) {
+                    const constant = parseFloat(factorMatch[1]);
+                    if (isFinite(constant) && constant > 0) {
+                        const root = Math.sqrt(constant);
+                        const candidates = [root, -root];
+                        for (const candidate of candidates) {
+                            const roundedAsymptote = Math.abs(candidate - Math.round(candidate)) < 0.0001
+                                ? Math.round(candidate)
+                                : candidate;
+                            if (!asymptotes.includes(roundedAsymptote)) {
+                                asymptotes.push(roundedAsymptote);
+                            }
+                        }
+                    }
+                }
+
+                const quadReversePattern = /([0-9.]+)\s*-\s*x\s*\^\s*2/g;
+                while ((factorMatch = quadReversePattern.exec(denom)) !== null) {
+                    const constant = parseFloat(factorMatch[1]);
+                    if (isFinite(constant) && constant > 0) {
+                        const root = Math.sqrt(constant);
+                        const candidates = [root, -root];
+                        for (const candidate of candidates) {
+                            const roundedAsymptote = Math.abs(candidate - Math.round(candidate)) < 0.0001
+                                ? Math.round(candidate)
+                                : candidate;
+                            if (!asymptotes.includes(roundedAsymptote)) {
+                                asymptotes.push(roundedAsymptote);
+                            }
+                        }
+                    }
                 }
             }
         } catch (error) {
@@ -24683,6 +24771,23 @@ class Graphiti {
             return (crossesTopToBottom && narrowInX) || (oppositeLargeSigns && narrowInX && hugeJump);
         };
 
+        const crossesKnownVerticalAsymptote = (prevWorld, nextWorld) => {
+            const asymptotes = func.explicitVerticalAsymptotes;
+            if (!asymptotes || !Array.isArray(asymptotes) || asymptotes.length === 0 || !prevWorld || !nextWorld) {
+                return false;
+            }
+
+            const minX = Math.min(prevWorld.x, nextWorld.x);
+            const maxX = Math.max(prevWorld.x, nextWorld.x);
+
+            for (const asymptoteX of asymptotes) {
+                if (asymptoteX > minX && asymptoteX < maxX) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
         for (let i = 0; i < func.points.length; i++) {
             const point = func.points[i];
 
@@ -24711,6 +24816,16 @@ class Graphiti {
             }
 
             if (isLikelyAsymptoteBridge(previousWorldPoint, point, previousScreenPos, screenPos)) {
+                if (pathStarted) {
+                    this.ctx.stroke();
+                    pathStarted = false;
+                }
+                previousScreenPos = screenPos;
+                previousWorldPoint = point;
+                continue;
+            }
+
+            if (crossesKnownVerticalAsymptote(previousWorldPoint, point)) {
                 if (pathStarted) {
                     this.ctx.stroke();
                     pathStarted = false;
