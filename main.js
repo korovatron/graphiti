@@ -3879,6 +3879,10 @@ class Graphiti {
                 if (bufferedMinX <= 1 && bufferedMaxX >= 1) criticalPoints.push(1);
                 if (bufferedMinX <= -1 && bufferedMaxX >= -1) criticalPoints.push(-1);
             }
+            if (processedExpression.includes('sqrt') && bufferedMinX <= 0 && bufferedMaxX >= 0) {
+                // Include x=0 for square-root domains so y=sqrt(x) anchors at the origin.
+                criticalPoints.push(0);
+            }
 
             const pushEvaluatedSample = (x) => {
                 try {
@@ -3916,12 +3920,18 @@ class Graphiti {
             };
 
             const getAsymptoteApproachPoint = (asymptoteX, direction, intervalMin, intervalMax, baseGap) => {
-                const multipliers = [1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125];
+                const multipliers = [
+                    1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125,
+                    0.00390625, 0.001953125, 0.0009765625, 0.00048828125,
+                    0.000244140625, 0.0001220703125, 0.00006103515625,
+                    0.000030517578125, 0.0000152587890625, 0.00000762939453125,
+                    0.000003814697265625, 0.0000019073486328125
+                ];
                 const viewportPad = Math.max((this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
                 let bestPoint = null;
 
                 for (const m of multipliers) {
-                    const offset = Math.max(baseGap * m, 1e-8);
+                    const offset = Math.max(baseGap * m, 1e-14);
                     const x = asymptoteX + direction * offset;
                     if (x < intervalMin || x > intervalMax) continue;
 
@@ -4002,7 +4012,8 @@ class Graphiti {
             // Add critical points that might have been missed due to step size
             for (const criticalX of criticalPoints) {
                 // Check if this critical point is already very close to an existing point
-                const existsAlready = points.some(p => Math.abs(p.x - criticalX) < step * 0.1);
+                const criticalTolerance = Math.max(Math.abs(step) * 0.001, 1e-10);
+                const existsAlready = points.some(p => Math.abs(p.x - criticalX) < criticalTolerance);
                 if (!existsAlready) {
                     try {
                         scope.x = criticalX;
@@ -7826,6 +7837,61 @@ class Graphiti {
         
         try {
             normalizedExpression = this.convertFromLatex(expression).toLowerCase().trim();
+
+            // Detect log-family asymptotes from linear arguments in ln(arg)/log(arg).
+            // Covers families such as ln(x+1), 2ln(x), -2log(x), ln(2x-3).
+            const expressionRhsMatch = normalizedExpression.match(/^\s*y\s*[=><≥≤]\s*(.+)$/i);
+            const expressionCore = expressionRhsMatch && expressionRhsMatch[1]
+                ? expressionRhsMatch[1].trim()
+                : normalizedExpression;
+            const logArgumentPattern = /\b(?:ln|log)\s*\(([^()]+)\)/g;
+            let logMatch;
+            while ((logMatch = logArgumentPattern.exec(expressionCore)) !== null) {
+                const argumentExpression = logMatch[1].trim();
+                if (!argumentExpression) continue;
+
+                try {
+                    const compiledArg = this.getCompiledExpression(argumentExpression);
+                    const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                    scope.x = 0;
+                    const v0 = compiledArg.evaluate(scope);
+                    scope.x = 1;
+                    const v1 = compiledArg.evaluate(scope);
+                    scope.x = 2;
+                    const v2 = compiledArg.evaluate(scope);
+
+                    if (!isFinite(v0) || !isFinite(v1) || !isFinite(v2)) {
+                        continue;
+                    }
+
+                    // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                    const b = v0;
+                    const a = v1 - v0;
+                    if (Math.abs(a) < 1e-12) {
+                        continue;
+                    }
+
+                    const expectedV2 = 2 * a + b;
+                    const linearResidual = Math.abs(v2 - expectedV2);
+                    const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                    if (linearResidual > linearScale * 1e-8) {
+                        continue;
+                    }
+
+                    const asymptoteX = -b / a;
+                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001
+                            ? Math.round(asymptoteX)
+                            : asymptoteX;
+                        if (!asymptotes.includes(roundedAsymptote)) {
+                            asymptotes.push(roundedAsymptote);
+                        }
+                    }
+                } catch {
+                    // Ignore argument parse failures and continue with other candidates.
+                }
+            }
             
             // Strategy: Find division operators and extract denominators carefully
             // Handle nested parentheses properly
