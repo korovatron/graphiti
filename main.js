@@ -7805,6 +7805,12 @@ class Graphiti {
     detectVerticalAsymptotes(expression, rangeMinX = null, rangeMaxX = null) {
         // Detect vertical asymptotes in rational expressions
         // Returns array of x-values where vertical asymptotes occur
+        // Regression reference families:
+        // - tan(x), tan(2x), sec(x), csc(x)
+        // - (x^2+1)/(x^2-9)
+        // - (x-1)/(x^2-16)
+        // - (x^2+2x+5)/(x^3-4x)
+        // - (x^2-1)/(x^2-x) [hole vs pole discrimination]
         const asymptotes = [];
         let denominators = [];
         
@@ -19137,10 +19143,15 @@ class Graphiti {
         const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
         const isParametric = funcType === 'parametric';
         
-        // Detect vertical asymptotes for snapping (for rational functions/inequalities)
+        // Detect vertical asymptotes for snapping and discontinuity filtering.
         let verticalAsymptotes = [];
-        if (isImplicit) {
-            verticalAsymptotes = this.detectVerticalAsymptotes(func.expression);
+        if (Array.isArray(func.explicitVerticalAsymptotes) && func.explicitVerticalAsymptotes.length > 0) {
+            verticalAsymptotes = func.explicitVerticalAsymptotes.slice();
+        } else if (!isParametric) {
+            verticalAsymptotes = this.detectVerticalAsymptotes(func.expression, this.viewport.minX, this.viewport.maxX);
+            if (!isImplicit) {
+                func.explicitVerticalAsymptotes = verticalAsymptotes.slice();
+            }
         }
         
         if (isImplicit) {
@@ -19387,6 +19398,12 @@ class Graphiti {
                 
                 // Check for valid points
                 if (!isFinite(y1) || !isFinite(y2)) continue;
+
+                // Do not try to interpolate roots across a known vertical asymptote segment.
+                const segmentHasKnownAsymptote = verticalAsymptotes.some(asymptoteX =>
+                    asymptoteX > Math.min(x1, x2) && asymptoteX < Math.max(x1, x2)
+                );
+                if (segmentHasKnownAsymptote) continue;
                 
                 // Check for sign change (zero crossing) or exact zero
                 // Use <= to catch cases where one point is exactly zero
@@ -19462,6 +19479,11 @@ class Graphiti {
                     }
                     
                     if (xIntercept !== null) {
+                        const nearKnownAsymptote = verticalAsymptotes.some(asymptoteX => Math.abs(xIntercept - asymptoteX) < 0.05);
+                        if (nearKnownAsymptote) {
+                            continue;
+                        }
+
                         // Check if this intercept is far enough from existing ones
                         const isDuplicate = allIntercepts.some(existing => 
                             Math.abs(existing.x - xIntercept) < minDistance
@@ -19496,6 +19518,16 @@ class Graphiti {
         const funcType = this.detectFunctionType(func.expression);
         const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
         const isParametric = funcType === 'parametric';
+
+        let verticalAsymptotes = [];
+        if (Array.isArray(func.explicitVerticalAsymptotes) && func.explicitVerticalAsymptotes.length > 0) {
+            verticalAsymptotes = func.explicitVerticalAsymptotes.slice();
+        } else if (!isParametric) {
+            verticalAsymptotes = this.detectVerticalAsymptotes(func.expression, this.viewport.minX, this.viewport.maxX);
+            if (!isImplicit) {
+                func.explicitVerticalAsymptotes = verticalAsymptotes.slice();
+            }
+        }
         
         if (isImplicit) {
             // For implicit functions, try to solve the equation at x=0 for accurate y-intercepts
@@ -19706,6 +19738,12 @@ class Graphiti {
             }
         } else {
             // Y-intercept occurs where x = 0
+            // If x=0 is a known vertical asymptote, there is no valid y-intercept.
+            const zeroIsAsymptote = verticalAsymptotes.some(asymptoteX => Math.abs(asymptoteX) < 1e-5);
+            if (zeroIsAsymptote) {
+                return this.selectEvenlySpaced(allIntercepts, maxInterceptsToDisplay);
+            }
+
             // Evaluate the explicit function at x = 0
             try {
                 // For explicit inequalities, extract the boundary equation
