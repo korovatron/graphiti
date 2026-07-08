@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.65';
+const VERSION = '1.1.66';
 
 class Graphiti {
     constructor() {
@@ -10065,7 +10065,9 @@ class Graphiti {
         const horizontalValues = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal.slice().sort((a, b) => a - b) : [];
         const obliqueLines = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
 
-        const hasPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression) && verticalValues.length >= 2;
+        const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
+        const hasReciprocalPeriodicTrigVerticals = /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expression);
+        const hasPeriodicTrigVerticals = (hasNamedPeriodicTrigVerticals || hasReciprocalPeriodicTrigVerticals) && verticalValues.length >= 2;
         if (hasPeriodicTrigVerticals) {
             const periodicEquation = this.formatPeriodicVerticalAsymptoteLatex(verticalValues);
             if (periodicEquation) {
