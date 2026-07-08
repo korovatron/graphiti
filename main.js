@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.45';
+const VERSION = '1.1.55';
 
 class Graphiti {
     constructor() {
@@ -6578,6 +6578,7 @@ class Graphiti {
             } else {
                 // Perfect cache hit - viewport and data match
                 this.ctx.drawImage(cached.canvas, 0, 0);
+                this.drawFunctionAsymptotes(func);
                 return;
             }
         }
@@ -6785,6 +6786,30 @@ class Graphiti {
                 // Don't clear existing points - keep them visible
                 this.activeImplicitCalculations.delete(func.id);
                 return;
+            }
+
+            // Algebraic asymptotes for hyperbola-family conics are independent of the
+            // marching-squares contour and can be derived directly from the quadratic form.
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                const implicitAsymptotes = this.detectImplicitHyperbolaAsymptotes(equation);
+                if (implicitAsymptotes) {
+                    const asymptoteSources = {
+                        vertical: implicitAsymptotes.vertical.map(value => ({ value, source: 'algebraic' })),
+                        horizontal: implicitAsymptotes.horizontal.map(value => ({ value, source: 'algebraic' })),
+                        oblique: implicitAsymptotes.oblique.map(line => ({ m: line.m, b: line.b, source: 'algebraic' }))
+                    };
+
+                    this.updateFunctionAsymptoteData(
+                        func,
+                        implicitAsymptotes.vertical,
+                        implicitAsymptotes.horizontal,
+                        implicitAsymptotes.oblique,
+                        null,
+                        asymptoteSources
+                    );
+                } else {
+                    this.clearFunctionAsymptoteData(func);
+                }
             }
             
             // Check if calculation was cancelled before starting heavy computation
@@ -10619,6 +10644,295 @@ class Graphiti {
             console.error('Error parsing implicit inequality:', error);
             return null;
         }
+    }
+
+    detectImplicitHyperbolaAsymptotes(equation) {
+        const coefficients = this.extractImplicitQuadraticCoefficients(equation);
+        if (!coefficients) {
+            return null;
+        }
+
+        const { A, B, C, D, E } = coefficients;
+        const discriminant = (B * B) - (4 * A * C);
+
+        // Only hyperbolas (including rectangular hyperbolas) have asymptotes here.
+        if (!Number.isFinite(discriminant) || discriminant <= 1e-12) {
+            return null;
+        }
+
+        const centreDenominator = (4 * A * C) - (B * B);
+        if (!Number.isFinite(centreDenominator) || Math.abs(centreDenominator) < 1e-12) {
+            return null;
+        }
+
+        const h = ((B * E) - (2 * C * D)) / centreDenominator;
+        const k = ((B * D) - (2 * A * E)) / centreDenominator;
+        if (!Number.isFinite(h) || !Number.isFinite(k)) {
+            return null;
+        }
+
+        const vertical = [];
+        const horizontal = [];
+        const oblique = [];
+        const addUniqueVertical = (x) => {
+            if (!Number.isFinite(x)) return;
+            if (!vertical.some(existing => Math.abs(existing - x) <= 1e-8)) {
+                vertical.push(Math.abs(x - Math.round(x)) < 1e-10 ? Math.round(x) : x);
+            }
+        };
+        const addUniqueHorizontal = (y) => {
+            if (!Number.isFinite(y)) return;
+            if (!horizontal.some(existing => Math.abs(existing - y) <= 1e-8)) {
+                horizontal.push(Math.abs(y - Math.round(y)) < 1e-10 ? Math.round(y) : y);
+            }
+        };
+        const addUniqueOblique = (m) => {
+            if (!Number.isFinite(m)) return;
+            const b = k - (m * h);
+            const duplicate = oblique.some(existing => {
+                const slopeClose = Math.abs(existing.m - m) <= Math.max(1e-8, Math.abs(existing.m) * 1e-6);
+                const interceptClose = Math.abs(existing.b - b) <= Math.max(1e-8, Math.abs(existing.b) * 1e-6);
+                return slopeClose && interceptClose;
+            });
+            if (!duplicate) {
+                oblique.push({ m, b, direction: 0 });
+            }
+        };
+
+        // Solve the translated homogeneous quadratic A*u^2 + B*u*v + C*v^2 = 0.
+        // If C is ~0, one asymptote is vertical through the centre and the other is finite-slope.
+        const finiteSlopeRoots = [];
+        if (Math.abs(C) <= 1e-12) {
+            if (Math.abs(B) <= 1e-12) {
+                return null;
+            }
+            addUniqueVertical(h);
+            finiteSlopeRoots.push(-A / B);
+        } else {
+            const slopeDiscriminant = (B * B) - (4 * A * C);
+            if (slopeDiscriminant < -1e-12) {
+                return null;
+            }
+
+            const sqrtDiscriminant = Math.sqrt(Math.max(0, slopeDiscriminant));
+            finiteSlopeRoots.push((-B + sqrtDiscriminant) / (2 * C));
+            finiteSlopeRoots.push((-B - sqrtDiscriminant) / (2 * C));
+        }
+
+        for (const m of finiteSlopeRoots) {
+            if (Number.isFinite(m)) {
+                addUniqueOblique(m);
+            }
+        }
+
+        // Rectangular hyperbola / pure xy term gives a horizontal asymptote as well.
+        if (Math.abs(A) <= 1e-12 && Math.abs(C) <= 1e-12 && Math.abs(B) > 1e-12) {
+            addUniqueHorizontal(k);
+        }
+
+        vertical.sort((a, b) => a - b);
+        horizontal.sort((a, b) => a - b);
+        oblique.sort((a, b) => a.m - b.m);
+
+        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0) {
+            return null;
+        }
+
+        return { vertical, horizontal, oblique };
+    }
+
+    extractImplicitQuadraticCoefficients(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '(' + equation.leftExpression + ')-(' + equation.rightExpression + ')';
+        let parsed;
+        try {
+            parsed = this.cleanMath.parse(combinedExpression);
+        } catch {
+            return null;
+        }
+
+        const coeffMap = this.extractBivariatePolynomialCoefficients(parsed);
+        if (!coeffMap) {
+            return null;
+        }
+
+        const terms = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+        for (const [key, value] of Object.entries(coeffMap)) {
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py)) {
+                return null;
+            }
+            if (px < 0 || py < 0 || px + py > 2) {
+                return null;
+            }
+
+            if (px === 2 && py === 0) terms.A += value;
+            else if (px === 1 && py === 1) terms.B += value;
+            else if (px === 0 && py === 2) terms.C += value;
+            else if (px === 1 && py === 0) terms.D += value;
+            else if (px === 0 && py === 1) terms.E += value;
+            else if (px === 0 && py === 0) terms.F += value;
+        }
+
+        return terms;
+    }
+
+    extractBivariatePolynomialCoefficients(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractBivariatePolynomialCoefficients(node.content);
+        }
+
+        if (node.type === 'ConstantNode') {
+            const value = Number(node.value);
+            return Number.isFinite(value) ? { '0,0': value } : null;
+        }
+
+        if (node.type === 'SymbolNode') {
+            const symbol = String(node.name || '').toLowerCase();
+            if (symbol === 'x') return { '1,0': 1 };
+            if (symbol === 'y') return { '0,1': 1 };
+            if (symbol === 'pi') return { '0,0': Math.PI };
+            if (symbol === 'e') return { '0,0': Math.E };
+            return null;
+        }
+
+        if (node.type !== 'OperatorNode') {
+            return null;
+        }
+
+        const args = node.args || [];
+        const op = node.op;
+
+        const combine = (left, right, sign = 1) => {
+            if (!left || !right) return null;
+            const result = {};
+            const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+            for (const key of keys) {
+                const value = (left[key] || 0) + ((right[key] || 0) * sign);
+                if (Math.abs(value) > 1e-12) {
+                    result[key] = value;
+                }
+            }
+            return Object.keys(result).length > 0 ? result : { '0,0': 0 };
+        };
+
+        const scale = (poly, factor) => {
+            if (!poly || !Number.isFinite(factor)) return null;
+            const result = {};
+            for (const [key, value] of Object.entries(poly)) {
+                const scaled = value * factor;
+                if (Math.abs(scaled) > 1e-12) {
+                    result[key] = scaled;
+                }
+            }
+            return Object.keys(result).length > 0 ? result : { '0,0': 0 };
+        };
+
+        const multiply = (left, right) => {
+            if (!left || !right) return null;
+            const result = {};
+            for (const [leftKey, leftValue] of Object.entries(left)) {
+                const [lxStr, lyStr] = leftKey.split(',');
+                const lx = Number(lxStr);
+                const ly = Number(lyStr);
+                if (!Number.isInteger(lx) || !Number.isInteger(ly)) return null;
+
+                for (const [rightKey, rightValue] of Object.entries(right)) {
+                    const [rxStr, ryStr] = rightKey.split(',');
+                    const rx = Number(rxStr);
+                    const ry = Number(ryStr);
+                    if (!Number.isInteger(rx) || !Number.isInteger(ry)) return null;
+
+                    const px = lx + rx;
+                    const py = ly + ry;
+                    if (px < 0 || py < 0 || px + py > 2) {
+                        return null;
+                    }
+
+                    const key = `${px},${py}`;
+                    result[key] = (result[key] || 0) + (leftValue * rightValue);
+                }
+            }
+
+            for (const key of Object.keys(result)) {
+                if (Math.abs(result[key]) <= 1e-12) {
+                    delete result[key];
+                }
+            }
+            return Object.keys(result).length > 0 ? result : { '0,0': 0 };
+        };
+
+        if (op === '+' && args.length >= 2) {
+            let result = this.extractBivariatePolynomialCoefficients(args[0]);
+            for (let i = 1; i < args.length; i++) {
+                result = combine(result, this.extractBivariatePolynomialCoefficients(args[i]), 1);
+            }
+            return result;
+        }
+
+        if (op === '-' && args.length === 1) {
+            const poly = this.extractBivariatePolynomialCoefficients(args[0]);
+            return scale(poly, -1);
+        }
+
+        if (op === '-' && args.length >= 2) {
+            let result = this.extractBivariatePolynomialCoefficients(args[0]);
+            for (let i = 1; i < args.length; i++) {
+                result = combine(result, this.extractBivariatePolynomialCoefficients(args[i]), -1);
+            }
+            return result;
+        }
+
+        if (op === '*' && args.length >= 2) {
+            let result = this.extractBivariatePolynomialCoefficients(args[0]);
+            for (let i = 1; i < args.length; i++) {
+                result = multiply(result, this.extractBivariatePolynomialCoefficients(args[i]));
+            }
+            return result;
+        }
+
+        if (op === '/' && args.length === 2) {
+            const numerator = this.extractBivariatePolynomialCoefficients(args[0]);
+            const denominator = this.extractBivariatePolynomialCoefficients(args[1]);
+            if (!numerator || !denominator) return null;
+            const denominatorKeys = Object.keys(denominator);
+            if (denominatorKeys.length !== 1 || denominatorKeys[0] !== '0,0') {
+                return null;
+            }
+            const scalar = denominator['0,0'];
+            if (!Number.isFinite(scalar) || Math.abs(scalar) < 1e-12) {
+                return null;
+            }
+            return scale(numerator, 1 / scalar);
+        }
+
+        if (op === '^' && args.length === 2) {
+            const base = this.extractBivariatePolynomialCoefficients(args[0]);
+            if (!base) return null;
+            const exponentNode = args[1];
+            if (!exponentNode || exponentNode.type !== 'ConstantNode') return null;
+            const exponent = Number(exponentNode.value);
+            if (!Number.isInteger(exponent) || exponent < 0 || exponent > 2) {
+                return null;
+            }
+            let result = { '0,0': 1 };
+            for (let i = 0; i < exponent; i++) {
+                result = multiply(result, base);
+                if (!result) return null;
+            }
+            return result;
+        }
+
+        return null;
     }
     
     processImplicitExpression(expression) {
@@ -27112,8 +27426,8 @@ class Graphiti {
         this.ctx.restore();
     }
 
-    drawFunctionAsymptotes(func) {
-        if (!func || this.plotMode !== 'cartesian') {
+    drawFunctionAsymptotes(func, context = this.ctx) {
+        if (!func || this.plotMode !== 'cartesian' || !context) {
             return;
         }
 
@@ -27129,38 +27443,38 @@ class Graphiti {
             return;
         }
 
-        this.ctx.save();
-        this.ctx.strokeStyle = func.color;
-        this.ctx.lineWidth = this.getLineWidth(2);
-        this.ctx.globalAlpha = 0.75;
-        this.ctx.setLineDash([this.getLineWidth(7), this.getLineWidth(4)]);
+        context.save();
+        context.strokeStyle = func.color;
+        context.lineWidth = this.getLineWidth(2);
+        context.globalAlpha = 0.75;
+        context.setLineDash([this.getLineWidth(7), this.getLineWidth(4)]);
 
         if (vertical.length > 0) {
-            this.ctx.beginPath();
+            context.beginPath();
             for (const x of vertical) {
                 if (!Number.isFinite(x)) continue;
                 if (x < this.viewport.minX || x > this.viewport.maxX) continue;
                 const screenPos = this.worldToScreen(x, 0);
-                this.ctx.moveTo(screenPos.x, 0);
-                this.ctx.lineTo(screenPos.x, this.viewport.height);
+                context.moveTo(screenPos.x, 0);
+                context.lineTo(screenPos.x, this.viewport.height);
             }
-            this.ctx.stroke();
+            context.stroke();
         }
 
         if (horizontal.length > 0) {
-            this.ctx.beginPath();
+            context.beginPath();
             for (const y of horizontal) {
                 if (!Number.isFinite(y)) continue;
                 if (y < this.viewport.minY || y > this.viewport.maxY) continue;
                 const screenPos = this.worldToScreen(0, y);
-                this.ctx.moveTo(0, screenPos.y);
-                this.ctx.lineTo(this.viewport.width, screenPos.y);
+                context.moveTo(0, screenPos.y);
+                context.lineTo(this.viewport.width, screenPos.y);
             }
-            this.ctx.stroke();
+            context.stroke();
         }
 
         if (oblique.length > 0) {
-            this.ctx.beginPath();
+            context.beginPath();
             for (const line of oblique) {
                 if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) continue;
 
@@ -27170,13 +27484,13 @@ class Graphiti {
 
                 const left = this.worldToScreen(this.viewport.minX, yLeft);
                 const right = this.worldToScreen(this.viewport.maxX, yRight);
-                this.ctx.moveTo(left.x, left.y);
-                this.ctx.lineTo(right.x, right.y);
+                context.moveTo(left.x, left.y);
+                context.lineTo(right.x, right.y);
             }
-            this.ctx.stroke();
+            context.stroke();
         }
 
-        this.ctx.restore();
+        context.restore();
     }
 
     drawImplicitFunction(func) {
@@ -27192,6 +27506,7 @@ class Graphiti {
         // we still need to draw the shading, so don't return early
         if (!pointsToUse || pointsToUse.length === 0) {
             if (!(isInequality && func.gridData)) {
+                this.drawFunctionAsymptotes(func);
                 return; // Only return if not an inequality with gridData
             }
         }
@@ -27206,6 +27521,7 @@ class Graphiti {
         
         // If there are no points to draw (boundary outside viewport), we're done after shading
         if (!pointsToUse || pointsToUse.length === 0) {
+            this.drawFunctionAsymptotes(func);
             return;
         }
         
@@ -27392,6 +27708,9 @@ class Graphiti {
                 }
             }
         }
+
+        // Paint algebraic asymptotes into the cached canvas so every redraw preserves them.
+        this.drawFunctionAsymptotes(func, offscreenCtx);
         
         // Store in cache
         this.implicitCurveCache.set(func.id, {
