@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.56';
+const VERSION = '1.1.61';
 
 class Graphiti {
     constructor() {
@@ -23,9 +23,6 @@ class Graphiti {
         this.currentState = this.states.TITLE;
         this.previousState = null;
 
-        // Temporary diagnostics for oblique asymptote tuning.
-        this.debugObliqueAsymptoteCoeffs = true;
-        
         // Flag to track if app has been initialized (prevents duplicate function loading)
         this.hasInitialized = false;
         
@@ -2243,7 +2240,10 @@ class Graphiti {
                         data-limit-type="upper"
                     ></math-field>
                 </div>
-                </div>
+            </div>
+            <div class="asymptote-info-container" data-function-id="${func.id}">
+                <div class="asymptote-info-title">Asymptotes:</div>
+                <div class="asymptote-equation-list"></div>
             </div>
         `;
         
@@ -2740,6 +2740,8 @@ class Graphiti {
         
         container.appendChild(funcDiv);
         
+        this.updateFunctionAsymptoteInfo(func);
+
         // Set initial visual state
         this.updateFunctionVisualState(func, funcDiv);
     }
@@ -2763,6 +2765,8 @@ class Graphiti {
             if (mathField) mathField.style.opacity = '0.6';
             funcDiv.classList.add('disabled');
         }
+
+        this.updateFunctionAsymptoteInfo(func);
     }
     
     updateIntersectionToggleButton() {
@@ -9955,6 +9959,8 @@ class Graphiti {
                 oblique: obliqueEquationDetails
             }
         };
+
+        this.updateFunctionAsymptoteInfo(func);
     }
 
     clearFunctionAsymptoteData(func) {
@@ -9967,6 +9973,157 @@ class Graphiti {
         delete func.obliqueAsymptotes;
         delete func.asymptoteData;
         delete func.holes;
+
+        this.updateFunctionAsymptoteInfo(func);
+    }
+
+    updateFunctionAsymptoteInfo(func) {
+        if (!func) {
+            return;
+        }
+
+        if (!func.enabled) {
+            const hiddenFuncItem = document.querySelector(`[data-function-id="${func.id}"]`);
+            if (hiddenFuncItem) {
+                const hiddenInfoContainer = hiddenFuncItem.querySelector('.asymptote-info-container');
+                if (hiddenInfoContainer) {
+                    hiddenInfoContainer.classList.remove('visible');
+                }
+            }
+            return;
+        }
+
+        const funcItem = document.querySelector(`[data-function-id="${func.id}"]`);
+        if (!funcItem) {
+            return;
+        }
+
+        const infoContainer = funcItem.querySelector('.asymptote-info-container');
+        const equationList = infoContainer ? infoContainer.querySelector('.asymptote-equation-list') : null;
+        if (!infoContainer || !equationList) {
+            return;
+        }
+
+        const equations = this.buildAsymptoteDisplayLatex(func);
+
+        equationList.innerHTML = '';
+        if (equations.length === 0) {
+            infoContainer.classList.remove('visible');
+            return;
+        }
+
+        infoContainer.classList.add('visible');
+        for (const equation of equations) {
+            const item = document.createElement('math-field');
+            item.className = 'asymptote-equation-item asymptote-equation-field';
+            item.setAttribute('read-only', 'true');
+            item.setAttribute('default-mode', 'math');
+            item.setAttribute('virtual-keyboard-mode', 'off');
+            item.setAttribute('tabindex', '-1');
+            item.setAttribute('color-scheme', 'dark');
+            item.value = equation;
+            equationList.appendChild(item);
+        }
+    }
+
+    buildAsymptoteDisplayLatex(func) {
+        const asymptoteData = func ? func.asymptoteData : null;
+        if (!asymptoteData) {
+            return [];
+        }
+
+        const equations = [];
+        const expression = this.convertFromLatex(func.expression).toLowerCase();
+        const verticalValues = Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical.slice().sort((a, b) => a - b) : [];
+        const horizontalValues = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal.slice().sort((a, b) => a - b) : [];
+        const obliqueLines = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+
+        const hasPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression) && verticalValues.length >= 2;
+        if (hasPeriodicTrigVerticals) {
+            const periodicEquation = this.formatPeriodicVerticalAsymptoteLatex(verticalValues);
+            if (periodicEquation) {
+                equations.push(periodicEquation);
+            }
+        } else {
+            for (const value of verticalValues) {
+                equations.push(`x = ${this.formatAsymptoteCoefficientLatex(value)}`);
+            }
+        }
+
+        for (const value of horizontalValues) {
+            equations.push(`y = ${this.formatAsymptoteCoefficientLatex(value)}`);
+        }
+
+        for (const line of obliqueLines) {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                continue;
+            }
+
+            const slope = line.m;
+            const intercept = line.b;
+            const slopeLatex = this.formatAsymptoteCoefficientLatex(slope);
+            const interceptLatex = this.formatAsymptoteCoefficientLatex(Math.abs(intercept));
+            const sign = intercept >= 0 ? '+' : '-';
+
+            if (Math.abs(slope - 1) < 1e-9) {
+                equations.push(Math.abs(intercept) < 1e-9 ? 'y = x' : `y = x ${sign} ${interceptLatex}`);
+            } else if (Math.abs(slope + 1) < 1e-9) {
+                equations.push(Math.abs(intercept) < 1e-9 ? 'y = -x' : `y = -x ${sign} ${interceptLatex}`);
+            } else {
+                equations.push(Math.abs(intercept) < 1e-9 ? `y = ${slopeLatex}x` : `y = ${slopeLatex}x ${sign} ${interceptLatex}`);
+            }
+        }
+
+        return equations;
+    }
+
+    formatPeriodicVerticalAsymptoteLatex(values) {
+        if (!Array.isArray(values) || values.length < 2) {
+            return null;
+        }
+
+        const sorted = values.slice().sort((a, b) => a - b).filter(value => Number.isFinite(value));
+        if (sorted.length < 2) {
+            return null;
+        }
+
+        const differences = [];
+        for (let i = 1; i < sorted.length; i++) {
+            differences.push(sorted[i] - sorted[i - 1]);
+        }
+
+        const averageDifference = differences.reduce((sum, value) => sum + value, 0) / differences.length;
+        if (!Number.isFinite(averageDifference) || Math.abs(averageDifference) < 1e-12) {
+            return null;
+        }
+
+        const consistent = differences.every(difference => Math.abs(difference - averageDifference) <= Math.max(1e-6, Math.abs(averageDifference) * 1e-4));
+        if (!consistent) {
+            return null;
+        }
+
+        const period = Math.abs(averageDifference);
+        const offset = this.modPositive(sorted[0], period);
+        const periodLatex = this.formatAsymptoteCoefficientLatex(period);
+        if (!periodLatex) {
+            return null;
+        }
+
+        if (Math.abs(offset) < 1e-6 || Math.abs(offset - period) < 1e-6) {
+            return `x = ${periodLatex} n`;
+        }
+
+        const offsetLatex = this.formatAsymptoteCoefficientLatex(offset);
+        return `x = ${offsetLatex} + ${periodLatex} n`;
+    }
+
+    modPositive(value, modulus) {
+        if (!Number.isFinite(value) || !Number.isFinite(modulus) || Math.abs(modulus) < 1e-12) {
+            return value;
+        }
+
+        const remainder = value % modulus;
+        return remainder < 0 ? remainder + modulus : remainder;
     }
     
     getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes = []) {
@@ -12476,6 +12633,40 @@ class Graphiti {
                 }
             }
         }
+
+        const commonValue = this.formatAsCommonValue(value);
+        if (commonValue) {
+            const isNegative = commonValue.startsWith('-');
+            const label = commonValue.replace(/^-/, '');
+            const latexMap = {
+                '1/2': '\\frac{1}{2}',
+                '1/3': '\\frac{1}{3}',
+                '2/3': '\\frac{2}{3}',
+                '√2': '\\sqrt{2}',
+                '√3': '\\sqrt{3}',
+                '√5': '\\sqrt{5}',
+                '2√2': '2\\sqrt{2}',
+                '2√3': '2\\sqrt{3}',
+                '√2/2': '\\frac{\\sqrt{2}}{2}',
+                '√3/2': '\\frac{\\sqrt{3}}{2}',
+                '√3/3': '\\frac{\\sqrt{3}}{3}',
+                '2√3/3': '\\frac{2\\sqrt{3}}{3}',
+                'e': 'e',
+                'e-1': 'e-1',
+                '1-1/e': '1-\\frac{1}{e}',
+                'φ': '\\varphi'
+            };
+
+            if (Object.prototype.hasOwnProperty.call(latexMap, label)) {
+                return isNegative ? `-${latexMap[label]}` : latexMap[label];
+            }
+        }
+
+        const fraction = this.decimalToFraction(value, 0.001, 20);
+        if (fraction && fraction.denominator > 1) {
+            const sign = fraction.numerator < 0 ? '-' : '';
+            return `${sign}\\frac{${Math.abs(fraction.numerator)}}{${fraction.denominator}}`;
+        }
         
         // Round to reasonable precision
         const rounded = Math.round(value * 1000) / 1000;
@@ -12498,6 +12689,15 @@ class Graphiti {
         }
         
         return { numerator, denominator };
+    }
+
+    formatAsymptoteCoefficientLatex(value) {
+        if (value === null || value === undefined || !isFinite(value)) {
+            return '';
+        }
+
+        const text = this.formatValueAsLatex(value);
+        return text || this.formatCoordinate(value);
     }
     
     // Evaluate a LaTeX expression to a numeric value
@@ -26109,10 +26309,6 @@ class Graphiti {
             }
         });
 
-        if (this.debugObliqueAsymptoteCoeffs && this.plotMode === 'cartesian') {
-            this.drawObliqueAsymptoteDebugOverlay();
-        }
-        
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.frozenIntersectionBadges.length > 0) {
@@ -26130,7 +26326,7 @@ class Graphiti {
                 this.drawIntersectionMarkers();
             }
         }
-        
+
         // Draw turning point markers if enabled and viewport is stable (skip during polar animation or pause)
         if (this.showTurningPoints && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.isViewportChanging && this.frozenTurningPointBadges.length > 0) {
@@ -26141,7 +26337,7 @@ class Graphiti {
                 this.drawTurningPointMarkers();
             }
         }
-        
+
         // Draw axis intercept markers if enabled and viewport is stable (skip during polar animation or pause)
         if (this.showIntercepts && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.isViewportChanging && this.frozenInterceptBadges && this.frozenInterceptBadges.length > 0) {
@@ -26152,163 +26348,56 @@ class Graphiti {
                 this.drawInterceptMarkers();
             }
         }
-        
+
         // Draw integration shaded regions (before badges) - skip in performance mode
         if (!isPerformanceMode && this.integralPairs.length > 0) {
             this.drawIntegrationRegions();
         }
-        
+
         // Draw tracing indicator if active, and all persistent badges
         if (this.input.tracing.active) {
             this.drawActiveTracingIndicator();
         }
-        
+
         // Draw all persistent badges (skip during polar animation or pause)
         if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             this.updateBadgeScreenPositions();
             this.drawPersistentBadges();
         }
-        
+
         // Draw integral panel at bottom-right for ALL pairs (after badges so it's on top) - skip in performance mode
         if (!isPerformanceMode && this.integralPairs.length > 0) {
             this.drawIntegralPanel();
         }
-        
+
         // Draw calculation indicator during viewport changes and calculations
         // Only shown when implicit functions are present
         if (this.shouldShowCalculationIndicator()) {
             this.drawCalculationIndicator();
         }
-        
+
         // Draw polar animation coordinates if animating or paused
         if (this.polarAnimation && (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) && this.plotMode === 'polar') {
             this.drawPolarAnimationSweepLine(); // Draw radar sweep line first (behind everything)
             this.drawPolarAnimationCoordinates();
             this.drawPolarAnimationPoint();
         }
-        
+
         // Draw rectangular zoom preview (desktop only, Cartesian mode only)
         if (this.input.zoomRect.active) {
             this.drawZoomRectangle();
         }
-        
+
         // Explicitly reset all canvas state to prevent leaking (especially important for mobile)
         this.ctx.shadowBlur = 0;
         this.ctx.shadowColor = 'transparent';
         this.ctx.globalAlpha = 1.0;
         this.ctx.globalCompositeOperation = 'source-over';
         this.ctx.setLineDash([]);
-        
+
         // UI overlays removed - cleaner interface
     }
 
-    drawObliqueAsymptoteDebugOverlay() {
-        const enabledFunctions = this.getCurrentFunctions().filter(func => func.enabled);
-        if (enabledFunctions.length === 0) {
-            return;
-        }
-
-        const rows = [];
-        for (const func of enabledFunctions) {
-            const debug = func.asymptoteData && func.asymptoteData.debug
-                ? func.asymptoteData.debug.oblique
-                : null;
-            if (!debug) {
-                continue;
-            }
-
-            rows.push({
-                color: func.color,
-                expression: (func.expression || '').replace(/\s+/g, ''),
-                debug: {
-                    ...debug,
-                    asymptoteDetails: func.asymptoteData && func.asymptoteData.equationsDetailed
-                        ? func.asymptoteData.equationsDetailed
-                        : { vertical: [], horizontal: [], oblique: [] }
-                }
-            });
-        }
-
-        if (rows.length === 0) {
-            return;
-        }
-
-        const formatValue = (value) => Number.isFinite(value) ? value.toFixed(6) : 'n/a';
-        const formatLine = (line) => {
-            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
-                return 'none';
-            }
-            const confidence = line.confidence ? (' [' + line.confidence + ']') : '';
-            return 'm=' + formatValue(line.m) + ', b=' + formatValue(line.b) + confidence;
-        };
-
-        const formatAsymptoteDetails = (details) => {
-            if (!Array.isArray(details) || details.length === 0) {
-                return 'none';
-            }
-            return details
-                .map(item => {
-                    const src = item && item.source ? item.source : 'numeric';
-                    return (item && item.equation ? item.equation : 'n/a') + ' [' + src + ']';
-                })
-                .join(' | ');
-        };
-
-        this.ctx.save();
-        this.ctx.font = '12px monospace';
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
-
-        const left = 10;
-        let top = 10;
-        const lineHeight = 14;
-        const boxWidth = Math.min(620, this.viewport.width - 20);
-
-        const maxRows = Math.min(rows.length, 5);
-        const linesPerRow = 5;
-        const boxHeight = 8 + (maxRows * linesPerRow * lineHeight) + 8;
-
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
-        this.ctx.fillRect(left, top, boxWidth, boxHeight);
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(left, top, boxWidth, boxHeight);
-
-        top += 6;
-        for (let i = 0; i < maxRows; i++) {
-            const row = rows[i];
-            const label = row.expression.length > 46 ? (row.expression.substring(0, 43) + '...') : row.expression;
-            const finalLines = Array.isArray(row.debug.finalLines) ? row.debug.finalLines : [];
-            const finalSummary = finalLines.length > 0
-                ? finalLines.map(line => formatLine(line)).join(' | ')
-                : 'none';
-
-            const details = row.debug && row.debug.asymptoteDetails ? row.debug.asymptoteDetails : null;
-            const verticalSummary = formatAsymptoteDetails(details ? details.vertical : null);
-            const horizontalSummary = formatAsymptoteDetails(details ? details.horizontal : null);
-            const obliqueSummary = formatAsymptoteDetails(details ? details.oblique : null);
-
-            this.ctx.fillStyle = row.color || '#FFFFFF';
-            this.ctx.fillText('f: ' + label, left + 8, top);
-            top += lineHeight;
-
-            this.ctx.fillStyle = '#E8E8E8';
-            this.ctx.fillText('+inf: ' + formatLine(row.debug.positive), left + 8, top);
-            top += lineHeight;
-
-            this.ctx.fillText('-inf: ' + formatLine(row.debug.negative), left + 8, top);
-            top += lineHeight;
-
-            this.ctx.fillText('final: ' + finalSummary, left + 8, top);
-            top += lineHeight;
-
-            this.ctx.fillText('asym: V{' + verticalSummary + '} H{' + horizontalSummary + '} O{' + obliqueSummary + '}', left + 8, top);
-            top += lineHeight;
-        }
-
-        this.ctx.restore();
-    }
-    
     scheduleChunkedDraw() {
         // Use requestAnimationFrame to avoid blocking the UI
         requestAnimationFrame(() => {

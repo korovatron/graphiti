@@ -996,6 +996,80 @@
             display: flex;
         }
 
+        .asymptote-info-container {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .asymptote-info-container.visible {
+            display: flex;
+        }
+
+        .asymptote-info-title {
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.35;
+        }
+
+        .asymptote-equation-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding-left: 10px;
+        }
+
+        .asymptote-equation-item {
+            display: block;
+            font-size: 13px;
+            color: var(--text-secondary);
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.35;
+            margin: 0;
+        }
+
+        .asymptote-equation-field {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            font-size: 13px !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            color: var(--text-secondary) !important;
+            --background: transparent;
+            --text-color: var(--text-secondary);
+            --border: none;
+            --selection-background-color: transparent;
+            --selection-color: var(--text-secondary);
+            pointer-events: none;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        .asymptote-equation-field:focus,
+        .asymptote-equation-field:focus-within {
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        .asymptote-equation-field::part(menu-toggle),
+        .asymptote-equation-field::part(virtual-keyboard-toggle),
+        .asymptote-equation-field::part(keyboard-toggle) {
+            display: none;
+        }
+
+        .asymptote-equation-field::part(content) {
+            padding: 0 !important;
+            white-space: normal;
+            line-height: 1;
+        }
+
         .integral-limit-row {
             flex: 1;
             min-width: 0;
