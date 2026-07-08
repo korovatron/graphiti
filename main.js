@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.66';
+const VERSION = '1.1.69';
 
 class Graphiti {
     constructor() {
@@ -8758,7 +8758,10 @@ class Graphiti {
             // Reject cases where the graph is already sitting on the candidate line.
             // This prevents constants like y=6 from being reported as having asymptote y=6.
             const onTheLineTolerance = Math.max(0.005, Math.abs(intercept) * 0.001);
-            if (nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance) {
+            const nearAbsY = Math.abs(tail[0].y);
+            const farAbsY = Math.abs(tail[tail.length - 1].y);
+            const nonDecayingMagnitude = farAbsY >= Math.max(nearAbsY * 0.9, nearAbsY - 1e-6);
+            if (nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
                 return null;
             }
 
@@ -8838,7 +8841,7 @@ class Graphiti {
 
         const parts = this.extractPolynomialRationalParts(processedExpression);
         if (!parts) {
-            return [];
+            return this.detectNumericRemovableDiscontinuities(processedExpression, compiledExpression, hasInverseTrig);
         }
 
         const denominatorRoots = this.findPolynomialRealRoots(parts.denominator);
@@ -8936,6 +8939,137 @@ class Graphiti {
                     x: roundedRoot,
                     y: yFromReduced,
                     source: 'algebraic'
+                });
+            }
+        }
+
+        holes.sort((a, b) => a.x - b.x);
+        return holes;
+    }
+
+    extractTopLevelDivisionNodes(expression) {
+        try {
+            let node = this.cleanMath.parse(expression);
+            while (node && node.type === 'ParenthesisNode') {
+                node = node.content;
+            }
+
+            if (!node || node.type !== 'OperatorNode' || node.op !== '/' || !Array.isArray(node.args) || node.args.length !== 2) {
+                return null;
+            }
+
+            return {
+                numeratorNode: node.args[0],
+                denominatorNode: node.args[1]
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    detectNumericRemovableDiscontinuities(processedExpression, compiledExpression, hasInverseTrig = false) {
+        const divisionParts = this.extractTopLevelDivisionNodes(processedExpression);
+        if (!divisionParts) {
+            return [];
+        }
+
+        const denominatorCoeffs = this.extractPolynomialCoeffs(divisionParts.denominatorNode);
+        if (!denominatorCoeffs || this.getPolynomialDegree(denominatorCoeffs) < 1) {
+            return [];
+        }
+
+        const denominatorRoots = this.findPolynomialRealRoots(denominatorCoeffs);
+        if (!Array.isArray(denominatorRoots) || denominatorRoots.length === 0) {
+            return [];
+        }
+
+        let numeratorCompiled;
+        let denominatorCompiled;
+        try {
+            numeratorCompiled = this.getCompiledExpression(divisionParts.numeratorNode.toString());
+            denominatorCompiled = this.getCompiledExpression(divisionParts.denominatorNode.toString());
+        } catch {
+            return [];
+        }
+
+        const evaluateCompiledAt = (compiled, x) => {
+            try {
+                const scope = this.getEvaluationScope({ x });
+                const value = compiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const holes = [];
+        const rootTolerance = 1e-7;
+        const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
+
+        for (const root of denominatorRoots) {
+            if (!Number.isFinite(root)) continue;
+
+            const numeratorAtRoot = evaluateCompiledAt(numeratorCompiled, root);
+            const denominatorAtRoot = evaluateCompiledAt(denominatorCompiled, root);
+            if (numeratorAtRoot === null || denominatorAtRoot === null) {
+                continue;
+            }
+
+            if (Math.abs(numeratorAtRoot) > rootTolerance || Math.abs(denominatorAtRoot) > rootTolerance) {
+                continue;
+            }
+
+            const sideValues = [];
+            for (const delta of deltas) {
+                const leftX = root - delta;
+                const rightX = root + delta;
+                try {
+                    const leftScope = this.getEvaluationScope({ x: leftX });
+                    const rightScope = this.getEvaluationScope({ x: rightX });
+                    const leftRaw = compiledExpression.evaluate(leftScope);
+                    const rightRaw = compiledExpression.evaluate(rightScope);
+                    const leftY = hasInverseTrig ? leftRaw * 180 / Math.PI : leftRaw;
+                    const rightY = hasInverseTrig ? rightRaw * 180 / Math.PI : rightRaw;
+
+                    if (Number.isFinite(leftY) && Number.isFinite(rightY)) {
+                        sideValues.push({ leftY, rightY });
+                    }
+                } catch {
+                    // Ignore failed probe points.
+                }
+            }
+
+            if (sideValues.length === 0) {
+                continue;
+            }
+
+            const nearest = sideValues[sideValues.length - 1];
+            const sideGap = Math.abs(nearest.leftY - nearest.rightY);
+            const sideMean = (nearest.leftY + nearest.rightY) / 2;
+            const sideGapTolerance = Math.max(1e-4, Math.abs(sideMean) * 2e-3);
+            if (sideGap > sideGapTolerance) {
+                continue;
+            }
+
+            if (sideValues.length >= 2) {
+                const previous = sideValues[sideValues.length - 2];
+                const previousMean = (previous.leftY + previous.rightY) / 2;
+                const stabilityTolerance = Math.max(5e-3, Math.abs(sideMean) * 5e-3);
+                if (Math.abs(sideMean - previousMean) > stabilityTolerance) {
+                    continue;
+                }
+            }
+
+            const roundedRoot = Math.abs(root - Math.round(root)) < 1e-10
+                ? Math.round(root)
+                : root;
+
+            const duplicate = holes.some(existing => Math.abs(existing.x - roundedRoot) <= 1e-7);
+            if (!duplicate) {
+                holes.push({
+                    x: roundedRoot,
+                    y: sideMean,
+                    source: 'numeric'
                 });
             }
         }
