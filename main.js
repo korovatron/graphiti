@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.69';
+const VERSION = '1.1.70';
 
 class Graphiti {
     constructor() {
@@ -8790,6 +8790,21 @@ class Graphiti {
 
             if (!isConvergentTail) {
                 return null;
+            }
+
+            // Snap tiny finite-window offsets to 0 for decaying bounded tails
+            // (for example sin(x)/x), while preserving genuine non-zero limits.
+            const nearZeroCandidate = Math.abs(intercept) <= 0.03;
+            const decaysTowardZero = farAbsY <= Math.max(0.002, nearAbsY * 0.5);
+            const scaledTailMagnitudes = tail
+                .map(sample => Math.abs(sample.y * sample.x))
+                .filter(value => Number.isFinite(value));
+            const boundedReciprocalEnvelope =
+                scaledTailMagnitudes.length === tail.length &&
+                Math.max(...scaledTailMagnitudes) <= 3;
+
+            if (nearZeroCandidate && decaysTowardZero && boundedReciprocalEnvelope) {
+                return 0;
             }
 
             return intercept;
