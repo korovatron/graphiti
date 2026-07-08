@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.26';
+const VERSION = '1.1.35';
 
 class Graphiti {
     constructor() {
@@ -22,6 +22,9 @@ class Graphiti {
         };
         this.currentState = this.states.TITLE;
         this.previousState = null;
+
+        // Temporary diagnostics for oblique asymptote tuning.
+        this.debugObliqueAsymptoteCoeffs = true;
         
         // Flag to track if app has been initialized (prevents duplicate function loading)
         this.hasInitialized = false;
@@ -3848,7 +3851,14 @@ class Graphiti {
             const explicitVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
             const horizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig);
-            this.updateFunctionAsymptoteData(func, explicitVerticalAsymptotes, horizontalAsymptotes);
+            const obliqueDetection = this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
+            const obliqueAsymptotes = obliqueDetection && Array.isArray(obliqueDetection.lines)
+                ? obliqueDetection.lines
+                : [];
+            const obliqueDebug = obliqueDetection && obliqueDetection.debug
+                ? obliqueDetection.debug
+                : null;
+            this.updateFunctionAsymptoteData(func, explicitVerticalAsymptotes, horizontalAsymptotes, obliqueAsymptotes, obliqueDebug);
             const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
 
             const bufferedRange = bufferedMaxX - bufferedMinX;
@@ -8070,6 +8080,134 @@ class Graphiti {
                     }
                 }
             }
+
+            // Detect trig-family vertical asymptotes for tan/sec/cot/csc with linear arguments.
+            // This catches families such as tan(x), tan(2x), sec(3x-1), csc(x+pi/4), cot(0.5x).
+            const addAsymptoteCandidate = (xValue) => {
+                if (!Number.isFinite(xValue) || Math.abs(xValue) > 1e10) {
+                    return;
+                }
+
+                const rounded = Math.abs(xValue - Math.round(xValue)) < 0.0001
+                    ? Math.round(xValue)
+                    : xValue;
+
+                if (!asymptotes.some(existing => Math.abs(existing - rounded) < 1e-4)) {
+                    asymptotes.push(rounded);
+                }
+            };
+
+            const extractTrigArguments = (expr) => {
+                const matches = [];
+                const trigNames = ['tan', 'sec', 'cot', 'csc'];
+
+                for (let i = 0; i < expr.length; i++) {
+                    const fn = trigNames.find(name => expr.slice(i, i + name.length) === name);
+                    if (!fn) continue;
+
+                    const before = i === 0 ? '' : expr[i - 1];
+                    if (/[a-z0-9_]/.test(before)) continue;
+                    if (i >= 3 && expr.slice(i - 3, i) === 'arc') continue;
+
+                    let j = i + fn.length;
+                    while (j < expr.length && /\s/.test(expr[j])) j++;
+                    if (j >= expr.length || expr[j] !== '(') continue;
+
+                    const start = j + 1;
+                    let depth = 0;
+                    let end = -1;
+
+                    for (let k = start; k < expr.length; k++) {
+                        const ch = expr[k];
+                        if (ch === '(') {
+                            depth++;
+                        } else if (ch === ')') {
+                            if (depth === 0) {
+                                end = k;
+                                break;
+                            }
+                            depth--;
+                        }
+                    }
+
+                    if (end === -1) continue;
+
+                    const argument = expr.substring(start, end).trim();
+                    if (argument) {
+                        matches.push({ fn, argument });
+                    }
+
+                    i = end;
+                }
+
+                return matches;
+            };
+
+            if (Number.isFinite(rangeMinX) && Number.isFinite(rangeMaxX) && rangeMaxX > rangeMinX) {
+                const trigArguments = extractTrigArguments(expressionCore);
+                const period = this.angleMode === 'degrees' ? 180 : Math.PI;
+                const tanSecPhase = this.angleMode === 'degrees' ? 90 : (Math.PI / 2);
+
+                for (const trigCall of trigArguments) {
+                    try {
+                        const compiledArg = this.getCompiledExpression(trigCall.argument);
+                        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                        scope.x = 0;
+                        const v0 = compiledArg.evaluate(scope);
+                        scope.x = 1;
+                        const v1 = compiledArg.evaluate(scope);
+                        scope.x = 2;
+                        const v2 = compiledArg.evaluate(scope);
+
+                        if (!Number.isFinite(v0) || !Number.isFinite(v1) || !Number.isFinite(v2)) {
+                            continue;
+                        }
+
+                        // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                        const b = v0;
+                        const a = v1 - v0;
+                        if (Math.abs(a) < 1e-12) {
+                            continue;
+                        }
+
+                        const expectedV2 = 2 * a + b;
+                        const linearResidual = Math.abs(v2 - expectedV2);
+                        const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                        if (linearResidual > linearScale * 1e-8) {
+                            continue;
+                        }
+
+                        const phase = (trigCall.fn === 'tan' || trigCall.fn === 'sec') ? tanSecPhase : 0;
+
+                        const argAtMin = a * rangeMinX + b;
+                        const argAtMax = a * rangeMaxX + b;
+                        const argLo = Math.min(argAtMin, argAtMax);
+                        const argHi = Math.max(argAtMin, argAtMax);
+
+                        let kStart = Math.floor((argLo - phase) / period) - 1;
+                        let kEnd = Math.ceil((argHi - phase) / period) + 1;
+
+                        // Guard against pathological ranges generating huge candidate loops.
+                        const maxKSpan = 5000;
+                        if (kEnd - kStart > maxKSpan) {
+                            kStart = Math.floor((kStart + kEnd - maxKSpan) / 2);
+                            kEnd = kStart + maxKSpan;
+                        }
+
+                        const edgeTolerance = Math.max(1e-6, Math.abs(rangeMaxX - rangeMinX) * 1e-9);
+                        for (let k = kStart; k <= kEnd; k++) {
+                            const targetArg = phase + k * period;
+                            const asymptoteX = (targetArg - b) / a;
+                            if (!Number.isFinite(asymptoteX)) continue;
+                            if (asymptoteX < rangeMinX - edgeTolerance || asymptoteX > rangeMaxX + edgeTolerance) continue;
+                            addAsymptoteCandidate(asymptoteX);
+                        }
+                    } catch {
+                        // Ignore argument parse/evaluation failures for this trig call.
+                    }
+                }
+            }
             
             // Strategy: Find division operators and extract denominators carefully
             // Handle nested parentheses properly
@@ -8616,7 +8754,276 @@ class Graphiti {
         return asymptotes.sort((a, b) => a - b);
     }
 
-    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = []) {
+    detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig = false) {
+        const debug = {
+            reason: 'ok',
+            positive: null,
+            negative: null,
+            preMergeLines: [],
+            finalLines: []
+        };
+
+        if (!compiledExpression || !processedExpression) {
+            debug.reason = 'missing-expression';
+            return { lines: [], debug };
+        }
+
+        // Oblique asymptotes are currently scoped to rational-style expressions.
+        // This prevents false positives on plain linear/non-rational families.
+        const normalized = (processedExpression || '').toLowerCase();
+        if (!normalized.includes('/')) {
+            debug.reason = 'non-rational-expression';
+            return { lines: [], debug };
+        }
+        if (!/\bx\b/.test(normalized)) {
+            debug.reason = 'no-x-variable';
+            return { lines: [], debug };
+        }
+
+        // Heuristic for pure polynomial-rational families.
+        // For these, +∞ and -∞ should share the same oblique asymptote.
+        const compactNormalized = normalized.replace(/\s+/g, '');
+        const isPolynomialRationalForm = /^[0-9x+\-*/^().]+$/.test(compactNormalized);
+
+        const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
+        const baseMagnitude = Math.max(
+            10,
+            Math.abs(currentViewport.minX),
+            Math.abs(currentViewport.maxX)
+        );
+        const multipliers = [1, 2, 4, 8, 16, 32, 64];
+
+        const evaluateAtX = (x) => {
+            try {
+                const scope = this.getEvaluationScope({ x });
+                const result = compiledExpression.evaluate(scope);
+                const y = hasInverseTrig ? result * 180 / Math.PI : result;
+                return Number.isFinite(y) ? y : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const estimateDirectionLine = (direction) => {
+            const samples = [];
+            for (const multiplier of multipliers) {
+                const x = direction * baseMagnitude * multiplier;
+                const y = evaluateAtX(x);
+                if (y === null) continue;
+                samples.push({ x, y });
+            }
+
+            if (samples.length < 5) {
+                return null;
+            }
+
+            const tail = samples.slice(-5);
+            const n = tail.length;
+            let sumX = 0;
+            let sumY = 0;
+            let sumXX = 0;
+            let sumXY = 0;
+
+            for (const sample of tail) {
+                sumX += sample.x;
+                sumY += sample.y;
+                sumXX += sample.x * sample.x;
+                sumXY += sample.x * sample.y;
+            }
+
+            const denominator = (n * sumXX) - (sumX * sumX);
+            if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-12) {
+                return null;
+            }
+
+            const regressionM = ((n * sumXY) - (sumX * sumY)) / denominator;
+            const regressionB = (sumY - (regressionM * sumX)) / n;
+            if (!Number.isFinite(regressionM) || !Number.isFinite(regressionB)) {
+                return null;
+            }
+
+            const estimateLimitInInverseXSpace = (mappedValues) => {
+                // Fit z = p*(1/x) + L and return L as x -> ±infinity limit.
+                const pairs = [];
+                for (const sample of tail) {
+                    const t = 1 / sample.x;
+                    const z = mappedValues(sample);
+                    if (!Number.isFinite(t) || !Number.isFinite(z)) continue;
+                    pairs.push({ t, z });
+                }
+
+                if (pairs.length < 4) {
+                    return null;
+                }
+
+                const count = pairs.length;
+                let sumT = 0;
+                let sumZ = 0;
+                let sumTT = 0;
+                let sumTZ = 0;
+                for (const pair of pairs) {
+                    sumT += pair.t;
+                    sumZ += pair.z;
+                    sumTT += pair.t * pair.t;
+                    sumTZ += pair.t * pair.z;
+                }
+
+                const fitDenominator = (count * sumTT) - (sumT * sumT);
+                if (!Number.isFinite(fitDenominator) || Math.abs(fitDenominator) < 1e-18) {
+                    return null;
+                }
+
+                const intercept = ((sumZ * sumTT) - (sumT * sumTZ)) / fitDenominator;
+                return Number.isFinite(intercept) ? intercept : null;
+            };
+
+            // m = lim f(x)/x
+            const estimatedM = estimateLimitInInverseXSpace(sample => sample.y / sample.x);
+            const m = Number.isFinite(estimatedM) ? estimatedM : regressionM;
+
+            // b = lim (f(x) - m*x)
+            const estimatedB = estimateLimitInInverseXSpace(sample => sample.y - (m * sample.x));
+            let b = Number.isFinite(estimatedB) ? estimatedB : regressionB;
+
+            // Small stabilisation when the inferred intercept is extremely close to an integer.
+            const roundedB = Math.round(b);
+            if (Math.abs(b - roundedB) < 1e-8) {
+                b = roundedB;
+            }
+
+            if (!Number.isFinite(m) || !Number.isFinite(b)) {
+                return null;
+            }
+
+            // Not oblique if the slope is effectively horizontal.
+            if (Math.abs(m) < 0.01) {
+                return null;
+            }
+
+            let squaredError = 0;
+            const residuals = [];
+            for (const sample of tail) {
+                const residual = sample.y - ((m * sample.x) + b);
+                residuals.push(Math.abs(residual));
+                squaredError += residual * residual;
+            }
+
+            const rmsError = Math.sqrt(squaredError / n);
+            const nearestResidual = residuals[0];
+            const furthestResidual = residuals[residuals.length - 1];
+
+            let growingResidualSteps = 0;
+            for (let i = 1; i < residuals.length; i++) {
+                if (residuals[i] > residuals[i - 1] * 1.08) {
+                    growingResidualSteps++;
+                }
+            }
+
+            const residualShrinks = furthestResidual <= Math.max(0.03, nearestResidual * 0.9);
+            const mostlyNonGrowingResidual = growingResidualSteps <= 2;
+            const strictFitTolerance = Math.max(0.25, Math.abs(m) * 0.1 * baseMagnitude);
+            const relaxedFitTolerance = Math.max(2, Math.abs(m) * 0.35 * baseMagnitude);
+            const passesStrict = residualShrinks && mostlyNonGrowingResidual && rmsError <= strictFitTolerance;
+
+            // For rational families, keep a usable oblique candidate even when finite-window
+            // noise breaks strict monotonic residual checks.
+            const passesRelaxed = rmsError <= relaxedFitTolerance;
+
+            if (!passesStrict && !passesRelaxed) {
+                return null;
+            }
+
+            return {
+                m,
+                b,
+                direction,
+                confidence: passesStrict ? 'strict' : 'relaxed',
+                rmsError,
+                nearestResidual,
+                furthestResidual
+            };
+        };
+
+        const positive = estimateDirectionLine(1);
+        const negative = estimateDirectionLine(-1);
+        debug.positive = positive ? { ...positive } : null;
+        debug.negative = negative ? { ...negative } : null;
+
+        const lines = [];
+        const addUniqueLine = (line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return;
+            }
+
+            const duplicate = lines.some(existing => {
+                const slopeClose = Math.abs(existing.m - line.m) <= Math.max(1e-6, Math.abs(existing.m) * 0.03);
+                const interceptClose = Math.abs(existing.b - line.b) <= Math.max(1e-4, Math.max(Math.abs(existing.b), Math.abs(line.b), 1) * 0.03);
+                return slopeClose && interceptClose;
+            });
+
+            if (!duplicate) {
+                lines.push(line);
+            }
+        };
+
+        if (positive && negative) {
+            if (isPolynomialRationalForm) {
+                // Force a single line for polynomial-rational expressions to avoid
+                // duplicated near-parallel obliques caused by one-sided numeric drift.
+                addUniqueLine({
+                    m: (positive.m + negative.m) / 2,
+                    b: (positive.b + negative.b) / 2,
+                    direction: 0,
+                    confidence: (positive.confidence === 'strict' && negative.confidence === 'strict') ? 'strict' : 'relaxed'
+                });
+            } else {
+            const slopeClose = Math.abs(positive.m - negative.m) <= Math.max(1e-6, Math.max(Math.abs(positive.m), Math.abs(negative.m), 1) * 0.03);
+            const interceptClose = Math.abs(positive.b - negative.b) <= Math.max(1e-4, Math.max(Math.abs(positive.b), Math.abs(negative.b), 1) * 0.04);
+            if (slopeClose && interceptClose) {
+                addUniqueLine({ m: (positive.m + negative.m) / 2, b: (positive.b + negative.b) / 2, direction: 0 });
+            } else {
+                addUniqueLine(positive);
+                addUniqueLine(negative);
+            }
+            }
+        } else {
+            addUniqueLine(positive);
+            addUniqueLine(negative);
+        }
+
+        debug.preMergeLines = lines.map(line => ({ ...line }));
+
+        // Final consolidation pass: if two lines are visually almost identical in the
+        // current viewport, merge to one to avoid double-render artefacts.
+        if (lines.length > 1) {
+            const merged = [];
+            for (const line of lines) {
+                const existing = merged.find(candidate => {
+                    const leftDelta = Math.abs(((candidate.m * currentViewport.minX) + candidate.b) - ((line.m * currentViewport.minX) + line.b));
+                    const rightDelta = Math.abs(((candidate.m * currentViewport.maxX) + candidate.b) - ((line.m * currentViewport.maxX) + line.b));
+                    const maxWorldDelta = Math.max(leftDelta, rightDelta);
+                    const maxPixelDelta = maxWorldDelta * Math.max(1, this.viewport.scale || currentViewport.scale || 1);
+                    return maxPixelDelta <= 2.5;
+                });
+
+                if (!existing) {
+                    merged.push({ ...line });
+                } else {
+                    existing.m = (existing.m + line.m) / 2;
+                    existing.b = (existing.b + line.b) / 2;
+                    existing.direction = 0;
+                }
+            }
+
+            debug.finalLines = merged.map(line => ({ ...line }));
+            return { lines: merged, debug };
+        }
+
+        debug.finalLines = lines.map(line => ({ ...line }));
+        return { lines, debug };
+    }
+
+    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null) {
         if (!func) {
             return;
         }
@@ -8639,6 +9046,9 @@ class Graphiti {
 
         const vertical = uniqueSorted(verticalAsymptotes);
         const horizontal = uniqueSorted(horizontalAsymptotes);
+        const oblique = (obliqueAsymptotes || [])
+            .filter(line => line && Number.isFinite(line.m) && Number.isFinite(line.b))
+            .map(line => ({ m: line.m, b: line.b, direction: Number.isFinite(line.direction) ? line.direction : 0 }));
 
         const formatEquationValue = (value) => {
             const roundedInteger = Math.round(value);
@@ -8659,13 +9069,42 @@ class Graphiti {
             return this.formatCoordinate(value);
         };
 
+        const formatObliqueEquation = (m, b) => {
+            const roundedSlope = Math.round(m);
+            const slopeIsInteger = Math.abs(m - roundedSlope) < 1e-9;
+            const slopeValue = slopeIsInteger ? roundedSlope : m;
+
+            let slopePart = '';
+            if (Math.abs(slopeValue - 1) < 1e-9) {
+                slopePart = 'x';
+            } else if (Math.abs(slopeValue + 1) < 1e-9) {
+                slopePart = '-x';
+            } else {
+                slopePart = formatEquationValue(slopeValue) + 'x';
+            }
+
+            if (Math.abs(b) < 1e-9) {
+                return 'y=' + slopePart;
+            }
+
+            const bMagnitude = formatEquationValue(Math.abs(b));
+            const sign = b > 0 ? '+' : '-';
+            return 'y=' + slopePart + sign + bMagnitude;
+        };
+
         func.horizontalAsymptotes = horizontal;
+        func.obliqueAsymptotes = oblique;
         func.asymptoteData = {
             vertical,
             horizontal,
+            oblique,
+            debug: {
+                oblique: obliqueDebug
+            },
             equations: {
                 vertical: vertical.map(x => 'x=' + formatEquationValue(x)),
-                horizontal: horizontal.map(y => 'y=' + formatEquationValue(y))
+                horizontal: horizontal.map(y => 'y=' + formatEquationValue(y)),
+                oblique: oblique.map(line => formatObliqueEquation(line.m, line.b))
             }
         };
     }
@@ -8677,6 +9116,7 @@ class Graphiti {
 
         delete func.explicitVerticalAsymptotes;
         delete func.horizontalAsymptotes;
+        delete func.obliqueAsymptotes;
         delete func.asymptoteData;
     }
     
@@ -24527,6 +24967,10 @@ class Graphiti {
                 }
             }
         });
+
+        if (this.debugObliqueAsymptoteCoeffs && this.plotMode === 'cartesian') {
+            this.drawObliqueAsymptoteDebugOverlay();
+        }
         
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
@@ -24615,6 +25059,88 @@ class Graphiti {
         this.ctx.setLineDash([]);
         
         // UI overlays removed - cleaner interface
+    }
+
+    drawObliqueAsymptoteDebugOverlay() {
+        const enabledFunctions = this.getCurrentFunctions().filter(func => func.enabled);
+        if (enabledFunctions.length === 0) {
+            return;
+        }
+
+        const rows = [];
+        for (const func of enabledFunctions) {
+            const debug = func.asymptoteData && func.asymptoteData.debug
+                ? func.asymptoteData.debug.oblique
+                : null;
+            if (!debug) {
+                continue;
+            }
+
+            rows.push({
+                color: func.color,
+                expression: (func.expression || '').replace(/\s+/g, ''),
+                debug
+            });
+        }
+
+        if (rows.length === 0) {
+            return;
+        }
+
+        const formatValue = (value) => Number.isFinite(value) ? value.toFixed(6) : 'n/a';
+        const formatLine = (line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return 'none';
+            }
+            const confidence = line.confidence ? (' [' + line.confidence + ']') : '';
+            return 'm=' + formatValue(line.m) + ', b=' + formatValue(line.b) + confidence;
+        };
+
+        this.ctx.save();
+        this.ctx.font = '12px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+
+        const left = 10;
+        let top = 10;
+        const lineHeight = 14;
+        const boxWidth = Math.min(620, this.viewport.width - 20);
+
+        const maxRows = Math.min(rows.length, 5);
+        const linesPerRow = 4;
+        const boxHeight = 8 + (maxRows * linesPerRow * lineHeight) + 8;
+
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
+        this.ctx.fillRect(left, top, boxWidth, boxHeight);
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(left, top, boxWidth, boxHeight);
+
+        top += 6;
+        for (let i = 0; i < maxRows; i++) {
+            const row = rows[i];
+            const label = row.expression.length > 46 ? (row.expression.substring(0, 43) + '...') : row.expression;
+            const finalLines = Array.isArray(row.debug.finalLines) ? row.debug.finalLines : [];
+            const finalSummary = finalLines.length > 0
+                ? finalLines.map(line => formatLine(line)).join(' | ')
+                : 'none';
+
+            this.ctx.fillStyle = row.color || '#FFFFFF';
+            this.ctx.fillText('f: ' + label, left + 8, top);
+            top += lineHeight;
+
+            this.ctx.fillStyle = '#E8E8E8';
+            this.ctx.fillText('+inf: ' + formatLine(row.debug.positive), left + 8, top);
+            top += lineHeight;
+
+            this.ctx.fillText('-inf: ' + formatLine(row.debug.negative), left + 8, top);
+            top += lineHeight;
+
+            this.ctx.fillText('final: ' + finalSummary, left + 8, top);
+            top += lineHeight;
+        }
+
+        this.ctx.restore();
     }
     
     scheduleChunkedDraw() {
@@ -25458,7 +25984,6 @@ class Graphiti {
     }
     
     drawFunction(func) {
-        this.drawFunctionAsymptotes(func);
         if (!func.points || func.points.length < 2) return;
         
         // Check if this is an inequality
@@ -25671,6 +26196,9 @@ class Graphiti {
         if (pathStarted) {
             this.ctx.stroke();
         }
+
+        // Draw asymptotes after the curve so dashed obliques remain visible.
+        this.drawFunctionAsymptotes(func);
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
@@ -25688,7 +26216,8 @@ class Graphiti {
 
         const vertical = Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [];
         const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
-        if (vertical.length === 0 && horizontal.length === 0) {
+        const oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0) {
             return;
         }
 
@@ -25718,6 +26247,23 @@ class Graphiti {
                 const screenPos = this.worldToScreen(0, y);
                 this.ctx.moveTo(0, screenPos.y);
                 this.ctx.lineTo(this.viewport.width, screenPos.y);
+            }
+            this.ctx.stroke();
+        }
+
+        if (oblique.length > 0) {
+            this.ctx.beginPath();
+            for (const line of oblique) {
+                if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) continue;
+
+                const yLeft = (line.m * this.viewport.minX) + line.b;
+                const yRight = (line.m * this.viewport.maxX) + line.b;
+                if (!Number.isFinite(yLeft) || !Number.isFinite(yRight)) continue;
+
+                const left = this.worldToScreen(this.viewport.minX, yLeft);
+                const right = this.worldToScreen(this.viewport.maxX, yRight);
+                this.ctx.moveTo(left.x, left.y);
+                this.ctx.lineTo(right.x, right.y);
             }
             this.ctx.stroke();
         }
