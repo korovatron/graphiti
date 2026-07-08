@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.55';
+const VERSION = '1.1.56';
 
 class Graphiti {
     constructor() {
@@ -10802,6 +10802,9 @@ class Graphiti {
             if (symbol === 'y') return { '0,1': 1 };
             if (symbol === 'pi') return { '0,0': Math.PI };
             if (symbol === 'e') return { '0,0': Math.E };
+            if (this.parameters && this.parameters[symbol] && Number.isFinite(this.parameters[symbol].value)) {
+                return { '0,0': this.parameters[symbol].value };
+            }
             return null;
         }
 
