@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.71';
+const VERSION = '1.1.72';
 
 class Graphiti {
     constructor() {
@@ -8056,12 +8056,18 @@ class Graphiti {
                 const args = [];
 
                 for (let i = 0; i < expr.length; i++) {
-                    if (expr.slice(i, i + 3) !== 'log') continue;
+                    let fnLength = 0;
+                    if (expr.slice(i, i + 3) === 'log') {
+                        fnLength = 3;
+                    } else if (expr.slice(i, i + 2) === 'ln') {
+                        fnLength = 2;
+                    }
+                    if (fnLength === 0) continue;
 
                     const before = i === 0 ? '' : expr[i - 1];
                     if (/[a-z0-9_]/.test(before)) continue;
 
-                    let j = i + 3;
+                    let j = i + fnLength;
                     while (j < expr.length && /\s/.test(expr[j])) j++;
                     if (j >= expr.length || expr[j] !== '(') continue;
 
@@ -8099,55 +8105,50 @@ class Graphiti {
                 return args;
             };
 
-            const compactCore = expressionCore.replace(/\s+/g, '');
-            const affineLogFamilyPattern = /^[+-]?(?:(?:\d+(?:\.\d+)?|\.\d+)\*?)?log\([^()]+\)(?:[+-](?:\d+(?:\.\d+)?|\.\d+))?$/;
+            const logArguments = extractLogFirstArguments(expressionCore);
+            for (const argumentExpression of logArguments) {
+                if (!argumentExpression) continue;
 
-            if (affineLogFamilyPattern.test(compactCore)) {
-                const logArguments = extractLogFirstArguments(expressionCore);
-                for (const argumentExpression of logArguments) {
-                    if (!argumentExpression) continue;
+                try {
+                    const compiledArg = this.getCompiledExpression(argumentExpression);
+                    const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
 
-                    try {
-                        const compiledArg = this.getCompiledExpression(argumentExpression);
-                        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+                    scope.x = 0;
+                    const v0 = compiledArg.evaluate(scope);
+                    scope.x = 1;
+                    const v1 = compiledArg.evaluate(scope);
+                    scope.x = 2;
+                    const v2 = compiledArg.evaluate(scope);
 
-                        scope.x = 0;
-                        const v0 = compiledArg.evaluate(scope);
-                        scope.x = 1;
-                        const v1 = compiledArg.evaluate(scope);
-                        scope.x = 2;
-                        const v2 = compiledArg.evaluate(scope);
-
-                        if (!isFinite(v0) || !isFinite(v1) || !isFinite(v2)) {
-                            continue;
-                        }
-
-                        // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
-                        const b = v0;
-                        const a = v1 - v0;
-                        if (Math.abs(a) < 1e-12) {
-                            continue;
-                        }
-
-                        const expectedV2 = 2 * a + b;
-                        const linearResidual = Math.abs(v2 - expectedV2);
-                        const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
-                        if (linearResidual > linearScale * 1e-8) {
-                            continue;
-                        }
-
-                        const asymptoteX = -b / a;
-                        if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
-                            const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001
-                                ? Math.round(asymptoteX)
-                                : asymptoteX;
-                            if (!asymptotes.includes(roundedAsymptote)) {
-                                asymptotes.push(roundedAsymptote);
-                            }
-                        }
-                    } catch {
-                        // Ignore argument parse failures and continue with other candidates.
+                    if (!isFinite(v0) || !isFinite(v1) || !isFinite(v2)) {
+                        continue;
                     }
+
+                    // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                    const b = v0;
+                    const a = v1 - v0;
+                    if (Math.abs(a) < 1e-12) {
+                        continue;
+                    }
+
+                    const expectedV2 = 2 * a + b;
+                    const linearResidual = Math.abs(v2 - expectedV2);
+                    const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                    if (linearResidual > linearScale * 1e-8) {
+                        continue;
+                    }
+
+                    const asymptoteX = -b / a;
+                    if (isFinite(asymptoteX) && Math.abs(asymptoteX) < 1e10) {
+                        const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001
+                            ? Math.round(asymptoteX)
+                            : asymptoteX;
+                        if (!asymptotes.includes(roundedAsymptote)) {
+                            asymptotes.push(roundedAsymptote);
+                        }
+                    }
+                } catch {
+                    // Ignore argument parse failures and continue with other candidates.
                 }
             }
 
@@ -8615,39 +8616,70 @@ class Graphiti {
                 for (const candidate of asymptotes) {
                     if (!isFinite(candidate)) continue;
 
-                    let hasNonFinite = false;
-                    let maxAbs = 0;
-                    let minAbsFinite = Infinity;
-                    let finiteSamples = 0;
+                    const sideStats = {
+                        neg: { finite: 0, nonFinite: 0, maxAbs: 0, minAbs: Infinity, absByOffset: [] },
+                        pos: { finite: 0, nonFinite: 0, maxAbs: 0, minAbs: Infinity, absByOffset: [] }
+                    };
 
                     for (const offset of offsets) {
                         for (const sign of [-1, 1]) {
                             const sampleX = candidate + sign * offset;
+                            const key = sign < 0 ? 'neg' : 'pos';
+                            const stats = sideStats[key];
                             try {
                                 scope.x = sampleX;
                                 const sampleY = compiledFull.evaluate(scope);
                                 if (!isFinite(sampleY)) {
-                                    hasNonFinite = true;
+                                    stats.nonFinite++;
                                     continue;
                                 }
 
                                 const absY = Math.abs(sampleY);
-                                finiteSamples++;
-                                if (absY > maxAbs) maxAbs = absY;
-                                if (absY < minAbsFinite) minAbsFinite = absY;
+                                stats.finite++;
+                                if (absY > stats.maxAbs) stats.maxAbs = absY;
+                                if (absY < stats.minAbs) stats.minAbs = absY;
+                                stats.absByOffset.push(absY);
                             } catch {
-                                hasNonFinite = true;
+                                stats.nonFinite++;
                             }
                         }
                     }
 
-                    const strongGrowth = finiteSamples > 0 && maxAbs > blowupThreshold;
-                    const growthRatio = (finiteSamples > 0 && minAbsFinite < Infinity)
-                        ? (maxAbs / Math.max(minAbsFinite, 1e-9))
-                        : 0;
-                    const relativeBlowup = finiteSamples > 0 && maxAbs > 20 && growthRatio > 50;
+                    const sideShowsBlowup = (stats) => {
+                        if (!stats || stats.finite === 0) {
+                            return false;
+                        }
 
-                    if (hasNonFinite || strongGrowth || relativeBlowup) {
+                        const strongGrowth = stats.maxAbs > blowupThreshold;
+                        const growthRatio = stats.maxAbs / Math.max(stats.minAbs, 1e-9);
+                        const relativeBlowup = stats.maxAbs > 20 && growthRatio > 50;
+
+                        let inwardGrowth = false;
+                        if (Array.isArray(stats.absByOffset) && stats.absByOffset.length >= 3) {
+                            inwardGrowth = true;
+                            for (let i = 1; i < stats.absByOffset.length; i++) {
+                                // absByOffset is sampled from nearest -> farther offsets.
+                                if (stats.absByOffset[i - 1] < stats.absByOffset[i] * 0.98) {
+                                    inwardGrowth = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        const nearestAbs = Array.isArray(stats.absByOffset) && stats.absByOffset.length > 0
+                            ? stats.absByOffset[0]
+                            : 0;
+                        const furthestAbs = Array.isArray(stats.absByOffset) && stats.absByOffset.length > 0
+                            ? stats.absByOffset[stats.absByOffset.length - 1]
+                            : 0;
+                        const gradualBoundaryBlowup = inwardGrowth && nearestAbs > Math.max(5, furthestAbs * 1.12);
+
+                        return strongGrowth || relativeBlowup || gradualBoundaryBlowup;
+                    };
+
+                    const hasBlowupEvidence = sideShowsBlowup(sideStats.neg) || sideShowsBlowup(sideStats.pos);
+
+                    if (hasBlowupEvidence) {
                         validatedAsymptotes.push(candidate);
                     }
                 }
