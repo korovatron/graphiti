@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.44';
+const VERSION = '1.1.45';
 
 class Graphiti {
     constructor() {
@@ -3869,6 +3869,12 @@ class Graphiti {
             const obliqueDebug = obliqueDetection && obliqueDetection.debug
                 ? obliqueDetection.debug
                 : null;
+            const removableHoles = this.detectRemovableDiscontinuities(
+                processedExpression,
+                compiledExpression,
+                hasInverseTrig
+            );
+            func.holes = removableHoles;
 
             const asymptoteSources = {
                 vertical: explicitVerticalAsymptotes.map(value => ({
@@ -8789,6 +8795,119 @@ class Graphiti {
         return asymptotes.sort((a, b) => a - b);
     }
 
+    detectRemovableDiscontinuities(processedExpression, compiledExpression, hasInverseTrig = false) {
+        if (!processedExpression || !compiledExpression || !processedExpression.includes('/')) {
+            return [];
+        }
+
+        const parts = this.extractPolynomialRationalParts(processedExpression);
+        if (!parts) {
+            return [];
+        }
+
+        const denominatorRoots = this.findPolynomialRealRoots(parts.denominator);
+        if (!Array.isArray(denominatorRoots) || denominatorRoots.length === 0) {
+            return [];
+        }
+
+        const holes = [];
+        const tolerance = 1e-7;
+
+        for (const root of denominatorRoots) {
+            if (!Number.isFinite(root)) continue;
+
+            const numeratorAtRoot = this.evaluatePolynomial(parts.numerator, root);
+            const denominatorAtRoot = this.evaluatePolynomial(parts.denominator, root);
+
+            if (Math.abs(numeratorAtRoot) > tolerance || Math.abs(denominatorAtRoot) > tolerance) {
+                continue;
+            }
+
+            // Cancel common (x - root) factors to evaluate the removable limit.
+            let reducedNumerator = this.normalizePolynomial(parts.numerator);
+            let reducedDenominator = this.normalizePolynomial(parts.denominator);
+
+            let guard = 0;
+            while (guard < 6) {
+                const nAt = this.evaluatePolynomial(reducedNumerator, root);
+                const dAt = this.evaluatePolynomial(reducedDenominator, root);
+                if (Math.abs(nAt) > tolerance || Math.abs(dAt) > tolerance) {
+                    break;
+                }
+
+                const dividedNum = this.dividePolynomials(reducedNumerator, [-root, 1]);
+                const dividedDen = this.dividePolynomials(reducedDenominator, [-root, 1]);
+                reducedNumerator = this.normalizePolynomial(dividedNum.quotient);
+                reducedDenominator = this.normalizePolynomial(dividedDen.quotient);
+                guard++;
+            }
+
+            const reducedDenAtRoot = this.evaluatePolynomial(reducedDenominator, root);
+            if (!Number.isFinite(reducedDenAtRoot) || Math.abs(reducedDenAtRoot) < 1e-10) {
+                continue;
+            }
+
+            const yFromReduced = this.evaluatePolynomial(reducedNumerator, root) / reducedDenAtRoot;
+            if (!Number.isFinite(yFromReduced)) {
+                continue;
+            }
+
+            // Sanity-check algebraic hole with one-sided numeric samples.
+            let numericCheckPass = false;
+            const deltas = [1e-3, 1e-4, 1e-5, 1e-6];
+            const sideValues = [];
+            for (const delta of deltas) {
+                const leftX = root - delta;
+                const rightX = root + delta;
+                try {
+                    const leftScope = this.getEvaluationScope({ x: leftX });
+                    const rightScope = this.getEvaluationScope({ x: rightX });
+                    const leftRaw = compiledExpression.evaluate(leftScope);
+                    const rightRaw = compiledExpression.evaluate(rightScope);
+                    const leftY = hasInverseTrig ? leftRaw * 180 / Math.PI : leftRaw;
+                    const rightY = hasInverseTrig ? rightRaw * 180 / Math.PI : rightRaw;
+                    if (Number.isFinite(leftY) && Number.isFinite(rightY)) {
+                        sideValues.push({ leftY, rightY });
+                    }
+                } catch {
+                    // Ignore failed probe points.
+                }
+            }
+
+            if (sideValues.length > 0) {
+                const nearest = sideValues[sideValues.length - 1];
+                const sideGap = Math.abs(nearest.leftY - nearest.rightY);
+                const targetGap = Math.max(1e-4, Math.abs(yFromReduced) * 2e-3);
+                const sideMean = (nearest.leftY + nearest.rightY) / 2;
+                const targetMatch = Math.abs(sideMean - yFromReduced) <= Math.max(5e-3, Math.abs(yFromReduced) * 5e-3);
+                numericCheckPass = sideGap <= targetGap && targetMatch;
+            }
+
+            if (!numericCheckPass) {
+                continue;
+            }
+
+            const roundedRoot = Math.abs(root - Math.round(root)) < 1e-10
+                ? Math.round(root)
+                : root;
+
+            const duplicate = holes.some(existing => {
+                return Math.abs(existing.x - roundedRoot) <= 1e-7;
+            });
+
+            if (!duplicate) {
+                holes.push({
+                    x: roundedRoot,
+                    y: yFromReduced,
+                    source: 'algebraic'
+                });
+            }
+        }
+
+        holes.sort((a, b) => a.x - b.x);
+        return holes;
+    }
+
     tryDeriveAlgebraicRationalAsymptotes(processedExpression) {
         const core = (processedExpression || '').trim();
         if (!core || !core.includes('/')) {
@@ -9822,6 +9941,7 @@ class Graphiti {
         delete func.horizontalAsymptotes;
         delete func.obliqueAsymptotes;
         delete func.asymptoteData;
+        delete func.holes;
     }
     
     getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes = []) {
@@ -26928,9 +27048,68 @@ class Graphiti {
 
         // Draw asymptotes after the curve so dashed obliques remain visible.
         this.drawFunctionAsymptotes(func);
+        this.drawFunctionHoles(func);
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
+    }
+
+    getCanvasBackgroundColor() {
+        const docStyle = getComputedStyle(document.documentElement);
+        const varColor = docStyle.getPropertyValue('--canvas-bg').trim();
+        if (varColor) {
+            return varColor;
+        }
+
+        const canvasStyle = this.canvas ? getComputedStyle(this.canvas).backgroundColor : '';
+        if (canvasStyle && canvasStyle !== 'transparent' && canvasStyle !== 'rgba(0, 0, 0, 0)') {
+            return canvasStyle;
+        }
+
+        const bodyStyle = getComputedStyle(document.body).backgroundColor;
+        if (bodyStyle && bodyStyle !== 'transparent' && bodyStyle !== 'rgba(0, 0, 0, 0)') {
+            return bodyStyle;
+        }
+
+        return '#ffffff';
+    }
+
+    drawFunctionHoles(func) {
+        if (!func || !Array.isArray(func.holes) || func.holes.length === 0) {
+            return;
+        }
+
+        const radius = Math.max(this.getLineWidth(4), 4);
+        const lineWidth = this.getLineWidth(3);
+        const bgColor = this.getCanvasBackgroundColor();
+
+        this.ctx.save();
+        this.ctx.setLineDash([]);
+        this.ctx.strokeStyle = func.color;
+        this.ctx.lineWidth = lineWidth;
+        this.ctx.fillStyle = bgColor;
+
+        for (const hole of func.holes) {
+            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                continue;
+            }
+
+            if (hole.x < this.viewport.minX || hole.x > this.viewport.maxX || hole.y < this.viewport.minY || hole.y > this.viewport.maxY) {
+                continue;
+            }
+
+            const screen = this.worldToScreen(hole.x, hole.y);
+            if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                continue;
+            }
+
+            this.ctx.beginPath();
+            this.ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+        }
+
+        this.ctx.restore();
     }
 
     drawFunctionAsymptotes(func) {
