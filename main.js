@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.25';
+const VERSION = '1.1.26';
 
 class Graphiti {
     constructor() {
@@ -3648,6 +3648,7 @@ class Graphiti {
         
         if (!func.expression.trim()) {
             func.points = [];
+            this.clearFunctionAsymptoteData(func);
             if (this.performance.enabled) {
                 this.performance.plotTimes.set(func.id, 0);
             }
@@ -3656,6 +3657,7 @@ class Graphiti {
         
         // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
+            this.clearFunctionAsymptoteData(func);
             this.plotPolarFunction(func);
             if (this.performance.enabled) {
                 const elapsed = performance.now() - startTime;
@@ -3674,6 +3676,7 @@ class Graphiti {
         }
         
         if (functionType === 'parametric') {
+            this.clearFunctionAsymptoteData(func);
             this.plotParametricFunction(func);
             if (this.performance.enabled) {
                 const elapsed = performance.now() - startTime;
@@ -3683,6 +3686,7 @@ class Graphiti {
         }
         
         if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+            this.clearFunctionAsymptoteData(func);
             await this.plotImplicitFunction(func, false, this.isStartup);
             return;
         }
@@ -3701,6 +3705,7 @@ class Graphiti {
                 } else {
                     // Malformed inequality, can't plot
                     func.points = [];
+                    this.clearFunctionAsymptoteData(func);
                     return;
                 }
             } else if (processedExpression.toLowerCase().startsWith('y=')) {
@@ -3842,6 +3847,8 @@ class Graphiti {
             const bufferedMaxX = this.viewport.maxX + bufferSize;
             const explicitVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
+            const horizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig);
+            this.updateFunctionAsymptoteData(func, explicitVerticalAsymptotes, horizontalAsymptotes);
             const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
 
             const bufferedRange = bufferedMaxX - bufferedMinX;
@@ -4417,6 +4424,7 @@ class Graphiti {
             // Silent error for better UX during typing - no alert popup
             func.points = [];
             func.displayPoints = [];
+            this.clearFunctionAsymptoteData(func);
         }
         
         // Track plotting time for performance monitoring
@@ -8446,6 +8454,230 @@ class Graphiti {
         asymptotes.sort((a, b) => a - b);
         
         return asymptotes;
+    }
+
+    detectHorizontalAsymptotes(compiledExpression, hasInverseTrig = false) {
+        if (!compiledExpression) {
+            return [];
+        }
+
+        const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
+        const baseMagnitude = Math.max(
+            10,
+            Math.abs(currentViewport.minX),
+            Math.abs(currentViewport.maxX)
+        );
+        const multipliers = [1, 2, 4, 8, 16, 32];
+
+        const evaluateAtX = (x) => {
+            try {
+                const scope = this.getEvaluationScope({ x });
+                const result = compiledExpression.evaluate(scope);
+                const y = hasInverseTrig ? result * 180 / Math.PI : result;
+                return isFinite(y) ? y : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const estimateDirectionLimit = (direction) => {
+            const samples = [];
+            for (const multiplier of multipliers) {
+                const x = direction * baseMagnitude * multiplier;
+                const y = evaluateAtX(x);
+                if (y === null) {
+                    continue;
+                }
+                samples.push({ x, y });
+            }
+
+            if (samples.length < 5) {
+                return null;
+            }
+
+            const tail = samples.slice(-4);
+            const tailY = tail.map(sample => sample.y);
+            const absValues = tailY.map(v => Math.abs(v));
+            const maxAbs = Math.max(1, ...absValues);
+            const spread = Math.max(...tailY) - Math.min(...tailY);
+
+            // Fit y = a*(1/x) + L so L is the asymptote estimate at infinity.
+            let sumT = 0;
+            let sumY = 0;
+            let sumTT = 0;
+            let sumTY = 0;
+            for (const sample of tail) {
+                const t = 1 / sample.x;
+                sumT += t;
+                sumY += sample.y;
+                sumTT += t * t;
+                sumTY += t * sample.y;
+            }
+
+            const n = tail.length;
+            const denominator = (n * sumTT) - (sumT * sumT);
+            if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-18) {
+                return null;
+            }
+
+            const intercept = ((sumY * sumTT) - (sumT * sumTY)) / denominator;
+            if (!Number.isFinite(intercept)) {
+                return null;
+            }
+
+            // Reject clearly non-convergent tails.
+            let squaredError = 0;
+            const slope = ((n * sumTY) - (sumT * sumY)) / denominator;
+            for (const sample of tail) {
+                const predicted = (slope * (1 / sample.x)) + intercept;
+                const residual = sample.y - predicted;
+                squaredError += residual * residual;
+            }
+
+            const rmsError = Math.sqrt(squaredError / n);
+            const spreadTolerance = Math.max(0.15, maxAbs * 0.08);
+            const fitTolerance = Math.max(0.1, maxAbs * 0.05);
+            const offsetsFromLimit = tail.map(sample => Math.abs(sample.y - intercept));
+            const nearestOffset = offsetsFromLimit[0];
+            const furthestOffset = offsetsFromLimit[offsetsFromLimit.length - 1];
+            let growingOffsetSteps = 0;
+            for (let i = 1; i < offsetsFromLimit.length; i++) {
+                if (offsetsFromLimit[i] > offsetsFromLimit[i - 1] * 1.08) {
+                    growingOffsetSteps++;
+                }
+            }
+
+            let maxAbsSecantSlope = 0;
+            for (let i = 1; i < tail.length; i++) {
+                const dx = tail[i].x - tail[i - 1].x;
+                if (!Number.isFinite(dx) || dx === 0) {
+                    continue;
+                }
+                const dy = tail[i].y - tail[i - 1].y;
+                const secantSlope = Math.abs(dy / dx);
+                if (secantSlope > maxAbsSecantSlope) {
+                    maxAbsSecantSlope = secantSlope;
+                }
+            }
+
+            const residualShrinks = furthestOffset <= Math.max(0.02, nearestOffset * 0.85);
+            const mostlyNonGrowingResidual = growingOffsetSteps <= 1;
+            const nearFlatTail = maxAbsSecantSlope <= 0.08;
+            const isConvergentTail =
+                spread <= spreadTolerance &&
+                rmsError <= fitTolerance &&
+                residualShrinks &&
+                mostlyNonGrowingResidual &&
+                nearFlatTail;
+
+            if (!isConvergentTail) {
+                return null;
+            }
+
+            return intercept;
+        };
+
+        const positiveLimit = estimateDirectionLimit(1);
+        const negativeLimit = estimateDirectionLimit(-1);
+
+        const asymptotes = [];
+        const addUnique = (value) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+
+            const rounded = Math.abs(value - Math.round(value)) < 1e-8
+                ? Math.round(value)
+                : value;
+
+            const duplicate = asymptotes.some(existing => {
+                const tolerance = Math.max(1e-6, Math.abs(existing) * 0.01);
+                return Math.abs(existing - rounded) <= tolerance;
+            });
+
+            if (!duplicate) {
+                asymptotes.push(rounded);
+            }
+        };
+
+        if (Number.isFinite(positiveLimit) && Number.isFinite(negativeLimit)) {
+            const mergeTolerance = Math.max(0.05, Math.max(Math.abs(positiveLimit), Math.abs(negativeLimit), 1) * 0.03);
+            if (Math.abs(positiveLimit - negativeLimit) <= mergeTolerance) {
+                addUnique((positiveLimit + negativeLimit) / 2);
+            } else {
+                addUnique(positiveLimit);
+                addUnique(negativeLimit);
+            }
+        } else {
+            addUnique(positiveLimit);
+            addUnique(negativeLimit);
+        }
+
+        return asymptotes.sort((a, b) => a - b);
+    }
+
+    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = []) {
+        if (!func) {
+            return;
+        }
+
+        const uniqueSorted = (values) => {
+            const result = [];
+            for (const value of values || []) {
+                if (!Number.isFinite(value)) continue;
+                const duplicate = result.some(existing => {
+                    const tolerance = Math.max(1e-8, Math.abs(existing) * 1e-6);
+                    return Math.abs(existing - value) <= tolerance;
+                });
+                if (!duplicate) {
+                    result.push(value);
+                }
+            }
+            result.sort((a, b) => a - b);
+            return result;
+        };
+
+        const vertical = uniqueSorted(verticalAsymptotes);
+        const horizontal = uniqueSorted(horizontalAsymptotes);
+
+        const formatEquationValue = (value) => {
+            const roundedInteger = Math.round(value);
+            if (Math.abs(value - roundedInteger) < 1e-9) {
+                return roundedInteger.toString();
+            }
+
+            const absValue = Math.abs(value);
+            const sign = value < 0 ? '-' : '';
+            const fraction = this.decimalToFraction(absValue);
+            if (fraction && fraction.denominator > 1) {
+                const approx = fraction.numerator / fraction.denominator;
+                if (Math.abs(absValue - approx) < 1e-6) {
+                    return sign + fraction.numerator + '/' + fraction.denominator;
+                }
+            }
+
+            return this.formatCoordinate(value);
+        };
+
+        func.horizontalAsymptotes = horizontal;
+        func.asymptoteData = {
+            vertical,
+            horizontal,
+            equations: {
+                vertical: vertical.map(x => 'x=' + formatEquationValue(x)),
+                horizontal: horizontal.map(y => 'y=' + formatEquationValue(y))
+            }
+        };
+    }
+
+    clearFunctionAsymptoteData(func) {
+        if (!func) {
+            return;
+        }
+
+        delete func.explicitVerticalAsymptotes;
+        delete func.horizontalAsymptotes;
+        delete func.asymptoteData;
     }
     
     getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes = []) {
@@ -25226,6 +25458,7 @@ class Graphiti {
     }
     
     drawFunction(func) {
+        this.drawFunctionAsymptotes(func);
         if (!func.points || func.points.length < 2) return;
         
         // Check if this is an inequality
@@ -25441,6 +25674,55 @@ class Graphiti {
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
+    }
+
+    drawFunctionAsymptotes(func) {
+        if (!func || this.plotMode !== 'cartesian') {
+            return;
+        }
+
+        const asymptoteData = func.asymptoteData;
+        if (!asymptoteData) {
+            return;
+        }
+
+        const vertical = Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [];
+        const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
+        if (vertical.length === 0 && horizontal.length === 0) {
+            return;
+        }
+
+        this.ctx.save();
+        this.ctx.strokeStyle = func.color;
+        this.ctx.lineWidth = this.getLineWidth(2);
+        this.ctx.globalAlpha = 0.75;
+        this.ctx.setLineDash([this.getLineWidth(7), this.getLineWidth(4)]);
+
+        if (vertical.length > 0) {
+            this.ctx.beginPath();
+            for (const x of vertical) {
+                if (!Number.isFinite(x)) continue;
+                if (x < this.viewport.minX || x > this.viewport.maxX) continue;
+                const screenPos = this.worldToScreen(x, 0);
+                this.ctx.moveTo(screenPos.x, 0);
+                this.ctx.lineTo(screenPos.x, this.viewport.height);
+            }
+            this.ctx.stroke();
+        }
+
+        if (horizontal.length > 0) {
+            this.ctx.beginPath();
+            for (const y of horizontal) {
+                if (!Number.isFinite(y)) continue;
+                if (y < this.viewport.minY || y > this.viewport.maxY) continue;
+                const screenPos = this.worldToScreen(0, y);
+                this.ctx.moveTo(0, screenPos.y);
+                this.ctx.lineTo(this.viewport.width, screenPos.y);
+            }
+            this.ctx.stroke();
+        }
+
+        this.ctx.restore();
     }
 
     drawImplicitFunction(func) {
