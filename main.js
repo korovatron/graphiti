@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.35';
+const VERSION = '1.1.44';
 
 class Graphiti {
     constructor() {
@@ -3848,17 +3848,52 @@ class Graphiti {
             const bufferSize = viewportWidth * 0.5;
             const bufferedMinX = this.viewport.minX - bufferSize;
             const bufferedMaxX = this.viewport.maxX + bufferSize;
-            const explicitVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
+            const algebraicAsymptotes = this.tryDeriveAlgebraicRationalAsymptotes(processedExpression);
+            const numericVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
+            const explicitVerticalAsymptotes = algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0
+                ? algebraicAsymptotes.vertical
+                : numericVerticalAsymptotes;
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
-            const horizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig);
+            const numericHorizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig);
+            const horizontalAsymptotes = algebraicAsymptotes
+                ? algebraicAsymptotes.horizontal
+                : numericHorizontalAsymptotes;
+
             const obliqueDetection = this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
             const obliqueAsymptotes = obliqueDetection && Array.isArray(obliqueDetection.lines)
                 ? obliqueDetection.lines
                 : [];
+            const selectedObliqueAsymptotes = algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0
+                ? algebraicAsymptotes.oblique
+                : obliqueAsymptotes;
             const obliqueDebug = obliqueDetection && obliqueDetection.debug
                 ? obliqueDetection.debug
                 : null;
-            this.updateFunctionAsymptoteData(func, explicitVerticalAsymptotes, horizontalAsymptotes, obliqueAsymptotes, obliqueDebug);
+
+            const asymptoteSources = {
+                vertical: explicitVerticalAsymptotes.map(value => ({
+                    value,
+                    source: (algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0) ? 'algebraic' : 'numeric'
+                })),
+                horizontal: horizontalAsymptotes.map(value => ({
+                    value,
+                    source: (algebraicAsymptotes) ? 'algebraic' : 'numeric'
+                })),
+                oblique: selectedObliqueAsymptotes.map(line => ({
+                    m: line.m,
+                    b: line.b,
+                    source: (algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0) ? 'algebraic' : 'numeric'
+                }))
+            };
+
+            this.updateFunctionAsymptoteData(
+                func,
+                explicitVerticalAsymptotes,
+                horizontalAsymptotes,
+                selectedObliqueAsymptotes,
+                obliqueDebug,
+                asymptoteSources
+            );
             const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
 
             const bufferedRange = bufferedMaxX - bufferedMinX;
@@ -8754,6 +8789,314 @@ class Graphiti {
         return asymptotes.sort((a, b) => a - b);
     }
 
+    tryDeriveAlgebraicRationalAsymptotes(processedExpression) {
+        const core = (processedExpression || '').trim();
+        if (!core || !core.includes('/')) {
+            return null;
+        }
+
+        const parts = this.extractPolynomialRationalParts(core);
+        if (!parts) {
+            return null;
+        }
+
+        const numerator = parts.numerator;
+        const denominator = parts.denominator;
+        const denDegree = this.getPolynomialDegree(denominator);
+        const numDegree = this.getPolynomialDegree(numerator);
+
+        if (denDegree < 1) {
+            return null;
+        }
+
+        const vertical = [];
+        const candidateRoots = this.findPolynomialRealRoots(denominator);
+        for (const root of candidateRoots) {
+            const numeratorAtRoot = this.evaluatePolynomial(numerator, root);
+            // Ignore removable discontinuities where numerator also vanishes.
+            if (Math.abs(numeratorAtRoot) < 1e-7) {
+                continue;
+            }
+
+            const roundedRoot = Math.abs(root - Math.round(root)) < 1e-10
+                ? Math.round(root)
+                : root;
+
+            if (!vertical.some(existing => Math.abs(existing - roundedRoot) < 1e-7)) {
+                vertical.push(roundedRoot);
+            }
+        }
+
+        let horizontal = [];
+        let oblique = [];
+
+        if (numDegree < denDegree) {
+            horizontal = [0];
+        } else if (numDegree === denDegree) {
+            const h = numerator[numDegree] / denominator[denDegree];
+            horizontal = [h];
+        } else if (numDegree === denDegree + 1) {
+            const division = this.dividePolynomials(numerator, denominator);
+            const quotient = division.quotient;
+            if (this.getPolynomialDegree(quotient) === 1) {
+                oblique = [{
+                    m: quotient[1] || 0,
+                    b: quotient[0] || 0,
+                    direction: 0,
+                    confidence: 'algebraic'
+                }];
+            }
+        }
+
+        return {
+            vertical,
+            horizontal,
+            oblique,
+            source: 'algebraic'
+        };
+    }
+
+    extractPolynomialRationalParts(expression) {
+        try {
+            let node = this.cleanMath.parse(expression);
+            while (node && node.type === 'ParenthesisNode') {
+                node = node.content;
+            }
+
+            if (!node || node.type !== 'OperatorNode' || node.op !== '/' || !node.args || node.args.length !== 2) {
+                return null;
+            }
+
+            const numerator = this.extractPolynomialCoeffs(node.args[0]);
+            const denominator = this.extractPolynomialCoeffs(node.args[1]);
+
+            if (!numerator || !denominator) {
+                return null;
+            }
+
+            if (this.getPolynomialDegree(denominator) < 0) {
+                return null;
+            }
+
+            return {
+                numerator: this.normalizePolynomial(numerator),
+                denominator: this.normalizePolynomial(denominator)
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    extractPolynomialCoeffs(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolynomialCoeffs(node.content);
+        }
+
+        if (node.type === 'ConstantNode') {
+            const value = Number(node.value);
+            return Number.isFinite(value) ? [value] : null;
+        }
+
+        if (node.type === 'SymbolNode') {
+            const symbol = String(node.name || '').toLowerCase();
+            if (symbol === 'x') return [0, 1];
+            if (symbol === 'pi') return [Math.PI];
+            if (symbol === 'e') return [Math.E];
+            return null;
+        }
+
+        if (node.type !== 'OperatorNode') {
+            return null;
+        }
+
+        const args = node.args || [];
+        const op = node.op;
+
+        if (op === '+' && args.length === 2) {
+            const left = this.extractPolynomialCoeffs(args[0]);
+            const right = this.extractPolynomialCoeffs(args[1]);
+            return left && right ? this.addPolynomials(left, right) : null;
+        }
+
+        if (op === '-' && args.length === 2) {
+            const left = this.extractPolynomialCoeffs(args[0]);
+            const right = this.extractPolynomialCoeffs(args[1]);
+            return left && right ? this.addPolynomials(left, this.scalePolynomial(right, -1)) : null;
+        }
+
+        if (op === '-' && args.length === 1) {
+            const value = this.extractPolynomialCoeffs(args[0]);
+            return value ? this.scalePolynomial(value, -1) : null;
+        }
+
+        if (op === '*' && args.length === 2) {
+            const left = this.extractPolynomialCoeffs(args[0]);
+            const right = this.extractPolynomialCoeffs(args[1]);
+            return left && right ? this.multiplyPolynomials(left, right) : null;
+        }
+
+        if (op === '/' && args.length === 2) {
+            const numerator = this.extractPolynomialCoeffs(args[0]);
+            const denominator = this.extractPolynomialCoeffs(args[1]);
+            if (!numerator || !denominator) return null;
+            if (this.getPolynomialDegree(denominator) !== 0) return null;
+            const scalar = denominator[0];
+            if (!Number.isFinite(scalar) || Math.abs(scalar) < 1e-12) return null;
+            return this.scalePolynomial(numerator, 1 / scalar);
+        }
+
+        if (op === '^' && args.length === 2) {
+            const base = this.extractPolynomialCoeffs(args[0]);
+            if (!base) return null;
+
+            const expNode = args[1];
+            if (!expNode || expNode.type !== 'ConstantNode') return null;
+            const exponent = Number(expNode.value);
+            if (!Number.isInteger(exponent) || exponent < 0 || exponent > 8) return null;
+
+            let result = [1];
+            for (let i = 0; i < exponent; i++) {
+                result = this.multiplyPolynomials(result, base);
+            }
+            return result;
+        }
+
+        return null;
+    }
+
+    normalizePolynomial(coeffs) {
+        const normalized = (coeffs || []).slice();
+        for (let i = 0; i < normalized.length; i++) {
+            if (!Number.isFinite(normalized[i])) {
+                normalized[i] = 0;
+            } else if (Math.abs(normalized[i]) < 1e-12) {
+                normalized[i] = 0;
+            }
+        }
+
+        while (normalized.length > 1 && Math.abs(normalized[normalized.length - 1]) < 1e-12) {
+            normalized.pop();
+        }
+
+        if (normalized.length === 0) {
+            return [0];
+        }
+
+        return normalized;
+    }
+
+    getPolynomialDegree(coeffs) {
+        const normalized = this.normalizePolynomial(coeffs || [0]);
+        if (normalized.length === 1 && Math.abs(normalized[0]) < 1e-12) {
+            return -1;
+        }
+        return normalized.length - 1;
+    }
+
+    addPolynomials(a, b) {
+        const length = Math.max(a.length, b.length);
+        const out = new Array(length).fill(0);
+        for (let i = 0; i < length; i++) {
+            out[i] = (a[i] || 0) + (b[i] || 0);
+        }
+        return this.normalizePolynomial(out);
+    }
+
+    scalePolynomial(poly, scalar) {
+        return this.normalizePolynomial((poly || []).map(value => value * scalar));
+    }
+
+    multiplyPolynomials(a, b) {
+        const out = new Array(Math.max(1, a.length + b.length - 1)).fill(0);
+        for (let i = 0; i < a.length; i++) {
+            for (let j = 0; j < b.length; j++) {
+                out[i + j] += (a[i] || 0) * (b[j] || 0);
+            }
+        }
+        return this.normalizePolynomial(out);
+    }
+
+    dividePolynomials(numerator, denominator) {
+        const num = this.normalizePolynomial(numerator || [0]).slice();
+        const den = this.normalizePolynomial(denominator || [0]).slice();
+        const denDegree = this.getPolynomialDegree(den);
+        const denLead = den[denDegree];
+
+        if (denDegree < 0 || Math.abs(denLead) < 1e-12) {
+            return { quotient: [0], remainder: num };
+        }
+
+        const numDegree = this.getPolynomialDegree(num);
+        if (numDegree < denDegree) {
+            return { quotient: [0], remainder: num };
+        }
+
+        const quotient = new Array(numDegree - denDegree + 1).fill(0);
+        const remainder = num.slice();
+
+        for (let k = numDegree - denDegree; k >= 0; k--) {
+            const remDegree = this.getPolynomialDegree(remainder);
+            if (remDegree < denDegree + k) {
+                continue;
+            }
+
+            const coeff = (remainder[denDegree + k] || 0) / denLead;
+            quotient[k] = coeff;
+            for (let j = 0; j <= denDegree; j++) {
+                remainder[j + k] = (remainder[j + k] || 0) - coeff * (den[j] || 0);
+            }
+        }
+
+        return {
+            quotient: this.normalizePolynomial(quotient),
+            remainder: this.normalizePolynomial(remainder)
+        };
+    }
+
+    evaluatePolynomial(coeffs, x) {
+        const poly = coeffs || [0];
+        let sum = 0;
+        for (let i = poly.length - 1; i >= 0; i--) {
+            sum = sum * x + (poly[i] || 0);
+        }
+        return sum;
+    }
+
+    findPolynomialRealRoots(coeffs) {
+        const poly = this.normalizePolynomial(coeffs || [0]);
+        const degree = this.getPolynomialDegree(poly);
+        if (degree === 1) {
+            const a = poly[1];
+            const b = poly[0] || 0;
+            if (Math.abs(a) < 1e-12) return [];
+            return [-b / a];
+        }
+
+        if (degree === 2) {
+            const a = poly[2];
+            const b = poly[1] || 0;
+            const c = poly[0] || 0;
+            if (Math.abs(a) < 1e-12) {
+                if (Math.abs(b) < 1e-12) return [];
+                return [-c / b];
+            }
+
+            const d = (b * b) - (4 * a * c);
+            if (d < -1e-12) return [];
+            if (Math.abs(d) < 1e-12) return [-b / (2 * a)];
+
+            const sqrtD = Math.sqrt(Math.max(0, d));
+            return [(-b + sqrtD) / (2 * a), (-b - sqrtD) / (2 * a)];
+        }
+
+        // Higher-degree roots fall back to numeric asymptote detection paths.
+        return [];
+    }
+
     detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig = false) {
         const debug = {
             reason: 'ok',
@@ -8791,7 +9134,7 @@ class Graphiti {
             Math.abs(currentViewport.minX),
             Math.abs(currentViewport.maxX)
         );
-        const multipliers = [1, 2, 4, 8, 16, 32, 64];
+        const multipliers = [1, 2, 4, 8, 16, 32, 64, 128, 256];
 
         const evaluateAtX = (x) => {
             try {
@@ -8877,13 +9220,196 @@ class Graphiti {
                 return Number.isFinite(intercept) ? intercept : null;
             };
 
-            // m = lim f(x)/x
+            // m = lim f(x)/x (limit-style estimate)
             const estimatedM = estimateLimitInInverseXSpace(sample => sample.y / sample.x);
-            const m = Number.isFinite(estimatedM) ? estimatedM : regressionM;
+
+            // Robust fallback for slow-decay non-rational tails:
+            // use secants on the far tail to reduce finite-window bias.
+            const secantSlopes = [];
+            for (let i = 1; i < tail.length; i++) {
+                const dx = tail[i].x - tail[i - 1].x;
+                if (!Number.isFinite(dx) || Math.abs(dx) < 1e-12) continue;
+                const slope = (tail[i].y - tail[i - 1].y) / dx;
+                if (Number.isFinite(slope)) {
+                    secantSlopes.push(slope);
+                }
+            }
+
+            let secantMedian = null;
+            if (secantSlopes.length > 0) {
+                const sorted = secantSlopes.slice().sort((a, b) => a - b);
+                const mid = Math.floor(sorted.length / 2);
+                secantMedian = (sorted.length % 2 === 0)
+                    ? (sorted[mid - 1] + sorted[mid]) / 2
+                    : sorted[mid];
+            }
+
+            let m = regressionM;
+            if (Number.isFinite(estimatedM)) {
+                m = estimatedM;
+            }
+            if (Number.isFinite(secantMedian)) {
+                if (!Number.isFinite(m) || Math.abs(secantMedian - m) > 1e-3) {
+                    m = secantMedian;
+                }
+            }
+
+            // For one-sided domains, rely on the farthest secants for slope.
+            const farSecants = [];
+            if (tail.length >= 3) {
+                for (let i = tail.length - 2; i < tail.length; i++) {
+                    if (i <= 0) continue;
+                    const dx = tail[i].x - tail[i - 1].x;
+                    if (!Number.isFinite(dx) || Math.abs(dx) < 1e-12) continue;
+                    const slope = (tail[i].y - tail[i - 1].y) / dx;
+                    if (Number.isFinite(slope)) {
+                        farSecants.push(slope);
+                    }
+                }
+            }
+
+            if (farSecants.length > 0) {
+                const sortedFar = farSecants.slice().sort((a, b) => a - b);
+                const farMid = Math.floor(sortedFar.length / 2);
+                const farSecantMedian = (sortedFar.length % 2 === 0)
+                    ? (sortedFar[farMid - 1] + sortedFar[farMid]) / 2
+                    : sortedFar[farMid];
+                if (Number.isFinite(farSecantMedian)) {
+                    m = farSecantMedian;
+                }
+            }
 
             // b = lim (f(x) - m*x)
             const estimatedB = estimateLimitInInverseXSpace(sample => sample.y - (m * sample.x));
             let b = Number.isFinite(estimatedB) ? estimatedB : regressionB;
+
+            // Re-anchor intercept on far-tail residuals to suppress finite-window drift.
+            const farResiduals = tail
+                .slice(-3)
+                .map(sample => sample.y - (m * sample.x))
+                .filter(value => Number.isFinite(value));
+            if (farResiduals.length > 0) {
+                b = farResiduals.reduce((acc, value) => acc + value, 0) / farResiduals.length;
+            }
+
+            // For terms such as ln(x)/x, residuals decay slowly to 0 and finite-window
+            // fits can report a fake non-zero intercept. If the residual magnitude
+            // clearly trends down toward 0, snap b to 0.
+            const residualMagnitudeTail = tail
+                .map(sample => Math.abs(sample.y - (m * sample.x)))
+                .filter(value => Number.isFinite(value));
+            if (residualMagnitudeTail.length >= 4) {
+                let mostlyDecreasing = true;
+                for (let i = 1; i < residualMagnitudeTail.length; i++) {
+                    if (residualMagnitudeTail[i] > residualMagnitudeTail[i - 1] * 1.03) {
+                        mostlyDecreasing = false;
+                        break;
+                    }
+                }
+
+                const firstResidual = residualMagnitudeTail[0];
+                const lastResidual = residualMagnitudeTail[residualMagnitudeTail.length - 1];
+                const decaysToNearZero = lastResidual <= Math.max(0.03, firstResidual * 0.35);
+                if (mostlyDecreasing && decaysToNearZero) {
+                    b = 0;
+                } else {
+                    // Extra guard for slow one-sided decays (for example ln(x)/x):
+                    // if signed residuals keep same sign and shrink geometrically,
+                    // treat intercept as 0 rather than a finite-window offset.
+                    const signedResidualTail = tail
+                        .map(sample => sample.y - (m * sample.x))
+                        .filter(value => Number.isFinite(value));
+
+                    if (signedResidualTail.length >= 4) {
+                        const allPositive = signedResidualTail.every(v => v > 0);
+                        const allNegative = signedResidualTail.every(v => v < 0);
+                        const sameSign = allPositive || allNegative;
+
+                        const ratios = [];
+                        for (let i = 1; i < signedResidualTail.length; i++) {
+                            const prev = Math.abs(signedResidualTail[i - 1]);
+                            const curr = Math.abs(signedResidualTail[i]);
+                            if (prev > 1e-12) {
+                                ratios.push(curr / prev);
+                            }
+                        }
+
+                        if (sameSign && ratios.length >= 3) {
+                            const sortedRatios = ratios.slice().sort((a, b) => a - b);
+                            const ratioMid = Math.floor(sortedRatios.length / 2);
+                            const medianRatio = (sortedRatios.length % 2 === 0)
+                                ? (sortedRatios[ratioMid - 1] + sortedRatios[ratioMid]) / 2
+                                : sortedRatios[ratioMid];
+
+                            const geometricDecay = medianRatio < 0.82;
+                            const farShrink = Math.abs(signedResidualTail[signedResidualTail.length - 1]) <= Math.abs(signedResidualTail[0]) * 0.45;
+                            if (geometricDecay && farShrink) {
+                                b = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Deterministic correction for non-polynomial one-sided tails.
+            // If very-far residuals decay toward 0, force intercept b=0.
+            if (!isPolynomialRationalForm) {
+                const farMultipliers = [256, 512, 1024, 2048];
+                const farSamples = [];
+                for (const multiplier of farMultipliers) {
+                    const xFar = direction * baseMagnitude * multiplier;
+                    const yFar = evaluateAtX(xFar);
+                    if (yFar === null) continue;
+                    farSamples.push({ x: xFar, y: yFar });
+                }
+
+                if (farSamples.length >= 3) {
+                    const farSecants = [];
+                    for (let i = 1; i < farSamples.length; i++) {
+                        const dx = farSamples[i].x - farSamples[i - 1].x;
+                        if (!Number.isFinite(dx) || Math.abs(dx) < 1e-12) continue;
+                        const slope = (farSamples[i].y - farSamples[i - 1].y) / dx;
+                        if (Number.isFinite(slope)) {
+                            farSecants.push(slope);
+                        }
+                    }
+
+                    let farSlope = m;
+                    if (farSecants.length > 0) {
+                        const sortedFar = farSecants.slice().sort((a, b) => a - b);
+                        const mid = Math.floor(sortedFar.length / 2);
+                        farSlope = (sortedFar.length % 2 === 0)
+                            ? (sortedFar[mid - 1] + sortedFar[mid]) / 2
+                            : sortedFar[mid];
+                    }
+
+                    if (Number.isFinite(farSlope)) {
+                        const farResiduals = farSamples
+                            .map(sample => sample.y - (farSlope * sample.x))
+                            .filter(value => Number.isFinite(value));
+
+                        if (farResiduals.length >= 3) {
+                            const sameSign = farResiduals.every(v => v >= 0) || farResiduals.every(v => v <= 0);
+                            let mostlyDecreasing = true;
+                            for (let i = 1; i < farResiduals.length; i++) {
+                                if (Math.abs(farResiduals[i]) > Math.abs(farResiduals[i - 1]) * 1.03) {
+                                    mostlyDecreasing = false;
+                                    break;
+                                }
+                            }
+
+                            const firstAbs = Math.abs(farResiduals[0]);
+                            const lastAbs = Math.abs(farResiduals[farResiduals.length - 1]);
+                            const decaysTowardZero = lastAbs <= Math.max(0.002, firstAbs * 0.35);
+
+                            if (sameSign && mostlyDecreasing && decaysTowardZero) {
+                                m = farSlope;
+                                b = 0;
+                            }
+                        }
+                    }
+                }
+            }
 
             // Small stabilisation when the inferred intercept is extremely close to an integer.
             const roundedB = Math.round(b);
@@ -8946,8 +9472,145 @@ class Graphiti {
 
         const positive = estimateDirectionLine(1);
         const negative = estimateDirectionLine(-1);
-        debug.positive = positive ? { ...positive } : null;
-        debug.negative = negative ? { ...negative } : null;
+
+        const enforceOneSidedZeroIntercept = (line, direction) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return line;
+            }
+
+            const farMultipliers = [512, 1024, 2048, 4096, 8192];
+            const farSamples = [];
+            for (const multiplier of farMultipliers) {
+                const x = direction * baseMagnitude * multiplier;
+                const y = evaluateAtX(x);
+                if (y === null) continue;
+                farSamples.push({ x, y });
+            }
+
+            if (farSamples.length < 3) {
+                return line;
+            }
+
+            const secants = [];
+            const ratioSlopes = [];
+            for (let i = 1; i < farSamples.length; i++) {
+                const dx = farSamples[i].x - farSamples[i - 1].x;
+                if (!Number.isFinite(dx) || Math.abs(dx) < 1e-12) continue;
+                const slope = (farSamples[i].y - farSamples[i - 1].y) / dx;
+                if (Number.isFinite(slope)) {
+                    secants.push(slope);
+                }
+            }
+            for (const sample of farSamples) {
+                if (!Number.isFinite(sample.x) || Math.abs(sample.x) < 1e-12) continue;
+                const ratio = sample.y / sample.x;
+                if (Number.isFinite(ratio)) {
+                    ratioSlopes.push(ratio);
+                }
+            }
+
+            if (secants.length < 2) {
+                return line;
+            }
+
+            const sortedSecants = secants.slice().sort((a, b) => a - b);
+            const mid = Math.floor(sortedSecants.length / 2);
+            const farSlope = (sortedSecants.length % 2 === 0)
+                ? (sortedSecants[mid - 1] + sortedSecants[mid]) / 2
+                : sortedSecants[mid];
+
+            let ratioSlopeMedian = farSlope;
+            if (ratioSlopes.length > 0) {
+                const sortedRatios = ratioSlopes.slice().sort((a, b) => a - b);
+                const ratioMid = Math.floor(sortedRatios.length / 2);
+                ratioSlopeMedian = (sortedRatios.length % 2 === 0)
+                    ? (sortedRatios[ratioMid - 1] + sortedRatios[ratioMid]) / 2
+                    : sortedRatios[ratioMid];
+            }
+
+            const slopeSpread = sortedSecants[sortedSecants.length - 1] - sortedSecants[0];
+            const slopeStable = slopeSpread <= Math.max(1e-7, Math.abs(farSlope) * 5e-5);
+
+            const farResiduals = farSamples
+                .map(sample => sample.y - (farSlope * sample.x))
+                .filter(value => Number.isFinite(value));
+
+            if (farResiduals.length < 3) {
+                return line;
+            }
+
+            const absResiduals = farResiduals.map(value => Math.abs(value));
+            let mostlyDecreasing = true;
+            for (let i = 1; i < absResiduals.length; i++) {
+                if (absResiduals[i] > absResiduals[i - 1] * 1.05) {
+                    mostlyDecreasing = false;
+                    break;
+                }
+            }
+
+            const firstAbs = absResiduals[0];
+            const lastAbs = absResiduals[absResiduals.length - 1];
+            const decaysTowardZero = lastAbs <= Math.max(0.005, firstAbs * 0.35);
+            const tinyTailResidual = lastAbs <= 0.05;
+
+            if (slopeStable && mostlyDecreasing && decaysTowardZero && tinyTailResidual) {
+                return {
+                    ...line,
+                    m: farSlope,
+                    b: 0,
+                    confidence: line.confidence === 'strict' ? 'strict' : 'relaxed-onesided-zero'
+                };
+            }
+
+            // Final hard fallback for one-sided non-polynomial tails:
+            // use median(y/x) at very large |x| and check whether residuals collapse to 0.
+            if (Number.isFinite(ratioSlopeMedian)) {
+                const ratioResiduals = farSamples
+                    .map(sample => sample.y - (ratioSlopeMedian * sample.x))
+                    .filter(value => Number.isFinite(value));
+
+                if (ratioResiduals.length >= 3) {
+                    const absRatioResiduals = ratioResiduals.map(value => Math.abs(value));
+                    const headCount = Math.max(1, Math.floor(absRatioResiduals.length / 2));
+                    const tailCount = Math.max(1, absRatioResiduals.length - headCount);
+                    const headMean = absRatioResiduals
+                        .slice(0, headCount)
+                        .reduce((sum, value) => sum + value, 0) / headCount;
+                    const tailMean = absRatioResiduals
+                        .slice(absRatioResiduals.length - tailCount)
+                        .reduce((sum, value) => sum + value, 0) / tailCount;
+
+                    const tailNearZero = tailMean <= 0.03;
+                    const shrinkingToZero = tailMean <= Math.max(0.01, headMean * 0.35);
+
+                    if (tailNearZero && shrinkingToZero) {
+                        return {
+                            ...line,
+                            m: ratioSlopeMedian,
+                            b: 0,
+                            confidence: 'relaxed-onesided-zero'
+                        };
+                    }
+                }
+            }
+
+            return line;
+        };
+
+        // Domain-limited non-polynomial forms (e.g. ln(x)/x terms) can only provide
+        // one directional fit. If far residuals decay toward zero, enforce b = 0.
+        let adjustedPositive = positive;
+        let adjustedNegative = negative;
+        if (!isPolynomialRationalForm) {
+            if (adjustedPositive && !adjustedNegative) {
+                adjustedPositive = enforceOneSidedZeroIntercept(adjustedPositive, 1);
+            } else if (adjustedNegative && !adjustedPositive) {
+                adjustedNegative = enforceOneSidedZeroIntercept(adjustedNegative, -1);
+            }
+        }
+
+        debug.positive = adjustedPositive ? { ...adjustedPositive } : null;
+        debug.negative = adjustedNegative ? { ...adjustedNegative } : null;
 
         const lines = [];
         const addUniqueLine = (line) => {
@@ -8966,29 +9629,29 @@ class Graphiti {
             }
         };
 
-        if (positive && negative) {
+        if (adjustedPositive && adjustedNegative) {
             if (isPolynomialRationalForm) {
                 // Force a single line for polynomial-rational expressions to avoid
                 // duplicated near-parallel obliques caused by one-sided numeric drift.
                 addUniqueLine({
-                    m: (positive.m + negative.m) / 2,
-                    b: (positive.b + negative.b) / 2,
+                    m: (adjustedPositive.m + adjustedNegative.m) / 2,
+                    b: (adjustedPositive.b + adjustedNegative.b) / 2,
                     direction: 0,
-                    confidence: (positive.confidence === 'strict' && negative.confidence === 'strict') ? 'strict' : 'relaxed'
+                    confidence: (adjustedPositive.confidence === 'strict' && adjustedNegative.confidence === 'strict') ? 'strict' : 'relaxed'
                 });
             } else {
-            const slopeClose = Math.abs(positive.m - negative.m) <= Math.max(1e-6, Math.max(Math.abs(positive.m), Math.abs(negative.m), 1) * 0.03);
-            const interceptClose = Math.abs(positive.b - negative.b) <= Math.max(1e-4, Math.max(Math.abs(positive.b), Math.abs(negative.b), 1) * 0.04);
+            const slopeClose = Math.abs(adjustedPositive.m - adjustedNegative.m) <= Math.max(1e-6, Math.max(Math.abs(adjustedPositive.m), Math.abs(adjustedNegative.m), 1) * 0.03);
+            const interceptClose = Math.abs(adjustedPositive.b - adjustedNegative.b) <= Math.max(1e-4, Math.max(Math.abs(adjustedPositive.b), Math.abs(adjustedNegative.b), 1) * 0.04);
             if (slopeClose && interceptClose) {
-                addUniqueLine({ m: (positive.m + negative.m) / 2, b: (positive.b + negative.b) / 2, direction: 0 });
+                addUniqueLine({ m: (adjustedPositive.m + adjustedNegative.m) / 2, b: (adjustedPositive.b + adjustedNegative.b) / 2, direction: 0 });
             } else {
-                addUniqueLine(positive);
-                addUniqueLine(negative);
+                addUniqueLine(adjustedPositive);
+                addUniqueLine(adjustedNegative);
             }
             }
         } else {
-            addUniqueLine(positive);
-            addUniqueLine(negative);
+            addUniqueLine(adjustedPositive);
+            addUniqueLine(adjustedNegative);
         }
 
         debug.preMergeLines = lines.map(line => ({ ...line }));
@@ -9023,7 +9686,7 @@ class Graphiti {
         return { lines, debug };
     }
 
-    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null) {
+    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null, asymptoteSources = null) {
         if (!func) {
             return;
         }
@@ -9092,6 +9755,42 @@ class Graphiti {
             return 'y=' + slopePart + sign + bMagnitude;
         };
 
+        const sourceForVertical = (value) => {
+            if (!asymptoteSources || !Array.isArray(asymptoteSources.vertical)) return 'numeric';
+            const match = asymptoteSources.vertical.find(item => Math.abs((item.value ?? NaN) - value) <= 1e-7);
+            return match && match.source ? match.source : 'numeric';
+        };
+
+        const sourceForHorizontal = (value) => {
+            if (!asymptoteSources || !Array.isArray(asymptoteSources.horizontal)) return 'numeric';
+            const match = asymptoteSources.horizontal.find(item => Math.abs((item.value ?? NaN) - value) <= 1e-7);
+            return match && match.source ? match.source : 'numeric';
+        };
+
+        const sourceForOblique = (line) => {
+            if (!asymptoteSources || !Array.isArray(asymptoteSources.oblique)) return 'numeric';
+            const match = asymptoteSources.oblique.find(item =>
+                Math.abs((item.m ?? NaN) - line.m) <= Math.max(1e-8, Math.abs(line.m) * 1e-6) &&
+                Math.abs((item.b ?? NaN) - line.b) <= Math.max(1e-8, Math.abs(line.b) * 1e-6)
+            );
+            return match && match.source ? match.source : 'numeric';
+        };
+
+        const verticalEquationDetails = vertical.map(x => ({
+            equation: 'x=' + formatEquationValue(x),
+            source: sourceForVertical(x)
+        }));
+
+        const horizontalEquationDetails = horizontal.map(y => ({
+            equation: 'y=' + formatEquationValue(y),
+            source: sourceForHorizontal(y)
+        }));
+
+        const obliqueEquationDetails = oblique.map(line => ({
+            equation: formatObliqueEquation(line.m, line.b),
+            source: sourceForOblique(line)
+        }));
+
         func.horizontalAsymptotes = horizontal;
         func.obliqueAsymptotes = oblique;
         func.asymptoteData = {
@@ -9102,9 +9801,14 @@ class Graphiti {
                 oblique: obliqueDebug
             },
             equations: {
-                vertical: vertical.map(x => 'x=' + formatEquationValue(x)),
-                horizontal: horizontal.map(y => 'y=' + formatEquationValue(y)),
-                oblique: oblique.map(line => formatObliqueEquation(line.m, line.b))
+                vertical: verticalEquationDetails.map(item => item.equation),
+                horizontal: horizontalEquationDetails.map(item => item.equation),
+                oblique: obliqueEquationDetails.map(item => item.equation)
+            },
+            equationsDetailed: {
+                vertical: verticalEquationDetails,
+                horizontal: horizontalEquationDetails,
+                oblique: obliqueEquationDetails
             }
         };
     }
@@ -25079,7 +25783,12 @@ class Graphiti {
             rows.push({
                 color: func.color,
                 expression: (func.expression || '').replace(/\s+/g, ''),
-                debug
+                debug: {
+                    ...debug,
+                    asymptoteDetails: func.asymptoteData && func.asymptoteData.equationsDetailed
+                        ? func.asymptoteData.equationsDetailed
+                        : { vertical: [], horizontal: [], oblique: [] }
+                }
             });
         }
 
@@ -25096,6 +25805,18 @@ class Graphiti {
             return 'm=' + formatValue(line.m) + ', b=' + formatValue(line.b) + confidence;
         };
 
+        const formatAsymptoteDetails = (details) => {
+            if (!Array.isArray(details) || details.length === 0) {
+                return 'none';
+            }
+            return details
+                .map(item => {
+                    const src = item && item.source ? item.source : 'numeric';
+                    return (item && item.equation ? item.equation : 'n/a') + ' [' + src + ']';
+                })
+                .join(' | ');
+        };
+
         this.ctx.save();
         this.ctx.font = '12px monospace';
         this.ctx.textAlign = 'left';
@@ -25107,7 +25828,7 @@ class Graphiti {
         const boxWidth = Math.min(620, this.viewport.width - 20);
 
         const maxRows = Math.min(rows.length, 5);
-        const linesPerRow = 4;
+        const linesPerRow = 5;
         const boxHeight = 8 + (maxRows * linesPerRow * lineHeight) + 8;
 
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
@@ -25125,6 +25846,11 @@ class Graphiti {
                 ? finalLines.map(line => formatLine(line)).join(' | ')
                 : 'none';
 
+            const details = row.debug && row.debug.asymptoteDetails ? row.debug.asymptoteDetails : null;
+            const verticalSummary = formatAsymptoteDetails(details ? details.vertical : null);
+            const horizontalSummary = formatAsymptoteDetails(details ? details.horizontal : null);
+            const obliqueSummary = formatAsymptoteDetails(details ? details.oblique : null);
+
             this.ctx.fillStyle = row.color || '#FFFFFF';
             this.ctx.fillText('f: ' + label, left + 8, top);
             top += lineHeight;
@@ -25137,6 +25863,9 @@ class Graphiti {
             top += lineHeight;
 
             this.ctx.fillText('final: ' + finalSummary, left + 8, top);
+            top += lineHeight;
+
+            this.ctx.fillText('asym: V{' + verticalSummary + '} H{' + horizontalSummary + '} O{' + obliqueSummary + '}', left + 8, top);
             top += lineHeight;
         }
 
