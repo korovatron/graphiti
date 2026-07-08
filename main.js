@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.61';
+const VERSION = '1.1.64';
 
 class Graphiti {
     constructor() {
@@ -8755,6 +8755,13 @@ class Graphiti {
                 }
             }
 
+            // Reject cases where the graph is already sitting on the candidate line.
+            // This prevents constants like y=6 from being reported as having asymptote y=6.
+            const onTheLineTolerance = Math.max(0.005, Math.abs(intercept) * 0.001);
+            if (nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance) {
+                return null;
+            }
+
             let maxAbsSecantSlope = 0;
             for (let i = 1; i < tail.length; i++) {
                 const dx = tail[i].x - tail[i - 1].x;
@@ -8957,6 +8964,22 @@ class Graphiti {
             return null;
         }
 
+        const division = this.dividePolynomials(numerator, denominator);
+        const quotientDegree = this.getPolynomialDegree(division.quotient);
+        const remainderDegree = this.getPolynomialDegree(division.remainder);
+        const exactReduction = quotientDegree >= 0 && remainderDegree < 0;
+
+        // If the rational form reduces exactly to a constant or a line, any apparent
+        // asymptote is just a removable discontinuity rather than a true tail limit.
+        if (exactReduction && quotientDegree <= 1) {
+            return {
+                vertical: [],
+                horizontal: [],
+                oblique: [],
+                source: 'algebraic'
+            };
+        }
+
         const vertical = [];
         const candidateRoots = this.findPolynomialRealRoots(denominator);
         for (const root of candidateRoots) {
@@ -8984,9 +9007,8 @@ class Graphiti {
             const h = numerator[numDegree] / denominator[denDegree];
             horizontal = [h];
         } else if (numDegree === denDegree + 1) {
-            const division = this.dividePolynomials(numerator, denominator);
             const quotient = division.quotient;
-            if (this.getPolynomialDegree(quotient) === 1) {
+            if (this.getPolynomialDegree(quotient) === 1 && !exactReduction) {
                 oblique = [{
                     m: quotient[1] || 0,
                     b: quotient[0] || 0,
@@ -9591,6 +9613,11 @@ class Graphiti {
                 if (residuals[i] > residuals[i - 1] * 1.08) {
                     growingResidualSteps++;
                 }
+            }
+
+            const maxResidual = Math.max(...residuals);
+            if (maxResidual <= Math.max(1e-8, Math.abs(b) * 1e-8)) {
+                return null;
             }
 
             const residualShrinks = furthestResidual <= Math.max(0.03, nearestResidual * 0.9);
