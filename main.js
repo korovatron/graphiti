@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.76';
+const VERSION = '1.1.77';
 
 class Graphiti {
     constructor() {
@@ -7064,18 +7064,20 @@ class Graphiti {
                 continue;
             }
 
-            const fNeg1 = evaluateCombined(x, -1);
-            const fZero = evaluateCombined(x, 0);
-            const fOne = evaluateCombined(x, 1);
-            if (fNeg1 === null || fZero === null || fOne === null) {
+            const f0 = evaluateCombined(x, 0);
+            const f1 = evaluateCombined(x, 1);
+            const f2 = evaluateCombined(x, 2);
+            const f3 = evaluateCombined(x, 3);
+            if (f0 === null || f1 === null || f2 === null || f3 === null) {
                 continue;
             }
 
-            const secondDifference = fOne - (2 * fZero) + fNeg1;
-            const slopeMagnitude = Math.abs(fOne - fZero);
-            maxSecondDifference = Math.max(maxSecondDifference, Math.abs(secondDifference));
+            const secondDifference0 = f2 - (2 * f1) + f0;
+            const secondDifference1 = f3 - (2 * f2) + f1;
+            const slopeMagnitude = Math.abs(f1 - f0);
+            maxSecondDifference = Math.max(maxSecondDifference, Math.abs(secondDifference0), Math.abs(secondDifference1));
             maxSlopeMagnitude = Math.max(maxSlopeMagnitude, slopeMagnitude);
-            maxMagnitude = Math.max(maxMagnitude, Math.abs(fNeg1), Math.abs(fZero), Math.abs(fOne));
+            maxMagnitude = Math.max(maxMagnitude, Math.abs(f0), Math.abs(f1), Math.abs(f2), Math.abs(f3));
             validSamples++;
         }
 
