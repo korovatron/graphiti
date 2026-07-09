@@ -10112,8 +10112,9 @@ class Graphiti {
 
         const formatObliqueEquation = (m, b) => {
             const roundedSlope = Math.round(m);
-            const slopeIsInteger = Math.abs(m - roundedSlope) < 1e-9;
+            const slopeIsInteger = Math.abs(m - roundedSlope) < 1e-6;
             const slopeValue = slopeIsInteger ? roundedSlope : m;
+            const interceptValue = Math.abs(b) < 1e-6 ? 0 : b;
 
             let slopePart = '';
             if (Math.abs(slopeValue - 1) < 1e-9) {
@@ -10124,12 +10125,15 @@ class Graphiti {
                 slopePart = formatEquationValue(slopeValue) + 'x';
             }
 
-            if (Math.abs(b) < 1e-9) {
+            if (interceptValue === 0) {
                 return 'y=' + slopePart;
             }
 
-            const bMagnitude = formatEquationValue(Math.abs(b));
-            const sign = b > 0 ? '+' : '-';
+            const bMagnitude = formatEquationValue(Math.abs(interceptValue));
+            if (bMagnitude === '0' || bMagnitude === '-0') {
+                return 'y=' + slopePart;
+            }
+            const sign = interceptValue > 0 ? '+' : '-';
             return 'y=' + slopePart + sign + bMagnitude;
         };
 
@@ -10291,18 +10295,20 @@ class Graphiti {
                 continue;
             }
 
-            const slope = line.m;
-            const intercept = line.b;
+            const roundedSlope = Math.round(line.m);
+            const slope = Math.abs(line.m - roundedSlope) < 1e-6 ? roundedSlope : line.m;
+            const intercept = Math.abs(line.b) < 1e-6 ? 0 : line.b;
             const slopeLatex = this.formatAsymptoteCoefficientLatex(slope);
             const interceptLatex = this.formatAsymptoteCoefficientLatex(Math.abs(intercept));
+            const interceptDisplaysAsZero = intercept === 0 || interceptLatex === '0' || interceptLatex === '-0';
             const sign = intercept >= 0 ? '+' : '-';
 
-            if (Math.abs(slope - 1) < 1e-9) {
-                equations.push(Math.abs(intercept) < 1e-9 ? 'y = x' : `y = x ${sign} ${interceptLatex}`);
-            } else if (Math.abs(slope + 1) < 1e-9) {
-                equations.push(Math.abs(intercept) < 1e-9 ? 'y = -x' : `y = -x ${sign} ${interceptLatex}`);
+            if (Math.abs(slope - 1) < 1e-6) {
+                equations.push(interceptDisplaysAsZero ? 'y = x' : `y = x ${sign} ${interceptLatex}`);
+            } else if (Math.abs(slope + 1) < 1e-6) {
+                equations.push(interceptDisplaysAsZero ? 'y = -x' : `y = -x ${sign} ${interceptLatex}`);
             } else {
-                equations.push(Math.abs(intercept) < 1e-9 ? `y = ${slopeLatex}x` : `y = ${slopeLatex}x ${sign} ${interceptLatex}`);
+                equations.push(interceptDisplaysAsZero ? `y = ${slopeLatex}x` : `y = ${slopeLatex}x ${sign} ${interceptLatex}`);
             }
         }
 
