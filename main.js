@@ -1525,8 +1525,7 @@ class Graphiti {
                     
                     // Update intercepts after adding this function
                     if (this.showIntercepts) {
-                        this.intercepts = this.findAxisIntercepts();
-                        this.cullInterceptMarkers(); // Pre-calculate culled markers
+                        this.refreshIntercepts();
                     }
                 }
                 
@@ -1586,8 +1585,7 @@ class Graphiti {
                     this.turningPoints = this.findTurningPoints();
                 }
                 if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers
+                    this.refreshIntercepts();
                 }
             }
             
@@ -3189,9 +3187,7 @@ class Graphiti {
             
             // Update intercepts after plotting this function
             if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-                this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
-                this.draw(); // Trigger redraw to display intercepts
+                this.refreshIntercepts({ draw: true });
             }
             
             // Update UI to show success (remove any error styling)
@@ -3230,8 +3226,7 @@ class Graphiti {
                 this.turningPoints = this.findTurningPoints();
             }
             if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-                this.cullInterceptMarkers(); // Keep marker cache aligned after invalid input states
+                this.refreshIntercepts();
             }
             
             // Update UI to show error (subtle visual feedback)
@@ -15511,9 +15506,7 @@ class Graphiti {
                 // And set viewport changing to false AFTER recalculation
                 if ((targetBadge.hasTangent || targetBadge.hasNormal) && this.showIntercepts) {
                     this.isViewportChanging = false;
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Update culled marker cache
-                    this.draw(); // Force redraw to clear old intercept markers
+                    this.refreshIntercepts({ draw: true });
                 }
                 
                 // Start tracing mode for immediate responsiveness
@@ -16435,8 +16428,7 @@ class Graphiti {
             
             // Recalculate tangent intercepts
             if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-                this.cullInterceptMarkers(); // Update culled marker cache
+                this.refreshIntercepts();
             }
             
             // Recalculate tangent intersections since badge state changed
@@ -19165,8 +19157,7 @@ class Graphiti {
                 
                 // Calculate initial intercepts
                 if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                    this.refreshIntercepts();
                 }
                 
                 // Final draw to show everything
@@ -19192,8 +19183,7 @@ class Graphiti {
                 
                 // Calculate initial intercepts
                 if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                    this.refreshIntercepts();
                 }
                 
                 // Final draw to show everything
@@ -19665,8 +19655,7 @@ class Graphiti {
                             this.calculateIntersectionsWithWorker();
                         }
                         if (this.showIntercepts) {
-                            this.intercepts = this.findAxisIntercepts();
-                            this.cullInterceptMarkers();
+                            this.refreshIntercepts();
                         }
                         if (this.showTurningPoints) {
                             this.turningPoints = this.findTurningPoints();
@@ -19736,8 +19725,7 @@ class Graphiti {
                         this.calculateIntersectionsWithWorker();
                     }
                     if (this.showIntercepts) {
-                        this.intercepts = this.findAxisIntercepts();
-                        this.cullInterceptMarkers();
+                        this.refreshIntercepts();
                     }
                     if (this.showTurningPoints) {
                         this.turningPoints = this.findTurningPoints();
@@ -26236,8 +26224,7 @@ class Graphiti {
             this.turningPoints = this.findTurningPoints();
         }
         if (hasPlottedFunctions && this.showIntercepts) {
-            this.intercepts = this.findAxisIntercepts();
-            this.cullInterceptMarkers();
+            this.refreshIntercepts();
         }
     }
 
