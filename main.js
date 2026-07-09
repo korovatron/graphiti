@@ -8812,6 +8812,89 @@ class Graphiti {
             
             // Find all (x ± constant) factors in denominators
             for (const denom of denominators) {
+                // Pattern 0: square-root denominator boundaries (e.g. 1/sqrt(x), 1/sqrt(2x-3)).
+                // If sqrt(g(x)) appears in the denominator, g(x)=0 is a vertical asymptote boundary
+                // for reciprocal forms because denominator tends to 0+.
+                const extractSqrtArguments = (expr) => {
+                    const args = [];
+                    for (let i = 0; i < expr.length; i++) {
+                        if (expr.slice(i, i + 4) !== 'sqrt') continue;
+
+                        const before = i === 0 ? '' : expr[i - 1];
+                        if (/[a-z0-9_]/.test(before)) continue;
+
+                        let j = i + 4;
+                        while (j < expr.length && /\s/.test(expr[j])) j++;
+                        if (j < expr.length && expr[j] === '*') {
+                            j++;
+                            while (j < expr.length && /\s/.test(expr[j])) j++;
+                        }
+                        if (j >= expr.length || expr[j] !== '(') continue;
+
+                        const start = j + 1;
+                        let depth = 0;
+                        let end = -1;
+                        for (let k = start; k < expr.length; k++) {
+                            const ch = expr[k];
+                            if (ch === '(') {
+                                depth++;
+                            } else if (ch === ')') {
+                                if (depth === 0) {
+                                    end = k;
+                                    break;
+                                }
+                                depth--;
+                            }
+                        }
+
+                        if (end === -1) continue;
+                        const arg = expr.substring(start, end).trim();
+                        if (arg) {
+                            args.push(arg);
+                        }
+                        i = end;
+                    }
+                    return args;
+                };
+
+                const sqrtArguments = extractSqrtArguments(denom);
+                for (const argumentExpression of sqrtArguments) {
+                    try {
+                        const compiledArg = this.getCompiledExpression(argumentExpression);
+                        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                        scope.x = 0;
+                        const v0 = compiledArg.evaluate(scope);
+                        scope.x = 1;
+                        const v1 = compiledArg.evaluate(scope);
+                        scope.x = 2;
+                        const v2 = compiledArg.evaluate(scope);
+
+                        if (!Number.isFinite(v0) || !Number.isFinite(v1) || !Number.isFinite(v2)) {
+                            continue;
+                        }
+
+                        // Fit g(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                        const b = v0;
+                        const a = v1 - v0;
+                        if (Math.abs(a) < 1e-12) {
+                            continue;
+                        }
+
+                        const expectedV2 = 2 * a + b;
+                        const linearResidual = Math.abs(v2 - expectedV2);
+                        const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                        if (linearResidual > linearScale * 1e-8) {
+                            continue;
+                        }
+
+                        const asymptoteX = -b / a;
+                        addAsymptoteCandidate(asymptoteX);
+                    } catch {
+                        // Ignore parse/evaluation failures for this sqrt argument.
+                    }
+                }
+
                 // Pattern 1: (ax ± b) with coefficient - solve ax±b=0 for x
                 const coeffFactorPattern = /\(([0-9.]*)\s*\*?\s*x\s*([+-])\s*([0-9.]+)\)/g;
                 let factorMatch;
@@ -10482,6 +10565,64 @@ class Graphiti {
             return line;
         };
 
+        const snapSmallObliqueInterceptToZero = (line, direction) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return line;
+            }
+
+            if (Math.abs(line.b) > 0.28) {
+                return line;
+            }
+
+            const farMultipliers = [512, 1024, 2048, 4096];
+            const residuals = [];
+            for (const multiplier of farMultipliers) {
+                const x = direction * baseMagnitude * multiplier;
+                const y = evaluateAtX(x);
+                if (y === null) continue;
+
+                const residual = y - (line.m * x);
+                if (Number.isFinite(residual)) {
+                    residuals.push(residual);
+                }
+            }
+
+            if (residuals.length < 3) {
+                return line;
+            }
+
+            const absResiduals = residuals.map(value => Math.abs(value));
+            let mostlyDecreasing = true;
+            for (let i = 1; i < absResiduals.length; i++) {
+                if (absResiduals[i] > absResiduals[i - 1] * 1.08) {
+                    mostlyDecreasing = false;
+                    break;
+                }
+            }
+
+            const firstAbs = absResiduals[0];
+            const lastAbs = absResiduals[absResiduals.length - 1];
+            const trendsToZero = lastAbs <= Math.max(0.02, firstAbs * 0.5);
+            const headCount = Math.max(1, Math.floor(absResiduals.length / 2));
+            const tailCount = Math.max(1, absResiduals.length - headCount);
+            const headMean = absResiduals
+                .slice(0, headCount)
+                .reduce((sum, value) => sum + value, 0) / headCount;
+            const tailMean = absResiduals
+                .slice(absResiduals.length - tailCount)
+                .reduce((sum, value) => sum + value, 0) / tailCount;
+            const meanCollapsesToZero = tailMean <= 0.03 && tailMean <= Math.max(0.01, headMean * 0.65);
+
+            if ((mostlyDecreasing && trendsToZero) || meanCollapsesToZero) {
+                return {
+                    ...line,
+                    b: 0
+                };
+            }
+
+            return line;
+        };
+
         // Domain-limited non-polynomial forms (e.g. ln(x)/x terms) can only provide
         // one directional fit. If far residuals decay toward zero, enforce b = 0.
         let adjustedPositive = positive;
@@ -10492,6 +10633,12 @@ class Graphiti {
             } else if (adjustedNegative && !adjustedPositive) {
                 adjustedNegative = enforceOneSidedZeroIntercept(adjustedNegative, -1);
             }
+        }
+
+        if (adjustedPositive && !adjustedNegative) {
+            adjustedPositive = snapSmallObliqueInterceptToZero(adjustedPositive, 1);
+        } else if (adjustedNegative && !adjustedPositive) {
+            adjustedNegative = snapSmallObliqueInterceptToZero(adjustedNegative, -1);
         }
 
         debug.positive = adjustedPositive ? { ...adjustedPositive } : null;
@@ -10594,9 +10741,22 @@ class Graphiti {
 
         const vertical = uniqueSorted(verticalAsymptotes);
         const horizontal = uniqueSorted(horizontalAsymptotes);
+        const normalizeObliqueLine = (line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return null;
+            }
+
+            const snappedIntercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
+            return {
+                m: line.m,
+                b: snappedIntercept,
+                direction: Number.isFinite(line.direction) ? line.direction : 0
+            };
+        };
+
         const oblique = (obliqueAsymptotes || [])
-            .filter(line => line && Number.isFinite(line.m) && Number.isFinite(line.b))
-            .map(line => ({ m: line.m, b: line.b, direction: Number.isFinite(line.direction) ? line.direction : 0 }));
+            .map(line => normalizeObliqueLine(line))
+            .filter(line => line !== null);
 
         const formatEquationValue = (value) => {
             const roundedInteger = Math.round(value);
@@ -10621,12 +10781,13 @@ class Graphiti {
             const roundedSlope = Math.round(m);
             const slopeIsInteger = Math.abs(m - roundedSlope) < 1e-6;
             const slopeValue = slopeIsInteger ? roundedSlope : m;
-            const interceptValue = Math.abs(b) < 1e-6 ? 0 : b;
+            const interceptValue = Math.abs(b) < 0.18 ? 0 : b;
+            const unitSlopeTolerance = 0.015;
 
             let slopePart = '';
-            if (Math.abs(slopeValue - 1) < 1e-9) {
+            if (Math.abs(slopeValue - 1) < unitSlopeTolerance) {
                 slopePart = 'x';
-            } else if (Math.abs(slopeValue + 1) < 1e-9) {
+            } else if (Math.abs(slopeValue + 1) < unitSlopeTolerance) {
                 slopePart = '-x';
             } else {
                 slopePart = formatEquationValue(slopeValue) + 'x';
@@ -10836,15 +10997,16 @@ class Graphiti {
 
             const roundedSlope = Math.round(line.m);
             const slope = Math.abs(line.m - roundedSlope) < 1e-6 ? roundedSlope : line.m;
-            const intercept = Math.abs(line.b) < 1e-6 ? 0 : line.b;
+            const intercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
+            const unitSlopeTolerance = 0.015;
             const slopeLatex = this.formatAsymptoteCoefficientLatex(slope);
             const interceptLatex = this.formatAsymptoteCoefficientLatex(Math.abs(intercept));
             const interceptDisplaysAsZero = intercept === 0 || interceptLatex === '0' || interceptLatex === '-0';
             const sign = intercept >= 0 ? '+' : '-';
 
-            if (Math.abs(slope - 1) < 1e-6) {
+            if (Math.abs(slope - 1) < unitSlopeTolerance) {
                 equations.push(interceptDisplaysAsZero ? 'y = x' : `y = x ${sign} ${interceptLatex}`);
-            } else if (Math.abs(slope + 1) < 1e-6) {
+            } else if (Math.abs(slope + 1) < unitSlopeTolerance) {
                 equations.push(interceptDisplaysAsZero ? 'y = -x' : `y = -x ${sign} ${interceptLatex}`);
             } else {
                 equations.push(interceptDisplaysAsZero ? `y = ${slopeLatex}x` : `y = ${slopeLatex}x ${sign} ${interceptLatex}`);
