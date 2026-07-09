@@ -2725,8 +2725,7 @@ class Graphiti {
                 this.draw();
             }
             if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-                this.draw();
+                this.refreshIntercepts({ draw: true });
             }
         });
         
@@ -3232,6 +3231,7 @@ class Graphiti {
             }
             if (this.showIntercepts) {
                 this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers(); // Keep marker cache aligned after invalid input states
             }
             
             // Update UI to show error (subtle visual feedback)
@@ -11580,14 +11580,20 @@ class Graphiti {
         // Capture current intercepts as frozen badges ONLY if viewport wasn't already changing
         // Filter to only include intercepts from currently enabled functions
         if (!this.isViewportChanging && this.showIntercepts && this.intercepts.length > 0) {
-            this.frozenInterceptBadges = this.intercepts
-                .filter(intercept => !intercept.functionId || enabledFunctionIds.has(intercept.functionId))
+            // Freeze exactly what is currently rendered, not raw intercept candidates.
+            // This prevents stale hidden intercepts from reappearing during pan.
+            this.frozenInterceptBadges = (this.culledInterceptMarkers || [])
+                .map(marker => marker.intercept)
+                .filter(intercept => intercept && (!intercept.functionId || enabledFunctionIds.has(intercept.functionId)))
                 .map(intercept => ({
                     x: intercept.x,
                     y: intercept.y,
                     type: intercept.type,
                     functionColor: '#808080' // Neutral gray color for intercepts
                 }));
+        } else if (!this.isViewportChanging && this.showIntercepts) {
+            // Ensure old frozen intercepts do not survive into the next pan session.
+            this.frozenInterceptBadges = [];
         }
         
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
@@ -11628,6 +11634,7 @@ class Graphiti {
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
+            this.frozenInterceptBadges = []; // Clear frozen intercepts when viewport stabilizes
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
             // Replot explicit functions with updated viewport
@@ -11653,8 +11660,7 @@ class Graphiti {
                     this.turningPoints = this.findTurningPoints();
                 }
                 if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                    this.refreshIntercepts();
                 }
                 
                 // Update integral pairs after replots to refresh numerical calculations
@@ -14752,8 +14758,7 @@ class Graphiti {
                 
                 if (this.showIntercepts) {
                     // Recalculate and show intercepts
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                    this.refreshIntercepts();
                 } else {
                     // Clear intercepts
                     this.clearIntercepts();
@@ -20726,7 +20731,7 @@ class Graphiti {
         // Recalculate tangent intercepts since badges changed
         // Note: Don't call draw() here - let the caller handle it
         if (this.showIntercepts) {
-            this.intercepts = this.findAxisIntercepts();
+            this.refreshIntercepts();
         }
     }
     
@@ -20846,6 +20851,7 @@ class Graphiti {
         this.implicitIntersections = [];
         this.tangentIntersections = [];
         this.normalIntersections = [];
+        this.frozenIntersectionBadges = [];
     }
 
     // ================================
@@ -25153,6 +25159,29 @@ class Graphiti {
             !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum')
         );
     }
+
+    refreshIntercepts(options = {}) {
+        const { clearFrozen = false, draw = false } = options;
+
+        if (!this.showIntercepts) {
+            this.clearIntercepts();
+            if (draw) {
+                this.draw();
+            }
+            return;
+        }
+
+        this.intercepts = this.findAxisIntercepts();
+        this.cullInterceptMarkers();
+
+        if (clearFrozen) {
+            this.frozenInterceptBadges = [];
+        }
+
+        if (draw) {
+            this.draw();
+        }
+    }
     
     updateTurningPointsToggleButton() {
         const button = document.getElementById('turning-points-toggle');
@@ -25167,6 +25196,7 @@ class Graphiti {
     clearIntercepts() {
         // Clear intercept markers and frozen badges
         this.intercepts = [];
+        this.culledInterceptMarkers = [];
         this.frozenInterceptBadges = [];
         
         // Remove all intercept badges (Cartesian and polar types)
@@ -25180,6 +25210,25 @@ class Graphiti {
                 badge.badgeType !== 'y-axis-negative'
             )
         );
+    }
+
+    clearStaleFrozenMarkers() {
+        // Frozen markers are only valid during active viewport changes.
+        if (this.isViewportChanging) {
+            return;
+        }
+
+        if (!this.showIntersections || (!this.implicitIntersectionsPending && this.intersections.length === 0)) {
+            this.frozenIntersectionBadges = [];
+        }
+
+        if (!this.showTurningPoints || this.turningPoints.length === 0) {
+            this.frozenTurningPointBadges = [];
+        }
+
+        if (!this.showIntercepts || this.intercepts.length === 0) {
+            this.frozenInterceptBadges = [];
+        }
     }
     
     updateInterceptsToggleButton() {
@@ -25299,7 +25348,7 @@ class Graphiti {
         }
         
         if (this.showIntercepts) {
-            this.intercepts = this.findAxisIntercepts();
+            this.refreshIntercepts();
         }
         
         if (this.showTurningPoints) {
@@ -26518,6 +26567,8 @@ class Graphiti {
                 }
             }
         });
+
+        this.clearStaleFrozenMarkers();
 
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
