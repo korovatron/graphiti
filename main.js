@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.77';
+const VERSION = '1.1.78';
 
 class Graphiti {
     constructor() {
@@ -2205,6 +2205,7 @@ class Graphiti {
         const funcDiv = document.createElement('div');
         funcDiv.className = 'function-item';
         funcDiv.style.borderLeftColor = func.color;
+        this.applyFunctionBadgeStyle(func, funcDiv);
         funcDiv.setAttribute('data-function-id', func.id);
 
         // Set placeholder based on the function's mode
@@ -2269,11 +2270,11 @@ class Graphiti {
                 </div>
             </div>
             <div class="asymptote-info-container" data-function-id="${func.id}">
-                <div class="asymptote-info-title">Asymptotes:</div>
+                <div class="asymptote-info-title">Asymptotes</div>
                 <div class="asymptote-equation-list"></div>
             </div>
             <div class="holes-info-container" data-function-id="${func.id}">
-                <div class="holes-info-title">Holes:</div>
+                <div class="holes-info-title">Holes</div>
                 <div class="holes-equation-list"></div>
             </div>
         `;
@@ -2780,6 +2781,7 @@ class Graphiti {
     updateFunctionVisualState(func, funcDiv) {
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const mathField = funcDiv.querySelector('math-field');
+        this.applyFunctionBadgeStyle(func, funcDiv);
         
         if (func.enabled) {
             // Function is visible
@@ -2798,6 +2800,20 @@ class Graphiti {
         }
 
         this.updateFunctionAsymptoteInfo(func);
+    }
+
+    applyFunctionBadgeStyle(func, funcDiv) {
+        if (!funcDiv) {
+            return;
+        }
+
+        const badgeBackground = (func && typeof func.color === 'string' && func.color.trim())
+            ? func.color
+            : '#ffd400';
+        const badgeText = this.getContrastingTextColor(badgeBackground);
+
+        funcDiv.style.setProperty('--function-badge-bg', badgeBackground);
+        funcDiv.style.setProperty('--function-badge-fg', badgeText);
     }
     
     updateIntersectionToggleButton() {
@@ -3864,6 +3880,8 @@ class Graphiti {
             const expressionForSampling = processedExpression.toLowerCase();
             const hasXVariable = /\bx\b/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
+            const hasReciprocalPeriodicTrigWithX = hasXVariable && /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expressionForSampling);
+            const shouldSkipNumericHorizontalAsymptotes = hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX;
             const baseAsymptoteSpacing = this.angleMode === 'degrees' ? 180 : Math.PI;
 
             let frequencyMultiplier = 1;
@@ -3889,7 +3907,11 @@ class Graphiti {
                 ? algebraicAsymptotes.vertical
                 : numericVerticalAsymptotes;
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
-            const numericHorizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
+            // Periodic trig families with vertical poles do not have horizontal asymptotes.
+            // Skip numeric fitting to avoid zoom-dependent false positives (for example tan(x) -> y=+-2/15).
+            const numericHorizontalAsymptotes = shouldSkipNumericHorizontalAsymptotes
+                ? []
+                : this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
             const horizontalAsymptotes = algebraicAsymptotes
                 ? algebraicAsymptotes.horizontal
                 : numericHorizontalAsymptotes;
@@ -10907,6 +10929,8 @@ class Graphiti {
         if (!funcItem) {
             return;
         }
+
+        this.applyFunctionBadgeStyle(func, funcItem);
 
         const infoContainer = funcItem.querySelector('.asymptote-info-container');
         const equationList = infoContainer ? infoContainer.querySelector('.asymptote-equation-list') : null;
