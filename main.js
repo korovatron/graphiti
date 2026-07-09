@@ -10957,6 +10957,8 @@ class Graphiti {
                 item.setAttribute('virtual-keyboard-mode', 'off');
                 item.setAttribute('tabindex', '-1');
                 item.setAttribute('color-scheme', 'dark');
+                item.style.setProperty('font-size', '14px', 'important');
+                item.style.setProperty('--mathlive-font-size', '14px');
                 item.value = equation;
                 equationList.appendChild(item);
             }
@@ -10981,6 +10983,8 @@ class Graphiti {
             holeItem.setAttribute('virtual-keyboard-mode', 'off');
             holeItem.setAttribute('tabindex', '-1');
             holeItem.setAttribute('color-scheme', 'dark');
+            holeItem.style.setProperty('font-size', '14px', 'important');
+            holeItem.style.setProperty('--mathlive-font-size', '14px');
             holeItem.value = holeEquation;
             holesList.appendChild(holeItem);
         }
