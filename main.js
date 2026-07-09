@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.73';
+const VERSION = '1.1.74';
 
 class Graphiti {
     constructor() {
@@ -15191,11 +15191,118 @@ class Graphiti {
         document.addEventListener('keyup', (e) => {
             this.input.keys.delete(e.key.toLowerCase());
         });
+
+        const isMathLiveTouchInteraction = (event) => {
+            if (!event || typeof event.composedPath !== 'function') {
+                return false;
+            }
+
+            const path = event.composedPath();
+            return path.some(node => {
+                if (!node) {
+                    return false;
+                }
+
+                if (node.tagName === 'MATH-FIELD') {
+                    return true;
+                }
+
+                if (!node.classList) {
+                    return false;
+                }
+
+                return node.classList.contains('ML__keyboard') ||
+                    node.classList.contains('ML__keyboard-container') ||
+                    node.classList.contains('ML__virtual-keyboard') ||
+                    node.classList.contains('MLK__backdrop') ||
+                    node.classList.contains('MLK__plate') ||
+                    node.classList.contains('MLK__keycap') ||
+                    node.classList.contains('ML__keycap');
+            });
+        };
+
+        const getDirectlyTappedMathField = (event) => {
+            if (!event) {
+                return null;
+            }
+
+            const target = event.target;
+            if (target && typeof target.closest === 'function') {
+                const nearestField = target.closest('math-field');
+                if (nearestField) {
+                    return nearestField;
+                }
+            }
+
+            if (typeof event.composedPath === 'function') {
+                const path = event.composedPath();
+                const firstNode = path && path.length > 0 ? path[0] : null;
+                if (firstNode && firstNode.tagName === 'MATH-FIELD') {
+                    return firstNode;
+                }
+            }
+
+            return null;
+        };
+
+        // iOS/touch fallback: ensure tapped MathLive field reliably becomes active.
+        // Some mobile Safari focus transitions can leave the virtual keyboard detached
+        // from the intended field until another field is tapped first.
+        const focusTappedMathField = (e) => {
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            const tappedMathField = getDirectlyTappedMathField(e);
+            if (!tappedMathField) {
+                return;
+            }
+
+            // Ignore touches that are really on MathLive keyboard chrome.
+            if (path.some(node => node && node.classList && (
+                node.classList.contains('ML__keyboard') ||
+                node.classList.contains('ML__keyboard-container') ||
+                node.classList.contains('ML__virtual-keyboard') ||
+                node.classList.contains('MLK__keycap') ||
+                node.classList.contains('ML__keycap')
+            ))) {
+                return;
+            }
+
+            // Ignore read-only display fields such as asymptote equations.
+            if (tappedMathField.getAttribute('read-only') === 'true' || tappedMathField.classList.contains('asymptote-equation-field')) {
+                return;
+            }
+
+            // If a previous canvas tap set blur protection, clear it for direct taps.
+            tappedMathField.removeAttribute('data-blur-protected');
+
+            // Defer focus to let native touch focus settle first.
+            setTimeout(() => {
+                if (!document.contains(tappedMathField)) {
+                    return;
+                }
+
+                // Always call focus() on direct field taps to re-bind keyboard target
+                // on iOS Safari, even if hasFocus() already reports true.
+                tappedMathField.focus();
+
+                if (window.mathVirtualKeyboard && !window.mathVirtualKeyboard.visible) {
+                    window.mathVirtualKeyboard.show({ animate: true });
+                }
+            }, 0);
+        };
+
+        document.addEventListener('touchend', focusTappedMathField, { passive: true, capture: true });
+
+        // Edge touch emulation and some Android browsers route taps through pointer events.
+        document.addEventListener('pointerup', (e) => {
+            if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                focusTappedMathField(e);
+            }
+        }, { passive: true, capture: true });
         
         // Document-level touch events for hamburger menu closure
         document.addEventListener('touchstart', (e) => {
             // Don't handle if interaction is with MathLive virtual keyboard
-            if (e.target.closest('.ML__keyboard') || e.target.closest('math-field')) {
+            if (isMathLiveTouchInteraction(e)) {
                 return;
             }
             
@@ -15220,7 +15327,7 @@ class Graphiti {
         
         document.addEventListener('touchmove', (e) => {
             // Don't handle if interaction is with MathLive virtual keyboard
-            if (e.target.closest('.ML__keyboard') || e.target.closest('math-field')) {
+            if (isMathLiveTouchInteraction(e)) {
                 return;
             }
             
@@ -15245,7 +15352,7 @@ class Graphiti {
             if (!this.isTrueMobile()) return;
             
             // Don't handle if interaction is with MathLive virtual keyboard
-            if (e.target.closest('.ML__keyboard') || e.target.closest('math-field')) {
+            if (isMathLiveTouchInteraction(e)) {
                 return;
             }
             
