@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.74';
+const VERSION = '1.1.75';
 
 class Graphiti {
     constructor() {
@@ -1654,6 +1654,33 @@ class Graphiti {
                 description: 'Implicit Equations Demo',
                 viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
             },
+            'affine-functions': {
+                expressions: [
+                    '\\frac{x-1}{x+1}y-x+1=0',                         // Line + hole + vertical component
+                    '(x-2)y-1=0',                                        // Rational branch with vertical/horizontal asymptotes
+                    '(x+1)y-(2x-5)=0'                                    // Rational branch with horizontal asymptote y=2
+                ],
+                description: 'Affine Functions Demo',
+                viewport: { minX: -6, maxX: 6, minY: -6, maxY: 6 }
+            },
+            'asymptotes-rational': {
+                expressions: [
+                    'y=\\frac{2x+1}{x-2}',                             // Linear/linear rational (horizontal + vertical asymptotes)
+                    'y=\\frac{x^2+1}{x-1}',                            // Oblique asymptote y=x+1 with vertical x=1
+                    'y=\\frac{x^2-1}{x^2-x}'                           // Removable hole at x=1 and vertical asymptote at x=0
+                ],
+                description: 'Asymptotes & Holes Demo',
+                viewport: { minX: -8, maxX: 8, minY: -8, maxY: 8 }
+            },
+            'asymptotes-non-rational': {
+                expressions: [
+                    'y=e^{-x}+1',                                       // Horizontal asymptote y=1
+                    'y=\\tan\\left(x\\right)',                     // Periodic vertical asymptotes
+                    'y=\\arctan\\left(x\\right)'                   // Horizontal asymptotes y=±pi/2
+                ],
+                description: 'Non-Rational Asymptotes Demo',
+                viewport: { minX: -8, maxX: 8, minY: -4, maxY: 4 }
+            },
             'tangents-normals': {
                 expressions: [
                     'y=\\sin(x)',                                       // Sine curve
@@ -2244,6 +2271,10 @@ class Graphiti {
             <div class="asymptote-info-container" data-function-id="${func.id}">
                 <div class="asymptote-info-title">Asymptotes:</div>
                 <div class="asymptote-equation-list"></div>
+            </div>
+            <div class="holes-info-container" data-function-id="${func.id}">
+                <div class="holes-info-title">Holes:</div>
+                <div class="holes-equation-list"></div>
             </div>
         `;
         
@@ -3858,7 +3889,7 @@ class Graphiti {
                 ? algebraicAsymptotes.vertical
                 : numericVerticalAsymptotes;
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
-            const numericHorizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig);
+            const numericHorizontalAsymptotes = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
             const horizontalAsymptotes = algebraicAsymptotes
                 ? algebraicAsymptotes.horizontal
                 : numericHorizontalAsymptotes;
@@ -6802,6 +6833,28 @@ class Graphiti {
                 return;
             }
 
+            // Safe implicit fast-path: equations affine in y can be rendered as an
+            // explicit equivalent y = -B(x)/A(x), which enables the mature explicit
+            // asymptote/hole pipeline and avoids marching-squares artefacts.
+            if (functionType === 'implicit') {
+                const affineModel = this.tryBuildAffineImplicitModel(equation);
+                if (affineModel) {
+                    const handled = await this.plotImplicitAffineAsExplicit(func, affineModel);
+                    if (handled) {
+                        // Keep implicit cache flow consistent with other implicit render modes.
+                        this.applyImplicitFunctionPoints(func, func.points || []);
+                        this.draw();
+                        this.activeImplicitCalculations.delete(func.id);
+
+                        if (this.performance.enabled) {
+                            const elapsed = performance.now() - startTime;
+                            this.performance.plotTimes.set(func.id, elapsed);
+                        }
+                        return;
+                    }
+                }
+            }
+
             // Algebraic asymptotes for hyperbola-family conics are independent of the
             // marching-squares contour and can be derived directly from the quadratic form.
             if (functionType === 'implicit' || functionType === 'implicit-inequality') {
@@ -6954,6 +7007,420 @@ class Graphiti {
             // Don't clear existing points on error - keep them visible
             this.activeImplicitCalculations.delete(func.id);
         }
+    }
+
+    tryBuildAffineImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '(' + equation.leftExpression + ')-(' + equation.rightExpression + ')';
+        const replaceYSymbol = (expression, replacement) => expression.replace(/\by\b/g, '(' + replacement + ')');
+
+        const bExpression = replaceYSymbol(combinedExpression, '0');
+        const aExpression = '((' + replaceYSymbol(combinedExpression, '1') + ')-(' + bExpression + '))';
+
+        let combinedForEval = combinedExpression;
+        let aForEval = aExpression;
+        let bForEval = bExpression;
+        if (this.angleMode === 'degrees') {
+            combinedForEval = this.convertTrigToDegreeModeImplicitCartesian(combinedForEval);
+            aForEval = this.convertTrigToDegreeModeImplicitCartesian(aForEval);
+            bForEval = this.convertTrigToDegreeModeImplicitCartesian(bForEval);
+        }
+
+        let combinedCompiled;
+        let aCompiled;
+        let bCompiled;
+        try {
+            combinedCompiled = this.getCompiledExpression(combinedForEval);
+            aCompiled = this.getCompiledExpression(aForEval);
+            bCompiled = this.getCompiledExpression(bForEval);
+        } catch {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        const evaluateCombined = (x, y) => {
+            scope.x = x;
+            scope.y = y;
+            try {
+                const value = combinedCompiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        let validSamples = 0;
+        let maxSecondDifference = 0;
+        let maxMagnitude = 0;
+        let maxSlopeMagnitude = 0;
+        const centerX = (this.viewport.minX + this.viewport.maxX) * 0.5;
+        const sampleXs = [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4, centerX - 1, centerX, centerX + 1];
+
+        for (const x of sampleXs) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+
+            const fNeg1 = evaluateCombined(x, -1);
+            const fZero = evaluateCombined(x, 0);
+            const fOne = evaluateCombined(x, 1);
+            if (fNeg1 === null || fZero === null || fOne === null) {
+                continue;
+            }
+
+            const secondDifference = fOne - (2 * fZero) + fNeg1;
+            const slopeMagnitude = Math.abs(fOne - fZero);
+            maxSecondDifference = Math.max(maxSecondDifference, Math.abs(secondDifference));
+            maxSlopeMagnitude = Math.max(maxSlopeMagnitude, slopeMagnitude);
+            maxMagnitude = Math.max(maxMagnitude, Math.abs(fNeg1), Math.abs(fZero), Math.abs(fOne));
+            validSamples++;
+        }
+
+        if (validSamples < 3) {
+            return null;
+        }
+
+        const linearityTolerance = Math.max(1e-7, maxMagnitude * 1e-7);
+        if (maxSecondDifference > linearityTolerance) {
+            return null;
+        }
+
+        // If A(x) is effectively zero everywhere, the relation is not an explicit branch in y.
+        const slopeTolerance = Math.max(1e-7, maxMagnitude * 1e-8);
+        if (maxSlopeMagnitude <= slopeTolerance) {
+            return null;
+        }
+
+        const verticalComponents = this.findAffineImplicitVerticalComponents(aCompiled, bCompiled);
+
+        const domainExclusionsRaw = [
+            ...this.detectVerticalAsymptotes(aExpression),
+            ...this.detectVerticalAsymptotes(bExpression)
+        ];
+        const domainExclusions = [];
+        for (const x of domainExclusionsRaw) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+            if (!domainExclusions.some(existing => Math.abs(existing - x) <= 1e-6)) {
+                domainExclusions.push(x);
+            }
+        }
+        domainExclusions.sort((a, b) => a - b);
+
+        const explicitExpression = '-(' + bExpression + ')/(' + aExpression + ')';
+
+        return {
+            explicitExpression,
+            verticalComponents,
+            domainExclusions
+        };
+    }
+
+    findAffineImplicitVerticalComponents(aCompiled, bCompiled) {
+        if (!aCompiled || !bCompiled) {
+            return [];
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+        const evaluateAtX = (compiled, x) => {
+            scope.x = x;
+            try {
+                const value = compiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        // Keep affine vertical-component detection stable across zoom levels by
+        // scanning a fixed global window instead of viewport-relative bounds.
+        const minX = -256;
+        const maxX = 256;
+        const samples = 4096;
+        const step = (maxX - minX) / samples;
+
+        let scaleA = 0;
+        let scaleB = 0;
+        for (let i = 0; i <= samples; i++) {
+            const x = minX + (i * step);
+            const aValue = evaluateAtX(aCompiled, x);
+            const bValue = evaluateAtX(bCompiled, x);
+            if (aValue !== null) {
+                scaleA = Math.max(scaleA, Math.abs(aValue));
+            }
+            if (bValue !== null) {
+                scaleB = Math.max(scaleB, Math.abs(bValue));
+            }
+        }
+
+        const aTolerance = Math.max(1e-7, scaleA * 1e-6);
+        const bTolerance = Math.max(1e-4, scaleB * 5e-4);
+
+        const bisectRoot = (leftX, rightX, leftValue, rightValue) => {
+            if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) {
+                return null;
+            }
+
+            if (Math.abs(leftValue) <= aTolerance) {
+                return leftX;
+            }
+            if (Math.abs(rightValue) <= aTolerance) {
+                return rightX;
+            }
+            if (leftValue * rightValue > 0) {
+                return null;
+            }
+
+            let a = leftX;
+            let b = rightX;
+            let fa = leftValue;
+            let fb = rightValue;
+
+            for (let iter = 0; iter < 40; iter++) {
+                const mid = (a + b) * 0.5;
+                const fm = evaluateAtX(aCompiled, mid);
+                if (fm === null) {
+                    break;
+                }
+
+                if (Math.abs(fm) <= aTolerance) {
+                    return mid;
+                }
+
+                if (fa * fm <= 0) {
+                    b = mid;
+                    fb = fm;
+                } else {
+                    a = mid;
+                    fa = fm;
+                }
+
+                if (Math.abs(b - a) <= 1e-8) {
+                    break;
+                }
+            }
+
+            return (a + b) * 0.5;
+        };
+
+        const candidates = [];
+        let prevX = minX;
+        let prevA = evaluateAtX(aCompiled, prevX);
+
+        for (let i = 1; i <= samples; i++) {
+            const x = minX + (i * step);
+            const currentA = evaluateAtX(aCompiled, x);
+            if (prevA === null || currentA === null) {
+                prevX = x;
+                prevA = currentA;
+                continue;
+            }
+
+            let root = null;
+            if (prevA * currentA < 0) {
+                root = bisectRoot(prevX, x, prevA, currentA);
+            } else if (Math.abs(currentA) <= aTolerance) {
+                root = x;
+            }
+
+            if (root !== null && Number.isFinite(root)) {
+                const bAtRoot = evaluateAtX(bCompiled, root);
+                if (bAtRoot !== null && Math.abs(bAtRoot) <= bTolerance) {
+                    const rounded = Math.abs(root - Math.round(root)) < 1e-8 ? Math.round(root) : root;
+                    if (!candidates.some(existing => Math.abs(existing - rounded) <= 1e-5)) {
+                        candidates.push(rounded);
+                    }
+                }
+            }
+
+            prevX = x;
+            prevA = currentA;
+        }
+
+        candidates.sort((a, b) => a - b);
+        return candidates;
+    }
+
+    async plotImplicitAffineAsExplicit(func, affineModel) {
+        if (!func || !affineModel || !affineModel.explicitExpression) {
+            return false;
+        }
+
+        const proxyFunc = {
+            ...func,
+            expression: 'y=' + affineModel.explicitExpression,
+            points: []
+        };
+
+        await this.plotFunction(proxyFunc);
+
+        if (!Array.isArray(proxyFunc.points) || proxyFunc.points.length === 0) {
+            return false;
+        }
+
+        const verticalComponents = Array.isArray(affineModel.verticalComponents)
+            ? affineModel.verticalComponents.filter(value => Number.isFinite(value))
+            : [];
+        const isAtVerticalComponent = (x) => verticalComponents.some(value => Math.abs(value - x) <= 1e-5);
+        const domainExclusions = Array.isArray(affineModel.domainExclusions)
+            ? affineModel.domainExclusions.filter(value => Number.isFinite(value) && !isAtVerticalComponent(value))
+            : [];
+
+        const asymptoteData = proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] };
+        let filteredVertical = (Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [])
+            .filter(value => !isAtVerticalComponent(value));
+        const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
+        const oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+
+        const pointsWithExclusionBreaks = [];
+        const sourcePoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
+        const xSpan = this.viewport.maxX - this.viewport.minX;
+        const exclusionTolerance = Math.max(1e-6, Math.abs(xSpan) * 1e-6);
+
+        for (let i = 0; i < sourcePoints.length; i++) {
+            const current = sourcePoints[i];
+            if (!current || !Number.isFinite(current.x) || !Number.isFinite(current.y)) {
+                pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                continue;
+            }
+
+            const hitsExcludedX = domainExclusions.some(exclusionX => Math.abs(current.x - exclusionX) <= exclusionTolerance);
+            if (hitsExcludedX) {
+                pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                continue;
+            }
+
+            pointsWithExclusionBreaks.push({ ...current });
+
+            const next = sourcePoints[i + 1];
+            if (!next || !Number.isFinite(next.x) || !Number.isFinite(next.y)) {
+                continue;
+            }
+
+            const minX = Math.min(current.x, next.x);
+            const maxX = Math.max(current.x, next.x);
+            const crossesExclusion = domainExclusions.some(exclusionX => exclusionX > minX && exclusionX < maxX);
+            if (crossesExclusion) {
+                pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+            }
+        }
+
+        func.points = pointsWithExclusionBreaks;
+
+        const derivedDomainHoles = [];
+        const derivedVerticalAsymptotes = [];
+        if (domainExclusions.length > 0) {
+            let expressionForEval = affineModel.explicitExpression;
+            if (this.angleMode === 'degrees') {
+                expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+            }
+
+            const compiledExpression = this.getCompiledExpression(expressionForEval);
+            const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const evalY = (x) => {
+                scope.x = x;
+                try {
+                    const value = compiledExpression.evaluate(scope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            const estimateHoleLimit = (x0) => {
+                const deltas = [1e-2, 1e-3, 1e-4, 1e-5];
+
+                for (const delta of deltas) {
+                    const left = evalY(x0 - delta);
+                    const right = evalY(x0 + delta);
+                    if (left === null || right === null) {
+                        continue;
+                    }
+
+                    const magnitude = Math.max(Math.abs(left), Math.abs(right));
+                    const agreement = Math.abs(left - right);
+                    const agreementTolerance = Math.max(1e-3, magnitude * 5e-3);
+                    if (magnitude < 1e6 && agreement <= agreementTolerance) {
+                        return (left + right) * 0.5;
+                    }
+                }
+
+                return null;
+            };
+
+            for (const exclusionX of domainExclusions) {
+                const limitY = estimateHoleLimit(exclusionX);
+                if (limitY !== null) {
+                    derivedDomainHoles.push({ x: exclusionX, y: limitY });
+                } else {
+                    derivedVerticalAsymptotes.push(exclusionX);
+                }
+            }
+        }
+
+        if (derivedDomainHoles.length > 0) {
+            filteredVertical = filteredVertical.filter(value =>
+                !derivedDomainHoles.some(hole => Math.abs(hole.x - value) <= 1e-5)
+            );
+        }
+
+        if (derivedVerticalAsymptotes.length > 0) {
+            for (const x of derivedVerticalAsymptotes) {
+                if (!Number.isFinite(x)) {
+                    continue;
+                }
+                if (!filteredVertical.some(existing => Math.abs(existing - x) <= 1e-6)) {
+                    filteredVertical.push(x);
+                }
+            }
+            filteredVertical.sort((a, b) => a - b);
+        }
+
+        const mergedHoles = [
+            ...(Array.isArray(proxyFunc.holes) ? proxyFunc.holes : []),
+            ...derivedDomainHoles
+        ];
+        const filteredHoles = [];
+        for (const hole of mergedHoles) {
+            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                continue;
+            }
+            if (isAtVerticalComponent(hole.x)) {
+                continue;
+            }
+            const duplicate = filteredHoles.some(existing =>
+                Math.abs(existing.x - hole.x) <= 1e-5 && Math.abs(existing.y - hole.y) <= 1e-5
+            );
+            if (!duplicate) {
+                filteredHoles.push({ x: hole.x, y: hole.y });
+            }
+        }
+
+        if (verticalComponents.length > 0) {
+            const ySpan = this.viewport.maxY - this.viewport.minY;
+            const yMin = this.viewport.minY - ySpan * 0.5;
+            const yMax = this.viewport.maxY + ySpan * 0.5;
+
+            for (const x of verticalComponents) {
+                func.points.push({ x: NaN, y: NaN, connected: false });
+                func.points.push({ x, y: yMin, connected: false });
+                func.points.push({ x, y: yMax, connected: true });
+                func.points.push({ x: NaN, y: NaN, connected: false });
+            }
+        }
+
+        this.updateFunctionAsymptoteData(func, filteredVertical, horizontal, oblique, null);
+        func.holes = filteredHoles;
+        func.affineExplicitExpression = affineModel.explicitExpression;
+        func.affineVerticalComponents = verticalComponents.slice();
+        func.implicitRenderMode = 'affine-explicit';
+        this.updateFunctionAsymptoteInfo(func);
+
+        return true;
     }
 
     tryAnalyticTrigLineFamily(equation, functionId = null, calculationId = null) {
@@ -8712,10 +9179,15 @@ class Graphiti {
         return asymptotes;
     }
 
-    detectHorizontalAsymptotes(compiledExpression, hasInverseTrig = false) {
+    detectHorizontalAsymptotes(compiledExpression, hasInverseTrig = false, processedExpression = '') {
         if (!compiledExpression) {
             return [];
         }
+
+        const normalizedExpression = (processedExpression || '').toLowerCase().replace(/\s+/g, '');
+        const hasDecayingExponentialTail =
+            /(?:^|[^a-z])e\^(?:\{|\()?-([0-9.]*\*?)?x(?:\}|\))?/.test(normalizedExpression) ||
+            /(?:^|[^a-z])exp\(-([0-9.]*\*?)?x\)/.test(normalizedExpression);
 
         const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
         const baseMagnitude = Math.max(
@@ -8809,7 +9281,7 @@ class Graphiti {
             const nearAbsY = Math.abs(tail[0].y);
             const farAbsY = Math.abs(tail[tail.length - 1].y);
             const nonDecayingMagnitude = farAbsY >= Math.max(nearAbsY * 0.9, nearAbsY - 1e-6);
-            if (nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
+            if (!hasDecayingExponentialTail && nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
                 return null;
             }
 
@@ -9180,9 +9652,11 @@ class Graphiti {
         const vertical = [];
         const candidateRoots = this.findPolynomialRealRoots(denominator);
         for (const root of candidateRoots) {
-            const numeratorAtRoot = this.evaluatePolynomial(numerator, root);
-            // Ignore removable discontinuities where numerator also vanishes.
-            if (Math.abs(numeratorAtRoot) < 1e-7) {
+            const denominatorMultiplicity = this.getPolynomialRootMultiplicity(denominator, root, 1e-7, 10);
+            const numeratorMultiplicity = this.getPolynomialRootMultiplicity(numerator, root, 1e-7, 10);
+
+            // True pole only when denominator has uncancelled multiplicity at this root.
+            if (denominatorMultiplicity <= numeratorMultiplicity) {
                 continue;
             }
 
@@ -9431,6 +9905,39 @@ class Graphiti {
             sum = sum * x + (poly[i] || 0);
         }
         return sum;
+    }
+
+    getPolynomialRootMultiplicity(coeffs, root, tolerance = 1e-7, maxMultiplicity = 8) {
+        if (!Number.isFinite(root)) {
+            return 0;
+        }
+
+        let poly = this.normalizePolynomial(coeffs || [0]);
+        let multiplicity = 0;
+
+        for (let i = 0; i < maxMultiplicity; i++) {
+            const degree = this.getPolynomialDegree(poly);
+            if (degree < 1) {
+                break;
+            }
+
+            const valueAtRoot = this.evaluatePolynomial(poly, root);
+            if (!Number.isFinite(valueAtRoot) || Math.abs(valueAtRoot) > tolerance) {
+                break;
+            }
+
+            const division = this.dividePolynomials(poly, [-root, 1]);
+            const remainder = this.normalizePolynomial(division.remainder || [0]);
+            const remainderIsZero = remainder.every(value => Math.abs(value) <= tolerance);
+            if (!remainderIsZero) {
+                break;
+            }
+
+            poly = this.normalizePolynomial(division.quotient || [0]);
+            multiplicity++;
+        }
+
+        return multiplicity;
     }
 
     findPolynomialRealRoots(coeffs) {
@@ -10207,6 +10714,8 @@ class Graphiti {
         delete func.obliqueAsymptotes;
         delete func.asymptoteData;
         delete func.holes;
+        delete func.affineExplicitExpression;
+        delete func.affineVerticalComponents;
 
         this.updateFunctionAsymptoteInfo(func);
     }
@@ -10223,6 +10732,10 @@ class Graphiti {
                 if (hiddenInfoContainer) {
                     hiddenInfoContainer.classList.remove('visible');
                 }
+                const hiddenHolesContainer = hiddenFuncItem.querySelector('.holes-info-container');
+                if (hiddenHolesContainer) {
+                    hiddenHolesContainer.classList.remove('visible');
+                }
             }
             return;
         }
@@ -10238,25 +10751,51 @@ class Graphiti {
             return;
         }
 
+        const holesContainer = funcItem.querySelector('.holes-info-container');
+        const holesList = holesContainer ? holesContainer.querySelector('.holes-equation-list') : null;
+
         const equations = this.buildAsymptoteDisplayLatex(func);
+        const holeEquations = this.buildHoleDisplayLatex(func);
 
         equationList.innerHTML = '';
         if (equations.length === 0) {
             infoContainer.classList.remove('visible');
+        } else {
+            infoContainer.classList.add('visible');
+            for (const equation of equations) {
+                const item = document.createElement('math-field');
+                item.className = 'asymptote-equation-item asymptote-equation-field';
+                item.setAttribute('read-only', 'true');
+                item.setAttribute('default-mode', 'math');
+                item.setAttribute('virtual-keyboard-mode', 'off');
+                item.setAttribute('tabindex', '-1');
+                item.setAttribute('color-scheme', 'dark');
+                item.value = equation;
+                equationList.appendChild(item);
+            }
+        }
+
+        if (!holesContainer || !holesList) {
             return;
         }
 
-        infoContainer.classList.add('visible');
-        for (const equation of equations) {
-            const item = document.createElement('math-field');
-            item.className = 'asymptote-equation-item asymptote-equation-field';
-            item.setAttribute('read-only', 'true');
-            item.setAttribute('default-mode', 'math');
-            item.setAttribute('virtual-keyboard-mode', 'off');
-            item.setAttribute('tabindex', '-1');
-            item.setAttribute('color-scheme', 'dark');
-            item.value = equation;
-            equationList.appendChild(item);
+        holesList.innerHTML = '';
+        if (holeEquations.length === 0) {
+            holesContainer.classList.remove('visible');
+            return;
+        }
+
+        holesContainer.classList.add('visible');
+        for (const holeEquation of holeEquations) {
+            const holeItem = document.createElement('math-field');
+            holeItem.className = 'asymptote-equation-item asymptote-equation-field';
+            holeItem.setAttribute('read-only', 'true');
+            holeItem.setAttribute('default-mode', 'math');
+            holeItem.setAttribute('virtual-keyboard-mode', 'off');
+            holeItem.setAttribute('tabindex', '-1');
+            holeItem.setAttribute('color-scheme', 'dark');
+            holeItem.value = holeEquation;
+            holesList.appendChild(holeItem);
         }
     }
 
@@ -10313,6 +10852,27 @@ class Graphiti {
         }
 
         return equations;
+    }
+
+    buildHoleDisplayLatex(func) {
+        const holes = func && Array.isArray(func.holes) ? func.holes : [];
+        if (holes.length === 0) {
+            return [];
+        }
+
+        const sorted = holes
+            .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+            .slice()
+            .sort((a, b) => a.x - b.x);
+
+        const coordinates = [];
+        for (const hole of sorted) {
+            const xLatex = this.formatAsymptoteCoefficientLatex(hole.x);
+            const yLatex = this.formatAsymptoteCoefficientLatex(hole.y);
+            coordinates.push(`\\left(${xLatex}, ${yLatex}\\right)`);
+        }
+
+        return coordinates;
     }
 
     formatPeriodicVerticalAsymptoteLatex(values) {
@@ -21746,8 +22306,30 @@ class Graphiti {
         
         // Check if it's an implicit function or implicit inequality
         const funcType = this.detectFunctionType(func.expression);
-        const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
+        const isAffineExplicit = func.implicitRenderMode === 'affine-explicit';
+        const isImplicit = !isAffineExplicit && (funcType === 'implicit' || funcType === 'implicit-inequality');
         const isParametric = funcType === 'parametric';
+
+        if (isAffineExplicit && Array.isArray(func.affineVerticalComponents)) {
+            for (const x of func.affineVerticalComponents) {
+                if (!Number.isFinite(x)) {
+                    continue;
+                }
+                if (x < this.viewport.minX || x > this.viewport.maxX) {
+                    continue;
+                }
+                const duplicate = allIntercepts.some(existing => Math.abs(existing.x - x) < minDistance);
+                if (!duplicate) {
+                    allIntercepts.push({
+                        x,
+                        y: 0,
+                        type: 'x-intercept',
+                        functionId: func.id,
+                        color: func.color
+                    });
+                }
+            }
+        }
         
         // Detect vertical asymptotes for snapping and discontinuity filtering.
         let verticalAsymptotes = [];
@@ -22122,7 +22704,8 @@ class Graphiti {
         // Use displayPoints for implicit functions (double-buffering), fall back to points
         const points = func.displayPoints || func.points;
         const funcType = this.detectFunctionType(func.expression);
-        const isImplicit = funcType === 'implicit' || funcType === 'implicit-inequality';
+        const isAffineExplicit = func.implicitRenderMode === 'affine-explicit';
+        const isImplicit = !isAffineExplicit && (funcType === 'implicit' || funcType === 'implicit-inequality');
         const isParametric = funcType === 'parametric';
 
         let verticalAsymptotes = [];
@@ -22353,7 +22936,11 @@ class Graphiti {
             // Evaluate the explicit function at x = 0
             try {
                 // For explicit inequalities, extract the boundary equation
-                let exprToEvaluate = func.expression;
+                    let exprToEvaluate = func.expression;
+
+                    if (isAffineExplicit && func.affineExplicitExpression) {
+                        exprToEvaluate = 'y=' + func.affineExplicitExpression;
+                    }
                 if (funcType === 'explicit-inequality') {
                     const inequality = this.parseInequality(func.expression);
                     if (inequality && inequality.leftSide.toLowerCase() === 'y') {
@@ -23160,7 +23747,8 @@ class Graphiti {
         for (const func of enabledFunctions) {
             try {
                 // Detect function type
-                const functionType = this.detectFunctionType(func.expression);
+                const detectedType = this.detectFunctionType(func.expression);
+                const functionType = func.implicitRenderMode === 'affine-explicit' ? 'explicit' : detectedType;
                 
                 // Handle inequalities by finding turning points on their boundary curves
                 if (functionType === 'explicit-inequality') {
@@ -26637,7 +27225,7 @@ class Graphiti {
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
                 const functionType = this.detectFunctionType(func.expression);
-                if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                if ((functionType === 'implicit' || functionType === 'implicit-inequality') && func.implicitRenderMode !== 'affine-explicit') {
                     // Draw implicit functions/inequalities using displayPoints (stable during calculations)
                     const pointsToCheck = func.displayPoints || func.points;
                     // For implicit inequalities, draw even if no boundary points (may need full-viewport shading)

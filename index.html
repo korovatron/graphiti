@@ -1004,17 +1004,28 @@
             padding-top: 8px;
         }
 
-        .asymptote-info-container.visible {
+        .asymptote-info-container.visible,
+        .holes-info-container.visible {
             display: flex;
         }
 
-        .asymptote-info-title {
+        .holes-info-container {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+
+        .asymptote-info-title,
+        .holes-info-title {
             font-size: 14px;
             color: var(--text-primary);
             line-height: 1.35;
         }
 
-        .asymptote-equation-list {
+        .asymptote-equation-list,
+        .holes-equation-list {
             display: flex;
             flex-direction: column;
             gap: 2px;
@@ -2369,6 +2380,24 @@
                                     <strong>Derivatives & Turning Points</strong>
                                 </div>
                                 <div class="example-description">Plot y = x³ - 3x and its derivative using d/dx notation</div>
+                            </div>
+                            <div class="demo-set-item" data-demo-set="affine-functions">
+                                <div class="example-formula">
+                                    <strong>Affine Functions</strong>
+                                </div>
+                                <div class="example-description">Relations of the form A(x)y+B(x)=0 with holes, asymptotes, and extra components</div>
+                            </div>
+                            <div class="demo-set-item" data-demo-set="asymptotes-rational">
+                                <div class="example-formula">
+                                    <strong>Asymptotes & Holes</strong>
+                                </div>
+                                <div class="example-description">Linear/linear rational, oblique asymptote, and removable discontinuities</div>
+                            </div>
+                            <div class="demo-set-item" data-demo-set="asymptotes-non-rational">
+                                <div class="example-formula">
+                                    <strong>Non-Rational Asymptotes</strong>
+                                </div>
+                                <div class="example-description">Exponential and trig examples with horizontal and periodic vertical asymptotes</div>
                             </div>
                             
                             <!-- Polar Demo Sets -->
