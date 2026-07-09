@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.73';
+const VERSION = '1.1.72';
 
 class Graphiti {
     constructor() {
@@ -1525,7 +1525,8 @@ class Graphiti {
                     
                     // Update intercepts after adding this function
                     if (this.showIntercepts) {
-                        this.refreshIntercepts();
+                        this.intercepts = this.findAxisIntercepts();
+                        this.cullInterceptMarkers(); // Pre-calculate culled markers
                     }
                 }
                 
@@ -1585,7 +1586,8 @@ class Graphiti {
                     this.turningPoints = this.findTurningPoints();
                 }
                 if (this.showIntercepts) {
-                    this.refreshIntercepts();
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers
                 }
             }
             
@@ -2723,7 +2725,8 @@ class Graphiti {
                 this.draw();
             }
             if (this.showIntercepts) {
-                this.refreshIntercepts({ draw: true });
+                this.intercepts = this.findAxisIntercepts();
+                this.draw();
             }
         });
         
@@ -3187,7 +3190,9 @@ class Graphiti {
             
             // Update intercepts after plotting this function
             if (this.showIntercepts) {
-                this.refreshIntercepts({ draw: true });
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+                this.draw(); // Trigger redraw to display intercepts
             }
             
             // Update UI to show success (remove any error styling)
@@ -3226,7 +3231,7 @@ class Graphiti {
                 this.turningPoints = this.findTurningPoints();
             }
             if (this.showIntercepts) {
-                this.refreshIntercepts();
+                this.intercepts = this.findAxisIntercepts();
             }
             
             // Update UI to show error (subtle visual feedback)
@@ -3942,7 +3947,7 @@ class Graphiti {
             }
 
             const addLinearLogDomainBoundaryProbes = () => {
-                if (!processedExpression.includes('log')) {
+                if (!processedExpression.includes('log') && !processedExpression.includes('ln')) {
                     return;
                 }
 
@@ -3950,13 +3955,23 @@ class Graphiti {
                     const args = [];
 
                     for (let i = 0; i < expr.length; i++) {
-                        if (expr.slice(i, i + 3) !== 'log') continue;
+                        let fnLength = 0;
+                        if (expr.slice(i, i + 3) === 'log') {
+                            fnLength = 3;
+                        } else if (expr.slice(i, i + 2) === 'ln') {
+                            fnLength = 2;
+                        }
+                        if (fnLength === 0) continue;
 
                         const before = i === 0 ? '' : expr[i - 1];
                         if (/[a-z0-9_]/.test(before)) continue;
 
-                        let j = i + 3;
+                        let j = i + fnLength;
                         while (j < expr.length && /\s/.test(expr[j])) j++;
+                        if (j < expr.length && expr[j] === '*') {
+                            j++;
+                            while (j < expr.length && /\s/.test(expr[j])) j++;
+                        }
                         if (j >= expr.length || expr[j] !== '(') continue;
 
                         const innerStart = j + 1;
@@ -8064,6 +8079,10 @@ class Graphiti {
 
                     let j = i + fnLength;
                     while (j < expr.length && /\s/.test(expr[j])) j++;
+                    if (j < expr.length && expr[j] === '*') {
+                        j++;
+                        while (j < expr.length && /\s/.test(expr[j])) j++;
+                    }
                     if (j >= expr.length || expr[j] !== '(') continue;
 
                     const innerStart = j + 1;
@@ -8177,6 +8196,10 @@ class Graphiti {
 
                     let j = i + fn.length;
                     while (j < expr.length && /\s/.test(expr[j])) j++;
+                    if (j < expr.length && expr[j] === '*') {
+                        j++;
+                        while (j < expr.length && /\s/.test(expr[j])) j++;
+                    }
                     if (j >= expr.length || expr[j] !== '(') continue;
 
                     const start = j + 1;
@@ -8604,8 +8627,6 @@ class Graphiti {
                     : 20;
                 const baseEps = Math.max(1e-8, Math.min(1e-2, xSpan * 1e-6));
                 const offsets = [1, 2, 4, 8].map(m => m * baseEps);
-                const blowupThreshold = 500;
-
                 const validatedAsymptotes = [];
 
                 for (const candidate of asymptotes) {
@@ -8645,9 +8666,8 @@ class Graphiti {
                             return false;
                         }
 
-                        const strongGrowth = stats.maxAbs > blowupThreshold;
                         const growthRatio = stats.maxAbs / Math.max(stats.minAbs, 1e-9);
-                        const relativeBlowup = stats.maxAbs > 20 && growthRatio > 50;
+                        const relativeBlowup = stats.maxAbs > 20 && growthRatio > 6;
 
                         let inwardGrowth = false;
                         if (Array.isArray(stats.absByOffset) && stats.absByOffset.length >= 3) {
@@ -8667,9 +8687,10 @@ class Graphiti {
                         const furthestAbs = Array.isArray(stats.absByOffset) && stats.absByOffset.length > 0
                             ? stats.absByOffset[stats.absByOffset.length - 1]
                             : 0;
+                        const poleLikeInwardGrowth = inwardGrowth && nearestAbs > Math.max(50, furthestAbs * 6);
                         const gradualBoundaryBlowup = inwardGrowth && nearestAbs > Math.max(5, furthestAbs * 1.12);
 
-                        return strongGrowth || relativeBlowup || gradualBoundaryBlowup;
+                        return poleLikeInwardGrowth || relativeBlowup || gradualBoundaryBlowup;
                     };
 
                     const hasBlowupEvidence = sideShowsBlowup(sideStats.neg) || sideShowsBlowup(sideStats.pos);
@@ -9457,10 +9478,14 @@ class Graphiti {
             return { lines: [], debug };
         }
 
-        // Oblique asymptotes are currently scoped to rational-style expressions.
-        // This prevents false positives on plain linear/non-rational families.
+        // Oblique asymptotes are primarily scoped to rational-style expressions.
+        // Also allow exponential-decay tails (for example e^{-x}) that behave like reciprocal forms.
         const normalized = (processedExpression || '').toLowerCase();
-        if (!normalized.includes('/')) {
+        const hasReciprocalForm = normalized.includes('/');
+        const hasExponentialDecayForm = /\be\s*\^\s*\(\s*-[^)]*x[^)]*\)|\be\s*\^\s*-[a-z0-9_.()*+\-/\s]*x|\bexp\s*\(\s*-[^)]*x[^)]*\)/.test(normalized);
+        const hasReciprocalExponentialDecayForm = /\/\s*(?:exp\s*\(\s*[^)]*x[^)]*\)|e\s*\^\s*\(?\s*[^)\s]+\s*\)?)/.test(normalized);
+        const hasPrecisionLossDecayTailForm = hasExponentialDecayForm || hasReciprocalExponentialDecayForm;
+        if (!hasReciprocalForm && !hasExponentialDecayForm) {
             debug.reason = 'non-rational-expression';
             return { lines: [], debug };
         }
@@ -9792,7 +9817,9 @@ class Graphiti {
             }
 
             const maxResidual = Math.max(...residuals);
-            if (maxResidual <= Math.max(1e-8, Math.abs(b) * 1e-8)) {
+            const tinyResidualEnvelope = maxResidual <= Math.max(1e-8, Math.abs(b) * 1e-8);
+            const nonDecayingResidual = furthestResidual >= Math.max(nearestResidual * 0.9, nearestResidual - 1e-10);
+            if (tinyResidualEnvelope && nonDecayingResidual && !hasPrecisionLossDecayTailForm) {
                 return null;
             }
 
@@ -11575,20 +11602,14 @@ class Graphiti {
         // Capture current intercepts as frozen badges ONLY if viewport wasn't already changing
         // Filter to only include intercepts from currently enabled functions
         if (!this.isViewportChanging && this.showIntercepts && this.intercepts.length > 0) {
-            // Freeze exactly what is currently rendered, not raw intercept candidates.
-            // This prevents stale hidden intercepts from reappearing during pan.
-            this.frozenInterceptBadges = (this.culledInterceptMarkers || [])
-                .map(marker => marker.intercept)
-                .filter(intercept => intercept && (!intercept.functionId || enabledFunctionIds.has(intercept.functionId)))
+            this.frozenInterceptBadges = this.intercepts
+                .filter(intercept => !intercept.functionId || enabledFunctionIds.has(intercept.functionId))
                 .map(intercept => ({
                     x: intercept.x,
                     y: intercept.y,
                     type: intercept.type,
                     functionColor: '#808080' // Neutral gray color for intercepts
                 }));
-        } else if (!this.isViewportChanging && this.showIntercepts) {
-            // Ensure old frozen intercepts do not survive into the next pan session.
-            this.frozenInterceptBadges = [];
         }
         
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
@@ -11629,7 +11650,6 @@ class Graphiti {
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
             this.frozenTurningPointBadges = []; // Clear frozen turning point badges
-            this.frozenInterceptBadges = []; // Clear frozen intercepts when viewport stabilizes
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
             // Replot explicit functions with updated viewport
@@ -11655,7 +11675,8 @@ class Graphiti {
                     this.turningPoints = this.findTurningPoints();
                 }
                 if (this.showIntercepts) {
-                    this.refreshIntercepts();
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
                 
                 // Update integral pairs after replots to refresh numerical calculations
@@ -14753,7 +14774,8 @@ class Graphiti {
                 
                 if (this.showIntercepts) {
                     // Recalculate and show intercepts
-                    this.refreshIntercepts();
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 } else {
                     // Clear intercepts
                     this.clearIntercepts();
@@ -15506,7 +15528,9 @@ class Graphiti {
                 // And set viewport changing to false AFTER recalculation
                 if ((targetBadge.hasTangent || targetBadge.hasNormal) && this.showIntercepts) {
                     this.isViewportChanging = false;
-                    this.refreshIntercepts({ draw: true });
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Update culled marker cache
+                    this.draw(); // Force redraw to clear old intercept markers
                 }
                 
                 // Start tracing mode for immediate responsiveness
@@ -16428,7 +16452,8 @@ class Graphiti {
             
             // Recalculate tangent intercepts
             if (this.showIntercepts) {
-                this.refreshIntercepts();
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers(); // Update culled marker cache
             }
             
             // Recalculate tangent intersections since badge state changed
@@ -19157,7 +19182,8 @@ class Graphiti {
                 
                 // Calculate initial intercepts
                 if (this.showIntercepts) {
-                    this.refreshIntercepts();
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
                 
                 // Final draw to show everything
@@ -19183,7 +19209,8 @@ class Graphiti {
                 
                 // Calculate initial intercepts
                 if (this.showIntercepts) {
-                    this.refreshIntercepts();
+                    this.intercepts = this.findAxisIntercepts();
+                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
                 
                 // Final draw to show everything
@@ -19655,7 +19682,8 @@ class Graphiti {
                             this.calculateIntersectionsWithWorker();
                         }
                         if (this.showIntercepts) {
-                            this.refreshIntercepts();
+                            this.intercepts = this.findAxisIntercepts();
+                            this.cullInterceptMarkers();
                         }
                         if (this.showTurningPoints) {
                             this.turningPoints = this.findTurningPoints();
@@ -19725,7 +19753,8 @@ class Graphiti {
                         this.calculateIntersectionsWithWorker();
                     }
                     if (this.showIntercepts) {
-                        this.refreshIntercepts();
+                        this.intercepts = this.findAxisIntercepts();
+                        this.cullInterceptMarkers();
                     }
                     if (this.showTurningPoints) {
                         this.turningPoints = this.findTurningPoints();
@@ -20719,7 +20748,7 @@ class Graphiti {
         // Recalculate tangent intercepts since badges changed
         // Note: Don't call draw() here - let the caller handle it
         if (this.showIntercepts) {
-            this.refreshIntercepts();
+            this.intercepts = this.findAxisIntercepts();
         }
     }
     
@@ -20839,7 +20868,6 @@ class Graphiti {
         this.implicitIntersections = [];
         this.tangentIntersections = [];
         this.normalIntersections = [];
-        this.frozenIntersectionBadges = [];
     }
 
     // ================================
@@ -25147,29 +25175,6 @@ class Graphiti {
             !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum')
         );
     }
-
-    refreshIntercepts(options = {}) {
-        const { clearFrozen = false, draw = false } = options;
-
-        if (!this.showIntercepts) {
-            this.clearIntercepts();
-            if (draw) {
-                this.draw();
-            }
-            return;
-        }
-
-        this.intercepts = this.findAxisIntercepts();
-        this.cullInterceptMarkers();
-
-        if (clearFrozen) {
-            this.frozenInterceptBadges = [];
-        }
-
-        if (draw) {
-            this.draw();
-        }
-    }
     
     updateTurningPointsToggleButton() {
         const button = document.getElementById('turning-points-toggle');
@@ -25184,7 +25189,6 @@ class Graphiti {
     clearIntercepts() {
         // Clear intercept markers and frozen badges
         this.intercepts = [];
-        this.culledInterceptMarkers = [];
         this.frozenInterceptBadges = [];
         
         // Remove all intercept badges (Cartesian and polar types)
@@ -25198,25 +25202,6 @@ class Graphiti {
                 badge.badgeType !== 'y-axis-negative'
             )
         );
-    }
-
-    clearStaleFrozenMarkers() {
-        // Frozen markers are only valid during active viewport changes.
-        if (this.isViewportChanging) {
-            return;
-        }
-
-        if (!this.showIntersections || (!this.implicitIntersectionsPending && this.intersections.length === 0)) {
-            this.frozenIntersectionBadges = [];
-        }
-
-        if (!this.showTurningPoints || this.turningPoints.length === 0) {
-            this.frozenTurningPointBadges = [];
-        }
-
-        if (!this.showIntercepts || this.intercepts.length === 0) {
-            this.frozenInterceptBadges = [];
-        }
     }
     
     updateInterceptsToggleButton() {
@@ -25336,7 +25321,7 @@ class Graphiti {
         }
         
         if (this.showIntercepts) {
-            this.refreshIntercepts();
+            this.intercepts = this.findAxisIntercepts();
         }
         
         if (this.showTurningPoints) {
@@ -26224,7 +26209,8 @@ class Graphiti {
             this.turningPoints = this.findTurningPoints();
         }
         if (hasPlottedFunctions && this.showIntercepts) {
-            this.refreshIntercepts();
+            this.intercepts = this.findAxisIntercepts();
+            this.cullInterceptMarkers();
         }
     }
 
@@ -26554,8 +26540,6 @@ class Graphiti {
                 }
             }
         });
-
-        this.clearStaleFrozenMarkers();
 
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
