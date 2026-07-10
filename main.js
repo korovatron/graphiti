@@ -3470,6 +3470,7 @@ class Graphiti {
         } catch (error) {
             // Expression is invalid, clear points and show visual feedback
             func.points = [];
+            this.clearFunctionAsymptoteData(func);
             
             // Clear badges for this invalid function
             this.removeBadgesForFunction(func.id);
@@ -3493,6 +3494,7 @@ class Graphiti {
             if (funcDiv) {
                 // Add error class instead of trying to manipulate styles directly
                 funcDiv.classList.add('function-error');
+                this.updateFunctionAsymptoteInfo(func);
                 
                 // Also apply direct styling to the math-field for immediate visual feedback
                 const mathField = funcDiv.querySelector('math-field');
@@ -11236,6 +11238,19 @@ class Graphiti {
 
         const funcItem = document.querySelector(`[data-function-id="${func.id}"]`);
         if (!funcItem) {
+            return;
+        }
+
+        // Do not display derived asymptote/hole info while expression is invalid.
+        if (funcItem.classList.contains('function-error')) {
+            const errorInfoContainer = funcItem.querySelector('.asymptote-info-container');
+            if (errorInfoContainer) {
+                errorInfoContainer.classList.remove('visible');
+            }
+            const errorHolesContainer = funcItem.querySelector('.holes-info-container');
+            if (errorHolesContainer) {
+                errorHolesContainer.classList.remove('visible');
+            }
             return;
         }
 

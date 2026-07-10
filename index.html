@@ -1247,14 +1247,14 @@
         }
         
         /* Error styling for functions using direct styling */
-        .function-item.function-error math-field {
+        .function-item.function-error math-field:not(.asymptote-equation-field) {
             background: rgba(231, 76, 60, 0.1) !important;
             border: 2px solid #E74C3C !important;
             border-radius: 4px !important;
         }
         
         /* Also try with :focus-within for visibility */
-        .function-item.function-error math-field:focus-within {
+        .function-item.function-error math-field:not(.asymptote-equation-field):focus-within {
             background: rgba(231, 76, 60, 0.2) !important;
             border: 2px solid #E74C3C !important;
             box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3) !important;
