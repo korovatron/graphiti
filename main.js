@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.78';
+const VERSION = '1.1.79';
 
 class Graphiti {
     constructor() {
@@ -8787,6 +8787,102 @@ class Graphiti {
                         // Ignore argument parse/evaluation failures for this trig call.
                     }
                 }
+
+                // Detect hyperbolic-family vertical asymptotes for coth/csch with linear arguments.
+                // Real-domain poles occur when sinh(arg)=0, i.e. arg=0.
+                const extractHyperbolicPoleArguments = (expr) => {
+                    const matches = [];
+                    const hyperbolicPoleNames = ['coth', 'csch'];
+
+                    for (let i = 0; i < expr.length; i++) {
+                        const fn = hyperbolicPoleNames.find(name => expr.slice(i, i + name.length) === name);
+                        if (!fn) continue;
+
+                        const before = i === 0 ? '' : expr[i - 1];
+                        if (/[a-z0-9_]/.test(before)) continue;
+
+                        let j = i + fn.length;
+                        while (j < expr.length && /\s/.test(expr[j])) j++;
+                        if (j < expr.length && expr[j] === '*') {
+                            j++;
+                            while (j < expr.length && /\s/.test(expr[j])) j++;
+                        }
+                        if (j >= expr.length || expr[j] !== '(') continue;
+
+                        const start = j + 1;
+                        let depth = 0;
+                        let end = -1;
+
+                        for (let k = start; k < expr.length; k++) {
+                            const ch = expr[k];
+                            if (ch === '(') {
+                                depth++;
+                            } else if (ch === ')') {
+                                if (depth === 0) {
+                                    end = k;
+                                    break;
+                                }
+                                depth--;
+                            }
+                        }
+
+                        if (end === -1) continue;
+
+                        const argument = expr.substring(start, end).trim();
+                        if (argument) {
+                            matches.push({ fn, argument });
+                        }
+
+                        i = end;
+                    }
+
+                    return matches;
+                };
+
+                const hyperbolicPoleArguments = extractHyperbolicPoleArguments(expressionCore);
+                for (const hyperbolicCall of hyperbolicPoleArguments) {
+                    try {
+                        const compiledArg = this.getCompiledExpression(hyperbolicCall.argument);
+                        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                        scope.x = 0;
+                        const v0 = compiledArg.evaluate(scope);
+                        scope.x = 1;
+                        const v1 = compiledArg.evaluate(scope);
+                        scope.x = 2;
+                        const v2 = compiledArg.evaluate(scope);
+
+                        if (!Number.isFinite(v0) || !Number.isFinite(v1) || !Number.isFinite(v2)) {
+                            continue;
+                        }
+
+                        // Fit arg(x) = a*x + b from x=0 and x=1, then verify linearity at x=2.
+                        const b = v0;
+                        const a = v1 - v0;
+                        if (Math.abs(a) < 1e-12) {
+                            continue;
+                        }
+
+                        const expectedV2 = 2 * a + b;
+                        const linearResidual = Math.abs(v2 - expectedV2);
+                        const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                        if (linearResidual > linearScale * 1e-8) {
+                            continue;
+                        }
+
+                        const asymptoteX = -b / a;
+                        if (!Number.isFinite(asymptoteX)) continue;
+
+                        const edgeTolerance = Math.max(1e-6, Math.abs(rangeMaxX - rangeMinX) * 1e-9);
+                        if (asymptoteX < rangeMinX - edgeTolerance || asymptoteX > rangeMaxX + edgeTolerance) {
+                            continue;
+                        }
+
+                        addAsymptoteCandidate(asymptoteX);
+                    } catch {
+                        // Ignore argument parse/evaluation failures for this hyperbolic call.
+                    }
+                }
             }
             
             // Strategy: Find division operators and extract denominators carefully
@@ -9295,6 +9391,7 @@ class Graphiti {
         const hasDecayingExponentialTail =
             /(?:^|[^a-z])e\^(?:\{|\()?-([0-9.]*\*?)?x(?:\}|\))?/.test(normalizedExpression) ||
             /(?:^|[^a-z])exp\(-([0-9.]*\*?)?x\)/.test(normalizedExpression);
+        const hasHyperbolicTailFamily = /(^|[^a-z])(tanh|coth|sech|csch)\s*\(/.test(normalizedExpression);
 
         const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
         const baseMagnitude = Math.max(
@@ -9388,7 +9485,7 @@ class Graphiti {
             const nearAbsY = Math.abs(tail[0].y);
             const farAbsY = Math.abs(tail[tail.length - 1].y);
             const nonDecayingMagnitude = farAbsY >= Math.max(nearAbsY * 0.9, nearAbsY - 1e-6);
-            if (!hasDecayingExponentialTail && nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
+            if (!hasDecayingExponentialTail && !hasHyperbolicTailFamily && nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
                 return null;
             }
 
