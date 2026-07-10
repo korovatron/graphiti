@@ -469,11 +469,11 @@ class Graphiti {
                             tooltip: 'Numbers & Basic Operations',
                             rows: [
                                 [
-                                    // Variables and parentheses - reorganized
+                                    // Variables and left-side action keys
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', class: 'variable-key' },
-                                    { latex: '(', label: '(' },
-                                    { latex: ')', label: ')' },
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -513,10 +513,10 @@ class Graphiti {
                                     { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Bottom row with 0, operations, and navigation
+                                    // Bottom row with navigation and parentheses
                                     '[left]', '[right]',
-                                    { latex: '=', label: '=' },
-                                    { label: '[backspace]', width: 1 },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { 
@@ -537,11 +537,15 @@ class Graphiti {
                             tooltip: 'Trigonometric Functions',
                             rows: [
                                 [
-                                    // Variables and parentheses - same as numeric keyboard
+                                    // Variables and left-side action keys
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', label: 'θ', class: 'variable-key' },
-                                    { latex: '(', label: '(' },
-                                    { latex: ')', label: ')' },
+                                    { 
+                                        insert: '\frac{d}{dx}\left(#?\right)', 
+                                        label: 'd/dx', 
+                                        class: 'small derivative-key'
+                                    },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -605,14 +609,10 @@ class Graphiti {
                                     { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Bottom row with navigation, shift key between . and -
+                                    // Bottom row with navigation and parentheses
                                     '[left]', '[right]',
-                                    { 
-                                        insert: '\\frac{d}{dx}\\left(#?\\right)', 
-                                        label: 'd/dx', 
-                                        class: 'small derivative-key'
-                                    },
-                                    { label: '[backspace]', width: 1 },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { 
@@ -634,11 +634,11 @@ class Graphiti {
                             tooltip: 'Hyperbolic Functions',
                             rows: [
                                 [
-                                    // Variables and parentheses - same as numeric keyboard
+                                    // Variables and left-side action keys
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', class: 'variable-key' },
-                                    { latex: '(', label: '(' },
-                                    { latex: ')', label: ')' },
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -708,10 +708,10 @@ class Graphiti {
                                     { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Bottom row with navigation, shift key between . and -
+                                    // Bottom row with navigation and parentheses
                                     '[left]', '[right]',
-                                    { latex: '=', label: '=' },
-                                    { label: '[backspace]', width: 1 },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { 
@@ -732,11 +732,11 @@ class Graphiti {
                             tooltip: 'Variables & Parameters',
                             rows: [
                                 [
-                                    // All variables in one row
+                                    // Top row with variables and left-side action keys
                                     { latex: 'x', class: 'variable-key' },
                                     { latex: 'y', class: 'variable-key' },
-                                    { latex: 'r', class: 'variable-key' },
-                                    { latex: '\\theta', class: 'variable-key' },
+                                    { latex: '=', label: '=' },
+                                    { label: '[backspace]', width: 1 },
                                     '[separator]',
                                     { latex: '7', label: '7' },
                                     { latex: '8', label: '8' },
@@ -774,15 +774,19 @@ class Graphiti {
                                     { latex: '\\cdot', label: '×' }
                                 ],
                                 [
-                                    // Constants - t for parametric, π with e shift variant
+                                    // Constants and remaining variables
+                                    { latex: 'r', class: 'variable-key' },
+                                    { 
+                                        latex: '\theta',
+                                        label: 'θ',
+                                        class: 'variable-key'
+                                    },
                                     { latex: 't', label: 't', class: 'variable-key' },
                                     { 
-                                        latex: '\\pi', 
+                                        latex: '\pi', 
                                         label: 'π',
                                         shift: { latex: 'e', label: 'e' }
                                     },
-                                    { latex: '(', label: '(' },
-                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '1', label: '1' },
                                     { latex: '2', label: '2' },
@@ -790,10 +794,10 @@ class Graphiti {
                                     { latex: '+', label: '+' }
                                 ],
                                 [
-                                    // Bottom row with navigation
+                                    // Bottom row with navigation and parentheses
                                     '[left]', '[right]',
-                                    { latex: '=', label: '=' },
-                                    { label: '[backspace]', width: 1 },
+                                    { latex: '(', label: '(' },
+                                    { latex: ')', label: ')' },
                                     '[separator]',
                                     { latex: '0', label: '0' }, 
                                     { 
