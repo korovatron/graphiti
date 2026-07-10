@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.88';
+const VERSION = '1.1.89';
 
 class Graphiti {
     constructor() {
@@ -7536,7 +7536,7 @@ class Graphiti {
         let filteredVertical = (Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [])
             .filter(value => !isAtVerticalComponent(value));
         const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
-        const oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+        let oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
 
         const pointsWithExclusionBreaks = [];
         const sourcePoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
@@ -7575,6 +7575,7 @@ class Graphiti {
 
         const derivedDomainHoles = [];
         const derivedVerticalAsymptotes = [];
+        let affineCompiledExpression = null;
         if (domainExclusions.length > 0) {
             let expressionForEval = affineModel.explicitExpression;
             if (this.angleMode === 'degrees') {
@@ -7582,6 +7583,7 @@ class Graphiti {
             }
 
             const compiledExpression = this.getCompiledExpression(expressionForEval);
+            affineCompiledExpression = compiledExpression;
             const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
             const evalY = (x) => {
                 scope.x = x;
@@ -7622,6 +7624,86 @@ class Graphiti {
                     derivedVerticalAsymptotes.push(exclusionX);
                 }
             }
+        }
+
+        if (oblique.length > 0) {
+            if (!affineCompiledExpression) {
+                let expressionForEval = affineModel.explicitExpression;
+                if (this.angleMode === 'degrees') {
+                    expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+                }
+                affineCompiledExpression = this.getCompiledExpression(expressionForEval);
+            }
+
+            const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const evalAffineY = (x) => {
+                evalScope.x = x;
+                try {
+                    const value = affineCompiledExpression.evaluate(evalScope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            const xSpan = this.viewport.maxX - this.viewport.minX;
+            const exclusionTolerance = Math.max(1e-8, Math.abs(xSpan) * 1e-7);
+            const isNearExcludedX = (x) => domainExclusions.some(exclusionX => Math.abs(x - exclusionX) <= exclusionTolerance);
+            const testXs = [
+                this.viewport.minX,
+                this.viewport.minX + xSpan * 0.25,
+                this.viewport.minX + xSpan * 0.5,
+                this.viewport.minX + xSpan * 0.75,
+                this.viewport.maxX,
+                -64,
+                -16,
+                -4,
+                0,
+                4,
+                16,
+                64
+            ].filter(x => Number.isFinite(x) && !isNearExcludedX(x));
+
+            const isCoincidentLine = (line) => {
+                if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                    return false;
+                }
+
+                let acceptedSamples = 0;
+                let maxNormalisedResidual = 0;
+
+                for (const x of testXs) {
+                    const y = evalAffineY(x);
+                    if (y === null) {
+                        continue;
+                    }
+
+                    const yLine = (line.m * x) + line.b;
+                    if (!Number.isFinite(yLine)) {
+                        continue;
+                    }
+
+                    const residual = Math.abs(y - yLine);
+                    const scale = Math.max(1, Math.abs(y), Math.abs(yLine));
+                    const normalisedResidual = residual / scale;
+                    if (normalisedResidual > maxNormalisedResidual) {
+                        maxNormalisedResidual = normalisedResidual;
+                    }
+
+                    acceptedSamples++;
+                }
+
+                if (acceptedSamples < 5) {
+                    return false;
+                }
+
+                return maxNormalisedResidual <= 5e-7;
+            };
+
+            // Remove oblique lines that are effectively the same as the plotted branch.
+            // This prevents viewport-dependent false asymptotes for relations that simplify
+            // to a line with removable holes.
+            oblique = oblique.filter(line => !isCoincidentLine(line));
         }
 
         if (derivedDomainHoles.length > 0) {
