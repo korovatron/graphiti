@@ -8757,6 +8757,7 @@ class Graphiti {
         // - (x^2-1)/(x^2-x) [hole vs pole discrimination]
         const asymptotes = [];
         let denominators = [];
+        const logDerivedAsymptotes = [];
         let normalizedExpression = '';
         
         try {
@@ -8866,8 +8867,11 @@ class Graphiti {
                         const roundedAsymptote = Math.abs(asymptoteX - Math.round(asymptoteX)) < 0.0001
                             ? Math.round(asymptoteX)
                             : asymptoteX;
-                        if (!asymptotes.includes(roundedAsymptote)) {
+                        if (!asymptotes.some(existing => Math.abs(existing - roundedAsymptote) < 1e-4)) {
                             asymptotes.push(roundedAsymptote);
+                        }
+                        if (!logDerivedAsymptotes.some(existing => Math.abs(existing - roundedAsymptote) < 1e-4)) {
+                            logDerivedAsymptotes.push(roundedAsymptote);
                         }
                     }
                 } catch {
@@ -9549,7 +9553,9 @@ class Graphiti {
                         }
                     }
 
-                    const sideShowsBlowup = (stats) => {
+                    const isLogDerivedCandidate = logDerivedAsymptotes.some(existing => Math.abs(existing - candidate) < 1e-4);
+
+                    const sideShowsBlowup = (stats, allowMilderGrowth = false) => {
                         if (!stats || stats.finite === 0) {
                             return false;
                         }
@@ -9577,11 +9583,12 @@ class Graphiti {
                             : 0;
                         const poleLikeInwardGrowth = inwardGrowth && nearestAbs > Math.max(50, furthestAbs * 6);
                         const gradualBoundaryBlowup = inwardGrowth && nearestAbs > Math.max(5, furthestAbs * 1.12);
+                        const mildBoundaryBlowup = allowMilderGrowth && inwardGrowth && nearestAbs > Math.max(2, furthestAbs * 1.04);
 
-                        return poleLikeInwardGrowth || relativeBlowup || gradualBoundaryBlowup;
+                        return poleLikeInwardGrowth || relativeBlowup || gradualBoundaryBlowup || mildBoundaryBlowup;
                     };
 
-                    const hasBlowupEvidence = sideShowsBlowup(sideStats.neg) || sideShowsBlowup(sideStats.pos);
+                    const hasBlowupEvidence = sideShowsBlowup(sideStats.neg, isLogDerivedCandidate) || sideShowsBlowup(sideStats.pos, isLogDerivedCandidate);
 
                     if (hasBlowupEvidence) {
                         validatedAsymptotes.push(candidate);
@@ -9732,6 +9739,44 @@ class Graphiti {
 
             if (!isConvergentTail) {
                 return null;
+            }
+
+            // Probe nearby phases so periodic functions cannot masquerade as convergent tails
+            // when sampled at unlucky phase-aligned x values (for example certain sin(x) viewports).
+            const phaseProbeValues = [];
+            const additivePhaseOffset = Math.max(0.75, baseMagnitude * 0.37);
+            const multiplicativePhaseFactor = Math.SQRT2;
+
+            for (const sample of tail) {
+                const additiveProbeX = sample.x + (direction * additivePhaseOffset);
+                const multiplicativeProbeX = sample.x * multiplicativePhaseFactor;
+
+                const additiveProbeY = evaluateAtX(additiveProbeX);
+                if (additiveProbeY !== null) {
+                    phaseProbeValues.push(additiveProbeY);
+                }
+
+                const multiplicativeProbeY = evaluateAtX(multiplicativeProbeX);
+                if (multiplicativeProbeY !== null) {
+                    phaseProbeValues.push(multiplicativeProbeY);
+                }
+            }
+
+            if (phaseProbeValues.length >= 4) {
+                const probeSpread = Math.max(...phaseProbeValues) - Math.min(...phaseProbeValues);
+                const probeOffsets = phaseProbeValues.map(value => Math.abs(value - intercept));
+                const nearLimitProbeTolerance = Math.max(0.2, fitTolerance * 2.2);
+                const nearLimitProbeCount = probeOffsets.filter(offset => offset <= nearLimitProbeTolerance).length;
+                const requiredNearLimitCount = Math.ceil(phaseProbeValues.length * 0.7);
+                const probeSpreadTolerance = Math.max(0.35, spreadTolerance * 2.4);
+
+                const phaseConsistentWithLimit =
+                    probeSpread <= probeSpreadTolerance &&
+                    nearLimitProbeCount >= requiredNearLimitCount;
+
+                if (!phaseConsistentWithLimit) {
+                    return null;
+                }
             }
 
             // Snap tiny finite-window offsets to 0 for decaying bounded tails
