@@ -1508,7 +1508,8 @@ class Graphiti {
         return [...this.cartesianFunctions, ...this.polarFunctions];
     }
     
-    addFunction(expression = '') {
+    addFunction(expression = '', options = {}) {
+        const focusNewField = !!options.focusNewField;
         const id = this.nextFunctionId++;
         // Use total function count (including blank) for color assignment
         const currentFunctions = this.getCurrentFunctions();
@@ -1567,6 +1568,25 @@ class Graphiti {
         }
         
         this.createFunctionUI(func);
+
+        if (focusNewField) {
+            requestAnimationFrame(() => {
+                const newField = document.querySelector(`[data-function-id="${func.id}"] .function-main-row math-field.mathlive-input`);
+                if (!newField) {
+                    return;
+                }
+
+                try {
+                    newField.focus();
+                    this.lastEditableMathField = newField;
+                    if (typeof newField.getValue === 'function' && newField.getValue()) {
+                        newField.selection = { ranges: [[Infinity, Infinity]] };
+                    }
+                } catch {
+                    // Ignore focus failures (for example if blocked by a transient UI state).
+                }
+            });
+        }
         
         // If expression is provided, plot it immediately
         if (expression) {
@@ -15561,7 +15581,7 @@ class Graphiti {
                 // Clear intersection badges since adding a function changes the intersection landscape
                 this.clearIntersections();
                 // Note: Don't clear function badges when adding functions - preserve existing trace points
-                this.addFunction('');
+                this.addFunction('', { focusNewField: true });
             });
         }
 
@@ -15635,7 +15655,7 @@ class Graphiti {
                         this.addExampleFunction(expression);
                     } else {
                         // Add blank function
-                        this.addFunction('');
+                        this.addFunction('', { focusNewField: true });
                     }
                     
                     // Close dropdown
