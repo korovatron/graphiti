@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.80';
+const VERSION = '1.1.81';
 
 class Graphiti {
     constructor() {
@@ -20460,6 +20460,10 @@ class Graphiti {
         const hamburgerMenu = document.getElementById('hamburger-menu');
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
+
+        // If panel is reopened quickly after auto-close, remove temporary
+        // blur protection immediately so editable fields can accept focus/input.
+        document.querySelectorAll('math-field').forEach(mf => mf.removeAttribute('data-blur-protected'));
         
         if (hamburgerMenu) {
             hamburgerMenu.classList.add('active');
@@ -20505,12 +20509,30 @@ class Graphiti {
         // FIRST: Blur ALL mathfields so MathLive won't try to reopen keyboard
         const allMathFields = document.querySelectorAll('math-field');
         allMathFields.forEach(mf => {
+            try {
+                mf.blur();
+            } catch {
+                // Ignore stale/unmounted field blur failures.
+            }
             if (mf.hasFocus()) {
                 mf.blur();
             }
             // Prevent any math-field from being focused during panel close animation
             mf.setAttribute('data-blur-protected', 'true');
         });
+
+        // Also blur the document active element as a backstop for iOS shadow-DOM focus quirks.
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            try {
+                document.activeElement.blur();
+            } catch {
+                // Ignore non-blurrable active elements.
+            }
+        }
+
+        // Drop stale keyboard target state so next panel open starts clean.
+        this.lastEditableMathField = null;
+        this.mathLiveKeyboardInteractionUntil = 0;
         
         // THEN: Close keyboard after fields are blurred
         if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
