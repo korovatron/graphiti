@@ -1113,6 +1113,59 @@ class Graphiti {
             });
         });
     }
+
+    isMathFieldActuallyFocused(field) {
+        if (!field) {
+            return false;
+        }
+
+        try {
+            if (typeof field.hasFocus === 'function' && field.hasFocus()) {
+                return true;
+            }
+        } catch {
+            // Ignore stale field focus checks.
+        }
+
+        const activeElement = document.activeElement;
+        if (activeElement === field) {
+            return true;
+        }
+
+        if (activeElement && typeof activeElement.closest === 'function') {
+            try {
+                if (activeElement.closest('math-field') === field) {
+                    return true;
+                }
+            } catch {
+                // Ignore closest() failures for shadow/internal elements.
+            }
+        }
+
+        if (window.MathfieldElement && window.MathfieldElement.activeMathfield === field) {
+            return true;
+        }
+
+        // MathLive virtual keyboard can temporarily move DOM focus to keycaps
+        // while editing the same field. Keep active styling in that state.
+        if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+            if (this.lastEditableMathField === field && field.getAttribute('data-blur-protected') !== 'true') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    deferMathFieldBlurStyleReset(field, applyBlurStyles) {
+        setTimeout(() => {
+            if (this.isMathFieldActuallyFocused(field)) {
+                return;
+            }
+
+            applyBlurStyles();
+        }, 40);
+    }
     
     // Initialize polar range MathLive fields with proper styling
     initializePolarRangeFields() {
@@ -1144,6 +1197,7 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
+                    this.lastEditableMathField = field;
                     // Check for landscape editing restriction first
                     if (this.shouldRestrictLandscapeEditing()) {
                         field.blur();
@@ -1164,16 +1218,18 @@ class Graphiti {
                 });
                 
                 field.addEventListener('focusout', () => {
-                    // Check if field has error - preserve error styling if present
-                    if (field.classList.contains('input-error')) {
-                        field.style.setProperty('border', '2px solid #E74C3C', 'important');
-                        field.style.setProperty('box-shadow', 'none', 'important');
-                    } else {
-                        field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                        field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                        field.style.setProperty('box-shadow', 'none', 'important');
-                    }
-                    field.style.setProperty('outline', 'none', 'important');
+                    this.deferMathFieldBlurStyleReset(field, () => {
+                        // Check if field has error - preserve error styling if present
+                        if (field.classList.contains('input-error')) {
+                            field.style.setProperty('border', '2px solid #E74C3C', 'important');
+                            field.style.setProperty('box-shadow', 'none', 'important');
+                        } else {
+                            field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                            field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                            field.style.setProperty('box-shadow', 'none', 'important');
+                        }
+                        field.style.setProperty('outline', 'none', 'important');
+                    });
                 });
                 
                 // Auto-focus field when virtual keyboard toggle is clicked
@@ -1237,6 +1293,7 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
+                    this.lastEditableMathField = field;
                     // Check for landscape editing restriction first
                     if (this.shouldRestrictLandscapeEditing()) {
                         field.blur();
@@ -1257,16 +1314,18 @@ class Graphiti {
                 });
                 
                 field.addEventListener('focusout', () => {
-                    // Check if field has error - preserve error styling if present
-                    if (field.classList.contains('input-error')) {
-                        field.style.setProperty('border', '2px solid #E74C3C', 'important');
-                        field.style.setProperty('box-shadow', 'none', 'important');
-                    } else {
-                        field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                        field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                        field.style.setProperty('box-shadow', 'none', 'important');
-                    }
-                    field.style.setProperty('outline', 'none', 'important');
+                    this.deferMathFieldBlurStyleReset(field, () => {
+                        // Check if field has error - preserve error styling if present
+                        if (field.classList.contains('input-error')) {
+                            field.style.setProperty('border', '2px solid #E74C3C', 'important');
+                            field.style.setProperty('box-shadow', 'none', 'important');
+                        } else {
+                            field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                            field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                            field.style.setProperty('box-shadow', 'none', 'important');
+                        }
+                        field.style.setProperty('outline', 'none', 'important');
+                    });
                 });
                 
                 // Auto-focus field when virtual keyboard toggle is clicked
@@ -2545,18 +2604,20 @@ class Graphiti {
         });
         
         mathField.addEventListener('focusout', () => {
-            // Check if parent has error - preserve error styling if present
-            const funcDiv = mathField.closest('.function-item');
-            if (funcDiv && funcDiv.classList.contains('function-error')) {
-                mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
-                mathField.style.setProperty('box-shadow', 'none', 'important');
-            } else {
-                // Remove focus styling
-                mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                mathField.style.setProperty('box-shadow', 'none', 'important');
-            }
-            mathField.style.setProperty('outline', 'none', 'important');
+            this.deferMathFieldBlurStyleReset(mathField, () => {
+                // Check if parent has error - preserve error styling if present
+                const funcDiv = mathField.closest('.function-item');
+                if (funcDiv && funcDiv.classList.contains('function-error')) {
+                    mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
+                    mathField.style.setProperty('box-shadow', 'none', 'important');
+                } else {
+                    // Remove focus styling
+                    mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                    mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    mathField.style.setProperty('box-shadow', 'none', 'important');
+                }
+                mathField.style.setProperty('outline', 'none', 'important');
+            });
         });
         
         // Keep old focus listener for backwards compatibility
@@ -2718,6 +2779,7 @@ class Graphiti {
             
             // Add focus styling
             lowerLimitField.addEventListener('focusin', () => {
+                this.lastEditableMathField = lowerLimitField;
                 // Check for landscape editing restriction first
                 if (this.shouldRestrictLandscapeEditing()) {
                     lowerLimitField.blur();
@@ -2732,10 +2794,12 @@ class Graphiti {
             });
             
             lowerLimitField.addEventListener('focusout', () => {
-                lowerLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                lowerLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                lowerLimitField.style.setProperty('box-shadow', 'none', 'important');
-                lowerLimitField.style.setProperty('outline', 'none', 'important');
+                this.deferMathFieldBlurStyleReset(lowerLimitField, () => {
+                    lowerLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                    lowerLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    lowerLimitField.style.setProperty('box-shadow', 'none', 'important');
+                    lowerLimitField.style.setProperty('outline', 'none', 'important');
+                });
             });
             
             // Auto-focus field when virtual keyboard toggle is clicked
@@ -2793,6 +2857,7 @@ class Graphiti {
             
             // Add focus styling
             upperLimitField.addEventListener('focusin', () => {
+                this.lastEditableMathField = upperLimitField;
                 // Check for landscape editing restriction first
                 if (this.shouldRestrictLandscapeEditing()) {
                     upperLimitField.blur();
@@ -2807,10 +2872,12 @@ class Graphiti {
             });
             
             upperLimitField.addEventListener('focusout', () => {
-                upperLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
-                upperLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
-                upperLimitField.style.setProperty('box-shadow', 'none', 'important');
-                upperLimitField.style.setProperty('outline', 'none', 'important');
+                this.deferMathFieldBlurStyleReset(upperLimitField, () => {
+                    upperLimitField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                    upperLimitField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    upperLimitField.style.setProperty('box-shadow', 'none', 'important');
+                    upperLimitField.style.setProperty('outline', 'none', 'important');
+                });
             });
             
             // Auto-focus field when virtual keyboard toggle is clicked
@@ -3029,8 +3096,17 @@ class Graphiti {
                         const computedStyle = getComputedStyle(document.documentElement);
                         const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
                         const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+                        const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#4A90E2';
                         mathField.style.setProperty('background', inputBg, 'important');
-                        mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                        if (this.isMathFieldActuallyFocused(mathField)) {
+                            mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                            mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                            mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                        } else {
+                            mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                            mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                            mathField.style.setProperty('box-shadow', 'none', 'important');
+                        }
                         mathField.style.setProperty('border-radius', '4px', 'important');
                     }
                 }
@@ -3370,8 +3446,17 @@ class Graphiti {
                     const computedStyle = getComputedStyle(document.documentElement);
                     const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
                     const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+                    const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#4A90E2';
                     mathField.style.setProperty('background', inputBg, 'important');
-                    mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    if (this.isMathFieldActuallyFocused(mathField)) {
+                        mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                        mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                        mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    } else {
+                        mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                        mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                        mathField.style.setProperty('box-shadow', 'none', 'important');
+                    }
                     mathField.style.setProperty('border-radius', '4px', 'important');
                 }
             }
@@ -3409,6 +3494,11 @@ class Graphiti {
                     mathField.style.setProperty('background', 'rgba(231, 76, 60, 0.1)', 'important');
                     mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
                     mathField.style.setProperty('border-radius', '4px', 'important');
+                    if (this.isMathFieldActuallyFocused(mathField)) {
+                        mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
+                    } else {
+                        mathField.style.setProperty('box-shadow', 'none', 'important');
+                    }
                 }
             }
         }
@@ -19255,6 +19345,11 @@ class Graphiti {
                 input.style.setProperty('background', 'rgba(231, 76, 60, 0.1)', 'important');
                 input.style.setProperty('border', '2px solid #E74C3C', 'important');
                 input.style.setProperty('border-radius', '4px', 'important');
+                if (this.isMathFieldActuallyFocused(input)) {
+                    input.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
+                } else {
+                    input.style.setProperty('box-shadow', 'none', 'important');
+                }
             } else {
                 // Fallback for regular input elements
                 input.style.borderColor = '#E74C3C';
@@ -19269,10 +19364,19 @@ class Graphiti {
                 const computedStyle = getComputedStyle(document.documentElement);
                 const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
                 const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+                const accentColor = computedStyle.getPropertyValue('--accent-color').trim() || '#4A90E2';
                 
                 // Restore dark background and border
                 input.style.setProperty('background', inputBg, 'important');
-                input.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                if (this.isMathFieldActuallyFocused(input)) {
+                    input.style.setProperty('border', `1px solid ${accentColor}`, 'important');
+                    input.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
+                    input.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                } else {
+                    input.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+                    input.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+                    input.style.setProperty('box-shadow', 'none', 'important');
+                }
                 input.style.setProperty('border-radius', '4px', 'important');
                 input.style.setProperty('--background', inputBg, 'important');
             } else {
