@@ -28118,41 +28118,98 @@ class Graphiti {
         // Get grid color from CSS variable (adapts to light/dark theme)
         const gridColor = getComputedStyle(document.documentElement)
             .getPropertyValue('--grid-color').trim();
-        
-        this.ctx.strokeStyle = gridColor;
-        this.ctx.lineWidth = 1;
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+        const majorGridColor = isLightMode ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.32)';
+
+        // Major lines align with axis label intervals so labelled ticks feel emphasised.
+        const xMajorSpacing = this.getTrigAwareXLabelSpacing();
+        const yMajorSpacing = this.getTrigAwareYLabelSpacing();
+        const subdivisionsPerMajor = 5;
+        const xMinorSpacing = xMajorSpacing / subdivisionsPerMajor;
+        const yMinorSpacing = yMajorSpacing / subdivisionsPerMajor;
+
+        const xRange = this.viewport.maxX - this.viewport.minX;
+        const yRange = this.viewport.maxY - this.viewport.minY;
+        const pixelsPerUnitX = xRange !== 0 ? this.viewport.width / xRange : 0;
+        const pixelsPerUnitY = yRange !== 0 ? this.viewport.height / yRange : 0;
+
+        // Avoid overdraw when zoomed out: skip minor lines that would be too dense.
+        const drawXMinor = (xMinorSpacing * pixelsPerUnitX) >= 9;
+        const drawYMinor = (yMinorSpacing * pixelsPerUnitY) >= 9;
+
+        const isNearMajorMultiple = (value, majorSpacing) => {
+            if (!isFinite(value) || !isFinite(majorSpacing) || majorSpacing <= 0) return false;
+            const quotient = value / majorSpacing;
+            return Math.abs(quotient - Math.round(quotient)) < 1e-6;
+        };
+
+        const crisp = (screenValue) => Math.round(screenValue) + 0.5;
+
+        this.ctx.save();
+
+        if (drawXMinor || drawYMinor) {
+            this.ctx.strokeStyle = gridColor;
+            this.ctx.globalAlpha = 0.58;
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+
+            if (drawXMinor) {
+                const startXMinor = Math.floor(this.viewport.minX / xMinorSpacing) * xMinorSpacing;
+                for (let x = startXMinor; x <= this.viewport.maxX + xMinorSpacing * 0.5; x += xMinorSpacing) {
+                    if (isNearMajorMultiple(x, xMajorSpacing)) continue;
+                    const screenPos = this.worldToScreen(x, 0);
+                    const crispX = crisp(screenPos.x);
+                    this.ctx.moveTo(crispX, 0);
+                    this.ctx.lineTo(crispX, this.viewport.height);
+                }
+            }
+
+            if (drawYMinor) {
+                const startYMinor = Math.floor(this.viewport.minY / yMinorSpacing) * yMinorSpacing;
+                for (let y = startYMinor; y <= this.viewport.maxY + yMinorSpacing * 0.5; y += yMinorSpacing) {
+                    if (isNearMajorMultiple(y, yMajorSpacing)) continue;
+                    const screenPos = this.worldToScreen(0, y);
+                    const crispY = crisp(screenPos.y);
+                    this.ctx.moveTo(0, crispY);
+                    this.ctx.lineTo(this.viewport.width, crispY);
+                }
+            }
+
+            this.ctx.stroke();
+        }
+
+        this.ctx.strokeStyle = majorGridColor;
+        this.ctx.globalAlpha = 1;
+        this.ctx.lineWidth = 1.15;
         this.ctx.beginPath();
-        
-        // Vertical lines - use trig-aware X-axis spacing
-        const xGridSpacing = this.getTrigAwareXGridSpacing();
-        const startX = Math.floor(this.viewport.minX / xGridSpacing) * xGridSpacing;
-        
-        for (let x = startX; x <= this.viewport.maxX; x += xGridSpacing) {
+
+        const startXMajor = Math.floor(this.viewport.minX / xMajorSpacing) * xMajorSpacing;
+        for (let x = startXMajor; x <= this.viewport.maxX + xMajorSpacing * 0.5; x += xMajorSpacing) {
             const screenPos = this.worldToScreen(x, 0);
-            this.ctx.moveTo(screenPos.x, 0);
-            this.ctx.lineTo(screenPos.x, this.viewport.height);
+            const crispX = crisp(screenPos.x);
+            this.ctx.moveTo(crispX, 0);
+            this.ctx.lineTo(crispX, this.viewport.height);
         }
-        
-        // Horizontal lines - use Y-axis specific spacing
-        const yGridSpacing = this.getTrigAwareYGridSpacing();
-        const startY = Math.floor(this.viewport.minY / yGridSpacing) * yGridSpacing;
-        
-        for (let y = startY; y <= this.viewport.maxY; y += yGridSpacing) {
+
+        const startYMajor = Math.floor(this.viewport.minY / yMajorSpacing) * yMajorSpacing;
+        for (let y = startYMajor; y <= this.viewport.maxY + yMajorSpacing * 0.5; y += yMajorSpacing) {
             const screenPos = this.worldToScreen(0, y);
-            this.ctx.moveTo(0, screenPos.y);
-            this.ctx.lineTo(this.viewport.width, screenPos.y);
+            const crispY = crisp(screenPos.y);
+            this.ctx.moveTo(0, crispY);
+            this.ctx.lineTo(this.viewport.width, crispY);
         }
-        
+
         this.ctx.stroke();
+        this.ctx.restore();
     }
     
     drawPolarGrid() {
         // Get grid color from CSS variable (adapts to light/dark theme)
         const gridColor = getComputedStyle(document.documentElement)
             .getPropertyValue('--grid-color').trim();
-        
-        this.ctx.strokeStyle = gridColor;
-        this.ctx.lineWidth = 1;
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+        const majorGridColor = isLightMode ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.32)';
+        const subdivisionsPerMajor = 5;
         
         // Find the center of the viewport in screen coordinates
         const center = this.worldToScreen(0, 0);
@@ -28179,33 +28236,76 @@ class Graphiti {
         
         const finalMaxRadius = Math.max(maxViewportRadius, fallbackRadius);
         
-        // Calculate spacing with fresh viewport data - force recalculation
-        const rSpacing = this.calculateFreshPolarSpacing();
-        
-        // Draw concentric circles (constant r values)
+        // Current polar spacing acts as MAJOR spacing. Add MINOR spacing by dividing into 5.
+        const majorRSpacing = this.calculateFreshPolarSpacing();
+        const minorRSpacing = majorRSpacing / subdivisionsPerMajor;
+
+        const majorThetaSpacing = this.getPolarAngleSpacing();
+        const minorThetaSpacing = majorThetaSpacing / subdivisionsPerMajor;
+        const maxScreenRadius = finalMaxRadius * this.viewport.scale;
+
+        const isNearMajorMultiple = (value, majorSpacing) => {
+            if (!isFinite(value) || !isFinite(majorSpacing) || majorSpacing <= 0) return false;
+            const quotient = value / majorSpacing;
+            return Math.abs(quotient - Math.round(quotient)) < 1e-6;
+        };
+
+        this.ctx.save();
+
+        // Minor polar gridlines
+        this.ctx.strokeStyle = gridColor;
+        this.ctx.globalAlpha = 0.58;
+        this.ctx.lineWidth = 1;
+
+        // Draw minor concentric circles (constant r values)
         this.ctx.beginPath();
-        for (let r = rSpacing; r <= finalMaxRadius; r += rSpacing) {
+        for (let r = minorRSpacing; r <= finalMaxRadius; r += minorRSpacing) {
+            if (isNearMajorMultiple(r, majorRSpacing)) continue;
             const screenRadius = r * this.viewport.scale;
             this.ctx.moveTo(center.x + screenRadius, center.y);
             this.ctx.arc(center.x, center.y, screenRadius, 0, 2 * Math.PI);
         }
         this.ctx.stroke();
-        
-        // Draw radial lines (constant θ values)
+
+        // Draw radial lines (constant θ values) using minor style uniformly
         this.ctx.beginPath();
-        const thetaSpacing = this.getPolarAngleSpacing();
-        const maxScreenRadius = finalMaxRadius * this.viewport.scale;
-        
-        for (let theta = 0; theta < 2 * Math.PI; theta += thetaSpacing) {
+        for (let theta = 0; theta < 2 * Math.PI; theta += minorThetaSpacing) {
+            if (isNearMajorMultiple(theta, majorThetaSpacing)) continue;
             const endX = center.x + maxScreenRadius * Math.cos(theta);
             const endY = center.y - maxScreenRadius * Math.sin(theta); // Negative because screen Y is flipped
             this.ctx.moveTo(center.x, center.y);
             this.ctx.lineTo(endX, endY);
         }
         this.ctx.stroke();
+
+        // Major polar gridlines
+        this.ctx.strokeStyle = majorGridColor;
+        this.ctx.globalAlpha = 1;
+        this.ctx.lineWidth = 1.15;
+
+        // Draw major concentric circles
+        this.ctx.beginPath();
+        for (let r = majorRSpacing; r <= finalMaxRadius; r += majorRSpacing) {
+            const screenRadius = r * this.viewport.scale;
+            this.ctx.moveTo(center.x + screenRadius, center.y);
+            this.ctx.arc(center.x, center.y, screenRadius, 0, 2 * Math.PI);
+        }
+        this.ctx.stroke();
+
+        // Draw major radial lines
+        this.ctx.beginPath();
+        for (let theta = 0; theta < 2 * Math.PI; theta += majorThetaSpacing) {
+            const endX = center.x + maxScreenRadius * Math.cos(theta);
+            const endY = center.y - maxScreenRadius * Math.sin(theta); // Negative because screen Y is flipped
+            this.ctx.moveTo(center.x, center.y);
+            this.ctx.lineTo(endX, endY);
+        }
+        this.ctx.stroke();
+
+        this.ctx.restore();
         
         // Draw angle labels on radial lines
-        this.drawPolarAngleLabels(center, finalMaxRadius, thetaSpacing);
+        this.drawPolarAngleLabels(center, finalMaxRadius, majorThetaSpacing);
     }
     
     calculateFreshPolarSpacing() {
@@ -28676,24 +28776,25 @@ class Graphiti {
     }
     
     drawAxes() {
-        // Get axes color from CSS variable (adapts to light/dark theme)
-        const axesColor = getComputedStyle(document.documentElement)
-            .getPropertyValue('--axes-color').trim();
-            
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+        const axesColor = isLightMode ? 'rgba(0, 0, 0, 0.50)' : 'rgba(255, 255, 255, 0.72)';
+        const crisp = (screenValue) => Math.round(screenValue) + 0.5;
+
         this.ctx.strokeStyle = axesColor;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 2.2;
+        this.ctx.globalAlpha = 1;
         this.ctx.beginPath();
         
         // X-axis
         if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
-            const y = this.worldToScreen(0, 0).y;
+            const y = crisp(this.worldToScreen(0, 0).y);
             this.ctx.moveTo(0, y);
             this.ctx.lineTo(this.viewport.width, y);
         }
         
         // Y-axis
         if (this.viewport.minX <= 0 && this.viewport.maxX >= 0) {
-            const x = this.worldToScreen(0, 0).x;
+            const x = crisp(this.worldToScreen(0, 0).x);
             this.ctx.moveTo(x, 0);
             this.ctx.lineTo(x, this.viewport.height);
         }
