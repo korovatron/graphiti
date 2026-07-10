@@ -2221,7 +2221,7 @@ class Graphiti {
                     default-mode="math"
                     smart-fence="true"
                     smart-superscript="true"
-                    virtual-keyboard-mode="auto"
+                    virtual-keyboard-mode="manual"
                     virtual-keyboards="numeric functions symbols greek"
                     color-scheme="dark"
                     style="
@@ -2399,6 +2399,113 @@ class Graphiti {
         // Add event listeners
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const removeBtn = funcDiv.querySelector('.remove-btn');
+        const markKeyboardReopenAllowed = () => {
+            this.keyboardDismissedByCanvas = false;
+            this.suppressMathFieldFocusUntil = 0;
+            this.virtualKeyboardDismissLockUntil = 0;
+        };
+
+        const tryShowKeyboardForField = (forceRebind = false) => {
+            const touchLikeDevice = navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches;
+            if (!touchLikeDevice) {
+                return;
+            }
+
+            if (this.keyboardDismissedByCanvas) {
+                return;
+            }
+
+            if (Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                return;
+            }
+
+            if (!window.mathVirtualKeyboard || window.mathVirtualKeyboard.visible) {
+                return;
+            }
+
+            const shouldRebindFocusedField = forceRebind && mathField.hasFocus();
+            if (shouldRebindFocusedField) {
+                try {
+                    mathField.blur();
+                } catch {
+                    // Ignore blur failures and continue with focus attempt.
+                }
+
+                setTimeout(() => {
+                    try {
+                        mathField.focus();
+                    } catch {
+                        return;
+                    }
+
+                    if (window.mathVirtualKeyboard && 'target' in window.mathVirtualKeyboard) {
+                        try {
+                            window.mathVirtualKeyboard.target = mathField;
+                        } catch {
+                            // Ignore target assignment failures.
+                        }
+                    }
+
+                    if (mathField.getValue()) {
+                        try {
+                            mathField.selection = { ranges: [[Infinity, Infinity]] };
+                        } catch {
+                            // Ignore selection failures.
+                        }
+                    }
+
+                    if (mathField.hasFocus() && !this.keyboardDismissedByCanvas && window.mathVirtualKeyboard && !window.mathVirtualKeyboard.visible) {
+                        this.virtualKeyboardShowBypass = true;
+                        try {
+                            window.mathVirtualKeyboard.show({ animate: true });
+                        } finally {
+                            setTimeout(() => {
+                                this.virtualKeyboardShowBypass = false;
+                            }, 0);
+                        }
+                    }
+                }, 20);
+                return;
+            }
+
+            // Ensure this specific field is the active target before showing keyboard.
+            if (!mathField.hasFocus()) {
+                try {
+                    mathField.focus();
+                } catch {
+                    return;
+                }
+            }
+
+            if (window.mathVirtualKeyboard && 'target' in window.mathVirtualKeyboard) {
+                try {
+                    window.mathVirtualKeyboard.target = mathField;
+                } catch {
+                    // Ignore target assignment failures.
+                }
+            }
+
+            setTimeout(() => {
+                if (mathField.hasFocus() && !this.keyboardDismissedByCanvas && window.mathVirtualKeyboard && !window.mathVirtualKeyboard.visible) {
+                    this.virtualKeyboardShowBypass = true;
+                    try {
+                        window.mathVirtualKeyboard.show({ animate: true });
+                    } finally {
+                        setTimeout(() => {
+                            this.virtualKeyboardShowBypass = false;
+                        }, 0);
+                    }
+                }
+            }, 10);
+        };
+
+        mathField.addEventListener('touchstart', markKeyboardReopenAllowed, { passive: true });
+        mathField.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                markKeyboardReopenAllowed();
+            }
+        }, { passive: true });
+        mathField.addEventListener('mousedown', markKeyboardReopenAllowed);
         
         // Get computed CSS variable values to match polar range fields exactly
         const computedStyle = getComputedStyle(document.documentElement);
@@ -2433,30 +2540,11 @@ class Graphiti {
                 mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
             }
             mathField.style.setProperty('outline', 'none', 'important');
+
+            tryShowKeyboardForField();
         });
         
         mathField.addEventListener('focusout', () => {
-            const panelIsClosing = this.isClosingMobileMenu === true;
-            const fieldIsBlurProtected = mathField.getAttribute('data-blur-protected') === 'true';
-            const keyboardInteractionActive = Date.now() <= (this.mathLiveKeyboardInteractionUntil || 0);
-            if (!panelIsClosing && !fieldIsBlurProtected && keyboardInteractionActive && window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
-                // iOS Safari can transiently blur the target field when tapping virtual keys.
-                // Re-focus the last editable field immediately so key insertion remains bound.
-                setTimeout(() => {
-                    const fallbackField = this.lastEditableMathField;
-                    if (!fallbackField || !document.contains(fallbackField)) {
-                        return;
-                    }
-                    if (fallbackField.getAttribute('read-only') === 'true' || fallbackField.classList.contains('asymptote-equation-field')) {
-                        return;
-                    }
-                    if (!fallbackField.hasFocus()) {
-                        fallbackField.focus();
-                    }
-                }, 0);
-                return;
-            }
-
             // Check if parent has error - preserve error styling if present
             const funcDiv = mathField.closest('.function-item');
             if (funcDiv && funcDiv.classList.contains('function-error')) {
@@ -2512,6 +2600,12 @@ class Graphiti {
                         mathField.selection = { ranges: [[Infinity, Infinity]] };
                     }, 10);
                 }
+            }
+
+            // On touch devices, tapping the same field can keep stale focus without
+            // emitting a new focusin event. Explicitly attempt to reopen keyboard.
+            if (!toggleClicked) {
+                tryShowKeyboardForField(true);
             }
         });
 
@@ -15177,6 +15271,34 @@ class Graphiti {
     }
     
     setupEventListeners() {
+        const ensureVirtualKeyboardShowGuard = () => {
+            if (!window.mathVirtualKeyboard || this.virtualKeyboardShowGuardPatched) {
+                return;
+            }
+
+            if (typeof window.mathVirtualKeyboard.show !== 'function') {
+                return;
+            }
+
+            const originalShow = window.mathVirtualKeyboard.show.bind(window.mathVirtualKeyboard);
+            this.virtualKeyboardOriginalShow = originalShow;
+            window.mathVirtualKeyboard.show = (options) => {
+                const dismissLocked = Date.now() <= (this.virtualKeyboardDismissLockUntil || 0);
+                if (dismissLocked && !this.virtualKeyboardShowBypass) {
+                    return;
+                }
+
+                return originalShow(options);
+            };
+
+            this.virtualKeyboardShowGuardPatched = true;
+        };
+
+        // Patch immediately if available and retry shortly in case MathLive initialises later.
+        ensureVirtualKeyboardShowGuard();
+        setTimeout(ensureVirtualKeyboardShowGuard, 200);
+        setTimeout(ensureVirtualKeyboardShowGuard, 800);
+
         // Wait for elements to be available
         const addFunctionButton = document.getElementById('add-function');
         const resetViewButton = document.getElementById('reset-view');
@@ -15735,6 +15857,11 @@ class Graphiti {
                     if (window.mathVirtualKeyboard.visible) {
                         window.mathVirtualKeyboard.hide({ animate: true });
                     } else {
+                        // Explicit user intent via toggle button should bypass any
+                        // temporary dismiss lock from prior canvas taps.
+                        this.virtualKeyboardDismissLockUntil = 0;
+                        this.keyboardDismissedByCanvas = false;
+
                         // Focus on the currently focused math field, or the first one if none focused
                         const focusedField = document.activeElement?.matches('math-field') 
                             ? document.activeElement 
@@ -15742,7 +15869,14 @@ class Graphiti {
                         if (focusedField) {
                             focusedField.focus();
                         }
-                        window.mathVirtualKeyboard.show({ animate: true });
+                        this.virtualKeyboardShowBypass = true;
+                        try {
+                            window.mathVirtualKeyboard.show({ animate: true });
+                        } finally {
+                            setTimeout(() => {
+                                this.virtualKeyboardShowBypass = false;
+                            }, 0);
+                        }
                     }
                 }
             });
@@ -15972,20 +16106,28 @@ class Graphiti {
         this.canvas.addEventListener('click', (e) => {
             // Close keyboard when clicking canvas (for mouse/desktop usage)
             if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
-                // FIRST: Blur all math-fields so MathLive won't reopen keyboard
-                const allMathFields = document.querySelectorAll('math-field');
-                allMathFields.forEach(mf => {
-                    if (mf.hasFocus()) {
-                        mf.blur();
-                    }
-                    mf.setAttribute('data-blur-protected', 'true');
-                });
-                // THEN: Hide keyboard after blur
+                this.keyboardDismissedByCanvas = true;
+                this.suppressMathFieldFocusUntil = Date.now() + 350;
+                this.virtualKeyboardDismissLockUntil = Date.now() + 350;
+                // Use the same hard reset as panel close to clear any shadow/internal
+                // MathLive focus that can auto-reopen the keyboard.
+                this.clearMathLiveFocusState();
                 window.mathVirtualKeyboard.hide();
-                // Remove protection after a delay
                 setTimeout(() => {
-                    allMathFields.forEach(mf => mf.removeAttribute('data-blur-protected'));
-                }, 500);
+                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible && Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                        window.mathVirtualKeyboard.hide();
+                    }
+                }, 80);
+                setTimeout(() => {
+                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible && Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                        window.mathVirtualKeyboard.hide();
+                    }
+                }, 180);
+                setTimeout(() => {
+                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible && Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                        window.mathVirtualKeyboard.hide();
+                    }
+                }, 300);
             }
             
             // Close function panel on narrow screens when clicking the graph area
@@ -15998,25 +16140,6 @@ class Graphiti {
                 }
             }
         });
-        
-        // Additional touchend handler for narrow screens that might not trigger the canvas click properly
-        this.canvas.addEventListener('touchend', (e) => {
-            // On narrow screens, also check if we should close the function panel
-            // This is a backup for cases where click might not work properly on touch devices
-            const isNarrowScreen = window.innerWidth < 1024;
-            if (isNarrowScreen && e.touches.length === 0) {
-                const functionPanel = document.getElementById('function-panel');
-                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
-                    // Simple tap detection - if the touch was quick and didn't move much
-                    setTimeout(() => {
-                        // Use a small delay to avoid conflicts with the existing touch handler
-                        if (functionPanel.classList.contains('mobile-open')) {
-                            this.closeMobileMenu();
-                        }
-                    }, 50);
-                }
-            }
-        }, { passive: true });
         
         // Touch Events
         this.canvas.addEventListener('touchstart', (e) => {
@@ -16031,23 +16154,42 @@ class Graphiti {
         
         this.canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
+
+            const functionPanel = document.getElementById('function-panel');
+            const isNarrowScreen = window.innerWidth < 1024;
+            const willAutoClosePanel = !!(isNarrowScreen && functionPanel && functionPanel.classList.contains('mobile-open'));
             
             // Close keyboard when tapping canvas on touch devices
             if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
-                // FIRST: Blur all math-fields so MathLive won't reopen keyboard
-                const allMathFields = document.querySelectorAll('math-field');
-                allMathFields.forEach(mf => {
-                    if (mf.hasFocus()) {
-                        mf.blur();
-                    }
-                    mf.setAttribute('data-blur-protected', 'true');
-                });
-                // THEN: Hide keyboard after blur
+                this.keyboardDismissedByCanvas = true;
+                this.suppressMathFieldFocusUntil = Date.now() + 350;
+                this.virtualKeyboardDismissLockUntil = Date.now() + 350;
+                // Important: touch auto-close hits this path before closeMobileMenu().
+                // Enter suppression mode only when the panel will actually auto-close,
+                // otherwise wide touch layouts can get stuck in "closing" state.
+                if (willAutoClosePanel) {
+                    this.suppressMathFieldAutoFocusUntil = Date.now() + 900;
+                }
+
+                // Use the same hard reset as panel close to clear any shadow/internal
+                // MathLive focus that can auto-reopen the keyboard.
+                this.clearMathLiveFocusState();
                 window.mathVirtualKeyboard.hide();
-                // Remove protection after a delay
                 setTimeout(() => {
-                    allMathFields.forEach(mf => mf.removeAttribute('data-blur-protected'));
-                }, 500);
+                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible && Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                        window.mathVirtualKeyboard.hide();
+                    }
+                }, 80);
+                setTimeout(() => {
+                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible && Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                        window.mathVirtualKeyboard.hide();
+                    }
+                }, 180);
+                setTimeout(() => {
+                    if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible && Date.now() <= (this.virtualKeyboardDismissLockUntil || 0)) {
+                        window.mathVirtualKeyboard.hide();
+                    }
+                }, 300);
             }
             
             this.handleTouchEnd(e);
@@ -16058,7 +16200,7 @@ class Graphiti {
             this.input.keys.add(e.key.toLowerCase());
             this.handleKeyboard(e);
         });
-        
+
         document.addEventListener('keyup', (e) => {
             this.input.keys.delete(e.key.toLowerCase());
         });
@@ -16112,7 +16254,24 @@ class Graphiti {
             });
         };
 
+                // Global touch recovery was re-focusing stale targets after panel close/open.
+                // Keep this disabled until a deterministic touch-safe strategy is implemented.
+                const enableTouchMathFieldRecovery = false;
+
+        const isFunctionPanelOpen = () => {
+            const functionPanel = document.getElementById('function-panel');
+            return !!(functionPanel && functionPanel.classList.contains('mobile-open') && !functionPanel.classList.contains('hidden'));
+        };
+
         const ensureEditableMathFieldTarget = () => {
+            if (!isFunctionPanelOpen()) {
+                return;
+            }
+
+            if (Date.now() <= (this.suppressMathFieldAutoFocusUntil || 0)) {
+                return;
+            }
+
             const activeMathField = document.activeElement && document.activeElement.matches && document.activeElement.matches('math-field')
                 ? document.activeElement
                 : null;
@@ -16134,20 +16293,22 @@ class Graphiti {
             this.lastEditableMathField = targetField;
         };
 
-        // Mark brief windows where iOS keyboard taps can trigger transient focus loss.
-        document.addEventListener('touchstart', (e) => {
-            if (isMathLiveKeyboardInteraction(e)) {
-                this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
-                ensureEditableMathFieldTarget();
-            }
-        }, { passive: true, capture: true });
+        if (enableTouchMathFieldRecovery) {
+            // Mark brief windows where iOS keyboard taps can trigger transient focus loss.
+            document.addEventListener('touchstart', (e) => {
+                if (isMathLiveKeyboardInteraction(e)) {
+                    this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
+                    ensureEditableMathFieldTarget();
+                }
+            }, { passive: true, capture: true });
 
-        document.addEventListener('pointerdown', (e) => {
-            if ((e.pointerType === 'touch' || e.pointerType === 'pen') && isMathLiveKeyboardInteraction(e)) {
-                this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
-                ensureEditableMathFieldTarget();
-            }
-        }, { passive: true, capture: true });
+            document.addEventListener('pointerdown', (e) => {
+                if ((e.pointerType === 'touch' || e.pointerType === 'pen') && isMathLiveKeyboardInteraction(e)) {
+                    this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
+                    ensureEditableMathFieldTarget();
+                }
+            }, { passive: true, capture: true });
+        }
 
         const getDirectlyTappedMathField = (event) => {
             if (!event) {
@@ -16177,6 +16338,14 @@ class Graphiti {
         // Some mobile Safari focus transitions can leave the virtual keyboard detached
         // from the intended field until another field is tapped first.
         const focusTappedMathField = (e) => {
+            if (!isFunctionPanelOpen()) {
+                return;
+            }
+
+            if (Date.now() <= (this.suppressMathFieldAutoFocusUntil || 0)) {
+                return;
+            }
+
             const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
             const tappedMathField = getDirectlyTappedMathField(e);
             if (!tappedMathField) {
@@ -16196,6 +16365,12 @@ class Graphiti {
 
             // Ignore read-only display fields such as asymptote equations.
             if (tappedMathField.getAttribute('read-only') === 'true' || tappedMathField.classList.contains('asymptote-equation-field')) {
+                return;
+            }
+
+            // Only allow recovery for fields inside the function panel.
+            const panelContainer = tappedMathField.closest('#function-panel');
+            if (!panelContainer) {
                 return;
             }
 
@@ -16219,14 +16394,16 @@ class Graphiti {
             }, 0);
         };
 
-        document.addEventListener('touchend', focusTappedMathField, { passive: true, capture: true });
+        if (enableTouchMathFieldRecovery) {
+            document.addEventListener('touchend', focusTappedMathField, { passive: true, capture: true });
 
-        // Edge touch emulation and some Android browsers route taps through pointer events.
-        document.addEventListener('pointerup', (e) => {
-            if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-                focusTappedMathField(e);
-            }
-        }, { passive: true, capture: true });
+            // Edge touch emulation and some Android browsers route taps through pointer events.
+            document.addEventListener('pointerup', (e) => {
+                if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                    focusTappedMathField(e);
+                }
+            }, { passive: true, capture: true });
+        }
         
         // Document-level touch events for hamburger menu closure
         document.addEventListener('touchstart', (e) => {
@@ -20457,6 +20634,75 @@ class Graphiti {
             this.openMobileMenu();
         }
     }
+
+    clearMathLiveFocusState() {
+        const allMathFields = document.querySelectorAll('math-field');
+        allMathFields.forEach(mf => {
+            try {
+                mf.blur();
+            } catch {
+                // Ignore stale/unmounted blur failures.
+            }
+        });
+
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            try {
+                document.activeElement.blur();
+            } catch {
+                // Ignore non-blurrable active elements.
+            }
+        }
+
+        if (window.MathfieldElement && window.MathfieldElement.activeMathfield) {
+            try {
+                window.MathfieldElement.activeMathfield.blur();
+            } catch {
+                // Ignore MathLive active field blur failures.
+            }
+        }
+
+        if (window.mathVirtualKeyboard && 'target' in window.mathVirtualKeyboard) {
+            try {
+                window.mathVirtualKeyboard.target = null;
+            } catch {
+                // Ignore if target is read-only in current MathLive build.
+            }
+        }
+
+        // Force focus transfer outside MathLive shadow roots to clear stale caret state.
+        // Use a persistent button sink (not an input) so touch browsers do not reopen keyboards.
+        if (!this.mathLiveFocusSink || !document.contains(this.mathLiveFocusSink)) {
+            const sink = document.createElement('button');
+            sink.type = 'button';
+            sink.tabIndex = -1;
+            sink.setAttribute('aria-hidden', 'true');
+            sink.style.position = 'fixed';
+            sink.style.opacity = '0';
+            sink.style.pointerEvents = 'none';
+            sink.style.left = '-10000px';
+            sink.style.top = '-10000px';
+            sink.style.width = '1px';
+            sink.style.height = '1px';
+            document.body.appendChild(sink);
+            this.mathLiveFocusSink = sink;
+        }
+        try {
+            this.mathLiveFocusSink.focus({ preventScroll: true });
+        } catch {
+            // Ignore focus sink failures.
+        }
+
+        if (window.getSelection && typeof window.getSelection === 'function') {
+            try {
+                const selection = window.getSelection();
+                if (selection) {
+                    selection.removeAllRanges();
+                }
+            } catch {
+                // Ignore selection reset failures.
+            }
+        }
+    }
     
     openMobileMenu() {
         const hamburgerMenu = document.getElementById('hamburger-menu');
@@ -20466,6 +20712,12 @@ class Graphiti {
         // If panel is reopened quickly after auto-close, remove temporary
         // blur protection immediately so editable fields can accept focus/input.
         document.querySelectorAll('math-field').forEach(mf => mf.removeAttribute('data-blur-protected'));
+
+        // Always reopen from a clean focus state so hidden stale caret targets
+        // cannot survive an auto-close -> reopen cycle on iOS.
+        this.clearMathLiveFocusState();
+        this.lastEditableMathField = null;
+        this.mathLiveKeyboardInteractionUntil = 0;
         
         if (hamburgerMenu) {
             hamburgerMenu.classList.add('active');
@@ -20478,6 +20730,11 @@ class Graphiti {
             functionPanel.offsetHeight;
             functionPanel.classList.add('mobile-open');
         }
+
+        // Re-run once the panel is visible; this clears focus resurrected by delayed touch events.
+        setTimeout(() => {
+            this.clearMathLiveFocusState();
+        }, 0);
         
         // Overlay disabled - no dimming of graph area
         // if (this.isTrueMobile() && mobileOverlay) {
@@ -20490,8 +20747,14 @@ class Graphiti {
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
 
+        // Ignore duplicate close requests while an existing close transition is in progress.
+        if (this.isClosingMobileMenu) {
+            return;
+        }
+
         // Guard against iOS focus-recovery logic re-focusing fields while panel is closing.
         this.isClosingMobileMenu = true;
+        this.suppressMathFieldAutoFocusUntil = Date.now() + 900;
         
         if (hamburgerMenu) {
             hamburgerMenu.classList.remove('active');
@@ -20511,29 +20774,10 @@ class Graphiti {
             }
         }
         
-        // FIRST: Blur ALL mathfields so MathLive won't try to reopen keyboard
+        // FIRST: Force clear MathLive focus/caret state and protect fields during close animation.
         const allMathFields = document.querySelectorAll('math-field');
-        allMathFields.forEach(mf => {
-            try {
-                mf.blur();
-            } catch {
-                // Ignore stale/unmounted field blur failures.
-            }
-            if (mf.hasFocus()) {
-                mf.blur();
-            }
-            // Prevent any math-field from being focused during panel close animation
-            mf.setAttribute('data-blur-protected', 'true');
-        });
-
-        // Also blur the document active element as a backstop for iOS shadow-DOM focus quirks.
-        if (document.activeElement && typeof document.activeElement.blur === 'function') {
-            try {
-                document.activeElement.blur();
-            } catch {
-                // Ignore non-blurrable active elements.
-            }
-        }
+        allMathFields.forEach(mf => mf.setAttribute('data-blur-protected', 'true'));
+        this.clearMathLiveFocusState();
 
         // Drop stale keyboard target state so next panel open starts clean.
         this.lastEditableMathField = null;
