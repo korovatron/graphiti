@@ -2407,6 +2407,7 @@ class Graphiti {
         
         // Add focus/blur listeners to apply consistent styling with polar range fields
         mathField.addEventListener('focusin', () => {
+            this.lastEditableMathField = mathField;
             // Check for landscape editing restriction first
             if (this.shouldRestrictLandscapeEditing()) {
                 mathField.blur();
@@ -2435,6 +2436,25 @@ class Graphiti {
         });
         
         mathField.addEventListener('focusout', () => {
+            const keyboardInteractionActive = Date.now() <= (this.mathLiveKeyboardInteractionUntil || 0);
+            if (keyboardInteractionActive && window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                // iOS Safari can transiently blur the target field when tapping virtual keys.
+                // Re-focus the last editable field immediately so key insertion remains bound.
+                setTimeout(() => {
+                    const fallbackField = this.lastEditableMathField;
+                    if (!fallbackField || !document.contains(fallbackField)) {
+                        return;
+                    }
+                    if (fallbackField.getAttribute('read-only') === 'true' || fallbackField.classList.contains('asymptote-equation-field')) {
+                        return;
+                    }
+                    if (!fallbackField.hasFocus()) {
+                        fallbackField.focus();
+                    }
+                }, 0);
+                return;
+            }
+
             // Check if parent has error - preserve error styling if present
             const funcDiv = mathField.closest('.function-item');
             if (funcDiv && funcDiv.classList.contains('function-error')) {
@@ -16069,6 +16089,39 @@ class Graphiti {
                     node.classList.contains('ML__keycap');
             });
         };
+
+        const isMathLiveKeyboardInteraction = (event) => {
+            if (!event || typeof event.composedPath !== 'function') {
+                return false;
+            }
+
+            const path = event.composedPath();
+            return path.some(node => {
+                if (!node || !node.classList) {
+                    return false;
+                }
+
+                return node.classList.contains('ML__keyboard') ||
+                    node.classList.contains('ML__keyboard-container') ||
+                    node.classList.contains('ML__virtual-keyboard') ||
+                    node.classList.contains('MLK__plate') ||
+                    node.classList.contains('MLK__keycap') ||
+                    node.classList.contains('ML__keycap');
+            });
+        };
+
+        // Mark brief windows where iOS keyboard taps can trigger transient focus loss.
+        document.addEventListener('touchstart', (e) => {
+            if (isMathLiveKeyboardInteraction(e)) {
+                this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
+            }
+        }, { passive: true, capture: true });
+
+        document.addEventListener('pointerdown', (e) => {
+            if ((e.pointerType === 'touch' || e.pointerType === 'pen') && isMathLiveKeyboardInteraction(e)) {
+                this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
+            }
+        }, { passive: true, capture: true });
 
         const getDirectlyTappedMathField = (event) => {
             if (!event) {
