@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.79';
+const VERSION = '1.1.80';
 
 class Graphiti {
     constructor() {
@@ -16110,16 +16110,40 @@ class Graphiti {
             });
         };
 
+        const ensureEditableMathFieldTarget = () => {
+            const activeMathField = document.activeElement && document.activeElement.matches && document.activeElement.matches('math-field')
+                ? document.activeElement
+                : null;
+            const targetField = activeMathField || this.lastEditableMathField;
+
+            if (!targetField || !document.contains(targetField)) {
+                return;
+            }
+
+            if (targetField.getAttribute('read-only') === 'true' || targetField.classList.contains('asymptote-equation-field')) {
+                return;
+            }
+
+            targetField.removeAttribute('data-blur-protected');
+            if (!targetField.hasFocus()) {
+                targetField.focus();
+            }
+
+            this.lastEditableMathField = targetField;
+        };
+
         // Mark brief windows where iOS keyboard taps can trigger transient focus loss.
         document.addEventListener('touchstart', (e) => {
             if (isMathLiveKeyboardInteraction(e)) {
                 this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
+                ensureEditableMathFieldTarget();
             }
         }, { passive: true, capture: true });
 
         document.addEventListener('pointerdown', (e) => {
             if ((e.pointerType === 'touch' || e.pointerType === 'pen') && isMathLiveKeyboardInteraction(e)) {
                 this.mathLiveKeyboardInteractionUntil = Date.now() + 300;
+                ensureEditableMathFieldTarget();
             }
         }, { passive: true, capture: true });
 
@@ -16175,6 +16199,7 @@ class Graphiti {
 
             // If a previous canvas tap set blur protection, clear it for direct taps.
             tappedMathField.removeAttribute('data-blur-protected');
+            this.lastEditableMathField = tappedMathField;
 
             // Defer focus to let native touch focus settle first.
             setTimeout(() => {
