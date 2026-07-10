@@ -1212,7 +1212,7 @@ class Graphiti {
                     } else {
                         field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                         field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                        field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                        field.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                     }
                     field.style.setProperty('outline', 'none', 'important');
                 });
@@ -1308,7 +1308,7 @@ class Graphiti {
                     } else {
                         field.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                         field.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                        field.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                        field.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                     }
                     field.style.setProperty('outline', 'none', 'important');
                 });
@@ -2596,7 +2596,7 @@ class Graphiti {
                 // Apply focus styling to match polar range fields
                 mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                 mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                mathField.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
             }
             mathField.style.setProperty('outline', 'none', 'important');
 
@@ -2794,7 +2794,7 @@ class Graphiti {
                 
                 lowerLimitField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                 lowerLimitField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                lowerLimitField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                lowerLimitField.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                 lowerLimitField.style.setProperty('outline', 'none', 'important');
             });
             
@@ -2872,7 +2872,7 @@ class Graphiti {
                 
                 upperLimitField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
                 upperLimitField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
-                upperLimitField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                upperLimitField.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                 upperLimitField.style.setProperty('outline', 'none', 'important');
             });
             
@@ -3107,7 +3107,7 @@ class Graphiti {
                         if (this.isMathFieldActuallyFocused(mathField)) {
                             mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
                             mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
-                            mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                            mathField.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                         } else {
                             mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
                             mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
@@ -3457,7 +3457,7 @@ class Graphiti {
                     if (this.isMathFieldActuallyFocused(mathField)) {
                         mathField.style.setProperty('border', `1px solid ${accentColor}`, 'important');
                         mathField.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
-                        mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                        mathField.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                     } else {
                         mathField.style.setProperty('border', `1px solid ${borderColor}`, 'important');
                         mathField.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
@@ -19392,7 +19392,7 @@ class Graphiti {
                 if (this.isMathFieldActuallyFocused(input)) {
                     input.style.setProperty('border', `1px solid ${accentColor}`, 'important');
                     input.style.setProperty('--border', `1px solid ${accentColor}`, 'important');
-                    input.style.setProperty('box-shadow', '0 0 0 2px rgba(74, 144, 226, 0.2)', 'important');
+                    input.style.setProperty('box-shadow', '0 0 0 3px rgba(74, 144, 226, 0.35)', 'important');
                 } else {
                     input.style.setProperty('border', `1px solid ${borderColor}`, 'important');
                     input.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
