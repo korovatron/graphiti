@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.81';
+const VERSION = '1.1.82';
 
 class Graphiti {
     constructor() {
@@ -2436,8 +2436,10 @@ class Graphiti {
         });
         
         mathField.addEventListener('focusout', () => {
+            const panelIsClosing = this.isClosingMobileMenu === true;
+            const fieldIsBlurProtected = mathField.getAttribute('data-blur-protected') === 'true';
             const keyboardInteractionActive = Date.now() <= (this.mathLiveKeyboardInteractionUntil || 0);
-            if (keyboardInteractionActive && window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+            if (!panelIsClosing && !fieldIsBlurProtected && keyboardInteractionActive && window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
                 // iOS Safari can transiently blur the target field when tapping virtual keys.
                 // Re-focus the last editable field immediately so key insertion remains bound.
                 setTimeout(() => {
@@ -20487,6 +20489,9 @@ class Graphiti {
         const hamburgerMenu = document.getElementById('hamburger-menu');
         const functionPanel = document.getElementById('function-panel');
         const mobileOverlay = document.getElementById('mobile-overlay');
+
+        // Guard against iOS focus-recovery logic re-focusing fields while panel is closing.
+        this.isClosingMobileMenu = true;
         
         if (hamburgerMenu) {
             hamburgerMenu.classList.remove('active');
@@ -20542,6 +20547,7 @@ class Graphiti {
         // Remove protection after panel animation completes (300ms) plus buffer
         setTimeout(() => {
             allMathFields.forEach(mf => mf.removeAttribute('data-blur-protected'));
+            this.isClosingMobileMenu = false;
         }, 500);
         
         // Overlay disabled - no dimming management needed
