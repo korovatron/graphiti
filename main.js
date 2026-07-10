@@ -2675,6 +2675,11 @@ class Graphiti {
             try {
                 const latex = mathField.getValue();
                 func.expression = latex; // Store LaTeX format
+
+                // Remove derived asymptote/hole info immediately when field is empty.
+                if (!latex || !latex.trim()) {
+                    this.clearFunctionAsymptoteData(func);
+                }
                 
                 // Clear expression cache when function expression changes
                 this.clearExpressionCache();
@@ -3084,6 +3089,7 @@ class Graphiti {
             // Don't plot empty expressions, but ensure error state is cleared
             if (!func.expression.trim()) {
                 func.points = [];
+                this.clearFunctionAsymptoteData(func);
                 
                 // Remove error styling for empty expressions (they're valid)
                 const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
