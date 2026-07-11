@@ -16200,8 +16200,9 @@ class Graphiti {
         // Export overlay controls
         const exportOverlay = document.getElementById('export-overlay');
         const exportCancelButton = document.getElementById('export-cancel-button');
-        const exportSvgButton = document.getElementById('export-svg-button');
+        const exportGenerateButton = document.getElementById('export-generate-button');
         const exportFrameShape = document.getElementById('export-frame-shape');
+        const exportFormatInputs = document.querySelectorAll('input[name="export-format"]');
 
         if (exportOverlay) {
             exportOverlay.addEventListener('click', (e) => {
@@ -16217,9 +16218,9 @@ class Graphiti {
             });
         }
 
-        if (exportSvgButton) {
-            exportSvgButton.addEventListener('click', () => {
-                this.exportCurrentViewAsSVG();
+        if (exportGenerateButton) {
+            exportGenerateButton.addEventListener('click', () => {
+                this.exportCurrentViewFromModal();
             });
         }
 
@@ -16227,6 +16228,14 @@ class Graphiti {
             exportFrameShape.addEventListener('change', () => {
                 this.updateExportFramePreview();
             });
+        }
+
+        if (exportFormatInputs && exportFormatInputs.length > 0) {
+            for (const input of exportFormatInputs) {
+                input.addEventListener('change', () => {
+                    this.updateExportFormatUI();
+                });
+            }
         }
         
         // Angle Mode Toggle
@@ -18542,6 +18551,8 @@ class Graphiti {
 
         if (shouldOpen) {
             overlay.classList.add('show');
+            this.applyDefaultExportFormat();
+            this.updateExportFormatUI();
             requestAnimationFrame(() => this.updateExportFramePreview());
             this.startExportPreviewLoop();
         } else {
@@ -18550,6 +18561,56 @@ class Graphiti {
             if (document.activeElement) {
                 document.activeElement.blur();
             }
+        }
+    }
+
+    isTouchExportDevice() {
+        const coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        return this.isMobileDevice() || (coarsePointer && hasTouch);
+    }
+
+    getSelectedExportFormat() {
+        const formatInput = document.querySelector('input[name="export-format"]:checked');
+        return formatInput ? formatInput.value : 'svg';
+    }
+
+    applyDefaultExportFormat() {
+        const defaultFormat = this.isTouchExportDevice() ? 'png' : 'svg';
+        const defaultInput = document.querySelector(`input[name="export-format"][value="${defaultFormat}"]`);
+        if (defaultInput) {
+            defaultInput.checked = true;
+        }
+    }
+
+    updateExportFormatUI() {
+        const format = this.getSelectedExportFormat();
+        const svgOnlyGroups = document.querySelectorAll('.export-svg-only');
+        const generateButton = document.getElementById('export-generate-button');
+
+        for (const group of svgOnlyGroups) {
+            if (format === 'svg') {
+                group.classList.remove('export-hidden');
+            } else {
+                group.classList.add('export-hidden');
+            }
+        }
+
+        if (generateButton) {
+            if (format === 'png') {
+                generateButton.textContent = this.isTouchExportDevice() ? 'Share PNG' : 'Download PNG';
+            } else {
+                generateButton.textContent = 'Download SVG';
+            }
+        }
+    }
+
+    exportCurrentViewFromModal() {
+        const format = this.getSelectedExportFormat();
+        if (format === 'png') {
+            this.exportCurrentViewAsPNG();
+        } else {
+            this.exportCurrentViewAsSVG();
         }
     }
 
@@ -18716,6 +18777,7 @@ class Graphiti {
     }
 
     getExportOptionsFromModal() {
+        const formatInput = document.querySelector('input[name="export-format"]:checked');
         const colorModeInput = document.querySelector('input[name="export-color-mode"]:checked');
         const gridModeInput = document.getElementById('export-grid-mode');
         const textSizeInput = document.getElementById('export-text-size');
@@ -18727,6 +18789,7 @@ class Graphiti {
         const includeTurningPointsInput = document.getElementById('export-include-turning-points');
 
         return {
+            format: formatInput ? formatInput.value : 'svg',
             colorMode: colorModeInput ? colorModeInput.value : 'keep',
             gridMode: gridModeInput ? gridModeInput.value : 'both',
             textSize: textSizeInput ? textSizeInput.value : 'small',
@@ -18737,6 +18800,87 @@ class Graphiti {
             includeIntercepts: includeInterceptsInput ? includeInterceptsInput.checked : true,
             includeTurningPoints: includeTurningPointsInput ? includeTurningPointsInput.checked : true
         };
+    }
+
+    async exportCurrentViewAsPNG() {
+        try {
+            const options = this.getExportOptionsFromModal();
+            const sourceWidth = Math.max(1, Math.round(this.viewport.width || this.canvas.width || 1));
+            const sourceHeight = Math.max(1, Math.round(this.viewport.height || this.canvas.height || 1));
+            const frame = this.getExportFrameRect(sourceWidth, sourceHeight, options.frameShape || 'original');
+
+            const cropCanvas = document.createElement('canvas');
+            cropCanvas.width = frame.width;
+            cropCanvas.height = frame.height;
+            const cropCtx = cropCanvas.getContext('2d');
+            if (!cropCtx) {
+                throw new Error('Could not prepare PNG export canvas');
+            }
+
+            cropCtx.drawImage(
+                this.canvas,
+                frame.x,
+                frame.y,
+                frame.width,
+                frame.height,
+                0,
+                0,
+                frame.width,
+                frame.height
+            );
+
+            const blob = await new Promise((resolve, reject) => {
+                cropCanvas.toBlob((pngBlob) => {
+                    if (pngBlob) resolve(pngBlob);
+                    else reject(new Error('Failed to create PNG'));
+                }, 'image/png');
+            });
+
+            const touchDevice = this.isTouchExportDevice();
+            if (touchDevice && navigator.share) {
+                try {
+                    const file = new File([blob], 'graphiti-graph.png', { type: 'image/png' });
+                    const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+                    if (canShareFiles) {
+                        await navigator.share({
+                            files: [file],
+                            title: 'Graphiti Graph'
+                        });
+
+                        this.toggleExportOverlay(false);
+                        const button = document.getElementById('share-image-button');
+                        if (button) {
+                            const rect = button.getBoundingClientRect();
+                            this.showShareTooltip('PNG shared', rect.left + rect.width / 2, rect.top);
+                        }
+                        return;
+                    }
+                } catch (shareError) {
+                    if (shareError.name === 'AbortError') {
+                        return;
+                    }
+                }
+            }
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'graphiti-graph.png';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            this.toggleExportOverlay(false);
+            const button = document.getElementById('share-image-button');
+            if (button) {
+                const rect = button.getBoundingClientRect();
+                this.showShareTooltip('PNG downloaded', rect.left + rect.width / 2, rect.top);
+            }
+        } catch (error) {
+            console.error('PNG export failed:', error);
+            alert('PNG export failed: ' + error.message);
+        }
     }
 
     exportCurrentViewAsSVG() {

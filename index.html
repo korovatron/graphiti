@@ -2121,6 +2121,10 @@
             color: #fff;
             font-weight: 600;
         }
+
+        .export-hidden {
+            display: none !important;
+        }
         
         /* Device-aware content visibility */
         .touch-only {
@@ -2945,7 +2949,7 @@
                                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
                             </svg>
                         </button>
-                        <button id="share-image-button" style="padding: 6px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Export graph as SVG">
+                        <button id="share-image-button" style="padding: 6px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Export graph (PNG or SVG)">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                                 <circle cx="12" cy="13" r="4"></circle>
@@ -3188,8 +3192,16 @@
 
     <div id="export-overlay" class="export-overlay">
         <div class="export-content">
-            <h2>Export SVG</h2>
+            <h2>Export</h2>
             <div class="export-options">
+                <div class="export-group">
+                    <div class="export-label">Format</div>
+                    <div class="export-radio-row">
+                        <label><input type="radio" name="export-format" value="png"> PNG</label>
+                        <label><input type="radio" name="export-format" value="svg" checked> SVG</label>
+                    </div>
+                </div>
+
                 <div class="export-group">
                     <label class="export-label" for="export-frame-shape">Export frame</label>
                     <select id="export-frame-shape" class="export-select">
@@ -3211,7 +3223,7 @@
                     </div>
                 </div>
 
-                <div class="export-group">
+                <div class="export-group export-svg-only">
                     <div class="export-label">Curve colours</div>
                     <div class="export-radio-row">
                         <label><input type="radio" name="export-color-mode" value="keep" checked> Keep colours</label>
@@ -3219,7 +3231,7 @@
                     </div>
                 </div>
 
-                <div class="export-group">
+                <div class="export-group export-svg-only">
                     <label class="export-label" for="export-grid-mode">Gridlines</label>
                     <select id="export-grid-mode" class="export-select">
                         <option value="both" selected>Major and minor</option>
@@ -3229,7 +3241,7 @@
                     </select>
                 </div>
 
-                <div class="export-group">
+                <div class="export-group export-svg-only">
                     <label class="export-label" for="export-text-size">Text size</label>
                     <select id="export-text-size" class="export-select">
                         <option value="small" selected>Small</option>
@@ -3238,23 +3250,23 @@
                     </select>
                 </div>
 
-                <div class="export-group export-checkbox-row">
+                <div class="export-group export-checkbox-row export-svg-only">
                     <label><input id="export-include-axes" type="checkbox" checked> Include axes</label>
                 </div>
 
-                <div class="export-group export-checkbox-row">
+                <div class="export-group export-checkbox-row export-svg-only">
                     <label><input id="export-include-axis-labels" type="checkbox" checked> Include axis numbers/labels</label>
                 </div>
 
-                <div class="export-group export-checkbox-row">
+                <div class="export-group export-checkbox-row export-svg-only">
                     <label><input id="export-include-intersections" type="checkbox" checked> Include intersections</label>
                 </div>
 
-                <div class="export-group export-checkbox-row">
+                <div class="export-group export-checkbox-row export-svg-only">
                     <label><input id="export-include-intercepts" type="checkbox" checked> Include intercepts</label>
                 </div>
 
-                <div class="export-group export-checkbox-row">
+                <div class="export-group export-checkbox-row export-svg-only">
                     <label><input id="export-include-turning-points" type="checkbox" checked> Include turning points</label>
                 </div>
 
@@ -3262,7 +3274,7 @@
 
             <div class="export-actions">
                 <button id="export-cancel-button" class="export-btn" type="button">Cancel</button>
-                <button id="export-svg-button" class="export-btn primary" type="button">Download SVG</button>
+                <button id="export-generate-button" class="export-btn primary" type="button">Download SVG</button>
             </div>
         </div>
     </div>
