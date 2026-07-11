@@ -18952,7 +18952,10 @@ class Graphiti {
         const labelFontSizeMap = {
             small: 12,
             medium: 16,
-            large: 20
+            large: 20,
+            xl: 24,
+            xxl: 28,
+            xxxl: 32
         };
 
         const pushLine = (x1, y1, x2, y2, stroke, strokeWidth = 1, dash = null) => {
@@ -19819,7 +19822,10 @@ class Graphiti {
                         label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
                     }
 
-                    pushLabel(screenPos.x, axisY + 7, label, labelColor, labelFontSize, 'middle', 'hanging');
+                    // Office apps often mis-handle dominant-baseline="hanging".
+                    // Use explicit vertical offset with alphabetic baseline for consistent placement under x-axis.
+                    const xAxisLabelY = axisY + labelFontSize + 4;
+                    pushLabel(screenPos.x, xAxisLabelY, label, labelColor, labelFontSize, 'middle', 'alphabetic');
                 }
             }
 
@@ -19849,7 +19855,8 @@ class Graphiti {
 
             if (this.viewport.minX <= 0 && this.viewport.maxX >= 0 && this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
                 const origin = this.worldToScreen(0, 0);
-                pushLabel(origin.x - 7, origin.y + 7, '0', labelColor, labelFontSize, 'end', 'hanging');
+                const originY = origin.y + labelFontSize + 4;
+                pushLabel(origin.x - 7, originY, '0', labelColor, labelFontSize, 'end', 'alphabetic');
             }
         }
 
@@ -20376,7 +20383,7 @@ class Graphiti {
 
         // Persistent point badges (intercepts, intersections, turning points, etc.)
         if (Array.isArray(this.input.persistentBadges) && this.input.persistentBadges.length > 0) {
-            const badgeFontSize = this.sizeMode === 'large' ? 20 : 16;
+            const badgeFontSize = labelFontSizeMap[options.textSize] || labelFontSizeMap.medium;
             const badgePadding = 6;
             const badgeCornerRadius = 3;
 
