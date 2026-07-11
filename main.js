@@ -2326,8 +2326,12 @@ class Graphiti {
                         --contains-highlight-background-color: var(--accent-color);
                     "></math-field>
                 <div class="function-controls">
+                    <button class="remove-btn" title="Delete function" aria-label="Delete function">
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M4 4L12 12M12 4L4 12" />
+                        </svg>
+                    </button>
                     <div class="color-indicator" style="background-color: ${func.color}; opacity: ${func.enabled ? '1' : '0.3'}; filter: ${func.enabled ? 'none' : 'grayscale(100%)'}" title="Click to ${func.enabled ? 'hide' : 'show'} function"></div>
-                    <button class="remove-btn" title="Delete function">×</button>
                 </div>
             </div>
             <div class="integral-limits-container" data-function-id="${func.id}">
@@ -2341,7 +2345,6 @@ class Graphiti {
                         data-limit-type="lower"
                     ></math-field>
                 </div>
-                <div class="integral-limit-row">
                     <label class="integral-limit-label">Upper limit:</label>
                     <math-field 
                         class="integral-limit-field integral-upper-limit"

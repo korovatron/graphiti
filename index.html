@@ -842,27 +842,48 @@
             background: #2A3F5A;
             color: var(--text-primary);
             border: 1px solid #555;
+            -webkit-appearance: none;
+            appearance: none;
+            outline: none;
+            filter: none;
             padding: 0;
-            font-size: 12px;
+            font-size: 0;
             width: 20px;
             height: 20px;
+            min-width: 20px;
+            min-height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 5px;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
-        
+
+        .function-item .remove-btn svg {
+            width: 14px;
+            height: 14px;
+            display: block;
+            fill: none;
+            stroke: #FFFFFF;
+            stroke-width: 2.6;
+            stroke-linecap: round;
+            transform: translateX(-0.1px) scale(1.02);
+            transform-origin: center;
+        }
+
         @media (hover: hover) {
             .function-item .remove-btn:hover {
-                box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+                filter: brightness(1.15);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
             }
         }
         
-        .function-item .remove-btn:active {
-            background: #E74C3C;
+        .function-item .remove-btn:focus,
+        .function-item .remove-btn:focus-visible {
+            outline: none;
+            filter: none;
         }
         
         .function-item input[type="text"], .function-item input[type="number"] {
