@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.103';
+const VERSION = '1.1.104';
 
 class Graphiti {
     constructor() {
@@ -16265,16 +16265,26 @@ class Graphiti {
         const exportOverlay = document.getElementById('export-overlay');
         const exportCancelButton = document.getElementById('export-cancel-button');
         const exportGenerateButton = document.getElementById('export-generate-button');
-        const exportFrameShape = document.getElementById('export-frame-shape');
-        const exportFormatInputs = document.querySelectorAll('input[name="export-format"]');
-        const exportIncludeAxes = document.getElementById('export-include-axes');
-        const exportIncludeAxisLabels = document.getElementById('export-include-axis-labels');
 
         if (exportOverlay) {
             exportOverlay.addEventListener('click', (e) => {
                 if (e.target === exportOverlay) {
                     this.toggleExportOverlay(false);
                 }
+            });
+
+            exportOverlay.addEventListener('change', (e) => {
+                const target = e.target;
+                if (!target || !target.matches || !target.matches('input, select')) return;
+
+                if (target.name === 'export-format' ||
+                    target.id === 'export-include-axes' ||
+                    target.id === 'export-include-axis-labels') {
+                    this.updateExportFormatUI();
+                    return;
+                }
+
+                this.requestExportPreviewUpdate();
             });
         }
 
@@ -16290,32 +16300,6 @@ class Graphiti {
             });
         }
 
-        if (exportFrameShape) {
-            exportFrameShape.addEventListener('change', () => {
-                this.updateExportFramePreview();
-            });
-        }
-
-        if (exportFormatInputs && exportFormatInputs.length > 0) {
-            for (const input of exportFormatInputs) {
-                input.addEventListener('change', () => {
-                    this.updateExportFormatUI();
-                });
-            }
-        }
-
-        if (exportIncludeAxes) {
-            exportIncludeAxes.addEventListener('change', () => {
-                this.updateExportFormatUI();
-            });
-        }
-
-        if (exportIncludeAxisLabels) {
-            exportIncludeAxisLabels.addEventListener('change', () => {
-                this.updateExportFormatUI();
-            });
-        }
-        
         // Angle Mode Toggle
         const angleModeToggle = document.getElementById('angle-mode-toggle');
         if (angleModeToggle) {
@@ -18631,11 +18615,9 @@ class Graphiti {
             overlay.classList.add('show');
             this.applyDefaultExportFormat();
             this.updateExportFormatUI();
-            requestAnimationFrame(() => this.updateExportFramePreview());
-            this.startExportPreviewLoop();
         } else {
             overlay.classList.remove('show');
-            this.stopExportPreviewLoop();
+            this.cancelExportPreviewUpdate();
             if (document.activeElement) {
                 document.activeElement.blur();
             }
@@ -18706,7 +18688,7 @@ class Graphiti {
             }
         }
 
-        this.updateExportFramePreview();
+        this.requestExportPreviewUpdate();
     }
 
     exportCurrentViewFromModal() {
@@ -18718,35 +18700,22 @@ class Graphiti {
         }
     }
 
-    startExportPreviewLoop() {
+    requestExportPreviewUpdate() {
         if (this.exportPreviewFrameRequestId) return;
 
-        this.exportPreviewLastRenderTime = 0;
-        const renderLoop = (timestamp) => {
+        this.exportPreviewFrameRequestId = requestAnimationFrame(() => {
+            this.exportPreviewFrameRequestId = null;
             const overlay = document.getElementById('export-overlay');
-            if (!overlay || !overlay.classList.contains('show')) {
-                this.stopExportPreviewLoop();
-                return;
-            }
-
-            // Throttle preview updates to reduce CPU use while keeping it responsive.
-            if (!this.exportPreviewLastRenderTime || (timestamp - this.exportPreviewLastRenderTime) >= 66) {
-                this.exportPreviewLastRenderTime = timestamp;
-                this.updateExportFramePreview();
-            }
-
-            this.exportPreviewFrameRequestId = requestAnimationFrame(renderLoop);
-        };
-
-        this.exportPreviewFrameRequestId = requestAnimationFrame(renderLoop);
+            if (!overlay || !overlay.classList.contains('show')) return;
+            this.updateExportFramePreview();
+        });
     }
 
-    stopExportPreviewLoop() {
+    cancelExportPreviewUpdate() {
         if (this.exportPreviewFrameRequestId) {
             cancelAnimationFrame(this.exportPreviewFrameRequestId);
             this.exportPreviewFrameRequestId = null;
         }
-        this.exportPreviewLastRenderTime = 0;
 
         if (this.exportPreviewSvgUrl) {
             URL.revokeObjectURL(this.exportPreviewSvgUrl);
