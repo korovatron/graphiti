@@ -1968,6 +1968,109 @@
             color: #888;
             font-size: 13px;
         }
+
+        /* Export overlay */
+        .export-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.82);
+            backdrop-filter: blur(4px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10010;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .export-overlay.show {
+            display: flex;
+        }
+
+        .export-content {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            width: min(92vw, 460px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+        }
+
+        .export-content h2 {
+            margin: 0 0 16px 0;
+            font-size: 22px;
+            color: #fff;
+        }
+
+        .export-options {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .export-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .export-label {
+            color: #cfd8e3;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .export-radio-row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .export-radio-row label,
+        .export-checkbox-row label {
+            color: #dbe7f3;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .export-select {
+            background: var(--input-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .export-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .export-btn {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 14px;
+            cursor: pointer;
+            color: var(--text-primary);
+            background: #2a3f5a;
+        }
+
+        .export-btn.primary {
+            background: #4A90E2;
+            border-color: #4A90E2;
+            color: #fff;
+            font-weight: 600;
+        }
         
         /* Device-aware content visibility */
         .touch-only {
@@ -2792,7 +2895,7 @@
                                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
                             </svg>
                         </button>
-                        <button id="share-image-button" style="padding: 6px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Copy image to clipboard or share">
+                        <button id="share-image-button" style="padding: 6px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Export graph as SVG">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                                 <circle cx="12" cy="13" r="4"></circle>
@@ -2831,7 +2934,7 @@
     
     <!-- Math.js library for safe mathematical expression evaluation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
-    
+
     <!-- LZ-String library for URL compression -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
     
@@ -3029,6 +3132,66 @@
             <!-- Version Number -->
             <div class="shortcuts-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2); text-align: center;">
                 <span style="font-size: 0.85em; opacity: 0.7;">Version <span id="version-number"></span></span>
+            </div>
+        </div>
+    </div>
+
+    <div id="export-overlay" class="export-overlay">
+        <div class="export-content">
+            <h2>Export SVG</h2>
+            <div class="export-options">
+                <div class="export-group">
+                    <div class="export-label">Curve colours</div>
+                    <div class="export-radio-row">
+                        <label><input type="radio" name="export-color-mode" value="keep" checked> Keep colours</label>
+                        <label><input type="radio" name="export-color-mode" value="black"> All black</label>
+                    </div>
+                </div>
+
+                <div class="export-group">
+                    <label class="export-label" for="export-grid-mode">Gridlines</label>
+                    <select id="export-grid-mode" class="export-select">
+                        <option value="both" selected>Major and minor</option>
+                        <option value="major">Major only</option>
+                        <option value="minor">Minor only</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+
+                <div class="export-group">
+                    <label class="export-label" for="export-text-size">Text size</label>
+                    <select id="export-text-size" class="export-select">
+                        <option value="small" selected>Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                    </select>
+                </div>
+
+                <div class="export-group export-checkbox-row">
+                    <label><input id="export-include-axes" type="checkbox" checked> Include axes</label>
+                </div>
+
+                <div class="export-group export-checkbox-row">
+                    <label><input id="export-include-axis-labels" type="checkbox" checked> Include axis numbers/labels</label>
+                </div>
+
+                <div class="export-group export-checkbox-row">
+                    <label><input id="export-include-intersections" type="checkbox" checked> Include intersections</label>
+                </div>
+
+                <div class="export-group export-checkbox-row">
+                    <label><input id="export-include-intercepts" type="checkbox" checked> Include intercepts</label>
+                </div>
+
+                <div class="export-group export-checkbox-row">
+                    <label><input id="export-include-turning-points" type="checkbox" checked> Include turning points</label>
+                </div>
+
+            </div>
+
+            <div class="export-actions">
+                <button id="export-cancel-button" class="export-btn" type="button">Cancel</button>
+                <button id="export-svg-button" class="export-btn primary" type="button">Download SVG</button>
             </div>
         </div>
     </div>

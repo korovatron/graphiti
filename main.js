@@ -16152,16 +16152,11 @@ class Graphiti {
             });
         }
         
-        // Share Image Button (PNG to clipboard)
+        // Share Image Button (now opens SVG export options)
         const shareImageButton = document.getElementById('share-image-button');
         if (shareImageButton) {
-            shareImageButton.addEventListener('click', async () => {
-                try {
-                    await this.copyOrShareCanvas();
-                } catch (error) {
-                    console.error('Share image error:', error);
-                    alert('Share failed: ' + error.message);
-                }
+            shareImageButton.addEventListener('click', () => {
+                this.toggleExportOverlay(true);
             });
         }
         
@@ -16199,6 +16194,31 @@ class Graphiti {
                 if (e.target === shortcutsOverlay) {
                     this.toggleShortcutsOverlay();
                 }
+            });
+        }
+
+        // Export overlay controls
+        const exportOverlay = document.getElementById('export-overlay');
+        const exportCancelButton = document.getElementById('export-cancel-button');
+        const exportSvgButton = document.getElementById('export-svg-button');
+
+        if (exportOverlay) {
+            exportOverlay.addEventListener('click', (e) => {
+                if (e.target === exportOverlay) {
+                    this.toggleExportOverlay(false);
+                }
+            });
+        }
+
+        if (exportCancelButton) {
+            exportCancelButton.addEventListener('click', () => {
+                this.toggleExportOverlay(false);
+            });
+        }
+
+        if (exportSvgButton) {
+            exportSvgButton.addEventListener('click', () => {
+                this.exportCurrentViewAsSVG();
             });
         }
         
@@ -18434,7 +18454,13 @@ class Graphiti {
         
         switch(e.key.toLowerCase()) {
             case 'escape':
-                // Close shortcuts overlay if open, otherwise go to title screen
+                // Close export overlay first, then shortcuts overlay, otherwise go to title screen
+                const exportOverlay = document.getElementById('export-overlay');
+                if (exportOverlay && exportOverlay.classList.contains('show')) {
+                    this.toggleExportOverlay(false);
+                    break;
+                }
+
                 const shortcutsOverlay = document.getElementById('shortcuts-overlay');
                 if (shortcutsOverlay && shortcutsOverlay.classList.contains('show')) {
                     this.toggleShortcutsOverlay();
@@ -18499,6 +18525,1021 @@ class Graphiti {
                 versionElement.textContent = VERSION;
             }
         }
+    }
+
+    toggleExportOverlay(forceOpen = null) {
+        const overlay = document.getElementById('export-overlay');
+        if (!overlay) return;
+
+        const shouldOpen = forceOpen === null ? !overlay.classList.contains('show') : !!forceOpen;
+
+        if (shouldOpen) {
+            overlay.classList.add('show');
+        } else {
+            overlay.classList.remove('show');
+            if (document.activeElement) {
+                document.activeElement.blur();
+            }
+        }
+    }
+
+    getExportOptionsFromModal() {
+        const colorModeInput = document.querySelector('input[name="export-color-mode"]:checked');
+        const gridModeInput = document.getElementById('export-grid-mode');
+        const textSizeInput = document.getElementById('export-text-size');
+        const includeAxesInput = document.getElementById('export-include-axes');
+        const includeAxisLabelsInput = document.getElementById('export-include-axis-labels');
+        const includeIntersectionsInput = document.getElementById('export-include-intersections');
+        const includeInterceptsInput = document.getElementById('export-include-intercepts');
+        const includeTurningPointsInput = document.getElementById('export-include-turning-points');
+
+        return {
+            colorMode: colorModeInput ? colorModeInput.value : 'keep',
+            gridMode: gridModeInput ? gridModeInput.value : 'both',
+            textSize: textSizeInput ? textSizeInput.value : 'small',
+            includeAxes: includeAxesInput ? includeAxesInput.checked : true,
+            includeAxisLabels: includeAxisLabelsInput ? includeAxisLabelsInput.checked : true,
+            includeIntersections: includeIntersectionsInput ? includeIntersectionsInput.checked : true,
+            includeIntercepts: includeInterceptsInput ? includeInterceptsInput.checked : true,
+            includeTurningPoints: includeTurningPointsInput ? includeTurningPointsInput.checked : true
+        };
+    }
+
+    exportCurrentViewAsSVG() {
+        try {
+            const options = this.getExportOptionsFromModal();
+            const svgString = this.buildSVGExport(options);
+            if (!svgString) {
+                throw new Error('Could not generate SVG');
+            }
+
+            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'graphiti-graph.svg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            URL.revokeObjectURL(url);
+            this.toggleExportOverlay(false);
+
+            const button = document.getElementById('share-image-button');
+            if (button) {
+                const rect = button.getBoundingClientRect();
+                this.showShareTooltip('SVG downloaded', rect.left + rect.width / 2, rect.top);
+            }
+        } catch (error) {
+            console.error('SVG export failed:', error);
+            alert('SVG export failed: ' + error.message);
+        }
+    }
+
+    buildSVGExport(options) {
+        const width = Math.max(1, Math.round(this.viewport.width || this.canvas.width || 1));
+        const height = Math.max(1, Math.round(this.viewport.height || this.canvas.height || 1));
+
+        const escapeXml = (str) => String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+
+        const svgNum = (value) => {
+            if (!Number.isFinite(value)) return '0';
+            return (Math.round(value * 1000) / 1000).toString();
+        };
+
+        const bgColor = '#ffffff';
+        const minorGridColor = options.colorMode === 'black'
+            ? '#e1e1e1'
+            : 'rgba(0, 0, 0, 0.08)';
+        const majorGridColor = options.colorMode === 'black'
+            ? '#b8b8b8'
+            : 'rgba(0, 0, 0, 0.18)';
+        const axisColor = '#000000';
+
+        const curveColorFor = (func) => {
+            if (options.colorMode === 'black') return '#111111';
+            return func && func.color ? func.color : '#111111';
+        };
+
+        const lines = [];
+        const labelLines = [];
+
+        const labelFontSizeMap = {
+            small: 12,
+            medium: 16,
+            large: 20
+        };
+
+        const pushLine = (x1, y1, x2, y2, stroke, strokeWidth = 1, dash = null) => {
+            if (![x1, y1, x2, y2].every(Number.isFinite)) return;
+            let line = `<line x1="${svgNum(x1)}" y1="${svgNum(y1)}" x2="${svgNum(x2)}" y2="${svgNum(y2)}" stroke="${stroke}" stroke-width="${svgNum(strokeWidth)}" vector-effect="non-scaling-stroke"`;
+            if (dash) {
+                line += ` stroke-dasharray="${dash}"`;
+            }
+            line += ' />';
+            lines.push(line);
+        };
+
+        const pushPath = (d, stroke, strokeWidth = 2, fill = 'none', extra = '') => {
+            if (!d || !d.trim()) return;
+            lines.push(`<path d="${d}" stroke="${stroke}" stroke-width="${svgNum(strokeWidth)}" fill="${fill}" vector-effect="non-scaling-stroke" ${extra} />`);
+        };
+
+        const pushLabel = (x, y, text, color, size = 12, anchor = 'middle', baseline = 'middle') => {
+            if (!Number.isFinite(x) || !Number.isFinite(y) || text === null || text === undefined) return;
+            labelLines.push(`<text x="${svgNum(x)}" y="${svgNum(y)}" fill="${color}" font-family="Arial, sans-serif" font-size="${svgNum(size)}" text-anchor="${anchor}" dominant-baseline="${baseline}">${escapeXml(text)}</text>`);
+        };
+
+        const buildStandardPath = (points) => {
+            if (!Array.isArray(points) || points.length < 2) return '';
+
+            let d = '';
+            let prev = null;
+
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                    prev = null;
+                    continue;
+                }
+
+                const screen = this.worldToScreen(point.x, point.y);
+                if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                    prev = null;
+                    continue;
+                }
+
+                if (!prev || point.connected === false) {
+                    d += ` M ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                } else {
+                    d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                }
+
+                prev = screen;
+            }
+
+            return d.trim();
+        };
+
+        const buildImplicitSegmentPaths = (points) => {
+            if (!Array.isArray(points) || points.length < 2) return [];
+
+            const segments = [];
+            for (let i = 0; i < points.length - 1; i += 3) {
+                const startPoint = points[i];
+                const endPoint = points[i + 1];
+                if (!startPoint || !endPoint) continue;
+                if (!Number.isFinite(startPoint.x) || !Number.isFinite(startPoint.y)) continue;
+                if (!Number.isFinite(endPoint.x) || !Number.isFinite(endPoint.y)) continue;
+
+                const start = this.worldToScreen(startPoint.x, startPoint.y);
+                const end = this.worldToScreen(endPoint.x, endPoint.y);
+                if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(end.x) || !Number.isFinite(end.y)) {
+                    continue;
+                }
+
+                segments.push({
+                    start,
+                    end,
+                    used: false
+                });
+            }
+
+            if (segments.length === 0) return [];
+
+            const tolerance = 0.5;
+            const paths = [];
+
+            for (let i = 0; i < segments.length; i++) {
+                if (segments[i].used) continue;
+
+                const chain = [segments[i]];
+                segments[i].used = true;
+
+                let extended = true;
+                while (extended) {
+                    extended = false;
+                    const last = chain[chain.length - 1];
+
+                    for (let j = 0; j < segments.length; j++) {
+                        if (segments[j].used) continue;
+
+                        const dxForward = Math.abs(last.end.x - segments[j].start.x);
+                        const dyForward = Math.abs(last.end.y - segments[j].start.y);
+                        const dxReverse = Math.abs(last.end.x - segments[j].end.x);
+                        const dyReverse = Math.abs(last.end.y - segments[j].end.y);
+
+                        if (dxForward < tolerance && dyForward < tolerance) {
+                            chain.push(segments[j]);
+                            segments[j].used = true;
+                            extended = true;
+                            break;
+                        }
+
+                        if (dxReverse < tolerance && dyReverse < tolerance) {
+                            chain.push({ start: segments[j].end, end: segments[j].start, used: true });
+                            segments[j].used = true;
+                            extended = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (chain.length > 0) {
+                    let d = `M ${svgNum(chain[0].start.x)} ${svgNum(chain[0].start.y)}`;
+                    for (const seg of chain) {
+                        d += ` L ${svgNum(seg.end.x)} ${svgNum(seg.end.y)}`;
+                    }
+                    paths.push(d);
+                }
+            }
+
+            return paths;
+        };
+
+        const buildExplicitInequalityFillPath = (points, operator) => {
+            if (!Array.isArray(points) || points.length < 2) return '';
+
+            const finitePoints = [];
+            for (const p of points) {
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+                const s = this.worldToScreen(p.x, p.y);
+                if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
+                finitePoints.push(s);
+            }
+
+            if (finitePoints.length < 2) return '';
+
+            const first = finitePoints[0];
+            const last = finitePoints[finitePoints.length - 1];
+            const boundaryY = (operator === '>' || operator === '>=') ? 0 : height;
+
+            let d = `M ${svgNum(first.x)} ${svgNum(boundaryY)} L ${svgNum(first.x)} ${svgNum(first.y)}`;
+            for (let i = 1; i < finitePoints.length; i++) {
+                d += ` L ${svgNum(finitePoints[i].x)} ${svgNum(finitePoints[i].y)}`;
+            }
+            d += ` L ${svgNum(last.x)} ${svgNum(boundaryY)} Z`;
+
+            return d;
+        };
+
+        const buildPolarInsideFillPath = (points) => {
+            if (!Array.isArray(points) || points.length < 2) return '';
+
+            const origin = this.worldToScreen(0, 0);
+            if (!origin || !Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return '';
+
+            let d = `M ${svgNum(origin.x)} ${svgNum(origin.y)}`;
+            let pointCount = 0;
+            for (const p of points) {
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+                const s = this.worldToScreen(p.x, p.y);
+                if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
+                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
+                pointCount++;
+            }
+
+            if (pointCount < 2) return '';
+            d += ' Z';
+            return d;
+        };
+
+        const buildPolarOutsideFillPath = (points) => {
+            if (!Array.isArray(points) || points.length < 2) return '';
+
+            let d = `M 0 0 L ${svgNum(width)} 0 L ${svgNum(width)} ${svgNum(height)} L 0 ${svgNum(height)} Z`;
+            const finitePoints = [];
+
+            for (const p of points) {
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+                const s = this.worldToScreen(p.x, p.y);
+                if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
+                finitePoints.push(s);
+            }
+
+            if (finitePoints.length < 2) return '';
+
+            const first = finitePoints[finitePoints.length - 1];
+            d += ` M ${svgNum(first.x)} ${svgNum(first.y)}`;
+            for (let i = finitePoints.length - 2; i >= 0; i--) {
+                d += ` L ${svgNum(finitePoints[i].x)} ${svgNum(finitePoints[i].y)}`;
+            }
+            d += ' Z';
+            return d;
+        };
+
+        const buildImplicitInequalityFillPath = (func, operator) => {
+            if (!func || !func.gridData || !operator) return '';
+
+            const cellSatisfies = (value) => {
+                if (!Number.isFinite(value)) return false;
+                if (operator === '>') return value > 0;
+                if (operator === '>=') return value >= 0;
+                if (operator === '<') return value < 0;
+                if (operator === '<=') return value <= 0;
+                return false;
+            };
+
+            let d = '';
+
+            const appendRect = (worldX, worldY, worldWidth, worldHeight) => {
+                const topLeft = this.worldToScreen(worldX, worldY);
+                const bottomRight = this.worldToScreen(worldX + worldWidth, worldY + worldHeight);
+
+                if (!Number.isFinite(topLeft.x) || !Number.isFinite(topLeft.y) ||
+                    !Number.isFinite(bottomRight.x) || !Number.isFinite(bottomRight.y)) {
+                    return;
+                }
+
+                const xMin = Math.min(topLeft.x, bottomRight.x);
+                const xMax = Math.max(topLeft.x, bottomRight.x);
+                const yMin = Math.min(topLeft.y, bottomRight.y);
+                const yMax = Math.max(topLeft.y, bottomRight.y);
+
+                d += ` M ${svgNum(xMin)} ${svgNum(yMin)} L ${svgNum(xMax)} ${svgNum(yMin)} L ${svgNum(xMax)} ${svgNum(yMax)} L ${svgNum(xMin)} ${svgNum(yMax)} Z`;
+            };
+
+            if (Array.isArray(func.gridData.adaptiveCells)) {
+                for (const cell of func.gridData.adaptiveCells) {
+                    if (!cell) continue;
+                    const { worldX, worldY, worldWidth, worldHeight, value } = cell;
+                    if (!cellSatisfies(value)) continue;
+                    appendRect(worldX, worldY, worldWidth, worldHeight);
+                }
+            } else {
+                const { width: gridWidth, height: gridHeight, values, minX, minY, cellWidth, cellHeight } = func.gridData;
+                if (!values || !Number.isFinite(gridWidth) || !Number.isFinite(gridHeight)) {
+                    return '';
+                }
+
+                for (let i = 0; i < gridWidth - 1; i++) {
+                    for (let j = 0; j < gridHeight - 1; j++) {
+                        const value = values[i][j];
+                        if (!cellSatisfies(value)) continue;
+
+                        const worldX = minX + i * cellWidth;
+                        const worldY = minY + j * cellHeight;
+                        appendRect(worldX, worldY, cellWidth, cellHeight);
+                    }
+                }
+            }
+
+            return d.trim();
+        };
+
+        const buildMultiInequalityIntersectionDataUrl = () => {
+            const inequalities = [];
+
+            for (const func of this.getCurrentFunctions()) {
+                if (!func || !func.enabled || !func.expression) continue;
+                const functionType = this.detectFunctionType(func.expression);
+                if (functionType === 'explicit-inequality' || functionType === 'implicit-inequality' || functionType === 'polar-inequality') {
+                    inequalities.push({ func, functionType });
+                }
+            }
+
+            if (inequalities.length < 2) {
+                return null;
+            }
+
+            const allHaveData = inequalities.every(({ func, functionType }) => {
+                if (functionType === 'implicit-inequality') {
+                    return !!func.gridData;
+                }
+                return Array.isArray(func.points) && func.points.length > 1;
+            });
+
+            if (!allHaveData) {
+                return null;
+            }
+
+            const offscreenCanvases = [];
+
+            for (const { func, functionType } of inequalities) {
+                const offscreenCanvas = document.createElement('canvas');
+                offscreenCanvas.width = width;
+                offscreenCanvas.height = height;
+                const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+                offscreenCtx.clearRect(0, 0, width, height);
+                offscreenCtx.imageSmoothingEnabled = false;
+
+                if (functionType === 'explicit-inequality') {
+                    const inequality = this.parseInequality(func.expression);
+                    if (inequality && func.points && func.points.length >= 2) {
+                        if (inequality.operator === '>' || inequality.operator === '>=') {
+                            this.fillAboveCurveComposite(offscreenCtx, func.points, width, height, this.viewport.maxY);
+                        } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                            this.fillBelowCurveComposite(offscreenCtx, func.points, width, height, this.viewport.minY);
+                        }
+                    }
+                } else if (functionType === 'polar-inequality') {
+                    const inequality = this.parsePolarInequality(func.expression);
+                    if (inequality && func.points && func.points.length >= 2) {
+                        if (inequality.operator === '>' || inequality.operator === '>=') {
+                            this.fillOutsidePolarCurveComposite(offscreenCtx, func.points, width, height);
+                        } else if (inequality.operator === '<' || inequality.operator === '<=') {
+                            this.fillInsidePolarCurveComposite(offscreenCtx, func.points);
+                        }
+                    }
+                } else if (functionType === 'implicit-inequality') {
+                    this.drawImplicitInequalityComposite(offscreenCtx, func);
+                }
+
+                offscreenCanvases.push(offscreenCanvas);
+            }
+
+            if (offscreenCanvases.length < 2) {
+                return null;
+            }
+
+            const compositeCanvas = document.createElement('canvas');
+            compositeCanvas.width = width;
+            compositeCanvas.height = height;
+            const compositeCtx = compositeCanvas.getContext('2d', { alpha: true });
+            compositeCtx.imageSmoothingEnabled = false;
+
+            compositeCtx.drawImage(offscreenCanvases[0], 0, 0);
+            for (let i = 1; i < offscreenCanvases.length; i++) {
+                compositeCtx.globalCompositeOperation = 'destination-in';
+                compositeCtx.drawImage(offscreenCanvases[i], 0, 0);
+            }
+            compositeCtx.globalCompositeOperation = 'source-over';
+
+            const colorCanvas = document.createElement('canvas');
+            colorCanvas.width = width;
+            colorCanvas.height = height;
+            const colorCtx = colorCanvas.getContext('2d', { alpha: true });
+            const intersectionColor = options.colorMode === 'black' ? '#777777' : '#B400FF';
+
+            colorCtx.fillStyle = intersectionColor;
+            colorCtx.fillRect(0, 0, width, height);
+            colorCtx.globalCompositeOperation = 'destination-in';
+            colorCtx.drawImage(compositeCanvas, 0, 0);
+
+            return colorCanvas.toDataURL('image/png');
+        };
+
+        const drawCartesianGridSVG = () => {
+            const xMajorSpacing = this.getTrigAwareXLabelSpacing();
+            const yMajorSpacing = this.getTrigAwareYLabelSpacing();
+            const subdivisionsPerMajor = 5;
+            const xMinorSpacing = xMajorSpacing / subdivisionsPerMajor;
+            const yMinorSpacing = yMajorSpacing / subdivisionsPerMajor;
+
+            const xRange = this.viewport.maxX - this.viewport.minX;
+            const yRange = this.viewport.maxY - this.viewport.minY;
+            const pixelsPerUnitX = xRange !== 0 ? this.viewport.width / xRange : 0;
+            const pixelsPerUnitY = yRange !== 0 ? this.viewport.height / yRange : 0;
+            const drawXMinor = (xMinorSpacing * pixelsPerUnitX) >= 9;
+            const drawYMinor = (yMinorSpacing * pixelsPerUnitY) >= 9;
+
+            const isNearMajorMultiple = (value, majorSpacing) => {
+                if (!isFinite(value) || !isFinite(majorSpacing) || majorSpacing <= 0) return false;
+                const quotient = value / majorSpacing;
+                return Math.abs(quotient - Math.round(quotient)) < 1e-6;
+            };
+
+            const drawMinor = options.gridMode === 'both' || options.gridMode === 'minor';
+            const drawMajor = options.gridMode === 'both' || options.gridMode === 'major';
+
+            if (drawMinor) {
+                if (drawXMinor) {
+                    const startXMinor = Math.floor(this.viewport.minX / xMinorSpacing) * xMinorSpacing;
+                    for (let x = startXMinor; x <= this.viewport.maxX + xMinorSpacing * 0.5; x += xMinorSpacing) {
+                        if (isNearMajorMultiple(x, xMajorSpacing)) continue;
+                        const screenPos = this.worldToScreen(x, 0);
+                        pushLine(screenPos.x, 0, screenPos.x, height, minorGridColor, 1);
+                    }
+                }
+
+                if (drawYMinor) {
+                    const startYMinor = Math.floor(this.viewport.minY / yMinorSpacing) * yMinorSpacing;
+                    for (let y = startYMinor; y <= this.viewport.maxY + yMinorSpacing * 0.5; y += yMinorSpacing) {
+                        if (isNearMajorMultiple(y, yMajorSpacing)) continue;
+                        const screenPos = this.worldToScreen(0, y);
+                        pushLine(0, screenPos.y, width, screenPos.y, minorGridColor, 1);
+                    }
+                }
+            }
+
+            if (drawMajor) {
+                const startXMajor = Math.floor(this.viewport.minX / xMajorSpacing) * xMajorSpacing;
+                for (let x = startXMajor; x <= this.viewport.maxX + xMajorSpacing * 0.5; x += xMajorSpacing) {
+                    const screenPos = this.worldToScreen(x, 0);
+                    pushLine(screenPos.x, 0, screenPos.x, height, majorGridColor, 1.15);
+                }
+
+                const startYMajor = Math.floor(this.viewport.minY / yMajorSpacing) * yMajorSpacing;
+                for (let y = startYMajor; y <= this.viewport.maxY + yMajorSpacing * 0.5; y += yMajorSpacing) {
+                    const screenPos = this.worldToScreen(0, y);
+                    pushLine(0, screenPos.y, width, screenPos.y, majorGridColor, 1.15);
+                }
+            }
+        };
+
+        const drawPolarGridSVG = () => {
+            const center = this.worldToScreen(0, 0);
+            const maxViewportRadius = Math.max(
+                Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.minY * this.viewport.minY),
+                Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.minY * this.viewport.minY),
+                Math.sqrt(this.viewport.minX * this.viewport.minX + this.viewport.maxY * this.viewport.maxY),
+                Math.sqrt(this.viewport.maxX * this.viewport.maxX + this.viewport.maxY * this.viewport.maxY)
+            );
+            const fallbackRadius = Math.max(
+                Math.abs(this.viewport.maxX - this.viewport.minX) / 2,
+                Math.abs(this.viewport.maxY - this.viewport.minY) / 2
+            ) * 1.5;
+            const finalMaxRadius = Math.max(maxViewportRadius, fallbackRadius);
+
+            const majorRSpacing = this.calculateFreshPolarSpacing();
+            const minorRSpacing = majorRSpacing / 5;
+            const majorThetaSpacing = this.getPolarAngleSpacing();
+            const minorThetaSpacing = majorThetaSpacing / 5;
+            const maxScreenRadius = finalMaxRadius * this.viewport.scale;
+
+            const drawMinor = options.gridMode === 'both' || options.gridMode === 'minor';
+            const drawMajor = options.gridMode === 'both' || options.gridMode === 'major';
+
+            const isNearMajorMultiple = (value, majorSpacing) => {
+                if (!isFinite(value) || !isFinite(majorSpacing) || majorSpacing <= 0) return false;
+                const quotient = value / majorSpacing;
+                return Math.abs(quotient - Math.round(quotient)) < 1e-6;
+            };
+
+            if (drawMinor) {
+                for (let r = minorRSpacing; r <= finalMaxRadius; r += minorRSpacing) {
+                    if (isNearMajorMultiple(r, majorRSpacing)) continue;
+                    const screenRadius = r * this.viewport.scale;
+                    lines.push(`<circle cx="${svgNum(center.x)}" cy="${svgNum(center.y)}" r="${svgNum(screenRadius)}" fill="none" stroke="${minorGridColor}" stroke-width="1" vector-effect="non-scaling-stroke" />`);
+                }
+
+                for (let theta = 0; theta < 2 * Math.PI; theta += minorThetaSpacing) {
+                    if (isNearMajorMultiple(theta, majorThetaSpacing)) continue;
+                    const endX = center.x + maxScreenRadius * Math.cos(theta);
+                    const endY = center.y - maxScreenRadius * Math.sin(theta);
+                    pushLine(center.x, center.y, endX, endY, minorGridColor, 1);
+                }
+            }
+
+            if (drawMajor) {
+                for (let r = majorRSpacing; r <= finalMaxRadius; r += majorRSpacing) {
+                    const screenRadius = r * this.viewport.scale;
+                    lines.push(`<circle cx="${svgNum(center.x)}" cy="${svgNum(center.y)}" r="${svgNum(screenRadius)}" fill="none" stroke="${majorGridColor}" stroke-width="1.15" vector-effect="non-scaling-stroke" />`);
+                }
+
+                for (let theta = 0; theta < 2 * Math.PI; theta += majorThetaSpacing) {
+                    const endX = center.x + maxScreenRadius * Math.cos(theta);
+                    const endY = center.y - maxScreenRadius * Math.sin(theta);
+                    pushLine(center.x, center.y, endX, endY, majorGridColor, 1.15);
+                }
+            }
+        };
+
+        if (options.gridMode !== 'none') {
+            if (this.plotMode === 'polar') {
+                drawPolarGridSVG();
+            } else {
+                drawCartesianGridSVG();
+            }
+        }
+
+        if (options.includeAxes) {
+            if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
+                const y = this.worldToScreen(0, 0).y;
+                pushLine(0, y, width, y, axisColor, 2.2);
+            }
+            if (this.viewport.minX <= 0 && this.viewport.maxX >= 0) {
+                const x = this.worldToScreen(0, 0).x;
+                pushLine(x, 0, x, height, axisColor, 2.2);
+            }
+        }
+
+        if (options.includeAxisLabels) {
+            const labelColor = '#000000';
+            const labelFontSize = labelFontSizeMap[options.textSize] || labelFontSizeMap.small;
+
+            let xLabelSpacing;
+            let yLabelSpacing;
+            if (this.plotMode === 'polar') {
+                xLabelSpacing = this.getXLabelSpacing();
+                yLabelSpacing = this.getYLabelSpacing();
+            } else {
+                xLabelSpacing = this.getTrigAwareXLabelSpacing();
+                yLabelSpacing = this.getTrigAwareYLabelSpacing();
+            }
+
+            if (this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
+                const axisY = this.worldToScreen(0, 0).y;
+                const startX = Math.floor(this.viewport.minX / xLabelSpacing) * xLabelSpacing;
+
+                for (let x = startX; x <= this.viewport.maxX; x += xLabelSpacing) {
+                    if (Math.abs(x) < 0.0001) continue;
+                    const screenPos = this.worldToScreen(x, 0);
+                    if (screenPos.x < 20 || screenPos.x > width - 20) continue;
+                    if (axisY + 5 >= height - 15) continue;
+
+                    let label;
+                    if (this.plotMode === 'polar') {
+                        label = this.formatNumber(x);
+                    } else {
+                        const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+                        const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
+                        const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
+                        label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
+                    }
+
+                    pushLabel(screenPos.x, axisY + 7, label, labelColor, labelFontSize, 'middle', 'hanging');
+                }
+            }
+
+            if (this.viewport.minX <= 0 && this.viewport.maxX >= 0) {
+                const axisX = this.worldToScreen(0, 0).x;
+                const startY = Math.floor(this.viewport.minY / yLabelSpacing) * yLabelSpacing;
+
+                for (let y = startY; y <= this.viewport.maxY; y += yLabelSpacing) {
+                    if (Math.abs(y) < 0.0001) continue;
+                    const screenPos = this.worldToScreen(0, y);
+                    if (screenPos.y < 20 || screenPos.y > height - 20) continue;
+                    if (axisX - 5 <= 15) continue;
+
+                    let label;
+                    if (this.plotMode === 'polar') {
+                        label = this.formatNumber(y);
+                    } else {
+                        const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+                        const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
+                        const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
+                        label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
+                    }
+
+                    pushLabel(axisX - 7, screenPos.y, label, labelColor, labelFontSize, 'end', 'middle');
+                }
+            }
+
+            if (this.viewport.minX <= 0 && this.viewport.maxX >= 0 && this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
+                const origin = this.worldToScreen(0, 0);
+                pushLabel(origin.x - 7, origin.y + 7, '0', labelColor, labelFontSize, 'end', 'hanging');
+            }
+        }
+
+        const functions = this.getCurrentFunctions();
+        const inequalityCount = this.countEnabledInequalities();
+
+        if (inequalityCount >= 2) {
+            const intersectionDataUrl = buildMultiInequalityIntersectionDataUrl();
+            if (intersectionDataUrl) {
+                lines.push(`<image x="0" y="0" width="${width}" height="${height}" href="${intersectionDataUrl}" opacity="0.25" preserveAspectRatio="none" />`);
+            }
+        }
+
+        for (const func of functions) {
+            if (!func || !func.enabled || !func.expression) continue;
+
+            const functionType = this.detectFunctionType(func.expression);
+            const points = func.displayPoints || func.points;
+            const stroke = curveColorFor(func);
+            const lineWidth = this.getLineWidth(3);
+
+            const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality' || functionType === 'implicit-inequality';
+            let inequalityMeta = null;
+            if (functionType === 'polar-inequality') {
+                inequalityMeta = this.parsePolarInequality(func.expression);
+            } else if (isInequality) {
+                inequalityMeta = this.parseInequality(func.expression);
+            }
+
+            let isStrictInequality = !!(inequalityMeta && inequalityMeta.isStrict);
+            if (isInequality && !inequalityMeta) {
+                const clean = this.convertFromLatex(func.expression).trim();
+                // Fallback in case parser misses escaped comparison tokens.
+                if (/\\lt|\\gt|<|>/.test(clean) && !(/\\leq|\\geq|<=|>=|≤|≥/.test(clean))) {
+                    isStrictInequality = true;
+                }
+            }
+
+            if (isInequality && inequalityCount === 1) {
+                if (functionType === 'explicit-inequality') {
+                    const inequality = inequalityMeta;
+                    if (inequality) {
+                        const fillPath = buildExplicitInequalityFillPath(points, inequality.operator);
+                        if (fillPath) {
+                            pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18"');
+                        }
+                    }
+                } else if (functionType === 'polar-inequality') {
+                    const inequality = inequalityMeta;
+                    if (inequality) {
+                        if (inequality.operator === '<' || inequality.operator === '<=') {
+                            const fillPath = buildPolarInsideFillPath(points);
+                            if (fillPath) {
+                                pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18"');
+                            }
+                        } else if (inequality.operator === '>' || inequality.operator === '>=') {
+                            const fillPath = buildPolarOutsideFillPath(points);
+                            if (fillPath) {
+                                pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18" fill-rule="evenodd"');
+                            }
+                        }
+                    }
+                } else if (functionType === 'implicit-inequality') {
+                    const inequality = inequalityMeta;
+                    if (inequality && func.gridData) {
+                        const fillPath = buildImplicitInequalityFillPath(func, inequality.operator);
+                        if (fillPath) {
+                            pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18"');
+                        }
+                    }
+                }
+            }
+
+            if (Array.isArray(points) && points.length > 0) {
+                const hasConnectedPoints = points.some((p) => p && p.connected);
+
+                if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !hasConnectedPoints) {
+                    const pointStep = Math.max(1, Math.floor(points.length / 5000));
+                    for (let i = 0; i < points.length; i += pointStep) {
+                        const point = points[i];
+                        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+                        const s = this.worldToScreen(point.x, point.y);
+                        if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
+                        lines.push(`<circle cx="${svgNum(s.x)}" cy="${svgNum(s.y)}" r="1.25" fill="${stroke}" />`);
+                    }
+                } else {
+                    if ((functionType === 'implicit' || functionType === 'implicit-inequality') && hasConnectedPoints) {
+                        const chainedPaths = buildImplicitSegmentPaths(points);
+                        if (chainedPaths.length > 0) {
+                            let dash = '';
+                            if (isInequality && isStrictInequality) {
+                                dash = ` stroke-dasharray="${svgNum(this.getLineWidth(8))} ${svgNum(this.getLineWidth(4))}"`;
+                            }
+                            for (const pathData of chainedPaths) {
+                                pushPath(pathData, stroke, lineWidth, 'none', dash.trim());
+                            }
+                        }
+                    } else {
+                        const pathData = buildStandardPath(points);
+                        if (pathData) {
+                            let dash = '';
+                            if (isInequality && isStrictInequality) {
+                                dash = ` stroke-dasharray="${svgNum(this.getLineWidth(8))} ${svgNum(this.getLineWidth(4))}"`;
+                            }
+                            pushPath(pathData, stroke, lineWidth, 'none', dash.trim());
+                        }
+                    }
+                }
+            }
+
+            if (func.asymptoteData && this.plotMode === 'cartesian') {
+                const asymptoteDash = `${svgNum(this.getLineWidth(7))} ${svgNum(this.getLineWidth(4))}`;
+                const asymptoteWidth = this.getLineWidth(2);
+                const vertical = Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [];
+                const horizontal = Array.isArray(func.asymptoteData.horizontal) ? func.asymptoteData.horizontal : [];
+                const oblique = Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique : [];
+
+                for (const x of vertical) {
+                    if (!Number.isFinite(x)) continue;
+                    if (x < this.viewport.minX || x > this.viewport.maxX) continue;
+                    const screen = this.worldToScreen(x, 0);
+                    pushLine(screen.x, 0, screen.x, height, stroke, asymptoteWidth, asymptoteDash);
+                }
+
+                for (const y of horizontal) {
+                    if (!Number.isFinite(y)) continue;
+                    if (y < this.viewport.minY || y > this.viewport.maxY) continue;
+                    const screen = this.worldToScreen(0, y);
+                    pushLine(0, screen.y, width, screen.y, stroke, asymptoteWidth, asymptoteDash);
+                }
+
+                for (const line of oblique) {
+                    if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) continue;
+                    const yLeft = (line.m * this.viewport.minX) + line.b;
+                    const yRight = (line.m * this.viewport.maxX) + line.b;
+                    if (!Number.isFinite(yLeft) || !Number.isFinite(yRight)) continue;
+                    const left = this.worldToScreen(this.viewport.minX, yLeft);
+                    const right = this.worldToScreen(this.viewport.maxX, yRight);
+                    pushLine(left.x, left.y, right.x, right.y, stroke, asymptoteWidth, asymptoteDash);
+                }
+            }
+
+            if (Array.isArray(func.holes) && func.holes.length > 0) {
+                const holeRadius = Math.max(this.getLineWidth(4), 4);
+                const holeStrokeWidth = this.getLineWidth(3);
+                for (const hole of func.holes) {
+                    if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) continue;
+                    if (hole.x < this.viewport.minX || hole.x > this.viewport.maxX || hole.y < this.viewport.minY || hole.y > this.viewport.maxY) {
+                        continue;
+                    }
+                    const screen = this.worldToScreen(hole.x, hole.y);
+                    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;
+                    lines.push(`<circle cx="${svgNum(screen.x)}" cy="${svgNum(screen.y)}" r="${svgNum(holeRadius)}" fill="${bgColor}" stroke="${stroke}" stroke-width="${svgNum(holeStrokeWidth)}" vector-effect="non-scaling-stroke" />`);
+                }
+            }
+        }
+
+        const tangentNormalLineWidth = this.getLineWidth(3);
+        const tangentDash = '10 5';
+        const normalDash = '5 5';
+        const tangentNormalOriginRadius = 4.0;
+
+        const pushWorldLineWithClipping = (startX, startY, endX, endY, stroke, lineWidth, dash = null, opacity = 0.8) => {
+            if (![startX, startY, endX, endY].every(Number.isFinite)) return;
+            const start = this.worldToScreen(startX, startY);
+            const end = this.worldToScreen(endX, endY);
+            if (![start.x, start.y, end.x, end.y].every(Number.isFinite)) return;
+
+            let extra = ` stroke-linecap="butt" opacity="${svgNum(opacity)}"`;
+            if (dash) {
+                extra += ` stroke-dasharray="${dash}"`;
+            }
+
+            pushLine(start.x, start.y, end.x, end.y, stroke, lineWidth, null);
+
+            // Replace the last inserted line with one that includes extra attributes.
+            const idx = lines.length - 1;
+            if (idx >= 0) {
+                lines[idx] = lines[idx].replace(' />', `${extra} />`);
+            }
+        };
+
+        const getBadgeLineColor = (badge) => {
+            if (options.colorMode === 'black') {
+                return '#000000';
+            }
+            // Neon variants are intentionally normalised to the regular tangent/normal styling for export.
+            return this.getContrastingColor(badge.functionColor || '#000000');
+        };
+
+        const tangentNormalOrigins = [];
+
+        for (const badge of this.input.persistentBadges) {
+            if (!badge || (!badge.hasTangent && !badge.hasNormal) || badge.tangentSlope === null || badge.tangentSlope === undefined) {
+                continue;
+            }
+
+            const slope = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+            if (!Number.isFinite(slope)) {
+                continue;
+            }
+
+            const x0 = badge.worldX;
+            const y0 = badge.worldY;
+            const minX = this.viewport.minX;
+            const maxX = this.viewport.maxX;
+            const minY = this.viewport.minY;
+            const maxY = this.viewport.maxY;
+            const stroke = getBadgeLineColor(badge);
+
+            const originScreen = this.worldToScreen(x0, y0);
+            if (Number.isFinite(originScreen.x) && Number.isFinite(originScreen.y) &&
+                originScreen.x >= -20 && originScreen.x <= width + 20 &&
+                originScreen.y >= -20 && originScreen.y <= height + 20) {
+                tangentNormalOrigins.push(originScreen);
+            }
+
+            if (badge.hasTangent) {
+                const intercept = y0 - slope * x0;
+                let startX, startY, endX, endY;
+
+                if (Math.abs(slope) < 1e10) {
+                    const yAtMinX = slope * minX + intercept;
+                    const yAtMaxX = slope * maxX + intercept;
+
+                    startX = minX;
+                    startY = yAtMinX;
+                    endX = maxX;
+                    endY = yAtMaxX;
+
+                    if (startY < minY) {
+                        startX = (minY - intercept) / slope;
+                        startY = minY;
+                    } else if (startY > maxY) {
+                        startX = (maxY - intercept) / slope;
+                        startY = maxY;
+                    }
+
+                    if (endY < minY) {
+                        endX = (minY - intercept) / slope;
+                        endY = minY;
+                    } else if (endY > maxY) {
+                        endX = (maxY - intercept) / slope;
+                        endY = maxY;
+                    }
+                } else {
+                    startX = (minY - intercept) / slope;
+                    startY = minY;
+                    endX = (maxY - intercept) / slope;
+                    endY = maxY;
+                }
+
+                pushWorldLineWithClipping(startX, startY, endX, endY, stroke, tangentNormalLineWidth, tangentDash, 0.8);
+            }
+
+            if (badge.hasNormal) {
+                let normalSlope;
+                if (Math.abs(slope) < 1e-10) {
+                    normalSlope = Infinity;
+                } else if (Math.abs(slope) > 1e10) {
+                    normalSlope = 0;
+                } else {
+                    normalSlope = -1 / slope;
+                }
+
+                const intercept = y0 - normalSlope * x0;
+                let startX, startY, endX, endY;
+
+                if (normalSlope === Infinity || normalSlope === -Infinity) {
+                    startX = x0;
+                    startY = minY;
+                    endX = x0;
+                    endY = maxY;
+                } else if (Math.abs(normalSlope) < 1e10) {
+                    const yAtMinX = normalSlope * minX + intercept;
+                    const yAtMaxX = normalSlope * maxX + intercept;
+
+                    startX = minX;
+                    startY = yAtMinX;
+                    endX = maxX;
+                    endY = yAtMaxX;
+
+                    if (startY < minY) {
+                        startX = (minY - intercept) / normalSlope;
+                        startY = minY;
+                    } else if (startY > maxY) {
+                        startX = (maxY - intercept) / normalSlope;
+                        startY = maxY;
+                    }
+
+                    if (endY < minY) {
+                        endX = (minY - intercept) / normalSlope;
+                        endY = minY;
+                    } else if (endY > maxY) {
+                        endX = (maxY - intercept) / normalSlope;
+                        endY = maxY;
+                    }
+                } else {
+                    startX = (minY - intercept) / normalSlope;
+                    startY = minY;
+                    endX = (maxY - intercept) / normalSlope;
+                    endY = maxY;
+                }
+
+                pushWorldLineWithClipping(startX, startY, endX, endY, stroke, tangentNormalLineWidth, normalDash, 0.8);
+            }
+        }
+
+        for (const origin of tangentNormalOrigins) {
+            lines.push(`<circle cx="${svgNum(origin.x)}" cy="${svgNum(origin.y)}" r="${svgNum(tangentNormalOriginRadius)}" fill="#000000" />`);
+        }
+
+        const markerColor = '#000000';
+
+        const drawMarkerSet = (items) => {
+            if (!Array.isArray(items) || items.length === 0) return;
+
+            for (const item of items) {
+                if (!item || !Number.isFinite(item.x) || !Number.isFinite(item.y)) continue;
+                const s = this.worldToScreen(item.x, item.y);
+                if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
+                if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
+                lines.push(`<circle cx="${svgNum(s.x)}" cy="${svgNum(s.y)}" r="4.0" fill="${markerColor}" />`);
+            }
+        };
+
+        if (options.includeIntersections && this.showIntersections) {
+            drawMarkerSet(this.intersections);
+        }
+
+        if (options.includeIntercepts && this.showIntercepts) {
+            drawMarkerSet(this.intercepts);
+        }
+
+        if (options.includeTurningPoints && this.showTurningPoints) {
+            drawMarkerSet(this.turningPoints);
+        }
+
+        const svg = [
+            `<?xml version="1.0" encoding="UTF-8"?>`,
+            `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+            `  <defs>`,
+            `    <clipPath id="plot-clip">`,
+            `      <rect x="0" y="0" width="${width}" height="${height}" />`,
+            `    </clipPath>`,
+            `  </defs>`,
+            `  <rect x="0" y="0" width="${width}" height="${height}" fill="${bgColor}" />`,
+            `  <g clip-path="url(#plot-clip)">`,
+            ...lines.map((line) => `    ${line}`),
+            `  </g>`,
+            ...labelLines.map((line) => `  ${line}`),
+            `</svg>`
+        ];
+
+        return svg.join('\n');
     }
     
     async copyOrShareCanvas() {
