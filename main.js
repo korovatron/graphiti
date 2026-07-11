@@ -16201,6 +16201,7 @@ class Graphiti {
         const exportOverlay = document.getElementById('export-overlay');
         const exportCancelButton = document.getElementById('export-cancel-button');
         const exportSvgButton = document.getElementById('export-svg-button');
+        const exportFrameShape = document.getElementById('export-frame-shape');
 
         if (exportOverlay) {
             exportOverlay.addEventListener('click', (e) => {
@@ -16219,6 +16220,12 @@ class Graphiti {
         if (exportSvgButton) {
             exportSvgButton.addEventListener('click', () => {
                 this.exportCurrentViewAsSVG();
+            });
+        }
+
+        if (exportFrameShape) {
+            exportFrameShape.addEventListener('change', () => {
+                this.updateExportFramePreview();
             });
         }
         
@@ -18535,11 +18542,176 @@ class Graphiti {
 
         if (shouldOpen) {
             overlay.classList.add('show');
+            requestAnimationFrame(() => this.updateExportFramePreview());
+            this.startExportPreviewLoop();
         } else {
             overlay.classList.remove('show');
+            this.stopExportPreviewLoop();
             if (document.activeElement) {
                 document.activeElement.blur();
             }
+        }
+    }
+
+    startExportPreviewLoop() {
+        if (this.exportPreviewFrameRequestId) return;
+
+        this.exportPreviewLastRenderTime = 0;
+        const renderLoop = (timestamp) => {
+            const overlay = document.getElementById('export-overlay');
+            if (!overlay || !overlay.classList.contains('show')) {
+                this.stopExportPreviewLoop();
+                return;
+            }
+
+            // Throttle preview updates to reduce CPU use while keeping it responsive.
+            if (!this.exportPreviewLastRenderTime || (timestamp - this.exportPreviewLastRenderTime) >= 66) {
+                this.exportPreviewLastRenderTime = timestamp;
+                this.updateExportFramePreview();
+            }
+
+            this.exportPreviewFrameRequestId = requestAnimationFrame(renderLoop);
+        };
+
+        this.exportPreviewFrameRequestId = requestAnimationFrame(renderLoop);
+    }
+
+    stopExportPreviewLoop() {
+        if (this.exportPreviewFrameRequestId) {
+            cancelAnimationFrame(this.exportPreviewFrameRequestId);
+            this.exportPreviewFrameRequestId = null;
+        }
+        this.exportPreviewLastRenderTime = 0;
+    }
+
+    getExportFrameRect(sourceWidth, sourceHeight, frameShape = 'original') {
+        const width = Math.max(1, Math.round(sourceWidth || 1));
+        const height = Math.max(1, Math.round(sourceHeight || 1));
+
+        let targetRatio = null;
+        if (frameShape === '1:1') targetRatio = 1;
+        if (frameShape === '4:3') targetRatio = 4 / 3;
+        if (frameShape === '16:9') targetRatio = 16 / 9;
+
+        if (!targetRatio) {
+            return {
+                x: 0,
+                y: 0,
+                width,
+                height,
+                ratioLabel: 'Original'
+            };
+        }
+
+        const sourceRatio = width / height;
+        let cropWidth;
+        let cropHeight;
+
+        if (sourceRatio > targetRatio) {
+            cropHeight = height;
+            cropWidth = Math.round(height * targetRatio);
+        } else {
+            cropWidth = width;
+            cropHeight = Math.round(width / targetRatio);
+        }
+
+        cropWidth = Math.max(1, Math.min(width, cropWidth));
+        cropHeight = Math.max(1, Math.min(height, cropHeight));
+
+        const x = Math.round((width - cropWidth) / 2);
+        const y = Math.round((height - cropHeight) / 2);
+
+        return {
+            x,
+            y,
+            width: cropWidth,
+            height: cropHeight,
+            ratioLabel: frameShape
+        };
+    }
+
+    updateExportFramePreview() {
+        const previewStage = document.getElementById('export-preview-stage');
+        const previewCanvas = document.getElementById('export-preview-canvas');
+        const previewFrame = document.getElementById('export-preview-frame');
+        const previewCaption = document.getElementById('export-preview-caption');
+        const shapeInput = document.getElementById('export-frame-shape');
+
+        if (!previewStage || !previewCanvas || !previewFrame || !shapeInput) return;
+
+        const sourceWidth = Math.max(1, Math.round(this.viewport.width || this.canvas.width || 1));
+        const sourceHeight = Math.max(1, Math.round(this.viewport.height || this.canvas.height || 1));
+        const frame = this.getExportFrameRect(sourceWidth, sourceHeight, shapeInput.value || 'original');
+
+        const stageBounds = previewStage.getBoundingClientRect();
+        const stageWidth = Math.max(1, stageBounds.width);
+        const maxPreviewHeight = 150;
+        const sourceRatio = sourceWidth / sourceHeight;
+
+        let previewWidth = stageWidth;
+        let previewHeight = previewWidth / sourceRatio;
+        if (previewHeight > maxPreviewHeight) {
+            previewHeight = maxPreviewHeight;
+            previewWidth = previewHeight * sourceRatio;
+        }
+
+        previewCanvas.style.width = `${previewWidth}px`;
+        previewCanvas.style.height = `${previewHeight}px`;
+
+        const canvasBounds = previewCanvas.getBoundingClientRect();
+        const previewCanvasWidth = Math.max(1, canvasBounds.width);
+        const previewCanvasHeight = Math.max(1, canvasBounds.height);
+        const canvasOffsetX = canvasBounds.left - stageBounds.left;
+        const canvasOffsetY = canvasBounds.top - stageBounds.top;
+
+        const dpr = window.devicePixelRatio || 1;
+        const pixelWidth = Math.max(1, Math.round(previewCanvasWidth * dpr));
+        const pixelHeight = Math.max(1, Math.round(previewCanvasHeight * dpr));
+        if (previewCanvas.width !== pixelWidth || previewCanvas.height !== pixelHeight) {
+            previewCanvas.width = pixelWidth;
+            previewCanvas.height = pixelHeight;
+        }
+
+        const ctx = previewCanvas.getContext('2d');
+        if (ctx) {
+            ctx.save();
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, previewCanvasWidth, previewCanvasHeight);
+
+            // Draw live graph scene snapshot into preview canvas.
+            ctx.drawImage(this.canvas, 0, 0, sourceWidth, sourceHeight, 0, 0, previewCanvasWidth, previewCanvasHeight);
+
+            // Dim area outside selected crop frame.
+            const scaleXForMask = previewCanvasWidth / sourceWidth;
+            const scaleYForMask = previewCanvasHeight / sourceHeight;
+            const frameX = frame.x * scaleXForMask;
+            const frameY = frame.y * scaleYForMask;
+            const frameW = frame.width * scaleXForMask;
+            const frameH = frame.height * scaleYForMask;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+            ctx.beginPath();
+            ctx.rect(0, 0, previewCanvasWidth, previewCanvasHeight);
+            ctx.rect(frameX, frameY, frameW, frameH);
+            ctx.fill('evenodd');
+
+            // Highlight crop frame edge directly in the canvas too.
+            ctx.strokeStyle = '#4A90E2';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(frameX, frameY, frameW, frameH);
+            ctx.restore();
+        }
+
+        const scaleX = previewCanvasWidth / sourceWidth;
+        const scaleY = previewCanvasHeight / sourceHeight;
+
+        previewFrame.style.left = `${canvasOffsetX + frame.x * scaleX}px`;
+        previewFrame.style.top = `${canvasOffsetY + frame.y * scaleY}px`;
+        previewFrame.style.width = `${frame.width * scaleX}px`;
+        previewFrame.style.height = `${frame.height * scaleY}px`;
+
+        if (previewCaption) {
+            previewCaption.textContent = `${frame.ratioLabel} - centred crop (${frame.width}x${frame.height})`;
         }
     }
 
@@ -18547,6 +18719,7 @@ class Graphiti {
         const colorModeInput = document.querySelector('input[name="export-color-mode"]:checked');
         const gridModeInput = document.getElementById('export-grid-mode');
         const textSizeInput = document.getElementById('export-text-size');
+        const frameShapeInput = document.getElementById('export-frame-shape');
         const includeAxesInput = document.getElementById('export-include-axes');
         const includeAxisLabelsInput = document.getElementById('export-include-axis-labels');
         const includeIntersectionsInput = document.getElementById('export-include-intersections');
@@ -18557,6 +18730,7 @@ class Graphiti {
             colorMode: colorModeInput ? colorModeInput.value : 'keep',
             gridMode: gridModeInput ? gridModeInput.value : 'both',
             textSize: textSizeInput ? textSizeInput.value : 'small',
+            frameShape: frameShapeInput ? frameShapeInput.value : 'original',
             includeAxes: includeAxesInput ? includeAxesInput.checked : true,
             includeAxisLabels: includeAxisLabelsInput ? includeAxisLabelsInput.checked : true,
             includeIntersections: includeIntersectionsInput ? includeIntersectionsInput.checked : true,
@@ -18600,6 +18774,7 @@ class Graphiti {
     buildSVGExport(options) {
         const width = Math.max(1, Math.round(this.viewport.width || this.canvas.width || 1));
         const height = Math.max(1, Math.round(this.viewport.height || this.canvas.height || 1));
+        const exportFrame = this.getExportFrameRect(width, height, options.frameShape || 'original');
 
         const escapeXml = (str) => String(str)
             .replace(/&/g, '&amp;')
@@ -20126,10 +20301,10 @@ class Graphiti {
 
         const svg = [
             `<?xml version="1.0" encoding="UTF-8"?>`,
-            `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+            `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${exportFrame.width}" height="${exportFrame.height}" viewBox="${svgNum(exportFrame.x)} ${svgNum(exportFrame.y)} ${svgNum(exportFrame.width)} ${svgNum(exportFrame.height)}">`,
             `  <defs>`,
             `    <clipPath id="plot-clip">`,
-            `      <rect x="0" y="0" width="${width}" height="${height}" />`,
+            `      <rect x="${svgNum(exportFrame.x)}" y="${svgNum(exportFrame.y)}" width="${svgNum(exportFrame.width)}" height="${svgNum(exportFrame.height)}" />`,
             `    </clipPath>`,
             `  </defs>`,
             `  <rect x="0" y="0" width="${width}" height="${height}" fill="${bgColor}" />`,

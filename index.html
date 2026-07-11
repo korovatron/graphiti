@@ -2055,6 +2055,56 @@
             gap: 10px;
         }
 
+        .export-preview-wrap {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 10px;
+        }
+
+        .export-preview-stage {
+            position: relative;
+            width: 100%;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .export-preview-canvas {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: block;
+            border-radius: 8px;
+            background:
+                linear-gradient(0deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+                rgba(0, 0, 0, 0.2);
+            background-size: 12px 12px;
+            overflow: hidden;
+        }
+
+        .export-preview-frame {
+            position: absolute;
+            border: 2px solid #4A90E2;
+            background: rgba(74, 144, 226, 0.18);
+            box-sizing: border-box;
+            border-radius: 2px;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+
+        .export-preview-caption {
+            margin-top: 8px;
+            color: #b7c5d5;
+            font-size: 12px;
+            text-align: center;
+        }
+
         .export-btn {
             border: 1px solid var(--border-color);
             border-radius: 8px;
@@ -3140,6 +3190,27 @@
         <div class="export-content">
             <h2>Export SVG</h2>
             <div class="export-options">
+                <div class="export-group">
+                    <label class="export-label" for="export-frame-shape">Export frame</label>
+                    <select id="export-frame-shape" class="export-select">
+                        <option value="original" selected>Original (current viewport)</option>
+                        <option value="4:3">4:3</option>
+                        <option value="16:9">16:9</option>
+                        <option value="1:1">Square (1:1)</option>
+                    </select>
+                </div>
+
+                <div class="export-group">
+                    <div class="export-label">Crop preview</div>
+                    <div class="export-preview-wrap">
+                        <div id="export-preview-stage" class="export-preview-stage">
+                            <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
+                            <div id="export-preview-frame" class="export-preview-frame"></div>
+                        </div>
+                        <div id="export-preview-caption" class="export-preview-caption">Largest centred crop</div>
+                    </div>
+                </div>
+
                 <div class="export-group">
                     <div class="export-label">Curve colours</div>
                     <div class="export-radio-row">
