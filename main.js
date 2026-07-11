@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.98';
+const VERSION = '1.1.99';
 
 class Graphiti {
     constructor() {
@@ -16180,9 +16180,16 @@ class Graphiti {
                 shareButton.setAttribute('aria-expanded', 'true');
             };
 
-            this.closeShareMenu = closeShareMenu;
+            const isShareMenuTarget = (target) => {
+                return shareButton.contains(target) || shareMenu.contains(target);
+            };
 
-            shareButton.addEventListener('click', (event) => {
+            const toggleShareMenu = (event) => {
+                // iOS Safari can emit touch and click for the same tap.
+                // Prevent the synthetic click so the menu does not immediately re-toggle.
+                if (event.type === 'touchend') {
+                    event.preventDefault();
+                }
                 event.stopPropagation();
                 const isOpen = shareMenu.style.display === 'block';
                 if (isOpen) {
@@ -16190,14 +16197,37 @@ class Graphiti {
                 } else {
                     openShareMenu();
                 }
-            });
+            };
+
+            this.closeShareMenu = closeShareMenu;
+
+            shareButton.addEventListener('click', toggleShareMenu);
+            shareButton.addEventListener('touchend', toggleShareMenu, { passive: false });
 
             shareMenu.addEventListener('click', (event) => {
                 event.stopPropagation();
             });
 
-            document.addEventListener('click', () => {
-                closeShareMenu();
+            shareMenu.addEventListener('touchend', (event) => {
+                event.stopPropagation();
+            }, { passive: true });
+
+            document.addEventListener('click', (event) => {
+                if (!isShareMenuTarget(event.target)) {
+                    closeShareMenu();
+                }
+            });
+
+            document.addEventListener('touchend', (event) => {
+                if (!isShareMenuTarget(event.target)) {
+                    closeShareMenu();
+                }
+            }, { passive: true });
+
+            document.addEventListener('pointerdown', (event) => {
+                if (!isShareMenuTarget(event.target)) {
+                    closeShareMenu();
+                }
             });
 
             document.addEventListener('keydown', (event) => {
