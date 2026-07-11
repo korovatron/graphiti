@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.94';
+const VERSION = '1.1.95';
 
 class Graphiti {
     constructor() {
@@ -19052,13 +19052,16 @@ class Graphiti {
             large: 20,
             xl: 24,
             xxl: 28,
-            xxxl: 32
+            xxxl: 32,
+            xxxxl: 36
         };
 
         const strokeWidthScaleMap = {
             small: 1,
-            medium: 1.5,
-            large: 1.9
+            medium: 2.0,
+            large: 3.0,
+            xl: 4.5,
+            xxl: 6.0
         };
         const strokeWidthScale = strokeWidthScaleMap[options.strokeWidth] || strokeWidthScaleMap.small;
         const getSvgLineWidth = (baseWidth) => baseWidth * strokeWidthScale;
