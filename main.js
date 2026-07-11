@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.104';
+const VERSION = '1.1.105';
 
 class Graphiti {
     constructor() {
@@ -4126,7 +4126,10 @@ class Graphiti {
             const baseAsymptoteSpacing = this.angleMode === 'degrees' ? 180 : Math.PI;
 
             let frequencyMultiplier = 1;
-            const multiplierMatch = expressionForSampling.match(/(?:tan|cot|sec|csc)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/);
+            const multiplierMatch = expressionForSampling.match(/(?:tan|cot|sec|csc)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/)
+                || (hasReciprocalPeriodicTrigWithX
+                    ? expressionForSampling.match(/\/\s*\(?\s*(?:sin|cos|tan)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/)
+                    : null);
             if (multiplierMatch) {
                 const parsed = parseFloat(multiplierMatch[1]);
                 if (isFinite(parsed) && parsed > 0) {
@@ -4134,7 +4137,7 @@ class Graphiti {
                 }
             }
 
-            const asymptoteSpacing = hasAsymptoteTrigWithX ? (baseAsymptoteSpacing / frequencyMultiplier) : null;
+            const asymptoteSpacing = (hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX) ? (baseAsymptoteSpacing / frequencyMultiplier) : null;
             
             // Add buffer zone for smooth panning - calculate extra points beyond visible viewport
             // Buffer is 50% of viewport width on each side, giving smooth panning until you exceed it
@@ -4148,6 +4151,11 @@ class Graphiti {
                 ? algebraicAsymptotes.vertical
                 : numericVerticalAsymptotes;
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
+            const isPeriodicVerticalAsymptoteFamily = (hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX) && isFinite(asymptoteSpacing) && asymptoteSpacing > 0;
+            const asymptotePixelSpacing = isPeriodicVerticalAsymptoteFamily
+                ? Math.abs((asymptoteSpacing / viewportWidth) * this.viewport.width)
+                : Infinity;
+            const hasDensePeriodicAsymptotes = isPeriodicVerticalAsymptoteFamily && asymptotePixelSpacing < 8;
             // Periodic trig families with vertical poles do not have horizontal asymptotes.
             // Skip numeric fitting to avoid zoom-dependent false positives (for example tan(x) -> y=+-2/15).
             const numericHorizontalAsymptotes = shouldSkipNumericHorizontalAsymptotes
@@ -4203,18 +4211,20 @@ class Graphiti {
             const bufferedRange = bufferedMaxX - bufferedMinX;
             let maxPlotResolution = adaptiveResolution; // Dynamic resolution based on complexity
 
-            if (hasAsymptoteTrigWithX && isFinite(asymptoteSpacing) && asymptoteSpacing > 0) {
+            if (isPeriodicVerticalAsymptoteFamily) {
                 // Keep enough points per asymptote interval so tan/cot/sec/csc stay stable when zoomed far out.
                 const asymptoteIntervals = bufferedRange / asymptoteSpacing;
-                const extremeZoomFactor = Math.max(1, Math.min(8, Math.ceil(viewportWidth / 250)));
-                const baseSamplesPerInterval = functionCount > 6 ? 18 : 26;
+                const extremeZoomFactor = hasDensePeriodicAsymptotes ? 1 : Math.max(1, Math.min(8, Math.ceil(viewportWidth / 250)));
+                const baseSamplesPerInterval = hasDensePeriodicAsymptotes ? (functionCount > 6 ? 4 : 6) : (functionCount > 6 ? 18 : 26);
                 const samplesPerInterval = baseSamplesPerInterval * extremeZoomFactor;
                 const asymptoteResolution = Math.ceil(asymptoteIntervals * samplesPerInterval);
-                const asymptoteResolutionCap = functionCount > 10 ? 90000 : functionCount > 6 ? 140000 : 280000;
+                const asymptoteResolutionCap = hasDensePeriodicAsymptotes
+                    ? (functionCount > 10 ? 16000 : functionCount > 6 ? 26000 : 42000)
+                    : (functionCount > 10 ? 90000 : functionCount > 6 ? 140000 : 280000);
                 maxPlotResolution = Math.min(Math.max(adaptiveResolution, asymptoteResolution), asymptoteResolutionCap);
             }
 
-            if (hasExplicitVerticalAsymptotes) {
+            if (hasExplicitVerticalAsymptotes && !hasDensePeriodicAsymptotes) {
                 // Rational-style asymptotes can still alias into diagonals at wide zoom.
                 // Increase baseline sampling density when explicit asymptotes are detected.
                 const asymptoteZoomFactor = Math.max(1, Math.min(6, Math.ceil(viewportWidth / 200)));
@@ -4447,10 +4457,20 @@ class Graphiti {
                 return null;
             };
 
+            let verticalAsymptotesForSegmentChecks = explicitVerticalAsymptotes;
             if (hasExplicitVerticalAsymptotes) {
-                const sortedAsymptotes = explicitVerticalAsymptotes
+                let sortedAsymptotes = explicitVerticalAsymptotes
                     .filter(x => isFinite(x) && x > bufferedMinX && x < bufferedMaxX)
                     .sort((a, b) => a - b);
+
+                if (hasDensePeriodicAsymptotes && sortedAsymptotes.length > 0) {
+                    const maxSamplingAsymptotes = Math.max(40, Math.min(220, Math.floor(this.viewport.width / 8)));
+                    if (sortedAsymptotes.length > maxSamplingAsymptotes) {
+                        const stride = Math.ceil(sortedAsymptotes.length / maxSamplingAsymptotes);
+                        sortedAsymptotes = sortedAsymptotes.filter((_, index) => index % stride === 0);
+                    }
+                    verticalAsymptotesForSegmentChecks = sortedAsymptotes;
+                }
 
                 // Keep a tiny exclusion band around the asymptote to avoid evaluating exactly at poles,
                 // but sample close enough to let branches naturally run off-screen.
@@ -4522,7 +4542,9 @@ class Graphiti {
             const viewportMagnitude = Math.max(Math.abs(this.viewport.minY), Math.abs(this.viewport.maxY), 1);
             const outsideMargin = viewportHeight * 0.1;
             let segmentSampleCount = 14;
-            if (hasAsymptoteTrigWithX && isFinite(asymptoteSpacing) && asymptoteSpacing > 0) {
+            if (hasDensePeriodicAsymptotes) {
+                segmentSampleCount = 3;
+            } else if (isPeriodicVerticalAsymptoteFamily) {
                 const relativeStep = Math.abs(step) / asymptoteSpacing;
                 const extremeZoomFactor = Math.max(1, Math.min(8, Math.ceil(viewportWidth / 250)));
                 segmentSampleCount = Math.max(14, Math.min(160, Math.ceil(relativeStep * 40 * extremeZoomFactor)));
@@ -4683,9 +4705,9 @@ class Graphiti {
                     const segmentMaxX = Math.max(prevPoint.x, point.x);
 
                     let alignedAsymptoteX = null;
-                    if (explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0) {
+                    if (verticalAsymptotesForSegmentChecks && verticalAsymptotesForSegmentChecks.length > 0) {
                         const midpointX = (prevPoint.x + point.x) / 2;
-                        for (const asymptoteX of explicitVerticalAsymptotes) {
+                        for (const asymptoteX of verticalAsymptotesForSegmentChecks) {
                             if (asymptoteX > segmentMinX && asymptoteX < segmentMaxX) {
                                 if (alignedAsymptoteX === null || Math.abs(asymptoteX - midpointX) < Math.abs(alignedAsymptoteX - midpointX)) {
                                     alignedAsymptoteX = asymptoteX;
@@ -9259,6 +9281,119 @@ class Graphiti {
             
             // Find all (x ± constant) factors in denominators
             for (const denom of denominators) {
+                if (Number.isFinite(rangeMinX) && Number.isFinite(rangeMaxX) && rangeMaxX > rangeMinX) {
+                    const extractReciprocalTrigArguments = (expr) => {
+                        const matches = [];
+                        const trigNames = ['sin', 'cos', 'tan'];
+
+                        for (let i = 0; i < expr.length; i++) {
+                            const fn = trigNames.find(name => expr.slice(i, i + name.length) === name);
+                            if (!fn) continue;
+
+                            const before = i === 0 ? '' : expr[i - 1];
+                            if (/[a-z0-9_]/.test(before)) continue;
+                            if (i >= 3 && expr.slice(i - 3, i) === 'arc') continue;
+
+                            let j = i + fn.length;
+                            while (j < expr.length && /\s/.test(expr[j])) j++;
+                            if (j < expr.length && expr[j] === '*') {
+                                j++;
+                                while (j < expr.length && /\s/.test(expr[j])) j++;
+                            }
+                            if (j >= expr.length || expr[j] !== '(') continue;
+
+                            const start = j + 1;
+                            let depth = 0;
+                            let end = -1;
+
+                            for (let k = start; k < expr.length; k++) {
+                                const ch = expr[k];
+                                if (ch === '(') {
+                                    depth++;
+                                } else if (ch === ')') {
+                                    if (depth === 0) {
+                                        end = k;
+                                        break;
+                                    }
+                                    depth--;
+                                }
+                            }
+
+                            if (end === -1) continue;
+
+                            const argument = expr.substring(start, end).trim();
+                            if (argument) {
+                                matches.push({ fn, argument });
+                            }
+
+                            i = end;
+                        }
+
+                        return matches;
+                    };
+
+                    const reciprocalTrigArguments = extractReciprocalTrigArguments(denom);
+                    const period = this.angleMode === 'degrees' ? 180 : Math.PI;
+                    const cosPhase = this.angleMode === 'degrees' ? 90 : (Math.PI / 2);
+
+                    for (const trigCall of reciprocalTrigArguments) {
+                        try {
+                            const compiledArg = this.getCompiledExpression(trigCall.argument);
+                            const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+
+                            scope.x = 0;
+                            const v0 = compiledArg.evaluate(scope);
+                            scope.x = 1;
+                            const v1 = compiledArg.evaluate(scope);
+                            scope.x = 2;
+                            const v2 = compiledArg.evaluate(scope);
+
+                            if (!Number.isFinite(v0) || !Number.isFinite(v1) || !Number.isFinite(v2)) {
+                                continue;
+                            }
+
+                            const b = v0;
+                            const a = v1 - v0;
+                            if (Math.abs(a) < 1e-12) {
+                                continue;
+                            }
+
+                            const expectedV2 = 2 * a + b;
+                            const linearResidual = Math.abs(v2 - expectedV2);
+                            const linearScale = Math.max(1, Math.abs(v0), Math.abs(v1), Math.abs(v2));
+                            if (linearResidual > linearScale * 1e-8) {
+                                continue;
+                            }
+
+                            const phase = trigCall.fn === 'cos' ? cosPhase : 0;
+                            const argAtMin = a * rangeMinX + b;
+                            const argAtMax = a * rangeMaxX + b;
+                            const argLo = Math.min(argAtMin, argAtMax);
+                            const argHi = Math.max(argAtMin, argAtMax);
+
+                            let kStart = Math.floor((argLo - phase) / period) - 1;
+                            let kEnd = Math.ceil((argHi - phase) / period) + 1;
+
+                            const maxKSpan = 5000;
+                            if (kEnd - kStart > maxKSpan) {
+                                kStart = Math.floor((kStart + kEnd - maxKSpan) / 2);
+                                kEnd = kStart + maxKSpan;
+                            }
+
+                            const edgeTolerance = Math.max(1e-6, Math.abs(rangeMaxX - rangeMinX) * 1e-9);
+                            for (let k = kStart; k <= kEnd; k++) {
+                                const targetArg = phase + k * period;
+                                const asymptoteX = (targetArg - b) / a;
+                                if (!Number.isFinite(asymptoteX)) continue;
+                                if (asymptoteX < rangeMinX - edgeTolerance || asymptoteX > rangeMaxX + edgeTolerance) continue;
+                                addAsymptoteCandidate(asymptoteX);
+                            }
+                        } catch {
+                            // Ignore argument parse/evaluation failures for this reciprocal trig denominator.
+                        }
+                    }
+                }
+
                 // Pattern 0: square-root denominator boundaries (e.g. 1/sqrt(x), 1/sqrt(2x-3)).
                 // If sqrt(g(x)) appears in the denominator, g(x)=0 is a vertical asymptote boundary
                 // for reciprocal forms because denominator tends to 0+.
@@ -31752,10 +31887,22 @@ class Graphiti {
         context.setLineDash([this.getLineWidth(7), this.getLineWidth(4)]);
 
         if (vertical.length > 0) {
+            let visibleVertical = vertical
+                .filter(x => Number.isFinite(x) && x >= this.viewport.minX && x <= this.viewport.maxX)
+                .sort((a, b) => a - b);
+
+            if (visibleVertical.length > 1) {
+                const worldWidth = this.viewport.maxX - this.viewport.minX;
+                const averageWorldSpacing = (visibleVertical[visibleVertical.length - 1] - visibleVertical[0]) / (visibleVertical.length - 1);
+                const averagePixelSpacing = Math.abs((averageWorldSpacing / worldWidth) * this.viewport.width);
+                if (Number.isFinite(averagePixelSpacing) && averagePixelSpacing > 0 && averagePixelSpacing < 6) {
+                    const stride = Math.max(1, Math.ceil(6 / averagePixelSpacing));
+                    visibleVertical = visibleVertical.filter((_, index) => index % stride === 0);
+                }
+            }
+
             context.beginPath();
-            for (const x of vertical) {
-                if (!Number.isFinite(x)) continue;
-                if (x < this.viewport.minX || x > this.viewport.maxX) continue;
+            for (const x of visibleVertical) {
                 const screenPos = this.worldToScreen(x, 0);
                 context.moveTo(screenPos.x, 0);
                 context.lineTo(screenPos.x, this.viewport.height);
