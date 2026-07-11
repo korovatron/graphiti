@@ -43,7 +43,7 @@ class Graphiti {
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
         
         // Size mode for display elements
-        this.sizeMode = 'large'; // 'normal' (small), 'large' (medium/default), 'xlarge' (largest)
+        this.sizeMode = 'normal'; // 'normal' (small/default), 'large' (medium), 'xlarge' (largest)
         
         // Plotting mode
         this.plotMode = 'cartesian'; // 'cartesian' or 'polar'
@@ -18872,6 +18872,7 @@ class Graphiti {
         const colorModeInput = document.querySelector('input[name="export-color-mode"]:checked');
         const gridModeInput = document.getElementById('export-grid-mode');
         const textSizeInput = document.getElementById('export-text-size');
+        const strokeWidthInput = document.getElementById('export-stroke-width');
         const frameShapeInput = document.getElementById('export-frame-shape');
         const includeAxesInput = document.getElementById('export-include-axes');
         const includeAxisTicksInput = document.getElementById('export-include-axis-ticks');
@@ -18886,6 +18887,7 @@ class Graphiti {
             colorMode: colorModeInput ? colorModeInput.value : 'keep',
             gridMode: gridModeInput ? gridModeInput.value : 'both',
             textSize: textSizeInput ? textSizeInput.value : 'large',
+            strokeWidth: strokeWidthInput ? strokeWidthInput.value : 'small',
             frameShape: frameShapeInput ? frameShapeInput.value : 'original',
             includeAxes: includeAxesInput ? includeAxesInput.checked : true,
             includeAxisTicks: includeAxisTicksInput ? includeAxisTicksInput.checked : true,
@@ -19052,6 +19054,14 @@ class Graphiti {
             xxl: 28,
             xxxl: 32
         };
+
+        const strokeWidthScaleMap = {
+            small: 1,
+            medium: 1.5,
+            large: 1.9
+        };
+        const strokeWidthScale = strokeWidthScaleMap[options.strokeWidth] || strokeWidthScaleMap.small;
+        const getSvgLineWidth = (baseWidth) => baseWidth * strokeWidthScale;
 
         const pushLine = (x1, y1, x2, y2, stroke, strokeWidth = 1, dash = null) => {
             if (![x1, y1, x2, y2].every(Number.isFinite)) return;
@@ -20028,7 +20038,7 @@ class Graphiti {
             const functionType = this.detectFunctionType(func.expression);
             const points = func.displayPoints || func.points;
             const stroke = curveColorFor(func);
-            const lineWidth = this.getLineWidth(3);
+            const lineWidth = getSvgLineWidth(3);
 
             const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality' || functionType === 'implicit-inequality';
             let inequalityMeta = null;
@@ -20100,7 +20110,7 @@ class Graphiti {
                         if (chainedPaths.length > 0) {
                             let dash = '';
                             if (isInequality && isStrictInequality) {
-                                dash = ` stroke-dasharray="${svgNum(this.getLineWidth(8))} ${svgNum(this.getLineWidth(4))}"`;
+                                dash = ` stroke-dasharray="${svgNum(getSvgLineWidth(8))} ${svgNum(getSvgLineWidth(4))}"`;
                             }
                             for (const pathData of chainedPaths) {
                                 pushPath(pathData, stroke, lineWidth, 'none', dash.trim());
@@ -20111,7 +20121,7 @@ class Graphiti {
                         if (pathData) {
                             let dash = '';
                             if (isInequality && isStrictInequality) {
-                                dash = ` stroke-dasharray="${svgNum(this.getLineWidth(8))} ${svgNum(this.getLineWidth(4))}"`;
+                                dash = ` stroke-dasharray="${svgNum(getSvgLineWidth(8))} ${svgNum(getSvgLineWidth(4))}"`;
                             }
                             pushPath(pathData, stroke, lineWidth, 'none', dash.trim());
                         }
@@ -20120,8 +20130,8 @@ class Graphiti {
             }
 
             if (func.asymptoteData && this.plotMode === 'cartesian') {
-                const asymptoteDash = `${svgNum(this.getLineWidth(7))} ${svgNum(this.getLineWidth(4))}`;
-                const asymptoteWidth = this.getLineWidth(2);
+                const asymptoteDash = `${svgNum(getSvgLineWidth(7))} ${svgNum(getSvgLineWidth(4))}`;
+                const asymptoteWidth = getSvgLineWidth(2);
                 const vertical = Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [];
                 const horizontal = Array.isArray(func.asymptoteData.horizontal) ? func.asymptoteData.horizontal : [];
                 const oblique = Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique : [];
@@ -20152,8 +20162,8 @@ class Graphiti {
             }
 
             if (Array.isArray(func.holes) && func.holes.length > 0) {
-                const holeRadius = Math.max(this.getLineWidth(4), 4);
-                const holeStrokeWidth = this.getLineWidth(3);
+                const holeRadius = Math.max(getSvgLineWidth(4), 4);
+                const holeStrokeWidth = getSvgLineWidth(3);
                 for (const hole of func.holes) {
                     if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) continue;
                     if (hole.x < this.viewport.minX || hole.x > this.viewport.maxX || hole.y < this.viewport.minY || hole.y > this.viewport.maxY) {
@@ -20204,7 +20214,7 @@ class Graphiti {
                             }
                         }
                         if (d) {
-                            pushPath(d, options.colorMode === 'black' ? '#000000' : this.getContrastingColor(pair.color || '#4A90E2'), this.getLineWidth(4), 'none', 'stroke-linecap="round" stroke-linejoin="round"');
+                            pushPath(d, options.colorMode === 'black' ? '#000000' : this.getContrastingColor(pair.color || '#4A90E2'), getSvgLineWidth(4), 'none', 'stroke-linecap="round" stroke-linejoin="round"');
                         }
                     }
                     continue;
@@ -20224,10 +20234,10 @@ class Graphiti {
                         const startScreen = this.worldToScreen(pair.start, 0);
                         const endScreen = this.worldToScreen(pair.end, 0);
                         const limitStroke = options.colorMode === 'black' ? '#000000' : (pair.color || '#000000');
-                        const limitDash = `${svgNum(this.getLineWidth(5))} ${svgNum(this.getLineWidth(5))}`;
+                        const limitDash = `${svgNum(getSvgLineWidth(5))} ${svgNum(getSvgLineWidth(5))}`;
 
-                        pushLine(startScreen.x, 0, startScreen.x, this.viewport.height, limitStroke, this.getLineWidth(1), limitDash);
-                        pushLine(endScreen.x, 0, endScreen.x, this.viewport.height, limitStroke, this.getLineWidth(1), limitDash);
+                        pushLine(startScreen.x, 0, startScreen.x, this.viewport.height, limitStroke, getSvgLineWidth(1), limitDash);
+                        pushLine(endScreen.x, 0, endScreen.x, this.viewport.height, limitStroke, getSvgLineWidth(1), limitDash);
                     }
                 }
             }
@@ -20255,12 +20265,12 @@ class Graphiti {
                     const linkedData = getLinkedCartesianRegionData(linkedPair, pair1, pair2);
                     if (linkedData && linkedData.path) {
                         pushPath(linkedData.path, 'none', 0, linkedFill, '');
-                        const dash = `${svgNum(this.getLineWidth(5))} ${svgNum(this.getLineWidth(5))}`;
+                        const dash = `${svgNum(getSvgLineWidth(5))} ${svgNum(getSvgLineWidth(5))}`;
                         if (linkedData.startLine) {
-                            pushLine(linkedData.startLine[0].x, linkedData.startLine[0].y, linkedData.startLine[1].x, linkedData.startLine[1].y, linkedBoundary, this.getLineWidth(2), dash);
+                            pushLine(linkedData.startLine[0].x, linkedData.startLine[0].y, linkedData.startLine[1].x, linkedData.startLine[1].y, linkedBoundary, getSvgLineWidth(2), dash);
                         }
                         if (linkedData.endLine) {
-                            pushLine(linkedData.endLine[0].x, linkedData.endLine[0].y, linkedData.endLine[1].x, linkedData.endLine[1].y, linkedBoundary, this.getLineWidth(2), dash);
+                            pushLine(linkedData.endLine[0].x, linkedData.endLine[0].y, linkedData.endLine[1].x, linkedData.endLine[1].y, linkedBoundary, getSvgLineWidth(2), dash);
                         }
                     }
                 }
@@ -20335,7 +20345,7 @@ class Graphiti {
 
                 // Simpson interior dashed lines
                 if (pair.numericalMethod === 'simpson' && Array.isArray(pair.cachedShapePaths.dashedLines)) {
-                    const simpsonDash = `${svgNum(this.getLineWidth(5))} ${svgNum(this.getLineWidth(5))}`;
+                    const simpsonDash = `${svgNum(getSvgLineWidth(5))} ${svgNum(getSvgLineWidth(5))}`;
                     for (const line of pair.cachedShapePaths.dashedLines) {
                         if (!Array.isArray(line) || line.length !== 2) continue;
                         const start = line[0];
@@ -20352,7 +20362,7 @@ class Graphiti {
             }
         }
 
-        const tangentNormalLineWidth = this.getLineWidth(3);
+        const tangentNormalLineWidth = getSvgLineWidth(3);
         const tangentDash = '10 5';
         const normalDash = '5 5';
         const tangentNormalOriginRadius = 4.0;
@@ -23299,15 +23309,15 @@ class Graphiti {
     }
     
     initializeSizeMode() {
-        // Always default to the middle size mode (no localStorage persistence)
+        // Always default to the small size mode (no localStorage persistence)
         const smallIcon = document.getElementById('small-size-icon');
         const mediumIcon = document.getElementById('medium-size-icon');
         const largeIcon = document.getElementById('large-size-icon');
 
-        this.sizeMode = 'large';
+        this.sizeMode = 'normal';
         if (smallIcon && mediumIcon && largeIcon) {
-            smallIcon.style.opacity = '0.3';
-            mediumIcon.style.opacity = '1';
+            smallIcon.style.opacity = '1';
+            mediumIcon.style.opacity = '0.3';
             largeIcon.style.opacity = '0.3';
         }
     }
