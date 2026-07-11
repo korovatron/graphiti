@@ -16160,10 +16160,55 @@ class Graphiti {
             });
         }
         
-        // Share Link Button (Copy graph link)
-        const shareLinkButton = document.getElementById('share-link-button');
-        if (shareLinkButton) {
-            shareLinkButton.addEventListener('click', async () => {
+        // Share menu controls
+        const shareButton = document.getElementById('share-button');
+        const shareMenu = document.getElementById('share-menu');
+        const shareMenuLink = document.getElementById('share-menu-link');
+        const shareMenuQR = document.getElementById('share-menu-qr');
+        
+        if (shareButton && shareMenu) {
+            const closeShareMenu = () => {
+                shareMenu.style.display = 'none';
+                shareButton.setAttribute('aria-expanded', 'false');
+            };
+            
+            const openShareMenu = () => {
+                shareMenu.style.display = 'block';
+                shareButton.setAttribute('aria-expanded', 'true');
+            };
+
+            this.closeShareMenu = closeShareMenu;
+
+            shareButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const isOpen = shareMenu.style.display === 'block';
+                if (isOpen) {
+                    closeShareMenu();
+                } else {
+                    openShareMenu();
+                }
+            });
+
+            shareMenu.addEventListener('click', (event) => {
+                event.stopPropagation();
+            });
+
+            document.addEventListener('click', () => {
+                closeShareMenu();
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    closeShareMenu();
+                }
+            });
+        }
+
+        if (shareMenuLink) {
+            shareMenuLink.addEventListener('click', async () => {
+                if (typeof this.closeShareMenu === 'function') {
+                    this.closeShareMenu();
+                }
                 try {
                     await this.shareGraphLink();
                 } catch (error) {
@@ -16172,11 +16217,12 @@ class Graphiti {
                 }
             });
         }
-        
-        // Share QR Code Button (Copy QR code image)
-        const shareQRButton = document.getElementById('share-qr-button');
-        if (shareQRButton) {
-            shareQRButton.addEventListener('click', async () => {
+
+        if (shareMenuQR) {
+            shareMenuQR.addEventListener('click', async () => {
+                if (typeof this.closeShareMenu === 'function') {
+                    this.closeShareMenu();
+                }
                 try {
                     await this.shareQRCode();
                 } catch (error) {
@@ -20815,7 +20861,7 @@ class Graphiti {
                     console.log('Share successful via Web Share API');
                     
                     // Show success tooltip
-                    const button = document.getElementById('share-link-button');
+                    const button = document.getElementById('share-button');
                     if (button) {
                         const rect = button.getBoundingClientRect();
                         const centerX = rect.left + rect.width / 2;
@@ -20843,7 +20889,7 @@ class Graphiti {
                     this.trackGoatCounterEvent('Graphiti URL Share Link Copied');
                     
                     // Show DOM tooltip confirmation (above all panels)
-                    const button = document.getElementById('share-link-button');
+                    const button = document.getElementById('share-button');
                     if (button) {
                         const rect = button.getBoundingClientRect();
                         const centerX = rect.left + rect.width / 2;
@@ -20863,7 +20909,7 @@ class Graphiti {
             
             // Show tooltip if user didn't cancel
             if (userCopied !== null) {
-                const button = document.getElementById('share-link-button');
+                const button = document.getElementById('share-button');
                 if (button) {
                     const rect = button.getBoundingClientRect();
                     const centerX = rect.left + rect.width / 2;
@@ -20939,7 +20985,7 @@ class Graphiti {
                         console.log('QR code shared successfully via Web Share API');
                         
                         // Show success tooltip
-                        const button = document.getElementById('share-qr-button');
+                        const button = document.getElementById('share-button');
                         if (button) {
                             const rect = button.getBoundingClientRect();
                             const centerX = rect.left + rect.width / 2;
@@ -20968,7 +21014,7 @@ class Graphiti {
                     console.log('QR code copied to clipboard');
                     
                     // Show DOM tooltip confirmation
-                    const button = document.getElementById('share-qr-button');
+                    const button = document.getElementById('share-button');
                     if (button) {
                         const rect = button.getBoundingClientRect();
                         const centerX = rect.left + rect.width / 2;
@@ -20994,7 +21040,7 @@ class Graphiti {
             URL.revokeObjectURL(url);
             
             // Show tooltip
-            const button = document.getElementById('share-qr-button');
+            const button = document.getElementById('share-button');
             if (button) {
                 const rect = button.getBoundingClientRect();
                 const centerX = rect.left + rect.width / 2;
