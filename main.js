@@ -18792,7 +18792,7 @@ class Graphiti {
             format: formatInput ? formatInput.value : 'svg',
             colorMode: colorModeInput ? colorModeInput.value : 'keep',
             gridMode: gridModeInput ? gridModeInput.value : 'both',
-            textSize: textSizeInput ? textSizeInput.value : 'small',
+            textSize: textSizeInput ? textSizeInput.value : 'medium',
             frameShape: frameShapeInput ? frameShapeInput.value : 'original',
             includeAxes: includeAxesInput ? includeAxesInput.checked : true,
             includeAxisLabels: includeAxisLabelsInput ? includeAxisLabelsInput.checked : true,
@@ -30885,7 +30885,7 @@ class Graphiti {
     
     drawAxes() {
         const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
-        const axesColor = isLightMode ? 'rgba(0, 0, 0, 0.50)' : 'rgba(255, 255, 255, 0.72)';
+        const axesColor = isLightMode ? '#000000' : 'rgba(255, 255, 255, 0.72)';
         const crisp = (screenValue) => Math.round(screenValue) + 0.5;
 
         this.ctx.strokeStyle = axesColor;
@@ -30911,11 +30911,14 @@ class Graphiti {
     }
     
     drawAxisLabels() {
-        // Get label color from CSS variable (adapts to light/dark theme)
-        const labelColor = getComputedStyle(document.documentElement)
-            .getPropertyValue('--label-color').trim();
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+        // In light mode, force black labels/numbers to match SVG black-export readability.
+        const labelColor = isLightMode
+            ? '#000000'
+            : getComputedStyle(document.documentElement).getPropertyValue('--label-color').trim();
             
         this.ctx.fillStyle = labelColor;
+        this.ctx.strokeStyle = labelColor;
         
         // Adjust font size and weight based on size mode
         if (this.sizeMode === 'large') {
