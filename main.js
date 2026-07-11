@@ -18656,6 +18656,122 @@ class Graphiti {
             labelLines.push(`<text x="${svgNum(x)}" y="${svgNum(y)}" fill="${color}" font-family="Arial, sans-serif" font-size="${svgNum(size)}" text-anchor="${anchor}" dominant-baseline="${baseline}">${escapeXml(text)}</text>`);
         };
 
+        const estimateBadgeTextWidth = (text, fontSize) => {
+            if (!text) return 0;
+            if (this.ctx && typeof this.ctx.measureText === 'function') {
+                this.ctx.save();
+                const fontWeight = this.sizeMode === 'large' ? 'bold' : 'normal';
+                this.ctx.font = `${fontWeight} ${fontSize}px Arial, sans-serif`;
+                const measured = this.ctx.measureText(text).width;
+                this.ctx.restore();
+                if (Number.isFinite(measured) && measured > 0) {
+                    return measured;
+                }
+            }
+
+            // Conservative fallback if measureText is unavailable.
+            return text.length * fontSize * 0.53;
+        };
+
+        const getBadgeLabelTextForExport = (badge, func, func2, integralLimitType, thetaValue, tValue) => {
+            if (!badge) return '';
+
+            if (badge.customText) {
+                return badge.customText;
+            }
+
+            let labelText;
+            if (badge.hasIntegral && integralLimitType) {
+                const isParametric = func && this.detectFunctionType(func.expression) === 'parametric';
+
+                if (isParametric && tValue !== null && tValue !== undefined) {
+                    const tValueStr = parseFloat(tValue.toPrecision(3)).toString();
+                    const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
+                    labelText = `∫ | t=${tValueStr} | ${limitLabel}`;
+                } else if (this.plotMode === 'polar') {
+                    let thetaValueStr;
+                    const theta = (thetaValue !== null && thetaValue !== undefined) ? thetaValue : Math.atan2(badge.worldY, badge.worldX);
+                    if (this.angleMode === 'degrees') {
+                        const thetaDegrees = theta * 180 / Math.PI;
+                        thetaValueStr = this.formatCoordinate(thetaDegrees) + '°';
+                    } else {
+                        const piFraction = this.formatAsPiFraction(theta);
+                        thetaValueStr = piFraction || this.formatCoordinate(theta);
+                    }
+                    const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
+                    labelText = `∫ | θ=${thetaValueStr} | ${limitLabel}`;
+                } else {
+                    let xValue;
+                    const trigRegex = /\\?(sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sec|csc|cot|asec|acsc|acot|sech|csch|coth)(\s*\(|\\left\()|\\operatorname\{\\mathrm\{(arc)?(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\}\}/i;
+                    const funcHasTrig = func && func.expression && trigRegex.test(func.expression);
+
+                    if (this.angleMode === 'radians' && funcHasTrig) {
+                        const piFraction = this.formatAsPiFraction(badge.worldX);
+                        xValue = piFraction || (func ? this.formatCoordinate(badge.worldX, func, true, false) : badge.worldX.toFixed(3));
+                    } else {
+                        xValue = func ? this.formatCoordinate(badge.worldX, func, true, false) : badge.worldX.toFixed(3);
+                    }
+                    const limitLabel = integralLimitType === 'lower' ? 'L' : 'U';
+                    labelText = `∫ | x=${xValue} | ${limitLabel}`;
+                }
+            } else if (badge.hasIntegral && !integralLimitType) {
+                labelText = '∫ | Add 2nd marker';
+            } else if (badge.badgeType) {
+                const coords = this.formatCoordinates(badge.worldX, badge.worldY, func, func2, thetaValue, tValue);
+                switch (badge.badgeType) {
+                    case 'maximum':
+                        labelText = `Local Maximum: ${coords}`;
+                        break;
+                    case 'minimum':
+                        labelText = `Local Minimum: ${coords}`;
+                        break;
+                    case 'intersection':
+                        labelText = coords;
+                        break;
+                    default:
+                        labelText = coords;
+                        break;
+                }
+            } else {
+                labelText = this.formatCoordinates(badge.worldX, badge.worldY, func, null, thetaValue, tValue);
+            }
+
+            if ((badge.hasTangent || badge.hasNormal) && badge.tangentSlope !== null) {
+                if (this.plotMode === 'polar' && badge.tangentSlope.polarDerivative !== undefined) {
+                    const polarDerivStr = this.formatDerivative(badge.tangentSlope.polarDerivative);
+                    labelText += ` | dr / dθ = ${polarDerivStr}`;
+                } else {
+                    const slopeValue = badge.tangentSlope.slope !== undefined ? badge.tangentSlope.slope : badge.tangentSlope;
+                    let displaySlope = slopeValue;
+                    if (this.angleMode === 'degrees' && badge.tangentSlope.method === 'symbolic' && badge.tangentSlope.degreeConversionApplied) {
+                        displaySlope = slopeValue * 180 / Math.PI;
+                    }
+
+                    let slopeStr;
+                    if (Math.abs(displaySlope) > 100) {
+                        slopeStr = displaySlope > 0 ? '∞' : '-∞';
+                    } else {
+                        slopeStr = this.formatDerivative(displaySlope);
+                    }
+                    labelText += ` | dy / dx = ${slopeStr}`;
+
+                    const secondDeriv = badge.tangentSlope.secondDerivative !== undefined
+                        ? badge.tangentSlope.secondDerivative
+                        : badge.secondDerivative;
+                    if (secondDeriv !== null && Number.isFinite(secondDeriv)) {
+                        let displaySecondDeriv = secondDeriv;
+                        if (this.angleMode === 'degrees' && badge.tangentSlope.method === 'symbolic' && badge.tangentSlope.degreeConversionApplied) {
+                            displaySecondDeriv = secondDeriv * Math.pow(180 / Math.PI, 2);
+                        }
+                        const secondDerivStr = this.formatDerivative(displaySecondDeriv);
+                        labelText += ` | d²y / dx² = ${secondDerivStr}`;
+                    }
+                }
+            }
+
+            return labelText || '';
+        };
+
         const buildStandardPath = (points) => {
             if (!Array.isArray(points) || points.length < 2) return '';
 
@@ -18983,6 +19099,236 @@ class Graphiti {
             colorCtx.drawImage(compositeCanvas, 0, 0);
 
             return colorCanvas.toDataURL('image/png');
+        };
+
+        const normalizeThetaToTwoPi = (theta) => {
+            let value = theta;
+            while (value < 0) value += 2 * Math.PI;
+            while (value > 2 * Math.PI) value -= 2 * Math.PI;
+            return value;
+        };
+
+        const buildCartesianIntegralPath = (pair) => {
+            if (!pair || !pair.func || !Array.isArray(pair.func.points)) return '';
+
+            const functionType = this.detectFunctionType(pair.func.expression);
+            const points = pair.func.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= pair.start && p.x <= pair.end);
+            if (points.length < 2) return '';
+
+            if (functionType === 'implicit') {
+                const segments = [];
+                let currentSegment = [];
+
+                for (let i = 0; i < points.length; i++) {
+                    const point = points[i];
+                    const prevIndex = pair.func.points.indexOf(point) - 1;
+                    const prevPoint = prevIndex >= 0 ? pair.func.points[prevIndex] : null;
+                    const isConnectedToPrev = prevPoint && Number.isFinite(prevPoint.y);
+
+                    if (currentSegment.length === 0 || !isConnectedToPrev) {
+                        if (currentSegment.length > 1) {
+                            segments.push(currentSegment);
+                        }
+                        currentSegment = [point];
+                    } else {
+                        currentSegment.push(point);
+                    }
+                }
+
+                if (currentSegment.length > 1) {
+                    segments.push(currentSegment);
+                }
+
+                const badge1 = this.input.persistentBadges.find((b) => b.id === pair.badge1Id);
+                const badge2 = this.input.persistentBadges.find((b) => b.id === pair.badge2Id);
+
+                const relevantSegments = segments.filter((segment) => {
+                    for (const badge of [badge1, badge2]) {
+                        if (!badge) continue;
+                        for (const point of segment) {
+                            const distX = Math.abs(point.x - badge.worldX);
+                            const distY = Math.abs(point.y - badge.worldY);
+                            if (distX < 0.1 && distY < 0.1) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                });
+
+                let d = '';
+                for (const segment of relevantSegments) {
+                    if (segment.length < 2) continue;
+                    const sorted = [...segment].sort((a, b) => a.x - b.x);
+                    const firstBase = this.worldToScreen(sorted[0].x, 0);
+                    const firstCurve = this.worldToScreen(sorted[0].x, sorted[0].y);
+                    d += ` M ${svgNum(firstBase.x)} ${svgNum(firstBase.y)} L ${svgNum(firstCurve.x)} ${svgNum(firstCurve.y)}`;
+                    for (let i = 1; i < sorted.length; i++) {
+                        const screen = this.worldToScreen(sorted[i].x, sorted[i].y);
+                        d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                    }
+                    const lastBase = this.worldToScreen(sorted[sorted.length - 1].x, 0);
+                    d += ` L ${svgNum(lastBase.x)} ${svgNum(lastBase.y)} Z`;
+                }
+                return d.trim();
+            }
+
+            points.sort((a, b) => a.x - b.x);
+            const startBase = this.worldToScreen(pair.start, 0);
+            const firstCurve = this.worldToScreen(points[0].x, points[0].y);
+            let d = `M ${svgNum(startBase.x)} ${svgNum(startBase.y)} L ${svgNum(firstCurve.x)} ${svgNum(firstCurve.y)}`;
+            for (let i = 1; i < points.length; i++) {
+                const screen = this.worldToScreen(points[i].x, points[i].y);
+                d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+            }
+            const endBase = this.worldToScreen(pair.end, 0);
+            d += ` L ${svgNum(endBase.x)} ${svgNum(endBase.y)} L ${svgNum(startBase.x)} ${svgNum(startBase.y)} Z`;
+            return d;
+        };
+
+        const buildPolarIntegralPath = (pair) => {
+            if (!pair || !pair.func || !Array.isArray(pair.func.points)) return '';
+
+            const center = this.worldToScreen(0, 0);
+            const start = normalizeThetaToTwoPi(pair.start);
+            const end = normalizeThetaToTwoPi(pair.end);
+
+            const relevantPoints = [];
+            for (const p of pair.func.points) {
+                if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+                let theta = p.theta;
+                if (theta === undefined || theta === null) {
+                    theta = Math.atan2(p.y, p.x);
+                }
+                const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                const normalized = normalizeThetaToTwoPi(thetaRad);
+                if (normalized >= start && normalized <= end) {
+                    relevantPoints.push({ x: p.x, y: p.y, theta: normalized });
+                }
+            }
+
+            if (relevantPoints.length < 2) return '';
+            relevantPoints.sort((a, b) => a.theta - b.theta);
+
+            const first = this.worldToScreen(relevantPoints[0].x, relevantPoints[0].y);
+            let d = `M ${svgNum(center.x)} ${svgNum(center.y)} L ${svgNum(first.x)} ${svgNum(first.y)}`;
+            for (let i = 1; i < relevantPoints.length; i++) {
+                const screen = this.worldToScreen(relevantPoints[i].x, relevantPoints[i].y);
+                d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+            }
+            d += ` L ${svgNum(center.x)} ${svgNum(center.y)} Z`;
+            return d;
+        };
+
+        const getLinkedCartesianRegionData = (linkedPair, pair1, pair2) => {
+            const xStart = Math.max(pair1.start, pair2.start);
+            const xEnd = Math.min(pair1.end, pair2.end);
+            if (!(xStart < xEnd)) return null;
+
+            const points1 = pair1.func.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= xStart && p.x <= xEnd).sort((a, b) => a.x - b.x);
+            const points2 = pair2.func.points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= xStart && p.x <= xEnd).sort((a, b) => a.x - b.x);
+            if (points1.length < 2 || points2.length < 2) return null;
+
+            let d = '';
+            const first1 = this.worldToScreen(points1[0].x, points1[0].y);
+            d += `M ${svgNum(first1.x)} ${svgNum(first1.y)}`;
+            for (let i = 1; i < points1.length; i++) {
+                const s = this.worldToScreen(points1[i].x, points1[i].y);
+                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
+            }
+            for (let i = points2.length - 1; i >= 0; i--) {
+                const s = this.worldToScreen(points2[i].x, points2[i].y);
+                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
+            }
+            d += ' Z';
+
+            const y1Start = this.interpolateY(points1, xStart);
+            const y2Start = this.interpolateY(points2, xStart);
+            const y1End = this.interpolateY(points1, xEnd);
+            const y2End = this.interpolateY(points2, xEnd);
+
+            const startLine = (y1Start !== null && y2Start !== null)
+                ? [this.worldToScreen(xStart, y1Start), this.worldToScreen(xStart, y2Start)]
+                : null;
+            const endLine = (y1End !== null && y2End !== null)
+                ? [this.worldToScreen(xEnd, y1End), this.worldToScreen(xEnd, y2End)]
+                : null;
+
+            return {
+                path: d,
+                startLine,
+                endLine
+            };
+        };
+
+        const getLinkedPolarRegionPath = (pair1, pair2) => {
+            const thetaStart = Math.max(pair1.start, pair2.start);
+            const thetaEnd = Math.min(pair1.end, pair2.end);
+            if (!(thetaStart < thetaEnd)) return '';
+
+            const getPointsWithTheta = (func, start, end) => {
+                return func.points.filter((p) => {
+                    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
+                    let theta = p.theta;
+                    if (theta === undefined || theta === null) {
+                        theta = Math.atan2(p.y, p.x);
+                    }
+                    const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    const normalized = normalizeThetaToTwoPi(thetaRad);
+                    return normalized >= start && normalized <= end;
+                }).map((p) => {
+                    let theta = p.theta;
+                    if (theta === undefined || theta === null) {
+                        theta = Math.atan2(p.y, p.x);
+                    }
+                    const thetaRad = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                    return {
+                        x: p.x,
+                        y: p.y,
+                        theta: normalizeThetaToTwoPi(thetaRad)
+                    };
+                }).sort((a, b) => a.theta - b.theta);
+            };
+
+            const points1 = getPointsWithTheta(pair1.func, thetaStart, thetaEnd);
+            const points2 = getPointsWithTheta(pair2.func, thetaStart, thetaEnd);
+            if (points1.length < 2 || points2.length < 2) return '';
+
+            const first = this.worldToScreen(points1[0].x, points1[0].y);
+            let d = `M ${svgNum(first.x)} ${svgNum(first.y)}`;
+            for (let i = 1; i < points1.length; i++) {
+                const s = this.worldToScreen(points1[i].x, points1[i].y);
+                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
+            }
+            for (let i = points2.length - 1; i >= 0; i--) {
+                const s = this.worldToScreen(points2[i].x, points2[i].y);
+                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
+            }
+            d += ' Z';
+            return d;
+        };
+
+        const buildScreenPathFromWorldPoints = (worldPoints, closePath = false) => {
+            if (!Array.isArray(worldPoints) || worldPoints.length < 2) return '';
+            let d = '';
+            let started = false;
+
+            for (const wp of worldPoints) {
+                if (!wp || !Number.isFinite(wp.x) || !Number.isFinite(wp.y)) continue;
+                const sp = this.worldToScreen(wp.x, wp.y);
+                if (!Number.isFinite(sp.x) || !Number.isFinite(sp.y)) continue;
+
+                if (!started) {
+                    d += `M ${svgNum(sp.x)} ${svgNum(sp.y)}`;
+                    started = true;
+                } else {
+                    d += ` L ${svgNum(sp.x)} ${svgNum(sp.y)}`;
+                }
+            }
+
+            if (!started) return '';
+            if (closePath) d += ' Z';
+            return d;
         };
 
         const drawCartesianGridSVG = () => {
@@ -19342,6 +19688,192 @@ class Graphiti {
             }
         }
 
+        // Integral shading regions
+        if (Array.isArray(this.integralPairs) && this.integralPairs.length > 0) {
+            for (const pair of this.integralPairs) {
+                const isLinkedWithAreaBetween = this.linkedBadgePairs.some((lp) =>
+                    (lp.pair1 === pair || lp.pair2 === pair) && lp.showAreaBetween !== false
+                );
+                if (isLinkedWithAreaBetween) continue;
+
+                if (!pair || !pair.func || !pair.func.points || pair.func.points.length === 0) continue;
+
+                const pairFillColor = options.colorMode === 'black'
+                    ? 'rgba(90, 90, 90, 0.25)'
+                    : this.hexToRGBA(pair.color || '#4A90E2', pair.neon ? 0.35 : 0.25);
+
+                if (pair.isParametric) {
+                    // Arc-length style highlight for parametric curves.
+                    const tMin = this.cartesianViewport.tMin;
+                    const tMax = this.cartesianViewport.tMax;
+                    const tRange = tMax - tMin;
+                    if (Number.isFinite(tRange) && tRange > 0 && pair.func.points.length > 1) {
+                        const tStep = tRange / (pair.func.points.length - 1);
+                        let d = '';
+                        let started = false;
+                        for (let i = 0; i < pair.func.points.length; i++) {
+                            const p = pair.func.points[i];
+                            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+                            const tCurrent = tMin + i * tStep;
+                            if (tCurrent < pair.start - 1e-10 || tCurrent > pair.end + 1e-10) continue;
+                            const s = this.worldToScreen(p.x, p.y);
+                            if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
+                            if (!started) {
+                                d += `M ${svgNum(s.x)} ${svgNum(s.y)}`;
+                                started = true;
+                            } else {
+                                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
+                            }
+                        }
+                        if (d) {
+                            pushPath(d, options.colorMode === 'black' ? '#000000' : this.getContrastingColor(pair.color || '#4A90E2'), this.getLineWidth(4), 'none', 'stroke-linecap="round" stroke-linejoin="round"');
+                        }
+                    }
+                    continue;
+                }
+
+                let pathData = '';
+                if (this.plotMode === 'polar') {
+                    pathData = buildPolarIntegralPath(pair);
+                } else {
+                    pathData = buildCartesianIntegralPath(pair);
+                }
+
+                if (pathData) {
+                    pushPath(pathData, 'none', 0, pairFillColor, '');
+
+                    if (this.plotMode === 'cartesian' && !pair.isParametric) {
+                        const startScreen = this.worldToScreen(pair.start, 0);
+                        const endScreen = this.worldToScreen(pair.end, 0);
+                        const limitStroke = options.colorMode === 'black' ? '#000000' : (pair.color || '#000000');
+                        const limitDash = `${svgNum(this.getLineWidth(5))} ${svgNum(this.getLineWidth(5))}`;
+
+                        pushLine(startScreen.x, 0, startScreen.x, this.viewport.height, limitStroke, this.getLineWidth(1), limitDash);
+                        pushLine(endScreen.x, 0, endScreen.x, this.viewport.height, limitStroke, this.getLineWidth(1), limitDash);
+                    }
+                }
+            }
+        }
+
+        // Area-between shading for linked integral pairs.
+        if (Array.isArray(this.linkedBadgePairs) && this.linkedBadgePairs.length > 0) {
+            const linkedFill = options.colorMode === 'black'
+                ? 'rgba(90, 90, 90, 0.30)'
+                : 'rgba(255, 215, 0, 0.30)';
+            const linkedBoundary = options.colorMode === 'black' ? '#000000' : '#FFD700';
+
+            for (const linkedPair of this.linkedBadgePairs) {
+                const pair1 = linkedPair.pair1;
+                const pair2 = linkedPair.pair2;
+                if (!pair1 || !pair2 || !pair1.func || !pair2.func) continue;
+                if (linkedPair.showAreaBetween === false) continue;
+
+                if (this.plotMode === 'polar') {
+                    const linkedPath = getLinkedPolarRegionPath(pair1, pair2);
+                    if (linkedPath) {
+                        pushPath(linkedPath, 'none', 0, linkedFill, '');
+                    }
+                } else {
+                    const linkedData = getLinkedCartesianRegionData(linkedPair, pair1, pair2);
+                    if (linkedData && linkedData.path) {
+                        pushPath(linkedData.path, 'none', 0, linkedFill, '');
+                        const dash = `${svgNum(this.getLineWidth(5))} ${svgNum(this.getLineWidth(5))}`;
+                        if (linkedData.startLine) {
+                            pushLine(linkedData.startLine[0].x, linkedData.startLine[0].y, linkedData.startLine[1].x, linkedData.startLine[1].y, linkedBoundary, this.getLineWidth(2), dash);
+                        }
+                        if (linkedData.endLine) {
+                            pushLine(linkedData.endLine[0].x, linkedData.endLine[0].y, linkedData.endLine[1].x, linkedData.endLine[1].y, linkedBoundary, this.getLineWidth(2), dash);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Numerical integration overlays (mid-ord, trapezium, Simpson strips).
+        if (this.plotMode === 'cartesian' && Array.isArray(this.integralPairs) && this.integralPairs.length > 0) {
+            const numericalErrorFill = options.colorMode === 'black' ? 'rgba(120, 120, 120, 0.25)' : 'rgba(255, 0, 0, 0.30)';
+            const numericalOutlineStroke = options.colorMode === 'black' ? '#000000' : 'rgba(204, 102, 0, 0.90)';
+            const numericalDashedStroke = options.colorMode === 'black' ? '#000000' : 'rgba(204, 102, 0, 0.70)';
+
+            for (const pair of this.integralPairs) {
+                if (!pair || !pair.showTrapeziumRule || pair.isParametric) continue;
+
+                // Ensure numerical results and cached world paths exist for export.
+                if (!pair.numericalResult) {
+                    if (pair.cachedNumericalResult &&
+                        pair.cachedNumericalResult.method === pair.numericalMethod &&
+                        pair.cachedNumericalResult.stripCount === pair.trapeziumStripCount) {
+                        pair.numericalResult = pair.cachedNumericalResult.result;
+                    } else if (pair.func && Number.isFinite(pair.start) && Number.isFinite(pair.end)) {
+                        let numericalResult;
+                        if (pair.numericalMethod === 'riemann') {
+                            numericalResult = this.calculateRiemannSum(pair.func, pair.start, pair.end, pair.trapeziumStripCount, 'midpoint');
+                        } else if (pair.numericalMethod === 'simpson') {
+                            numericalResult = this.calculateSimpsonsRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+                        } else {
+                            numericalResult = this.calculateTrapeziumRule(pair.func, pair.start, pair.end, pair.trapeziumStripCount);
+                        }
+
+                        pair.numericalResult = numericalResult;
+                        pair.cachedNumericalResult = {
+                            method: pair.numericalMethod,
+                            stripCount: pair.trapeziumStripCount,
+                            result: numericalResult,
+                            params: {
+                                alpha: this.parameters.alpha.value,
+                                beta: this.parameters.beta.value,
+                                gamma: this.parameters.gamma.value,
+                                delta: this.parameters.delta.value
+                            }
+                        };
+                    }
+                }
+
+                if (!pair.cachedShapePaths && pair.numericalResult) {
+                    this.cacheNumericalShapePaths(pair);
+                }
+
+                if (!pair.cachedShapePaths) continue;
+
+                // Error regions
+                if (Array.isArray(pair.cachedShapePaths.errorRegions)) {
+                    for (const errorPath of pair.cachedShapePaths.errorRegions) {
+                        const d = buildScreenPathFromWorldPoints(errorPath, true);
+                        if (d) {
+                            pushPath(d, 'none', 0, numericalErrorFill, '');
+                        }
+                    }
+                }
+
+                // Strip outlines
+                if (Array.isArray(pair.cachedShapePaths.outlines)) {
+                    for (const outline of pair.cachedShapePaths.outlines) {
+                        const d = buildScreenPathFromWorldPoints(outline, true);
+                        if (d) {
+                            pushPath(d, numericalOutlineStroke, 2, 'none', '');
+                        }
+                    }
+                }
+
+                // Simpson interior dashed lines
+                if (pair.numericalMethod === 'simpson' && Array.isArray(pair.cachedShapePaths.dashedLines)) {
+                    const simpsonDash = `${svgNum(this.getLineWidth(5))} ${svgNum(this.getLineWidth(5))}`;
+                    for (const line of pair.cachedShapePaths.dashedLines) {
+                        if (!Array.isArray(line) || line.length !== 2) continue;
+                        const start = line[0];
+                        const end = line[1];
+                        if (!start || !end) continue;
+
+                        const s1 = this.worldToScreen(start.x, start.y);
+                        const s2 = this.worldToScreen(end.x, end.y);
+                        if (![s1.x, s1.y, s2.x, s2.y].every(Number.isFinite)) continue;
+
+                        pushLine(s1.x, s1.y, s2.x, s2.y, numericalDashedStroke, 1.5, simpsonDash);
+                    }
+                }
+            }
+        }
+
         const tangentNormalLineWidth = this.getLineWidth(3);
         const tangentDash = '10 5';
         const normalDash = '5 5';
@@ -19521,6 +20053,75 @@ class Graphiti {
 
         if (options.includeTurningPoints && this.showTurningPoints) {
             drawMarkerSet(this.turningPoints);
+        }
+
+        // Persistent point badges (intercepts, intersections, turning points, etc.)
+        if (Array.isArray(this.input.persistentBadges) && this.input.persistentBadges.length > 0) {
+            const badgeFontSize = this.sizeMode === 'large' ? 20 : 16;
+            const badgePadding = 6;
+            const badgeCornerRadius = 3;
+
+            for (const badge of this.input.persistentBadges) {
+                if (!badge || !Number.isFinite(badge.worldX) || !Number.isFinite(badge.worldY)) continue;
+
+                const screen = this.worldToScreen(badge.worldX, badge.worldY);
+                if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;
+                if (screen.x < -20 || screen.x > width + 20 || screen.y < -20 || screen.y > height + 20) continue;
+
+                let func = null;
+                let func2 = null;
+                if (badge.functionId) {
+                    func = this.findFunctionById(badge.functionId);
+                } else if (badge.func1Id && badge.func2Id) {
+                    func = this.findFunctionById(badge.func1Id);
+                    func2 = this.findFunctionById(badge.func2Id);
+                }
+
+                let integralLimitType = null;
+                if (badge.hasIntegral) {
+                    const pair = this.integralPairs.find((p) => p.badge1Id === badge.id || p.badge2Id === badge.id);
+                    if (pair) {
+                        integralLimitType = pair.badge1Id === badge.id ? 'lower' : 'upper';
+                    }
+                }
+
+                const thetaValue = (this.plotMode === 'polar' && (badge.theta !== null && badge.theta !== undefined || badge.polarTheta !== null && badge.polarTheta !== undefined))
+                    ? (badge.theta !== null && badge.theta !== undefined ? badge.theta : badge.polarTheta)
+                    : null;
+                const tValueParam = (badge.tValue !== null && badge.tValue !== undefined) ? badge.tValue : null;
+
+                const labelText = getBadgeLabelTextForExport(badge, func, func2, integralLimitType, thetaValue, tValueParam);
+
+                const badgeBaseColor = badge.functionColor || '#4A90E2';
+                const markerOuter = options.colorMode === 'black' ? '#FFFFFF' : badgeBaseColor;
+                const markerInner = options.colorMode === 'black' ? '#000000' : '#FFFFFF';
+                const markerStroke = options.colorMode === 'black' ? '#000000' : '#FFFFFF';
+
+                const labelFill = options.colorMode === 'black' ? '#FFFFFF' : badgeBaseColor;
+                const labelStroke = options.colorMode === 'black' ? '#000000' : 'none';
+                const labelTextColor = options.colorMode === 'black' ? '#000000' : this.getContrastingTextColor(badgeBaseColor);
+
+                const markerRadius = this.getMarkerRadius(8);
+                const markerInnerRadius = this.getMarkerRadius(2);
+                lines.push(`<circle cx="${svgNum(screen.x)}" cy="${svgNum(screen.y)}" r="${svgNum(markerRadius)}" fill="${markerOuter}" stroke="${markerStroke}" stroke-width="2" vector-effect="non-scaling-stroke" />`);
+                lines.push(`<circle cx="${svgNum(screen.x)}" cy="${svgNum(screen.y)}" r="${svgNum(markerInnerRadius)}" fill="${markerInner}" />`);
+
+                if (!labelText) continue;
+
+                const labelX = screen.x + 15;
+                const labelY = screen.y - 10;
+                const textWidth = estimateBadgeTextWidth(labelText, badgeFontSize);
+                const textHeight = badgeFontSize;
+                const boxX = labelX - badgePadding;
+                const boxY = labelY - textHeight - badgePadding;
+                const boxWidth = textWidth + (2 * badgePadding);
+                const boxHeight = textHeight + (2 * badgePadding);
+
+                lines.push(`<rect x="${svgNum(boxX)}" y="${svgNum(boxY)}" width="${svgNum(boxWidth)}" height="${svgNum(boxHeight)}" rx="${svgNum(badgeCornerRadius)}" ry="${svgNum(badgeCornerRadius)}" fill="${labelFill}" stroke="${labelStroke}" stroke-width="1" vector-effect="non-scaling-stroke" />`);
+
+                const textY = boxY + (boxHeight * 0.7);
+                lines.push(`<text x="${svgNum(labelX)}" y="${svgNum(textY)}" fill="${labelTextColor}" font-family="Arial, sans-serif" font-size="${svgNum(badgeFontSize)}" text-anchor="start">${escapeXml(labelText)}</text>`);
+            }
         }
 
         const svg = [
