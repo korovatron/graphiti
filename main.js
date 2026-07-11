@@ -25483,6 +25483,30 @@ class Graphiti {
                     });
                 }
             }
+
+            if (func.affineExplicitExpression) {
+                const proxyFunc = {
+                    ...func,
+                    expression: 'y=' + func.affineExplicitExpression,
+                    implicitRenderMode: null,
+                    affineExplicitExpression: null,
+                    affineVerticalComponents: null
+                };
+
+                const proxyIntercepts = this.findXInterceptsForFunction(proxyFunc);
+                for (const intercept of proxyIntercepts) {
+                    if (!intercept || !Number.isFinite(intercept.x) || !Number.isFinite(intercept.y)) {
+                        continue;
+                    }
+                    if (intercept.type !== 'x-intercept') {
+                        continue;
+                    }
+                    const duplicate = allIntercepts.some(existing => Math.abs(existing.x - intercept.x) < minDistance);
+                    if (!duplicate) {
+                        allIntercepts.push(intercept);
+                    }
+                }
+            }
         }
         
         // Detect vertical asymptotes for snapping and discontinuity filtering.
