@@ -18838,6 +18838,7 @@ class Graphiti {
 
             try {
                 const svgOptions = this.getExportOptionsFromModal();
+                svgOptions.previewStrokeScale = Math.min(previewWidth / sourceWidth, previewHeight / sourceHeight);
                 const svgString = this.buildSVGExport(svgOptions);
 
                 if (svgString) {
@@ -19133,7 +19134,10 @@ class Graphiti {
             xxl: 6.0
         };
         const strokeWidthScale = strokeWidthScaleMap[options.strokeWidth] || strokeWidthScaleMap.small;
-        const getSvgLineWidth = (baseWidth) => baseWidth * strokeWidthScale;
+        const previewStrokeScale = Number.isFinite(options.previewStrokeScale) && options.previewStrokeScale > 0
+            ? options.previewStrokeScale
+            : 1;
+        const getSvgLineWidth = (baseWidth) => baseWidth * strokeWidthScale * previewStrokeScale;
         const graphStrokeWidth = getSvgLineWidth(3);
 
         const pushLine = (x1, y1, x2, y2, stroke, strokeWidth = 1, dash = null) => {
