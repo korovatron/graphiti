@@ -18641,6 +18641,8 @@ class Graphiti {
                 }
             }
         }
+
+        this.updateExportFramePreview();
     }
 
     exportCurrentViewFromModal() {
@@ -18681,6 +18683,11 @@ class Graphiti {
             this.exportPreviewFrameRequestId = null;
         }
         this.exportPreviewLastRenderTime = 0;
+
+        if (this.exportPreviewSvgUrl) {
+            URL.revokeObjectURL(this.exportPreviewSvgUrl);
+            this.exportPreviewSvgUrl = null;
+        }
     }
 
     getExportFrameRect(sourceWidth, sourceHeight, frameShape = 'original') {
@@ -18732,11 +18739,13 @@ class Graphiti {
     updateExportFramePreview() {
         const previewStage = document.getElementById('export-preview-stage');
         const previewCanvas = document.getElementById('export-preview-canvas');
+        const previewSvg = document.getElementById('export-preview-svg');
         const previewFrame = document.getElementById('export-preview-frame');
         const previewCaption = document.getElementById('export-preview-caption');
         const shapeInput = document.getElementById('export-frame-shape');
+        const format = this.getSelectedExportFormat();
 
-        if (!previewStage || !previewCanvas || !previewFrame || !shapeInput) return;
+        if (!previewStage || !previewCanvas || !previewSvg || !previewFrame || !shapeInput) return;
 
         const sourceWidth = Math.max(1, Math.round(this.viewport.width || this.canvas.width || 1));
         const sourceHeight = Math.max(1, Math.round(this.viewport.height || this.canvas.height || 1));
@@ -18752,6 +18761,50 @@ class Graphiti {
         if (previewHeight > maxPreviewHeight) {
             previewHeight = maxPreviewHeight;
             previewWidth = previewHeight * sourceRatio;
+        }
+
+        // SVG mode: show a true SVG preview that reflects current export options.
+        if (format === 'svg') {
+            previewCanvas.classList.add('export-hidden');
+            previewFrame.classList.add('export-hidden');
+            previewSvg.classList.remove('export-hidden');
+
+            previewSvg.style.width = `${previewWidth}px`;
+            previewSvg.style.height = `${previewHeight}px`;
+
+            try {
+                const svgOptions = this.getExportOptionsFromModal();
+                const svgString = this.buildSVGExport(svgOptions);
+
+                if (svgString) {
+                    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                    const nextUrl = URL.createObjectURL(blob);
+
+                    if (this.exportPreviewSvgUrl) {
+                        URL.revokeObjectURL(this.exportPreviewSvgUrl);
+                    }
+
+                    this.exportPreviewSvgUrl = nextUrl;
+                    previewSvg.src = nextUrl;
+                }
+            } catch (error) {
+                console.error('SVG preview update failed:', error);
+            }
+
+            if (previewCaption) {
+                previewCaption.textContent = `Live SVG preview - ${frame.ratioLabel} (${frame.width}x${frame.height})`;
+            }
+
+            return;
+        }
+
+        previewSvg.classList.add('export-hidden');
+        previewCanvas.classList.remove('export-hidden');
+        previewFrame.classList.remove('export-hidden');
+
+        if (this.exportPreviewSvgUrl) {
+            URL.revokeObjectURL(this.exportPreviewSvgUrl);
+            this.exportPreviewSvgUrl = null;
         }
 
         previewCanvas.style.width = `${previewWidth}px`;
@@ -20455,16 +20508,33 @@ class Graphiti {
         }
 
         const markerColor = '#000000';
+        const shouldRenderSignificantPointType = (type) => {
+            if (!type) return true;
+            if (type === 'intersection') {
+                return !!(options.includeIntersections && this.showIntersections);
+            }
+            if (type === 'intercept') {
+                return !!(options.includeIntercepts && this.showIntercepts);
+            }
+            if (type === 'turningPoint') {
+                return !!(options.includeTurningPoints && this.showTurningPoints);
+            }
+            return true;
+        };
 
         const drawMarkerSet = (items) => {
             if (!Array.isArray(items) || items.length === 0) return;
+
+            const significantPointRadius = 6;
+            const significantPointStroke = bgColor;
+            const significantPointStrokeWidth = 1.6;
 
             for (const item of items) {
                 if (!item || !Number.isFinite(item.x) || !Number.isFinite(item.y)) continue;
                 const s = this.worldToScreen(item.x, item.y);
                 if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
                 if (s.x < -20 || s.x > width + 20 || s.y < -20 || s.y > height + 20) continue;
-                lines.push(`<circle cx="${svgNum(s.x)}" cy="${svgNum(s.y)}" r="4.0" fill="${markerColor}" />`);
+                lines.push(`<circle cx="${svgNum(s.x)}" cy="${svgNum(s.y)}" r="${svgNum(significantPointRadius)}" fill="${markerColor}" stroke="${significantPointStroke}" stroke-width="${svgNum(significantPointStrokeWidth)}" vector-effect="non-scaling-stroke" />`);
             }
         };
 
@@ -20488,6 +20558,7 @@ class Graphiti {
 
             for (const badge of this.input.persistentBadges) {
                 if (!badge || !Number.isFinite(badge.worldX) || !Number.isFinite(badge.worldY)) continue;
+                if (!shouldRenderSignificantPointType(badge.significantPointType)) continue;
 
                 const screen = this.worldToScreen(badge.worldX, badge.worldY);
                 if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;

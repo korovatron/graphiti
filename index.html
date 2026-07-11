@@ -2092,6 +2092,17 @@
             overflow: hidden;
         }
 
+        .export-preview-svg {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: block;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            object-fit: contain;
+            overflow: hidden;
+        }
+
         .export-preview-frame {
             position: absolute;
             border: 2px solid #4A90E2;
@@ -3230,6 +3241,7 @@
                     <div class="export-preview-wrap">
                         <div id="export-preview-stage" class="export-preview-stage">
                             <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
+                            <img id="export-preview-svg" class="export-preview-svg export-hidden" alt="SVG export preview">
                             <div id="export-preview-frame" class="export-preview-frame"></div>
                         </div>
                         <div id="export-preview-caption" class="export-preview-caption">Largest centred crop</div>
@@ -3249,7 +3261,6 @@
                     <select id="export-grid-mode" class="export-select">
                         <option value="both" selected>Major and minor</option>
                         <option value="major">Major only</option>
-                        <option value="minor">Minor only</option>
                         <option value="none">None</option>
                     </select>
                 </div>
