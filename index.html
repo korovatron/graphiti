@@ -272,25 +272,12 @@
                 filter: brightness(1.15);
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
             }
-            
-            /* Remove box-shadow from title/help buttons */
-            #return-to-title:hover,
-            #virtual-keyboard-toggle:hover,
-            #help-button:hover {
-                box-shadow: none;
-            }
         }
         
         /* Active state for all devices (provides touch feedback) */
         button:active {
             filter: brightness(1.15);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-        }
-        
-        #return-to-title:active,
-        #virtual-keyboard-toggle:active,
-        #help-button:active {
-            box-shadow: none;
         }
         
         input[type="text"], input[type="number"] {
@@ -3000,8 +2987,8 @@
                         </button>
                     </div>
                     <!-- Share and Help buttons container - Help at the final position -->
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <div style="position: relative; flex: 1; display: flex;">
+                    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; align-items: center;">
+                        <div style="position: relative; min-width: 0; display: flex;">
                             <button id="share-button" style="padding: 6px; font-size: 10px; height: 40px; width: 100%; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="Share options" aria-haspopup="menu" aria-expanded="false">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
@@ -3014,7 +3001,7 @@
                                 <button id="share-menu-qr" style="width: 100%; padding: 8px 10px; font-size: 12px; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; color: #fff; cursor: pointer; margin-top: 4px;">QR code</button>
                             </div>
                         </div>
-                        <button id="help-button" style="padding: 8px; font-size: 10px; height: 40px; flex: 1; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="How to Use">
+                        <button id="help-button" style="padding: 8px; font-size: 10px; height: 40px; width: 100%; min-width: 0; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; line-height: 1.2;" title="How to Use">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
