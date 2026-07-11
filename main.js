@@ -43,7 +43,7 @@ class Graphiti {
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
         
         // Size mode for display elements
-        this.sizeMode = 'normal'; // 'normal' or 'large'
+        this.sizeMode = 'large'; // 'normal' (small), 'large' (medium/default), 'xlarge' (largest)
         
         // Plotting mode
         this.plotMode = 'cartesian'; // 'cartesian' or 'polar'
@@ -18792,7 +18792,7 @@ class Graphiti {
             format: formatInput ? formatInput.value : 'svg',
             colorMode: colorModeInput ? colorModeInput.value : 'keep',
             gridMode: gridModeInput ? gridModeInput.value : 'both',
-            textSize: textSizeInput ? textSizeInput.value : 'medium',
+            textSize: textSizeInput ? textSizeInput.value : 'large',
             frameShape: frameShapeInput ? frameShapeInput.value : 'original',
             includeAxes: includeAxesInput ? includeAxesInput.checked : true,
             includeAxisLabels: includeAxisLabelsInput ? includeAxisLabelsInput.checked : true,
@@ -18982,7 +18982,7 @@ class Graphiti {
             if (!text) return 0;
             if (this.ctx && typeof this.ctx.measureText === 'function') {
                 this.ctx.save();
-                const fontWeight = this.sizeMode === 'large' ? 'bold' : 'normal';
+                const fontWeight = this.sizeMode === 'normal' ? 'normal' : 'bold';
                 this.ctx.font = `${fontWeight} ${fontSize}px Arial, sans-serif`;
                 const measured = this.ctx.measureText(text).width;
                 this.ctx.restore();
@@ -19097,29 +19097,56 @@ class Graphiti {
         const buildStandardPath = (points) => {
             if (!Array.isArray(points) || points.length < 2) return '';
 
+            const buffer = 100;
+            const clipMinX = -buffer;
+            const clipMaxX = width + buffer;
+            const clipMinY = -buffer;
+            const clipMaxY = height + buffer;
+
+            const pointInExpandedViewport = (p) => (
+                p.x >= clipMinX && p.x <= clipMaxX && p.y >= clipMinY && p.y <= clipMaxY
+            );
+
             let d = '';
-            let prev = null;
+            let pathStarted = false;
+            let prevInside = false;
 
             for (let i = 0; i < points.length; i++) {
                 const point = points[i];
                 if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-                    prev = null;
+                    pathStarted = false;
+                    prevInside = false;
                     continue;
                 }
 
                 const screen = this.worldToScreen(point.x, point.y);
                 if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
-                    prev = null;
+                    pathStarted = false;
+                    prevInside = false;
                     continue;
                 }
 
-                if (!prev || point.connected === false) {
-                    d += ` M ${svgNum(screen.x)} ${svgNum(screen.y)}`;
-                } else {
-                    d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                const inside = pointInExpandedViewport(screen);
+
+                if (point.connected === false) {
+                    pathStarted = false;
+                    prevInside = inside;
+                    continue;
                 }
 
-                prev = screen;
+                if (inside) {
+                    if (!pathStarted || !prevInside) {
+                        d += ` M ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                        pathStarted = true;
+                    } else {
+                        d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                    }
+                } else if (pathStarted && prevInside) {
+                    // End this visible segment when it leaves the expanded viewport.
+                    pathStarted = false;
+                }
+
+                prevInside = inside;
             }
 
             return d.trim();
@@ -23076,23 +23103,22 @@ class Graphiti {
     }
     
     toggleSizeMode() {
-        const normalIcon = document.getElementById('normal-size-icon');
+        const smallIcon = document.getElementById('small-size-icon');
+        const mediumIcon = document.getElementById('medium-size-icon');
         const largeIcon = document.getElementById('large-size-icon');
-        
+
         if (this.sizeMode === 'normal') {
-            // Switch to large mode
             this.sizeMode = 'large';
-            if (normalIcon && largeIcon) {
-                normalIcon.style.opacity = '0.3';  // Dim normal icon
-                largeIcon.style.opacity = '1';     // Bright large icon
-            }
+        } else if (this.sizeMode === 'large') {
+            this.sizeMode = 'xlarge';
         } else {
-            // Switch to normal mode
             this.sizeMode = 'normal';
-            if (normalIcon && largeIcon) {
-                normalIcon.style.opacity = '1';    // Bright normal icon
-                largeIcon.style.opacity = '0.3';   // Dim large icon
-            }
+        }
+
+        if (smallIcon && mediumIcon && largeIcon) {
+            smallIcon.style.opacity = this.sizeMode === 'normal' ? '1' : '0.3';
+            mediumIcon.style.opacity = this.sizeMode === 'large' ? '1' : '0.3';
+            largeIcon.style.opacity = this.sizeMode === 'xlarge' ? '1' : '0.3';
         }
         
         // Force a redraw to apply size changes
@@ -23130,14 +23156,16 @@ class Graphiti {
     }
     
     initializeSizeMode() {
-        // Always default to normal (small) size mode (no localStorage persistence)
-        const normalIcon = document.getElementById('normal-size-icon');
+        // Always default to the middle size mode (no localStorage persistence)
+        const smallIcon = document.getElementById('small-size-icon');
+        const mediumIcon = document.getElementById('medium-size-icon');
         const largeIcon = document.getElementById('large-size-icon');
-        
-        this.sizeMode = 'normal';
-        if (normalIcon && largeIcon) {
-            normalIcon.style.opacity = '1';    // Bright normal icon
-            largeIcon.style.opacity = '0.3';   // Dim large icon
+
+        this.sizeMode = 'large';
+        if (smallIcon && mediumIcon && largeIcon) {
+            smallIcon.style.opacity = '0.3';
+            mediumIcon.style.opacity = '1';
+            largeIcon.style.opacity = '0.3';
         }
     }
     
@@ -30449,7 +30477,9 @@ class Graphiti {
         this.ctx.strokeStyle = angleColor; // For fraction lines
         
         // Adjust font size based on size mode
-        if (this.sizeMode === 'large') {
+        if (this.sizeMode === 'xlarge') {
+            this.ctx.font = 'bold 20px Arial';
+        } else if (this.sizeMode === 'large') {
             this.ctx.font = 'bold 16px Arial';
         } else {
             this.ctx.font = '12px Arial';
@@ -30928,7 +30958,9 @@ class Graphiti {
         this.ctx.strokeStyle = labelColor;
         
         // Adjust font size and weight based on size mode
-        if (this.sizeMode === 'large') {
+        if (this.sizeMode === 'xlarge') {
+            this.ctx.font = 'bold 20px Arial';
+        } else if (this.sizeMode === 'large') {
             this.ctx.font = 'bold 16px Arial';
         } else {
             this.ctx.font = '12px Arial';
@@ -34734,7 +34766,10 @@ class Graphiti {
     
     getLineWidth(baseWidth) {
         // Return adjusted line width based on size mode
-        // In large mode, multiply by 1.5 for better visibility
+        // In larger modes, increase line width for better visibility
+        if (this.sizeMode === 'xlarge') {
+            return baseWidth * 1.9;
+        }
         if (this.sizeMode === 'large') {
             return baseWidth * 1.5;
         }
@@ -34745,6 +34780,9 @@ class Graphiti {
         // Return adjusted marker radius based on size mode
         // Large mode uses the previous small-mode marker sizing.
         // Small mode is reduced further to keep unselected markers unobtrusive.
+        if (this.sizeMode === 'xlarge') {
+            return baseRadius * 0.9;
+        }
         if (this.sizeMode === 'large') {
             return baseRadius * 0.75;
         }
@@ -34785,6 +34823,9 @@ class Graphiti {
     
     getPanelScale() {
         // Return scale factor for UI panels based on size mode
+        if (this.sizeMode === 'xlarge') {
+            return 1.55;
+        }
         if (this.sizeMode === 'large') {
             return 1.3;
         }
@@ -35503,8 +35544,8 @@ class Graphiti {
         }
         
         // Adjust font size based on size mode
-        const fontSize = this.sizeMode === 'large' ? 20 : 16;
-        const fontWeight = this.sizeMode === 'large' ? 'bold' : 'normal';
+        const fontSize = this.sizeMode === 'xlarge' ? 24 : (this.sizeMode === 'large' ? 20 : 16);
+        const fontWeight = this.sizeMode === 'normal' ? 'normal' : 'bold';
         this.ctx.font = `${fontWeight} ${fontSize}px Arial, sans-serif`;
         const textMetrics = this.ctx.measureText(labelText);
         const textWidth = textMetrics.width;
@@ -36115,8 +36156,8 @@ class Graphiti {
         this.ctx.save();
         
         // Set font and measure text
-        const isLargeMode = this.sizeMode === 'large';
-        const fontSize = isLargeMode ? 24 : 18;
+        const isLargeMode = this.sizeMode !== 'normal';
+        const fontSize = this.sizeMode === 'xlarge' ? 30 : (this.sizeMode === 'large' ? 24 : 18);
         const fontFamily = 'Arial, sans-serif';
         this.ctx.font = `${fontSize}px ${fontFamily}`;
         
