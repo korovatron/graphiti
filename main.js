@@ -16203,6 +16203,8 @@ class Graphiti {
         const exportGenerateButton = document.getElementById('export-generate-button');
         const exportFrameShape = document.getElementById('export-frame-shape');
         const exportFormatInputs = document.querySelectorAll('input[name="export-format"]');
+        const exportIncludeAxes = document.getElementById('export-include-axes');
+        const exportIncludeAxisLabels = document.getElementById('export-include-axis-labels');
 
         if (exportOverlay) {
             exportOverlay.addEventListener('click', (e) => {
@@ -16236,6 +16238,18 @@ class Graphiti {
                     this.updateExportFormatUI();
                 });
             }
+        }
+
+        if (exportIncludeAxes) {
+            exportIncludeAxes.addEventListener('change', () => {
+                this.updateExportFormatUI();
+            });
+        }
+
+        if (exportIncludeAxisLabels) {
+            exportIncludeAxisLabels.addEventListener('change', () => {
+                this.updateExportFormatUI();
+            });
         }
         
         // Angle Mode Toggle
@@ -18587,6 +18601,12 @@ class Graphiti {
         const format = this.getSelectedExportFormat();
         const svgOnlyGroups = document.querySelectorAll('.export-svg-only');
         const generateButton = document.getElementById('export-generate-button');
+        const includeAxesInput = document.getElementById('export-include-axes');
+        const axisTicksGroup = document.getElementById('export-axis-ticks-group');
+        const includeAxisTicksInput = document.getElementById('export-include-axis-ticks');
+        const includeAxisLabelsInput = document.getElementById('export-include-axis-labels');
+        const axisLabelDensityGroup = document.getElementById('export-axis-label-density-group');
+        const axisLabelDensityInputs = document.querySelectorAll('input[name="export-axis-label-density"]');
 
         for (const group of svgOnlyGroups) {
             if (format === 'svg') {
@@ -18601,6 +18621,24 @@ class Graphiti {
                 generateButton.textContent = this.isTouchExportDevice() ? 'Share PNG' : 'Download PNG';
             } else {
                 generateButton.textContent = 'Download SVG';
+            }
+        }
+
+        if (axisTicksGroup) {
+            const showAxisTicksOption = format === 'svg' && (!includeAxesInput || includeAxesInput.checked);
+            axisTicksGroup.classList.toggle('export-hidden', !showAxisTicksOption);
+            if (includeAxisTicksInput) {
+                includeAxisTicksInput.disabled = !showAxisTicksOption;
+            }
+        }
+
+        if (axisLabelDensityGroup) {
+            const showAxisLabelDensityOption = format === 'svg' && (!includeAxisLabelsInput || includeAxisLabelsInput.checked);
+            axisLabelDensityGroup.classList.toggle('export-hidden', !showAxisLabelDensityOption);
+            if (axisLabelDensityInputs && axisLabelDensityInputs.length > 0) {
+                for (const input of axisLabelDensityInputs) {
+                    input.disabled = !showAxisLabelDensityOption;
+                }
             }
         }
     }
@@ -18783,7 +18821,9 @@ class Graphiti {
         const textSizeInput = document.getElementById('export-text-size');
         const frameShapeInput = document.getElementById('export-frame-shape');
         const includeAxesInput = document.getElementById('export-include-axes');
+        const includeAxisTicksInput = document.getElementById('export-include-axis-ticks');
         const includeAxisLabelsInput = document.getElementById('export-include-axis-labels');
+        const axisLabelDensityInput = document.querySelector('input[name="export-axis-label-density"]:checked');
         const includeIntersectionsInput = document.getElementById('export-include-intersections');
         const includeInterceptsInput = document.getElementById('export-include-intercepts');
         const includeTurningPointsInput = document.getElementById('export-include-turning-points');
@@ -18795,7 +18835,9 @@ class Graphiti {
             textSize: textSizeInput ? textSizeInput.value : 'large',
             frameShape: frameShapeInput ? frameShapeInput.value : 'original',
             includeAxes: includeAxesInput ? includeAxesInput.checked : true,
+            includeAxisTicks: includeAxisTicksInput ? includeAxisTicksInput.checked : true,
             includeAxisLabels: includeAxisLabelsInput ? includeAxisLabelsInput.checked : true,
+            axisLabelDensity: axisLabelDensityInput ? axisLabelDensityInput.value : 'all',
             includeIntersections: includeIntersectionsInput ? includeIntersectionsInput.checked : true,
             includeIntercepts: includeInterceptsInput ? includeInterceptsInput.checked : true,
             includeTurningPoints: includeTurningPointsInput ? includeTurningPointsInput.checked : true
@@ -19819,6 +19861,26 @@ class Graphiti {
         if (options.includeAxisLabels) {
             const labelColor = '#000000';
             const labelFontSize = labelFontSizeMap[options.textSize] || labelFontSizeMap.small;
+            const includeAxisTicks = options.includeAxisTicks !== false;
+            const reducedAxisLabelDensity = options.axisLabelDensity === 'reduced';
+            const axisTickLength = includeAxisTicks ? 7 : 0;
+            const axisTickStrokeWidth = 2.1;
+            const xAxisLabelOffsetY = (includeAxisTicks ? axisTickLength : 0) + labelFontSize + 4;
+            const yAxisLabelOffsetX = includeAxisTicks ? (axisTickLength + 4) : 7;
+
+            const shouldRenderAxisPosition = (value, spacing) => {
+                if (!reducedAxisLabelDensity) return true;
+                if (!Number.isFinite(value) || !Number.isFinite(spacing) || Math.abs(spacing) < 1e-10) return true;
+
+                const ratio = value / spacing;
+                const nearest = Math.round(ratio);
+                if (!Number.isFinite(nearest) || Math.abs(ratio - nearest) > 1e-6) {
+                    return true;
+                }
+
+                // Keep every other step measured from origin so both sides alternate consistently.
+                return Math.abs(nearest % 2) === 0;
+            };
 
             let xLabelSpacing;
             let yLabelSpacing;
@@ -19836,9 +19898,10 @@ class Graphiti {
 
                 for (let x = startX; x <= this.viewport.maxX; x += xLabelSpacing) {
                     if (Math.abs(x) < 0.0001) continue;
+                    if (!shouldRenderAxisPosition(x, xLabelSpacing)) continue;
                     const screenPos = this.worldToScreen(x, 0);
                     if (screenPos.x < 20 || screenPos.x > width - 20) continue;
-                    if (axisY + 5 >= height - 15) continue;
+                    if (axisY + xAxisLabelOffsetY >= height - 6) continue;
 
                     let label;
                     if (this.plotMode === 'polar') {
@@ -19850,9 +19913,13 @@ class Graphiti {
                         label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
                     }
 
+                    if (includeAxisTicks) {
+                        pushLine(screenPos.x, axisY, screenPos.x, axisY + axisTickLength, axisColor, axisTickStrokeWidth);
+                    }
+
                     // Office apps often mis-handle dominant-baseline="hanging".
                     // Use explicit vertical offset with alphabetic baseline for consistent placement under x-axis.
-                    const xAxisLabelY = axisY + labelFontSize + 4;
+                    const xAxisLabelY = axisY + xAxisLabelOffsetY;
                     pushLabel(screenPos.x, xAxisLabelY, label, labelColor, labelFontSize, 'middle', 'alphabetic');
                 }
             }
@@ -19863,9 +19930,10 @@ class Graphiti {
 
                 for (let y = startY; y <= this.viewport.maxY; y += yLabelSpacing) {
                     if (Math.abs(y) < 0.0001) continue;
+                    if (!shouldRenderAxisPosition(y, yLabelSpacing)) continue;
                     const screenPos = this.worldToScreen(0, y);
                     if (screenPos.y < 20 || screenPos.y > height - 20) continue;
-                    if (axisX - 5 <= 15) continue;
+                    if (axisX - yAxisLabelOffsetX <= 15) continue;
 
                     let label;
                     if (this.plotMode === 'polar') {
@@ -19877,14 +19945,17 @@ class Graphiti {
                         label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
                     }
 
-                    pushLabel(axisX - 7, screenPos.y, label, labelColor, labelFontSize, 'end', 'middle');
+                    if (includeAxisTicks) {
+                        pushLine(axisX, screenPos.y, axisX - axisTickLength, screenPos.y, axisColor, axisTickStrokeWidth);
+                    }
+                    pushLabel(axisX - yAxisLabelOffsetX, screenPos.y, label, labelColor, labelFontSize, 'end', 'middle');
                 }
             }
 
             if (this.viewport.minX <= 0 && this.viewport.maxX >= 0 && this.viewport.minY <= 0 && this.viewport.maxY >= 0) {
                 const origin = this.worldToScreen(0, 0);
-                const originY = origin.y + labelFontSize + 4;
-                pushLabel(origin.x - 7, originY, '0', labelColor, labelFontSize, 'end', 'alphabetic');
+                const originY = origin.y + xAxisLabelOffsetY;
+                pushLabel(origin.x - yAxisLabelOffsetX, originY, '0', labelColor, labelFontSize, 'end', 'alphabetic');
             }
         }
 

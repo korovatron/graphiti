@@ -644,6 +644,10 @@
             text-decoration-color: currentColor;
         }
 
+        .title-screen p.copyright .tool-description {
+            display: none;
+        }
+
         .title-screen p.copyright .tool-name {
             font-weight: 700;
         }
@@ -700,9 +704,6 @@
                 margin-top: 2px;
             }
 
-            .title-screen p.copyright .tool-description {
-                display: none;
-            }
         }
 
         /* Very short landscape screens: allow natural flow to avoid overlap */
@@ -2039,6 +2040,12 @@
             cursor: pointer;
         }
 
+        .export-sub-option {
+            margin-left: 22px;
+            padding-left: 10px;
+            border-left: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
         .export-select {
             background: var(--input-bg);
             color: var(--text-primary);
@@ -2884,14 +2891,20 @@
                         <span id="radians-icon" style="font-size: 12px; font-weight: bold; opacity: 1;">RAD</span>
                     </button>
                     <button id="size-mode-toggle" style="padding: 8px 12px; font-size: 12px; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Toggle Size Mode">
-                        <!-- Normal Size (small A) -->
-                        <span id="normal-size-icon" style="font-size: 12px; font-weight: bold; opacity: 1;">A</span>
+                        <!-- Small Size -->
+                        <span id="small-size-icon" style="font-size: 12px; font-weight: bold; opacity: 0.3;">A</span>
 
                         <!-- Separator -->
                         <div style="width: 1px; height: 12px; background: #666;"></div>
 
-                        <!-- Large Size (big A) -->
-                        <span id="large-size-icon" style="font-size: 16px; font-weight: bold; opacity: 0.3;">A</span>
+                        <!-- Medium Size (default) -->
+                        <span id="medium-size-icon" style="font-size: 16px; font-weight: bold; opacity: 1;">A</span>
+
+                        <!-- Separator -->
+                        <div style="width: 1px; height: 12px; background: #666;"></div>
+
+                        <!-- Large Size -->
+                        <span id="large-size-icon" style="font-size: 20px; font-weight: bold; opacity: 0.3;">A</span>
                     </button>
                     <button id="theme-toggle" style="padding: 8px 12px; font-size: 16px; height: 40px; background: #2A3F5A; border: 1px solid #555; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Toggle Theme">
                         <!-- Light Mode Icon (Sun) -->
@@ -3245,8 +3258,8 @@
                     <label class="export-label" for="export-text-size">Text size</label>
                     <select id="export-text-size" class="export-select">
                         <option value="small">Small</option>
-                        <option value="medium" selected>Medium</option>
-                        <option value="large">Large</option>
+                        <option value="medium">Medium</option>
+                        <option value="large" selected>Large</option>
                         <option value="xl">XL</option>
                         <option value="xxl">XXL</option>
                         <option value="xxxl">XXXL</option>
@@ -3257,8 +3270,20 @@
                     <label><input id="export-include-axes" type="checkbox" checked> Include axes</label>
                 </div>
 
+                <div id="export-axis-ticks-group" class="export-group export-checkbox-row export-svg-only export-sub-option">
+                    <label><input id="export-include-axis-ticks" type="checkbox" checked> Include tick marks</label>
+                </div>
+
                 <div class="export-group export-checkbox-row export-svg-only">
                     <label><input id="export-include-axis-labels" type="checkbox" checked> Include axis numbers/labels</label>
+                </div>
+
+                <div id="export-axis-label-density-group" class="export-group export-svg-only export-sub-option">
+                    <div class="export-label">Axis label density</div>
+                    <div class="export-radio-row">
+                        <label><input type="radio" name="export-axis-label-density" value="all" checked> All labels/ticks</label>
+                        <label><input type="radio" name="export-axis-label-density" value="reduced"> Every other (less crowded)</label>
+                    </div>
                 </div>
 
                 <div class="export-group export-checkbox-row export-svg-only">
