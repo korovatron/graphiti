@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.99';
+const VERSION = '1.1.100';
 
 class Graphiti {
     constructor() {
@@ -16180,54 +16180,39 @@ class Graphiti {
                 shareButton.setAttribute('aria-expanded', 'true');
             };
 
-            const isShareMenuTarget = (target) => {
-                return shareButton.contains(target) || shareMenu.contains(target);
+            this.closeShareMenu = closeShareMenu;
+
+            const shareLinkFromTouch = async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeShareMenu();
+                try {
+                    await this.shareGraphLink();
+                } catch (error) {
+                    console.error('Share link error:', error);
+                    alert('Share failed: ' + error.message);
+                }
             };
 
-            const toggleShareMenu = (event) => {
-                // iOS Safari can emit touch and click for the same tap.
-                // Prevent the synthetic click so the menu does not immediately re-toggle.
-                if (event.type === 'touchend') {
-                    event.preventDefault();
-                }
+            shareButton.addEventListener('touchend', shareLinkFromTouch, { passive: false });
+
+            shareButton.addEventListener('click', (event) => {
                 event.stopPropagation();
+
                 const isOpen = shareMenu.style.display === 'block';
                 if (isOpen) {
                     closeShareMenu();
                 } else {
                     openShareMenu();
                 }
-            };
-
-            this.closeShareMenu = closeShareMenu;
-
-            shareButton.addEventListener('click', toggleShareMenu);
-            shareButton.addEventListener('touchend', toggleShareMenu, { passive: false });
+            });
 
             shareMenu.addEventListener('click', (event) => {
                 event.stopPropagation();
             });
 
-            shareMenu.addEventListener('touchend', (event) => {
-                event.stopPropagation();
-            }, { passive: true });
-
-            document.addEventListener('click', (event) => {
-                if (!isShareMenuTarget(event.target)) {
-                    closeShareMenu();
-                }
-            });
-
-            document.addEventListener('touchend', (event) => {
-                if (!isShareMenuTarget(event.target)) {
-                    closeShareMenu();
-                }
-            }, { passive: true });
-
-            document.addEventListener('pointerdown', (event) => {
-                if (!isShareMenuTarget(event.target)) {
-                    closeShareMenu();
-                }
+            document.addEventListener('click', () => {
+                closeShareMenu();
             });
 
             document.addEventListener('keydown', (event) => {
