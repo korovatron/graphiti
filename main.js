@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.95';
+const VERSION = '1.1.96';
 
 class Graphiti {
     constructor() {
@@ -18944,6 +18944,8 @@ class Graphiti {
                             title: 'Graphiti Graph'
                         });
 
+                        this.trackGoatCounterEvent('Graphiti PNG Export');
+
                         this.toggleExportOverlay(false);
                         const button = document.getElementById('share-image-button');
                         if (button) {
@@ -18967,6 +18969,8 @@ class Graphiti {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+
+            this.trackGoatCounterEvent('Graphiti PNG Export');
 
             this.toggleExportOverlay(false);
             const button = document.getElementById('share-image-button');
@@ -18999,6 +19003,7 @@ class Graphiti {
             document.body.removeChild(link);
 
             URL.revokeObjectURL(url);
+            this.trackGoatCounterEvent('Graphiti SVG Export');
             this.toggleExportOverlay(false);
 
             const button = document.getElementById('share-image-button');
@@ -20651,6 +20656,26 @@ class Graphiti {
 
         return svg.join('\n');
     }
+
+    trackGoatCounterEvent(eventName) {
+        try {
+            if (!eventName) return;
+            if (!window.goatcounter || typeof window.goatcounter.count !== 'function') return;
+
+            const eventSlug = eventName
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+
+            window.goatcounter.count({
+                path: `/event/${eventSlug}`,
+                title: eventName,
+                event: true
+            });
+        } catch (error) {
+            console.warn('GoatCounter tracking failed:', error);
+        }
+    }
     
     async copyOrShareCanvas() {
         try {
@@ -20815,6 +20840,7 @@ class Graphiti {
                     await navigator.clipboard.writeText(shareUrl);
                     
                     console.log('Link copied to clipboard');
+                    this.trackGoatCounterEvent('Graphiti URL Share Link Copied');
                     
                     // Show DOM tooltip confirmation (above all panels)
                     const button = document.getElementById('share-link-button');
@@ -20892,6 +20918,8 @@ class Graphiti {
                     }
                 }, 'image/png');
             });
+
+            this.trackGoatCounterEvent('Graphiti QR Code Generated');
             
             // Detect mobile devices
             const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
