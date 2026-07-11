@@ -19116,6 +19116,7 @@ class Graphiti {
         };
         const strokeWidthScale = strokeWidthScaleMap[options.strokeWidth] || strokeWidthScaleMap.small;
         const getSvgLineWidth = (baseWidth) => baseWidth * strokeWidthScale;
+        const graphStrokeWidth = getSvgLineWidth(3);
 
         const pushLine = (x1, y1, x2, y2, stroke, strokeWidth = 1, dash = null) => {
             if (![x1, y1, x2, y2].every(Number.isFinite)) return;
@@ -20090,6 +20091,7 @@ class Graphiti {
             if (!func || !func.enabled || !func.expression) continue;
 
             const functionType = this.detectFunctionType(func.expression);
+            const isAffineExplicit = func.implicitRenderMode === 'affine-explicit';
             const points = func.displayPoints || func.points;
             const stroke = curveColorFor(func);
             const lineWidth = getSvgLineWidth(3);
@@ -20148,8 +20150,9 @@ class Graphiti {
 
             if (Array.isArray(points) && points.length > 0) {
                 const hasConnectedPoints = points.some((p) => p && p.connected);
+                const shouldUseImplicitSegmentPaths = (functionType === 'implicit' || functionType === 'implicit-inequality') && !isAffineExplicit;
 
-                if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !hasConnectedPoints) {
+                if (shouldUseImplicitSegmentPaths && !hasConnectedPoints) {
                     const pointStep = Math.max(1, Math.floor(points.length / 5000));
                     for (let i = 0; i < points.length; i += pointStep) {
                         const point = points[i];
@@ -20159,7 +20162,7 @@ class Graphiti {
                         lines.push(`<circle cx="${svgNum(s.x)}" cy="${svgNum(s.y)}" r="1.25" fill="${stroke}" />`);
                     }
                 } else {
-                    if ((functionType === 'implicit' || functionType === 'implicit-inequality') && hasConnectedPoints) {
+                    if (shouldUseImplicitSegmentPaths && hasConnectedPoints) {
                         const chainedPaths = buildImplicitSegmentPaths(points);
                         if (chainedPaths.length > 0) {
                             let dash = '';
@@ -20180,6 +20183,15 @@ class Graphiti {
                             pushPath(pathData, stroke, lineWidth, 'none', dash.trim());
                         }
                     }
+                }
+            }
+
+            if (isAffineExplicit && Array.isArray(func.affineVerticalComponents) && func.affineVerticalComponents.length > 0) {
+                for (const x of func.affineVerticalComponents) {
+                    if (!Number.isFinite(x)) continue;
+                    if (x < this.viewport.minX || x > this.viewport.maxX) continue;
+                    const screen = this.worldToScreen(x, 0);
+                    pushLine(screen.x, 0, screen.x, height, stroke, lineWidth);
                 }
             }
 
@@ -20589,9 +20601,10 @@ class Graphiti {
         const drawMarkerSet = (items) => {
             if (!Array.isArray(items) || items.length === 0) return;
 
-            const significantPointRadius = 6;
+            const significantPointDiameter = Math.max(graphStrokeWidth * 1.32, graphStrokeWidth + getSvgLineWidth(1.5));
+            const significantPointRadius = significantPointDiameter / 2;
             const significantPointStroke = bgColor;
-            const significantPointStrokeWidth = 1.6;
+            const significantPointStrokeWidth = Math.max(getSvgLineWidth(0.75), 1);
 
             for (const item of items) {
                 if (!item || !Number.isFinite(item.x) || !Number.isFinite(item.y)) continue;
