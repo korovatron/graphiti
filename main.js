@@ -18978,6 +18978,40 @@ class Graphiti {
             labelLines.push(`<text x="${svgNum(x)}" y="${svgNum(y)}" fill="${color}" font-family="Arial, sans-serif" font-size="${svgNum(size)}" text-anchor="${anchor}" dominant-baseline="${baseline}">${escapeXml(text)}</text>`);
         };
 
+        const pushPiFractionLabel = (x, y, piFractionString, color, size = 12, anchor = 'middle', baseline = 'middle') => {
+            const parsed = this.parsePiFraction(piFractionString);
+            if (!parsed || !parsed.denominator) {
+                pushLabel(x, y, piFractionString, color, size, anchor, baseline);
+                return;
+            }
+
+            const sign = parsed.sign || '';
+            const coefficient = parsed.coefficient || 1;
+            const denominator = parsed.denominator;
+            const numeratorText = `${sign}${coefficient === 1 ? '' : coefficient}π`;
+            const denominatorText = String(denominator);
+
+            const estimatedWidth = Math.max(numeratorText.length, denominatorText.length) * size * 0.58;
+            const halfWidth = (estimatedWidth / 2) + 1;
+
+            let centerX = x;
+            if (anchor === 'end') centerX = x - (estimatedWidth / 2);
+            if (anchor === 'start') centerX = x + (estimatedWidth / 2);
+
+            let centerY = y;
+            if (baseline === 'alphabetic') centerY = y - (size * 0.22);
+            if (baseline === 'hanging') centerY = y + (size * 0.8);
+
+            const numY = centerY - (size * 0.33);
+            const denY = centerY + (size * 0.18);
+            const lineY = centerY;
+            const lineWidth = Math.max(1, size * 0.08);
+
+            labelLines.push(`<text x="${svgNum(centerX)}" y="${svgNum(numY)}" fill="${color}" font-family="Arial, sans-serif" font-size="${svgNum(size)}" text-anchor="middle" dominant-baseline="alphabetic">${escapeXml(numeratorText)}</text>`);
+            labelLines.push(`<line x1="${svgNum(centerX - halfWidth)}" y1="${svgNum(lineY)}" x2="${svgNum(centerX + halfWidth)}" y2="${svgNum(lineY)}" stroke="${color}" stroke-width="${svgNum(lineWidth)}" vector-effect="non-scaling-stroke" />`);
+            labelLines.push(`<text x="${svgNum(centerX)}" y="${svgNum(denY)}" fill="${color}" font-family="Arial, sans-serif" font-size="${svgNum(size)}" text-anchor="middle" dominant-baseline="hanging">${escapeXml(denominatorText)}</text>`);
+        };
+
         const estimateBadgeTextWidth = (text, fontSize) => {
             if (!text) return 0;
             if (this.ctx && typeof this.ctx.measureText === 'function') {
@@ -19852,7 +19886,19 @@ class Graphiti {
                     // Office apps often mis-handle dominant-baseline="hanging".
                     // Use explicit vertical offset with alphabetic baseline for consistent placement under x-axis.
                     const xAxisLabelY = axisY + labelFontSize + 4;
-                    pushLabel(screenPos.x, xAxisLabelY, label, labelColor, labelFontSize, 'middle', 'alphabetic');
+                    const piFraction = this.parsePiFraction(label);
+                    if (piFraction && piFraction.denominator) {
+                        const xAxisPiBaseOffsetY = Math.round(labelFontSize * 0.32);
+                        const xAxisPiExtraOffsetByTextSize = {
+                            xl: 1,
+                            xxl: 2,
+                            xxxl: 3
+                        };
+                        const xAxisPiExtraOffsetY = xAxisPiExtraOffsetByTextSize[options.textSize] || 0;
+                        pushPiFractionLabel(screenPos.x, xAxisLabelY + xAxisPiBaseOffsetY + xAxisPiExtraOffsetY, label, labelColor, labelFontSize, 'middle', 'alphabetic');
+                    } else {
+                        pushLabel(screenPos.x, xAxisLabelY, label, labelColor, labelFontSize, 'middle', 'alphabetic');
+                    }
                 }
             }
 
@@ -19876,7 +19922,12 @@ class Graphiti {
                         label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
                     }
 
-                    pushLabel(axisX - 7, screenPos.y, label, labelColor, labelFontSize, 'end', 'middle');
+                    const piFraction = this.parsePiFraction(label);
+                    if (piFraction && piFraction.denominator) {
+                        pushPiFractionLabel(axisX - 7, screenPos.y, label, labelColor, labelFontSize, 'end', 'middle');
+                    } else {
+                        pushLabel(axisX - 7, screenPos.y, label, labelColor, labelFontSize, 'end', 'middle');
+                    }
                 }
             }
 
