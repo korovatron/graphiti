@@ -2345,6 +2345,7 @@ class Graphiti {
                         data-limit-type="lower"
                     ></math-field>
                 </div>
+                <div class="integral-limit-row">
                     <label class="integral-limit-label">Upper limit:</label>
                     <math-field 
                         class="integral-limit-field integral-upper-limit"
