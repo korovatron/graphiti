@@ -8781,6 +8781,8 @@ class Graphiti {
             );
             if (!hasCurrentDomainExclusions) {
                 cachedStructure = null;
+            } else if (monomialModel.power === 3 && domainExclusions.length > 0 && (!Array.isArray(cachedStructure.zeroLimitExclusions) || cachedStructure.zeroLimitExclusions.length === 0)) {
+                cachedStructure = null;
             }
         }
 
@@ -8821,6 +8823,9 @@ class Graphiti {
             let suppressNextIntervalBreak = false;
             const verticalAsymptoteXs = Array.isArray(cachedStructure.vertical)
                 ? cachedStructure.vertical.filter(value => Number.isFinite(value))
+                : [];
+            const zeroLimitExclusionsForCache = Array.isArray(cachedStructure.zeroLimitExclusions)
+                ? cachedStructure.zeroLimitExclusions.filter(value => Number.isFinite(value))
                 : [];
 
             const evaluateY = (x) => {
@@ -8929,8 +8934,13 @@ class Graphiti {
             }
             sampleInterval(intervalStart, bufferedMaxX);
 
-            proxyFunc.points = points;
-            proxyFunc.displayPoints = points;
+            if (zeroLimitExclusionsForCache.length > 0) {
+                proxyFunc.points = points;
+                this.addMonomialBranchHoleApproachPoints(proxyFunc, branchExpression, zeroLimitExclusionsForCache, exclusionGap);
+            }
+
+            proxyFunc.points = proxyFunc.points || points;
+            proxyFunc.displayPoints = proxyFunc.points;
             proxyFunc.holes = Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : [];
             proxyFunc.asymptoteData = {
                 vertical: Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [],
@@ -9072,7 +9082,7 @@ class Graphiti {
                 }
 
                 const hitsExcludedX = segmentBreakXs.some(exclusionX => Math.abs(current.x - exclusionX) <= exclusionTolerance);
-                if (hitsExcludedX) {
+                if (hitsExcludedX && current.monomialHoleApproach !== true) {
                     pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
                     continue;
                 }
@@ -9550,23 +9560,54 @@ class Graphiti {
         };
 
         const baseOffset = Math.max(exclusionTolerance * 1.25, Math.abs(this.viewport.maxX - this.viewport.minX) / Math.max(1, this.viewport.width) * 0.000001, 1e-12);
-        const multipliers = [1, 2, 4, 8, 16, 32, 64];
+        const offsets = [
+            1e-12,
+            1e-11,
+            1e-10,
+            1e-9,
+            baseOffset,
+            baseOffset * 2,
+            baseOffset * 4,
+            baseOffset * 8,
+            baseOffset * 16,
+            baseOffset * 32,
+            baseOffset * 64,
+            baseOffset * 128,
+            baseOffset * 256,
+            baseOffset * 512,
+            baseOffset * 1024,
+            baseOffset * 2048,
+            baseOffset * 4096,
+            baseOffset * 8192,
+            baseOffset * 16384,
+            baseOffset * 32768,
+            baseOffset * 65536
+        ]
+            .filter(value => Number.isFinite(value) && value > 0)
+            .sort((a, b) => a - b)
+            .filter((value, index, values) => index === 0 || Math.abs(value - values[index - 1]) > 1e-15);
 
         for (const root of roots) {
             if (!Number.isFinite(root)) {
                 continue;
             }
 
+            proxyFunc.points.push({ x: root, y: 0, connected: true, monomialHoleApproach: true });
+
             for (const direction of [-1, 1]) {
-                for (const multiplier of multipliers) {
-                    const x = root + direction * baseOffset * multiplier;
+                let addedForSide = 0;
+                for (const offset of offsets) {
+                    const x = root + direction * offset;
                     const y = evaluateAtX(x);
                     if (y === null) {
                         continue;
                     }
 
-                    proxyFunc.points.push({ x, y, connected: true });
-                    break;
+                    proxyFunc.points.push({ x, y, connected: true, monomialHoleApproach: true });
+                    addedForSide++;
+                    if (addedForSide >= 14) {
+                        break;
+                    }
                 }
             }
         }
@@ -9576,6 +9617,59 @@ class Graphiti {
             const bx = b && Number.isFinite(b.x) ? b.x : Infinity;
             return ax - bx;
         });
+
+        for (const root of roots) {
+            if (!Number.isFinite(root)) {
+                continue;
+            }
+
+            let nearestLeftIndex = -1;
+            let nearestRightIndex = -1;
+            let nearestOrdinaryLeftIndex = -1;
+            let nearestOrdinaryRightIndex = -1;
+            let nearestLeftDistance = Infinity;
+            let nearestRightDistance = Infinity;
+            let nearestOrdinaryLeftDistance = Infinity;
+            let nearestOrdinaryRightDistance = Infinity;
+
+            for (let i = 0; i < proxyFunc.points.length; i++) {
+                const point = proxyFunc.points[i];
+                if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                    continue;
+                }
+
+                const distance = Math.abs(point.x - root);
+                if (point.x < root && distance < nearestLeftDistance) {
+                    nearestLeftDistance = distance;
+                    nearestLeftIndex = i;
+                }
+                if (point.x < root && point.monomialHoleApproach !== true && distance < nearestOrdinaryLeftDistance) {
+                    nearestOrdinaryLeftDistance = distance;
+                    nearestOrdinaryLeftIndex = i;
+                }
+                if (point.x > root && distance < nearestRightDistance) {
+                    nearestRightDistance = distance;
+                    nearestRightIndex = i;
+                }
+                if (point.x > root && point.monomialHoleApproach !== true && distance < nearestOrdinaryRightDistance) {
+                    nearestOrdinaryRightDistance = distance;
+                    nearestOrdinaryRightIndex = i;
+                }
+            }
+
+            if (nearestLeftIndex >= 0) {
+                proxyFunc.points[nearestLeftIndex] = { ...proxyFunc.points[nearestLeftIndex], connected: true };
+            }
+            if (nearestRightIndex >= 0) {
+                proxyFunc.points[nearestRightIndex] = { ...proxyFunc.points[nearestRightIndex], connected: true };
+            }
+            if (nearestOrdinaryLeftIndex >= 0) {
+                proxyFunc.points[nearestOrdinaryLeftIndex] = { ...proxyFunc.points[nearestOrdinaryLeftIndex], connected: true };
+            }
+            if (nearestOrdinaryRightIndex >= 0) {
+                proxyFunc.points[nearestOrdinaryRightIndex] = { ...proxyFunc.points[nearestOrdinaryRightIndex], connected: true };
+            }
+        }
     }
 
     addQuadraticBranchEndpointRoots(proxyFunc, quadraticModel, roots) {
@@ -35040,6 +35134,34 @@ class Graphiti {
                 // Non-strict inequality or regular function - use solid line
                 offscreenCtx.setLineDash([]);
             }
+
+            if (this.isExplicitImplicitFastPath(func)) {
+                offscreenCtx.beginPath();
+                let pathStarted = false;
+
+                for (const point of pointsToUse) {
+                    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                        pathStarted = false;
+                        continue;
+                    }
+
+                    const screen = this.worldToScreen(point.x, point.y);
+                    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                        pathStarted = false;
+                        continue;
+                    }
+
+                    if (!pathStarted || point.connected === false) {
+                        offscreenCtx.moveTo(screen.x, screen.y);
+                        pathStarted = true;
+                    } else {
+                        offscreenCtx.lineTo(screen.x, screen.y);
+                    }
+                }
+
+                offscreenCtx.stroke();
+                offscreenCtx.setLineDash([]);
+            } else {
                 
                 // Build continuous paths from marching squares segments for consistent dash patterns
                 // Connect segments that share endpoints to create smooth dash flow
@@ -35125,6 +35247,7 @@ class Graphiti {
                 
                 // Stroke all paths at once for consistent dashes
                 offscreenCtx.stroke();
+            }
             
             // Reset line dash after drawing inequalities
             offscreenCtx.setLineDash([]);
