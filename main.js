@@ -6047,7 +6047,7 @@ class Graphiti {
         return func && func.expression ? this.detectFunctionType(func.expression) : 'explicit';
     }
 
-    refreshFastPathImplicitCoverageForViewport() {
+    refreshExplicitCoverageForViewport() {
         if (this.plotMode !== 'cartesian') {
             return;
         }
@@ -6058,21 +6058,86 @@ class Graphiti {
         }
 
         const edgeMargin = viewportWidth * 0.2;
+        const now = performance.now();
+        const looksExpensiveExplicit = (func) => {
+            const expression = this.convertFromLatex(func.expression || '').toLowerCase();
+            return /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expression) ||
+                /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expression) ||
+                /\b(log|ln|sqrt|asin|acos|atan|abs|sign)\s*\(/.test(expression) ||
+                /\/[^(]*x|\/\s*\([^)]*x/.test(expression) ||
+                expression.length > 80;
+        };
+
         this.getCurrentFunctions().forEach(func => {
-            if (!func || !func.enabled || !func.expression || !this.isExplicitImplicitFastPath(func)) {
+            if (!func || !func.enabled || !func.expression || func._viewportCoverageRefreshPending) {
                 return;
             }
 
-            const finiteXs = (func.points || [])
-                .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
-                .map(point => point.x);
-            const minPointX = finiteXs.length > 0 ? Math.min(...finiteXs) : Infinity;
-            const maxPointX = finiteXs.length > 0 ? Math.max(...finiteXs) : -Infinity;
+            const isFastPathImplicit = this.isExplicitImplicitFastPath(func);
+            const rawFunctionType = this.detectFunctionType(func.expression);
+            const isRegularExplicit = !isFastPathImplicit && rawFunctionType === 'explicit';
+            if (!isFastPathImplicit && !isRegularExplicit) {
+                return;
+            }
 
-            if (finiteXs.length === 0 || this.viewport.minX < minPointX + edgeMargin || this.viewport.maxX > maxPointX - edgeMargin) {
-                this.plotFunction(func).catch(error => {
-                    console.warn('Could not refresh fast-path implicit viewport coverage:', error);
-                });
+            const cooldownMs = isFastPathImplicit ? 40 : 160;
+            if (func._lastViewportCoverageRefreshAt && now - func._lastViewportCoverageRefreshAt < cooldownMs) {
+                return;
+            }
+
+            if (isRegularExplicit) {
+                const lastPlotMs = Number.isFinite(func._lastViewportCoveragePlotMs)
+                    ? func._lastViewportCoveragePlotMs
+                    : this.performance.plotTimes.get(func.id);
+                const expensiveHint = looksExpensiveExplicit(func);
+                const maxAllowedMs = expensiveHint ? 8 : 24;
+                const slowSimpleCooldownMs = 900;
+                const slowSimpleStillCoolingDown = !expensiveHint && Number.isFinite(lastPlotMs) && lastPlotMs > maxAllowedMs &&
+                    func._lastViewportCoverageRefreshAt && now - func._lastViewportCoverageRefreshAt < slowSimpleCooldownMs;
+                if ((!Number.isFinite(lastPlotMs) && expensiveHint) || slowSimpleStillCoolingDown || (expensiveHint && Number.isFinite(lastPlotMs) && lastPlotMs > maxAllowedMs)) {
+                    return;
+                }
+            }
+
+            const finitePoints = (func.points || [])
+                .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+            if (finitePoints.length === 0) {
+                if (isRegularExplicit) {
+                    func._viewportCoverageRefreshPending = true;
+                    func._lastViewportCoverageRefreshAt = now;
+                    const start = performance.now();
+                    this.plotFunction(func)
+                        .then(() => {
+                            func._lastViewportCoveragePlotMs = performance.now() - start;
+                        })
+                        .catch(error => {
+                            console.warn('Could not refresh explicit viewport coverage:', error);
+                        })
+                        .finally(() => {
+                            func._viewportCoverageRefreshPending = false;
+                        });
+                }
+                return;
+            }
+
+            const finiteXs = finitePoints.map(point => point.x);
+            const minPointX = Math.min(...finiteXs);
+            const maxPointX = Math.max(...finiteXs);
+
+            if (this.viewport.minX < minPointX + edgeMargin || this.viewport.maxX > maxPointX - edgeMargin) {
+                func._viewportCoverageRefreshPending = true;
+                func._lastViewportCoverageRefreshAt = now;
+                const start = performance.now();
+                this.plotFunction(func)
+                    .then(() => {
+                        func._lastViewportCoveragePlotMs = performance.now() - start;
+                    })
+                    .catch(error => {
+                        console.warn('Could not refresh viewport coverage:', error);
+                    })
+                    .finally(() => {
+                        func._viewportCoverageRefreshPending = false;
+                    });
             }
         });
     }
@@ -14077,7 +14142,7 @@ class Graphiti {
         }
         
         this.isViewportChanging = true;
-        this.refreshFastPathImplicitCoverageForViewport();
+        this.refreshExplicitCoverageForViewport();
         
         // Schedule implicit intersection recalculation after viewport changes settle
         this.scheduleImplicitIntersectionCalculation();
