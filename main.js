@@ -14224,7 +14224,7 @@ class Graphiti {
     }
     
     // Debounced intersection updates for smooth pan/zoom performance
-    handleViewportChange() {
+    handleViewportChange(options = {}) {
         // Get IDs of currently enabled functions
         const enabledFunctionIds = new Set(
             this.getCurrentFunctions()
@@ -14267,7 +14267,9 @@ class Graphiti {
         }
         
         this.isViewportChanging = true;
-        this.refreshExplicitCoverageForViewport();
+        if (!options.skipCoverageRefresh) {
+            this.refreshExplicitCoverageForViewport();
+        }
         
         // Schedule implicit intersection recalculation after viewport changes settle
         this.scheduleImplicitIntersectionCalculation();
@@ -19834,7 +19836,7 @@ class Graphiti {
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.draw();
-                    this.handleViewportChange(); // Debounced recalculation
+                    this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
                 
             } else if (effectiveDirection === 'vertical') {
@@ -19860,7 +19862,7 @@ class Graphiti {
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.draw();
-                    this.handleViewportChange(); // Debounced recalculation
+                    this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
                 
             } else {
@@ -19893,7 +19895,7 @@ class Graphiti {
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.draw();
-                    this.handleViewportChange(); // Debounced recalculation
+                    this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
             }
         }
@@ -23074,7 +23076,7 @@ class Graphiti {
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
             this.draw();
-            this.handleViewportChange(); // Debounced recalculation
+            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
     }
     
@@ -23104,7 +23106,7 @@ class Graphiti {
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
             this.draw();
-            this.handleViewportChange(); // Debounced recalculation
+            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
     }
     
