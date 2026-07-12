@@ -110,6 +110,8 @@ class Graphiti {
         this.explicitRationalStructureCache = new Map(); // Map<string, expression-level holes/asymptotes>
         this.monomialYImplicitModelCache = new Map(); // Map<string, monomial model>
         this.monomialYImplicitStructureCache = new Map(); // Map<string, expression-level holes/asymptotes>
+        this.quadraticYImplicitModelCache = new Map(); // Map<string, quadratic-in-y model>
+        this.quadraticYImplicitStructureCache = new Map(); // Map<string, expression-level holes/asymptotes/turning points>
         
         // Turning points cache for implicit functions (expensive numerical differentiation)
         this.turningPointsCache = new Map(); // Map<functionId, {expression, points, turningPoints}>
@@ -3116,6 +3118,8 @@ class Graphiti {
         this.explicitRationalStructureCache.clear();
         this.monomialYImplicitModelCache.clear();
         this.monomialYImplicitStructureCache.clear();
+        this.quadraticYImplicitModelCache.clear();
+        this.quadraticYImplicitStructureCache.clear();
     }
     
     // Regex pattern cache helpers for performance optimization
@@ -6061,7 +6065,11 @@ class Graphiti {
     }
 
     isExplicitImplicitFastPath(func) {
-        return !!func && (func.implicitRenderMode === 'affine-explicit' || func.implicitRenderMode === 'monomial-explicit');
+        return !!func && (
+            func.implicitRenderMode === 'affine-explicit' ||
+            func.implicitRenderMode === 'monomial-explicit' ||
+            func.implicitRenderMode === 'quadratic-explicit'
+        );
     }
 
     getEffectiveFunctionType(func) {
@@ -7364,6 +7372,23 @@ class Graphiti {
                         return;
                     }
                 }
+
+                const quadraticModel = this.getCachedQuadraticYImplicitModel(equation);
+                if (quadraticModel) {
+                    const handled = await this.plotImplicitQuadraticYAsExplicit(func, quadraticModel);
+                    if (handled) {
+                        // Keep implicit cache flow consistent with other implicit render modes.
+                        this.applyImplicitFunctionPoints(func, func.points || []);
+                        this.draw();
+                        this.activeImplicitCalculations.delete(func.id);
+
+                        if (this.performance.enabled) {
+                            const elapsed = performance.now() - startTime;
+                            this.performance.plotTimes.set(func.id, elapsed);
+                        }
+                        return;
+                    }
+                }
             }
 
             // Algebraic asymptotes for hyperbola-family conics are independent of the
@@ -7671,7 +7696,8 @@ class Graphiti {
             oblique: Array.isArray(value.oblique) ? value.oblique.map(line => ({ ...line })) : undefined,
             holes: Array.isArray(value.holes) ? value.holes.map(hole => ({ ...hole })) : undefined,
             squareTurningPoints: Array.isArray(value.squareTurningPoints) ? value.squareTurningPoints.map(point => ({ ...point })) : undefined,
-            cubicTurningPoints: Array.isArray(value.cubicTurningPoints) ? value.cubicTurningPoints.map(point => ({ ...point })) : undefined
+            cubicTurningPoints: Array.isArray(value.cubicTurningPoints) ? value.cubicTurningPoints.map(point => ({ ...point })) : undefined,
+            quadraticTurningPoints: Array.isArray(value.quadraticTurningPoints) ? value.quadraticTurningPoints.map(point => ({ ...point })) : undefined
         };
     }
 
@@ -7710,6 +7736,181 @@ class Graphiti {
         }
 
         this.monomialYImplicitStructureCache.set(cacheKey, this.cloneMonomialYCacheValue(structure));
+    }
+
+    getCachedQuadraticYImplicitStructure(cacheKey) {
+        if (!cacheKey) {
+            return null;
+        }
+
+        return this.cloneMonomialYCacheValue(this.quadraticYImplicitStructureCache.get(cacheKey));
+    }
+
+    setCachedQuadraticYImplicitStructure(cacheKey, structure) {
+        if (!cacheKey || !structure) {
+            return;
+        }
+
+        this.quadraticYImplicitStructureCache.set(cacheKey, this.cloneMonomialYCacheValue(structure));
+    }
+
+    getCachedQuadraticYImplicitModel(equation) {
+        const cacheKey = this.getMonomialYImplicitCacheKey(equation);
+        if (!cacheKey) {
+            return null;
+        }
+
+        const cached = this.quadraticYImplicitModelCache.get(cacheKey);
+        if (cached) {
+            return this.cloneMonomialYCacheValue(cached);
+        }
+
+        const model = this.tryBuildQuadraticYImplicitModel(equation);
+        if (!model) {
+            return null;
+        }
+
+        model.cacheKey = cacheKey;
+        this.quadraticYImplicitModelCache.set(cacheKey, this.cloneMonomialYCacheValue(model));
+        return this.cloneMonomialYCacheValue(model);
+    }
+
+    tryBuildQuadraticYImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '(' + equation.leftExpression + ')-(' + equation.rightExpression + ')';
+        const replaceYSymbol = (expression, replacement) => expression.replace(/\by\b/g, '(' + replacement + ')');
+
+        const cExpression = replaceYSymbol(combinedExpression, '0');
+        const f1Expression = replaceYSymbol(combinedExpression, '1');
+        const f2Expression = replaceYSymbol(combinedExpression, '2');
+        const aExpression = '(((' + f2Expression + ')-(2*(' + f1Expression + '))+(' + cExpression + '))/2)';
+        const bExpression = '(((4*(' + f1Expression + '))-(' + f2Expression + ')-(3*(' + cExpression + ')))/2)';
+        const discriminantExpression = '((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))';
+
+        let combinedForEval = combinedExpression;
+        if (this.angleMode === 'degrees') {
+            combinedForEval = this.convertTrigToDegreeModeImplicitCartesian(combinedForEval);
+        }
+
+        let combinedCompiled;
+        try {
+            combinedCompiled = this.getCompiledExpression(combinedForEval);
+        } catch {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        const evaluateCombined = (x, y) => {
+            scope.x = x;
+            scope.y = y;
+            try {
+                const value = combinedCompiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const centerX = (this.viewport.minX + this.viewport.maxX) * 0.5;
+        const sampleXs = [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4, centerX - 1, centerX, centerX + 1];
+        const sampleYs = [-3, -2, -1, 0.5, 2, 3];
+
+        let validSamples = 0;
+        let maxResidual = 0;
+        let maxMagnitude = 0;
+        let maxQuadraticMagnitude = 0;
+
+        for (const x of sampleXs) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+
+            const f0 = evaluateCombined(x, 0);
+            const f1 = evaluateCombined(x, 1);
+            const f2 = evaluateCombined(x, 2);
+            if (f0 === null || f1 === null || f2 === null) {
+                continue;
+            }
+
+            const aValue = (f2 - (2 * f1) + f0) / 2;
+            const bValue = ((4 * f1) - f2 - (3 * f0)) / 2;
+            const cValue = f0;
+            let sampleSetValid = true;
+            let localResidual = 0;
+            let localMagnitude = Math.max(Math.abs(f0), Math.abs(f1), Math.abs(f2));
+
+            for (const y of sampleYs) {
+                const actual = evaluateCombined(x, y);
+                if (actual === null) {
+                    sampleSetValid = false;
+                    break;
+                }
+
+                const expected = (aValue * y * y) + (bValue * y) + cValue;
+                localResidual = Math.max(localResidual, Math.abs(actual - expected));
+                localMagnitude = Math.max(localMagnitude, Math.abs(actual), Math.abs(expected));
+            }
+
+            if (!sampleSetValid) {
+                continue;
+            }
+
+            maxResidual = Math.max(maxResidual, localResidual);
+            maxMagnitude = Math.max(maxMagnitude, localMagnitude);
+            maxQuadraticMagnitude = Math.max(maxQuadraticMagnitude, Math.abs(aValue));
+            validSamples++;
+        }
+
+        if (validSamples < 3) {
+            return null;
+        }
+
+        const residualTolerance = Math.max(1e-6, maxMagnitude * 1e-7);
+        const coefficientTolerance = Math.max(1e-7, maxMagnitude * 1e-8);
+        if (maxResidual > residualTolerance || maxQuadraticMagnitude <= coefficientTolerance) {
+            return null;
+        }
+
+        const branchExpressions = [
+            '(-(' + bExpression + ')+sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))',
+            '(-(' + bExpression + ')-sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))'
+        ];
+
+        const domainExclusionsRaw = [
+            ...this.detectVerticalAsymptotes(combinedExpression),
+            ...this.detectVerticalAsymptotes(aExpression),
+            ...this.detectVerticalAsymptotes(bExpression),
+            ...this.detectVerticalAsymptotes(cExpression),
+            ...this.findNestedPolynomialDenominatorRoots(combinedExpression),
+            ...this.findNestedPolynomialDenominatorRoots(aExpression),
+            ...this.findNestedPolynomialDenominatorRoots(bExpression),
+            ...this.findNestedPolynomialDenominatorRoots(cExpression),
+            ...this.findMonomialRadicandRoots(aExpression)
+        ];
+        const domainExclusions = [];
+        for (const x of domainExclusionsRaw) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+            if (!domainExclusions.some(existing => Math.abs(existing - x) <= 1e-6)) {
+                domainExclusions.push(x);
+            }
+        }
+        domainExclusions.sort((a, b) => a - b);
+
+        return {
+            aExpression,
+            bExpression,
+            cExpression,
+            discriminantExpression,
+            branchExpressions,
+            discriminantRoots: this.findMonomialRadicandRoots(discriminantExpression),
+            domainExclusions,
+            implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation)
+        };
     }
 
     tryBuildMonomialYImplicitModel(equation) {
@@ -9133,6 +9334,287 @@ class Graphiti {
             const bx = b && Number.isFinite(b.x) ? b.x : Infinity;
             return ax - bx;
         });
+    }
+
+    addQuadraticBranchEndpointRoots(proxyFunc, quadraticModel, roots) {
+        if (!proxyFunc || !Array.isArray(proxyFunc.points) || !quadraticModel || !quadraticModel.aExpression || !quadraticModel.bExpression || !Array.isArray(roots) || roots.length === 0) {
+            return;
+        }
+
+        let aExpressionForEval = quadraticModel.aExpression;
+        let bExpressionForEval = quadraticModel.bExpression;
+        if (this.angleMode === 'degrees') {
+            aExpressionForEval = this.convertTrigToDegreeMode(aExpressionForEval);
+            bExpressionForEval = this.convertTrigToDegreeMode(bExpressionForEval);
+        }
+
+        let aCompiled;
+        let bCompiled;
+        try {
+            aCompiled = this.getCompiledExpression(aExpressionForEval);
+            bCompiled = this.getCompiledExpression(bExpressionForEval);
+        } catch {
+            return;
+        }
+
+        const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+        const evaluateEndpointY = (x) => {
+            evalScope.x = x;
+            try {
+                const aValue = aCompiled.evaluate(evalScope);
+                const bValue = bCompiled.evaluate(evalScope);
+                if (!Number.isFinite(aValue) || !Number.isFinite(bValue) || Math.abs(aValue) <= 1e-12) {
+                    return null;
+                }
+                const y = -bValue / (2 * aValue);
+                return Number.isFinite(y) ? y : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const xTolerance = Math.max(1e-8, (this.viewport.maxX - this.viewport.minX) * 1e-8);
+        const segments = [];
+        let currentSegment = [];
+        const flushSegment = () => {
+            if (currentSegment.length > 0) {
+                segments.push(currentSegment);
+                currentSegment = [];
+            }
+        };
+
+        for (const point of proxyFunc.points) {
+            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                currentSegment.push({ ...point });
+            } else {
+                flushSegment();
+            }
+        }
+        flushSegment();
+
+        if (segments.length === 0) {
+            segments.push([]);
+        }
+
+        const allFinitePoints = () => segments.flatMap(segment => segment);
+        const getSegmentDistance = (segment, root) => {
+            if (!segment || segment.length === 0) {
+                return Infinity;
+            }
+            const xs = segment.map(point => point.x);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            if (root >= minX - xTolerance && root <= maxX + xTolerance) {
+                return 0;
+            }
+            return Math.min(Math.abs(root - minX), Math.abs(root - maxX));
+        };
+
+        for (const root of roots) {
+            if (!Number.isFinite(root)) {
+                continue;
+            }
+
+            const y = evaluateEndpointY(root);
+            if (y === null) {
+                continue;
+            }
+
+            const exists = allFinitePoints().some(point =>
+                point && Number.isFinite(point.x) && Number.isFinite(point.y) &&
+                Math.abs(point.x - root) <= xTolerance && Math.abs(point.y - y) <= 1e-5
+            );
+            if (exists) {
+                continue;
+            }
+
+            let bestSegment = segments[0];
+            let bestDistance = getSegmentDistance(bestSegment, root);
+            for (const segment of segments.slice(1)) {
+                const distance = getSegmentDistance(segment, root);
+                if (distance < bestDistance) {
+                    bestSegment = segment;
+                    bestDistance = distance;
+                }
+            }
+            bestSegment.push({ x: root, y, connected: true });
+        }
+
+        proxyFunc.points = segments.flatMap((segment, segmentIndex) => {
+            const sortedSegment = segment
+                .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+                .sort((a, b) => a.x - b.x);
+            if (sortedSegment.length === 0) {
+                return [];
+            }
+
+            if (segmentIndex > 0) {
+                sortedSegment[0] = { ...sortedSegment[0], connected: false };
+                return [{ x: NaN, y: NaN, connected: false }, ...sortedSegment];
+            }
+
+            return sortedSegment;
+        });
+    }
+
+    async plotImplicitQuadraticYAsExplicit(func, quadraticModel) {
+        if (!func || !quadraticModel || !Array.isArray(quadraticModel.branchExpressions) || quadraticModel.branchExpressions.length === 0) {
+            return false;
+        }
+
+        const branchResults = [];
+        for (const branchExpression of quadraticModel.branchExpressions) {
+            const proxyFunc = {
+                ...func,
+                expression: 'y=' + branchExpression,
+                points: []
+            };
+
+            await this.plotFunction(proxyFunc);
+
+            if (Array.isArray(proxyFunc.points) && proxyFunc.points.some(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) {
+                branchResults.push({ expression: branchExpression, proxyFunc });
+            }
+        }
+
+        const discriminantRoots = Array.isArray(quadraticModel.discriminantRoots)
+            ? quadraticModel.discriminantRoots.filter(value => Number.isFinite(value))
+            : [];
+        if (discriminantRoots.length > 0) {
+            for (const branchResult of branchResults) {
+                this.addQuadraticBranchEndpointRoots(branchResult.proxyFunc, quadraticModel, discriminantRoots);
+            }
+        }
+
+        if (branchResults.length === 0) {
+            return false;
+        }
+
+        const domainExclusions = Array.isArray(quadraticModel.domainExclusions)
+            ? quadraticModel.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        const pointsWithExclusionBreaks = [];
+        const xSpan = this.viewport.maxX - this.viewport.minX;
+        const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-8);
+        const segmentBreakXs = domainExclusions
+            .filter(value => Number.isFinite(value))
+            .sort((a, b) => a - b)
+            .filter((value, index, values) => index === 0 || Math.abs(value - values[index - 1]) > 1e-7);
+
+        const appendBranchPoints = (sourcePoints) => {
+            if (pointsWithExclusionBreaks.length > 0) {
+                pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+            }
+
+            for (let i = 0; i < sourcePoints.length; i++) {
+                const current = sourcePoints[i];
+                if (!current || !Number.isFinite(current.x) || !Number.isFinite(current.y)) {
+                    pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                    continue;
+                }
+
+                const hitsExcludedX = segmentBreakXs.some(exclusionX => Math.abs(current.x - exclusionX) <= exclusionTolerance);
+                if (hitsExcludedX) {
+                    pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                    continue;
+                }
+
+                pointsWithExclusionBreaks.push({ ...current });
+
+                const next = sourcePoints[i + 1];
+                if (!next || !Number.isFinite(next.x) || !Number.isFinite(next.y)) {
+                    continue;
+                }
+
+                const minX = Math.min(current.x, next.x);
+                const maxX = Math.max(current.x, next.x);
+                const crossesExclusion = segmentBreakXs.some(exclusionX => exclusionX > minX && exclusionX < maxX);
+                if (crossesExclusion) {
+                    pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                }
+            }
+        };
+
+        for (const branchResult of branchResults) {
+            appendBranchPoints(branchResult.proxyFunc.points || []);
+        }
+
+        func.points = pointsWithExclusionBreaks;
+        const sampledRanges = branchResults
+            .map(branchResult => branchResult.proxyFunc._viewportCoverageSampleRange)
+            .filter(range => range && Number.isFinite(range.minX) && Number.isFinite(range.maxX));
+        if (sampledRanges.length > 0) {
+            func._viewportCoverageSampleRange = {
+                minX: Math.min(...sampledRanges.map(range => range.minX)),
+                maxX: Math.max(...sampledRanges.map(range => range.maxX))
+            };
+        }
+
+        const uniqueNumbers = (values, tolerance = 1e-6) => {
+            const result = [];
+            for (const value of values) {
+                if (!Number.isFinite(value)) {
+                    continue;
+                }
+                if (!result.some(existing => Math.abs(existing - value) <= tolerance)) {
+                    result.push(value);
+                }
+            }
+            result.sort((a, b) => a - b);
+            return result;
+        };
+
+        const uniqueObliqueLines = (lines) => {
+            const result = [];
+            for (const line of lines) {
+                if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                    continue;
+                }
+                if (!result.some(existing => Math.abs(existing.m - line.m) <= 1e-6 && Math.abs(existing.b - line.b) <= 1e-5)) {
+                    result.push(line);
+                }
+            }
+            return result;
+        };
+
+        const implicitAsymptotes = quadraticModel.implicitAsymptotes || { vertical: [], horizontal: [], oblique: [] };
+        const proxyAsymptotes = branchResults.map(branchResult => branchResult.proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] });
+        const vertical = uniqueNumbers([
+            ...proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []),
+            ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
+        ]);
+        const horizontal = uniqueNumbers([
+            ...proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
+            ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
+        ]);
+        const oblique = uniqueObliqueLines([
+            ...proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []),
+            ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique : [])
+        ]);
+
+        const mergedHoles = branchResults.flatMap(branchResult => Array.isArray(branchResult.proxyFunc.holes) ? branchResult.proxyFunc.holes : []);
+        const filteredHoles = [];
+        for (const hole of mergedHoles) {
+            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                continue;
+            }
+            const duplicate = filteredHoles.some(existing =>
+                Math.abs(existing.x - hole.x) <= 1e-5 && Math.abs(existing.y - hole.y) <= 1e-5
+            );
+            if (!duplicate) {
+                filteredHoles.push({ x: hole.x, y: hole.y });
+            }
+        }
+
+        this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
+        func.holes = filteredHoles;
+        func.quadraticYExplicitExpressions = quadraticModel.branchExpressions.slice();
+        func.quadraticYCacheKey = quadraticModel.cacheKey || null;
+        func.quadraticYDiscriminantExpression = quadraticModel.discriminantExpression;
+        func.implicitRenderMode = 'quadratic-explicit';
+        this.updateFunctionAsymptoteInfo(func);
+
+        return true;
     }
 
     tryAnalyticTrigLineFamily(equation, functionId = null, calculationId = null) {
@@ -28664,7 +29146,7 @@ class Graphiti {
             try {
                 // Detect function type
                 const detectedType = this.detectFunctionType(func.expression);
-                const isExplicitFastPath = func.implicitRenderMode === 'affine-explicit' || func.implicitRenderMode === 'monomial-explicit';
+                const isExplicitFastPath = this.isExplicitImplicitFastPath(func);
                 const functionType = isExplicitFastPath ? 'explicit' : detectedType;
                 
                 // Handle inequalities by finding turning points on their boundary curves
@@ -28878,6 +29360,12 @@ class Graphiti {
                             // If a generated branch is not symbolically differentiable, skip it.
                         }
                     }
+                    continue;
+                }
+
+                if (func.implicitRenderMode === 'quadratic-explicit' && Array.isArray(func.quadraticYExplicitExpressions)) {
+                    const quadraticTurningPoints = this.findQuadraticYTurningPointsForFunction(func);
+                    turningPoints.push(...quadraticTurningPoints);
                     continue;
                 }
                 
@@ -29608,6 +30096,96 @@ class Graphiti {
         }
 
         return turningPoints.filter(point => point.x >= this.viewport.minX && point.x <= this.viewport.maxX);
+    }
+
+    findQuadraticYTurningPointsForFunction(func) {
+        const turningPoints = [];
+        if (!func || func.implicitRenderMode !== 'quadratic-explicit' || !Array.isArray(func.quadraticYExplicitExpressions) || func.quadraticYExplicitExpressions.length === 0) {
+            return turningPoints;
+        }
+
+        const cachedStructure = this.getCachedQuadraticYImplicitStructure(func.quadraticYCacheKey);
+        if (cachedStructure && Array.isArray(cachedStructure.quadraticTurningPoints)) {
+            return cachedStructure.quadraticTurningPoints
+                .filter(point => point && Number.isFinite(point.x) && point.x >= this.viewport.minX && point.x <= this.viewport.maxX)
+                .filter(point => !this.isPointAtHoleForFunction(func, point.x, point.y))
+                .map(point => ({
+                    ...point,
+                    func: {
+                        ...func,
+                        expression: point.branchExpression ? 'y=' + point.branchExpression : func.expression,
+                        implicitRenderMode: null
+                    }
+                }));
+        }
+
+        for (const branchExpression of func.quadraticYExplicitExpressions) {
+            try {
+                let processedExpression = branchExpression.toLowerCase();
+                if (this.angleMode === 'degrees') {
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                    if (hasRegularTrigWithX) {
+                        processedExpression = this.convertTrigToDegreeMode(processedExpression);
+                    }
+                }
+
+                math.parse(processedExpression);
+                const cacheKey = `quadratic_deriv_${func.quadraticYCacheKey || func.id}_${branchExpression}`;
+                let derivativeStr;
+                let secondDerivativeStr;
+                if (this.expressionCache.has(cacheKey)) {
+                    const cachedDerivative = this.expressionCache.get(cacheKey);
+                    derivativeStr = cachedDerivative.first;
+                    secondDerivativeStr = cachedDerivative.second;
+                } else {
+                    const derivative = this.cleanMath.derivative(processedExpression, 'x');
+                    derivativeStr = derivative.toString();
+                    const secondDerivative = this.cleanMath.derivative(derivative, 'x');
+                    secondDerivativeStr = secondDerivative.toString();
+                    this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                }
+
+                const branchFunc = {
+                    ...func,
+                    expression: 'y=' + branchExpression,
+                    implicitRenderMode: null
+                };
+
+                const branchTurningPoints = this.findTurningPointsForFunction(
+                    branchFunc,
+                    derivativeStr,
+                    secondDerivativeStr,
+                    processedExpression
+                );
+                for (const point of branchTurningPoints) {
+                    turningPoints.push({
+                        ...point,
+                        branchExpression
+                    });
+                }
+            } catch {
+                // If a generated branch is not symbolically differentiable, skip it.
+            }
+        }
+
+        if (func.quadraticYCacheKey) {
+            const existingStructure = this.getCachedQuadraticYImplicitStructure(func.quadraticYCacheKey) || {};
+            this.setCachedQuadraticYImplicitStructure(func.quadraticYCacheKey, {
+                ...existingStructure,
+                quadraticTurningPoints: turningPoints.map(point => ({
+                    x: point.x,
+                    y: point.y,
+                    type: point.type,
+                    derivative: point.derivative,
+                    secondDerivative: point.secondDerivative,
+                    branchExpression: point.branchExpression
+                }))
+            });
+        }
+
+        return turningPoints
+            .filter(point => point.x >= this.viewport.minX && point.x <= this.viewport.maxX)
+            .filter(point => !this.isPointAtHoleForFunction(func, point.x, point.y));
     }
     
     // Find turning points for implicit functions F(x,y) = 0
@@ -32487,7 +33065,7 @@ class Graphiti {
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
                 const functionType = this.detectFunctionType(func.expression);
-                const isExplicitFastPath = func.implicitRenderMode === 'affine-explicit' || func.implicitRenderMode === 'monomial-explicit';
+                const isExplicitFastPath = this.isExplicitImplicitFastPath(func);
                 if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !isExplicitFastPath) {
                     // Draw implicit functions/inequalities using displayPoints (stable during calculations)
                     const pointsToCheck = func.displayPoints || func.points;
