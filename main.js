@@ -107,6 +107,8 @@ class Graphiti {
         // Expression compilation cache for performance optimization
         this.expressionCache = new Map(); // Map<string, CompiledExpression>
         this.parsedImplicitEquations = new Map(); // Map<string, {leftExpression, rightExpression}>
+        this.monomialYImplicitModelCache = new Map(); // Map<string, monomial model>
+        this.monomialYImplicitStructureCache = new Map(); // Map<string, expression-level holes/asymptotes>
         
         // Turning points cache for implicit functions (expensive numerical differentiation)
         this.turningPointsCache = new Map(); // Map<functionId, {expression, points, turningPoints}>
@@ -3110,6 +3112,8 @@ class Graphiti {
     clearExpressionCache() {
         // Clear the entire cache when functions are modified
         this.expressionCache.clear();
+        this.monomialYImplicitModelCache.clear();
+        this.monomialYImplicitStructureCache.clear();
     }
     
     // Regex pattern cache helpers for performance optimization
@@ -4179,11 +4183,18 @@ class Graphiti {
             const bufferSize = viewportWidth * 0.5;
             const bufferedMinX = this.viewport.minX - bufferSize;
             const bufferedMaxX = this.viewport.maxX + bufferSize;
-            const algebraicAsymptotes = this.tryDeriveAlgebraicRationalAsymptotes(processedExpression);
-            const numericVerticalAsymptotes = this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
-            const explicitVerticalAsymptotes = algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0
-                ? algebraicAsymptotes.vertical
-                : numericVerticalAsymptotes;
+            const knownMonomialProxyStructure = func.monomialYExplicitProxy && func.monomialYKnownStructure
+                ? func.monomialYKnownStructure
+                : null;
+            const algebraicAsymptotes = knownMonomialProxyStructure ? null : this.tryDeriveAlgebraicRationalAsymptotes(processedExpression);
+            const numericVerticalAsymptotes = knownMonomialProxyStructure
+                ? (Array.isArray(knownMonomialProxyStructure.vertical) ? knownMonomialProxyStructure.vertical.slice() : [])
+                : this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
+            const explicitVerticalAsymptotes = knownMonomialProxyStructure
+                ? numericVerticalAsymptotes
+                : algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0
+                    ? algebraicAsymptotes.vertical
+                    : numericVerticalAsymptotes;
             func.explicitVerticalAsymptotes = explicitVerticalAsymptotes;
             const isPeriodicVerticalAsymptoteFamily = (hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX) && isFinite(asymptoteSpacing) && asymptoteSpacing > 0;
             const asymptotePixelSpacing = isPeriodicVerticalAsymptoteFamily
@@ -4192,43 +4203,53 @@ class Graphiti {
             const hasDensePeriodicAsymptotes = isPeriodicVerticalAsymptoteFamily && asymptotePixelSpacing < 8;
             // Periodic trig families with vertical poles do not have horizontal asymptotes.
             // Skip numeric fitting to avoid zoom-dependent false positives (for example tan(x) -> y=+-2/15).
-            const numericHorizontalAsymptotes = shouldSkipNumericHorizontalAsymptotes
+            const numericHorizontalAsymptotes = knownMonomialProxyStructure
+                ? (Array.isArray(knownMonomialProxyStructure.horizontal) ? knownMonomialProxyStructure.horizontal.slice() : [])
+                : shouldSkipNumericHorizontalAsymptotes
                 ? []
                 : this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
-            const horizontalAsymptotes = algebraicAsymptotes
+            const horizontalAsymptotes = knownMonomialProxyStructure
+                ? numericHorizontalAsymptotes
+                : algebraicAsymptotes
                 ? algebraicAsymptotes.horizontal
                 : numericHorizontalAsymptotes;
 
-            const obliqueDetection = this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
+            const obliqueDetection = knownMonomialProxyStructure ? null : this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
             const obliqueAsymptotes = obliqueDetection && Array.isArray(obliqueDetection.lines)
                 ? obliqueDetection.lines
+                : knownMonomialProxyStructure && Array.isArray(knownMonomialProxyStructure.oblique)
+                    ? knownMonomialProxyStructure.oblique.map(line => ({ ...line }))
                 : [];
-            const selectedObliqueAsymptotes = algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0
+            const selectedObliqueAsymptotes = knownMonomialProxyStructure
+                ? obliqueAsymptotes
+                : algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0
                 ? algebraicAsymptotes.oblique
                 : obliqueAsymptotes;
             const obliqueDebug = obliqueDetection && obliqueDetection.debug
                 ? obliqueDetection.debug
                 : null;
-            const removableHoles = this.detectRemovableDiscontinuities(
-                processedExpression,
-                compiledExpression,
-                hasInverseTrig
-            );
+            const removableHoles = knownMonomialProxyStructure && Array.isArray(knownMonomialProxyStructure.holes)
+                ? knownMonomialProxyStructure.holes.map(hole => ({ ...hole }))
+                : this.detectRemovableDiscontinuities(
+                    processedExpression,
+                    compiledExpression,
+                    hasInverseTrig
+                );
             func.holes = removableHoles;
 
             const asymptoteSources = {
                 vertical: explicitVerticalAsymptotes.map(value => ({
                     value,
-                    source: (algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0) ? 'algebraic' : 'numeric'
+                    source: knownMonomialProxyStructure ? 'cached' : (algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0) ? 'algebraic' : 'numeric'
                 })),
                 horizontal: horizontalAsymptotes.map(value => ({
                     value,
-                    source: (algebraicAsymptotes) ? 'algebraic' : 'numeric'
+                    source: knownMonomialProxyStructure ? 'cached' : (algebraicAsymptotes) ? 'algebraic' : 'numeric'
                 })),
                 oblique: selectedObliqueAsymptotes.map(line => ({
                     m: line.m,
                     b: line.b,
-                    source: (algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0) ? 'algebraic' : 'numeric'
+                    source: knownMonomialProxyStructure ? 'cached' : (algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0) ? 'algebraic' : 'numeric'
                 }))
             };
 
@@ -6014,6 +6035,18 @@ class Graphiti {
         return 'explicit'; // Default fallback (could be parametric or other)
     }
 
+    isExplicitImplicitFastPath(func) {
+        return !!func && (func.implicitRenderMode === 'affine-explicit' || func.implicitRenderMode === 'monomial-explicit');
+    }
+
+    getEffectiveFunctionType(func) {
+        if (this.isExplicitImplicitFastPath(func)) {
+            return 'explicit';
+        }
+
+        return func && func.expression ? this.detectFunctionType(func.expression) : 'explicit';
+    }
+
     parseParametricEquation(expression) {
         // Parse parametric format: (x_expr, y_expr)
         // Returns: { xExpr: string, yExpr: string } or null if invalid
@@ -7173,7 +7206,7 @@ class Graphiti {
                     }
                 }
 
-                const monomialModel = this.tryBuildMonomialYImplicitModel(equation);
+                const monomialModel = this.getCachedMonomialYImplicitModel(equation);
                 if (monomialModel) {
                     const handled = await this.plotImplicitMonomialYAsExplicit(func, monomialModel);
                     if (handled) {
@@ -7456,6 +7489,84 @@ class Graphiti {
             verticalComponents,
             domainExclusions
         };
+    }
+
+    getMonomialYImplicitCacheKey(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const params = this.parameters || {};
+        const parameterKey = ['alpha', 'beta', 'gamma', 'delta']
+            .map(name => {
+                const value = params[name] && Number.isFinite(params[name].value) ? params[name].value : 1;
+                return name + '=' + value;
+            })
+            .join(';');
+
+        return [
+            this.angleMode,
+            parameterKey,
+            equation.leftExpression,
+            equation.rightExpression
+        ].join('|');
+    }
+
+    cloneMonomialYCacheValue(value) {
+        if (!value) {
+            return null;
+        }
+
+        return {
+            ...value,
+            verticalComponents: Array.isArray(value.verticalComponents) ? value.verticalComponents.slice() : [],
+            domainExclusions: Array.isArray(value.domainExclusions) ? value.domainExclusions.slice() : [],
+            branchExpressions: Array.isArray(value.branchExpressions) ? value.branchExpressions.slice() : undefined,
+            radicandRoots: Array.isArray(value.radicandRoots) ? value.radicandRoots.slice() : undefined,
+            zeroLimitExclusions: Array.isArray(value.zeroLimitExclusions) ? value.zeroLimitExclusions.slice() : undefined,
+            vertical: Array.isArray(value.vertical) ? value.vertical.slice() : undefined,
+            horizontal: Array.isArray(value.horizontal) ? value.horizontal.slice() : undefined,
+            oblique: Array.isArray(value.oblique) ? value.oblique.map(line => ({ ...line })) : undefined,
+            holes: Array.isArray(value.holes) ? value.holes.map(hole => ({ ...hole })) : undefined,
+            cubicTurningPoints: Array.isArray(value.cubicTurningPoints) ? value.cubicTurningPoints.map(point => ({ ...point })) : undefined
+        };
+    }
+
+    getCachedMonomialYImplicitModel(equation) {
+        const cacheKey = this.getMonomialYImplicitCacheKey(equation);
+        if (!cacheKey) {
+            return null;
+        }
+
+        const cached = this.monomialYImplicitModelCache.get(cacheKey);
+        if (cached) {
+            return this.cloneMonomialYCacheValue(cached);
+        }
+
+        const model = this.tryBuildMonomialYImplicitModel(equation);
+        if (!model) {
+            return null;
+        }
+
+        model.cacheKey = cacheKey;
+        this.monomialYImplicitModelCache.set(cacheKey, this.cloneMonomialYCacheValue(model));
+        return this.cloneMonomialYCacheValue(model);
+    }
+
+    getCachedMonomialYImplicitStructure(cacheKey) {
+        if (!cacheKey) {
+            return null;
+        }
+
+        return this.cloneMonomialYCacheValue(this.monomialYImplicitStructureCache.get(cacheKey));
+    }
+
+    setCachedMonomialYImplicitStructure(cacheKey, structure) {
+        if (!cacheKey || !structure) {
+            return;
+        }
+
+        this.monomialYImplicitStructureCache.set(cacheKey, this.cloneMonomialYCacheValue(structure));
     }
 
     tryBuildMonomialYImplicitModel(equation) {
@@ -7981,33 +8092,7 @@ class Graphiti {
         const branchExpressions = monomialModel.power === 2
             ? ['sqrt(' + radicand + ')', '-sqrt(' + radicand + ')']
             : ['sign(' + radicand + ')*abs(' + radicand + ')^(1/3)'];
-
-        const branchResults = [];
-        for (const branchExpression of branchExpressions) {
-            const proxyFunc = {
-                ...func,
-                expression: 'y=' + branchExpression,
-                monomialYExplicitProxy: true,
-                points: []
-            };
-
-            await this.plotFunction(proxyFunc);
-
-            if (Array.isArray(proxyFunc.points) && proxyFunc.points.some(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) {
-                branchResults.push({ expression: branchExpression, proxyFunc });
-            }
-        }
-
-        let radicandRoots = [];
-        if ([2, 3].includes(monomialModel.power) && branchResults.length > 0) {
-            radicandRoots = this.findMonomialRadicandRoots(radicand);
-            if (monomialModel.power === 2 && radicandRoots.length > 0) {
-                for (const branchResult of branchResults) {
-                    this.addMonomialBranchEndpointRoots(branchResult.proxyFunc, radicandRoots);
-                }
-            }
-        }
-
+        const cachedStructure = this.getCachedMonomialYImplicitStructure(monomialModel.cacheKey);
         const verticalComponents = Array.isArray(monomialModel.verticalComponents)
             ? monomialModel.verticalComponents.filter(value => Number.isFinite(value))
             : [];
@@ -8016,8 +8101,206 @@ class Graphiti {
             ? monomialModel.domainExclusions.filter(value => Number.isFinite(value) && !isAtVerticalComponent(value))
             : [];
 
-        const zeroLimitExclusions = [];
-        if (domainExclusions.length > 0) {
+        const plotCachedMonomialBranch = (proxyFunc, branchExpression) => {
+            let expressionForEval = branchExpression;
+            if (this.angleMode === 'degrees') {
+                expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+            }
+
+            let compiledExpression;
+            try {
+                compiledExpression = this.getCompiledExpression(expressionForEval);
+            } catch {
+                proxyFunc.points = [];
+                proxyFunc.displayPoints = [];
+                return false;
+            }
+
+            const viewportWidth = this.viewport.maxX - this.viewport.minX;
+            const bufferSize = viewportWidth * 0.5;
+            const bufferedMinX = this.viewport.minX - bufferSize;
+            const bufferedMaxX = this.viewport.maxX + bufferSize;
+            const bufferedRange = Math.max(bufferedMaxX - bufferedMinX, 1e-12);
+            const resolution = Math.max(550, Math.min(1100, Math.ceil(this.viewport.width * 1.2)));
+            const baseStep = bufferedRange / resolution;
+            const breakXs = [
+                ...(Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical : []),
+                ...domainExclusions,
+                ...verticalComponents
+            ]
+                .filter(value => Number.isFinite(value) && value > bufferedMinX && value < bufferedMaxX)
+                .sort((a, b) => a - b)
+                .filter((value, index, values) => index === 0 || Math.abs(value - values[index - 1]) > 1e-7);
+            const exclusionGap = Math.max(Math.abs(baseStep) * 0.2, Math.abs(bufferedRange) * 1e-8, 1e-8);
+            const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const points = [];
+            let suppressNextIntervalBreak = false;
+            const verticalAsymptoteXs = Array.isArray(cachedStructure.vertical)
+                ? cachedStructure.vertical.filter(value => Number.isFinite(value))
+                : [];
+
+            const evaluateY = (x) => {
+                try {
+                    scope.x = x;
+                    const y = compiledExpression.evaluate(scope);
+                    return Number.isFinite(y) ? y : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            const pushEvaluatedPoint = (x, connected = true) => {
+                const y = evaluateY(x);
+                if (y !== null) {
+                    points.push({ x, y, connected });
+                } else if (points.length > 0) {
+                    points.push({ x, y: NaN, connected: false });
+                }
+            };
+
+            const pushBreak = () => {
+                const lastPoint = points[points.length - 1];
+                if (points.length > 0 && lastPoint && Number.isFinite(lastPoint.x) && Number.isFinite(lastPoint.y)) {
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+            };
+
+            const getVerticalApproachPoint = (asymptoteX, direction) => {
+                const viewportPad = Math.max((this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
+                const multipliers = [1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125, 0.00390625, 0.001953125, 0.0009765625];
+                let bestPoint = null;
+
+                for (const multiplier of multipliers) {
+                    const x = asymptoteX + direction * Math.max(exclusionGap * multiplier, 1e-12);
+                    if (x < bufferedMinX || x > bufferedMaxX) {
+                        continue;
+                    }
+
+                    const y = evaluateY(x);
+                    if (y === null) {
+                        continue;
+                    }
+
+                    if (!bestPoint || Math.abs(y) > Math.abs(bestPoint.y)) {
+                        bestPoint = { x, y };
+                    }
+
+                    if (y > this.viewport.maxY || y < this.viewport.minY) {
+                        return { x, y };
+                    }
+                }
+
+                if (bestPoint) {
+                    return {
+                        x: bestPoint.x,
+                        y: bestPoint.y >= 0 ? this.viewport.maxY + viewportPad : this.viewport.minY - viewportPad
+                    };
+                }
+
+                return null;
+            };
+
+            const pushVerticalApproachPoint = (asymptoteX, direction, connected) => {
+                const approachPoint = getVerticalApproachPoint(asymptoteX, direction);
+                if (!approachPoint) {
+                    return;
+                }
+
+                const lastPoint = points[points.length - 1];
+                if (lastPoint && Number.isFinite(lastPoint.x) && Math.abs(lastPoint.x - approachPoint.x) <= 1e-12) {
+                    return;
+                }
+
+                points.push({ ...approachPoint, connected });
+            };
+
+            const sampleInterval = (xStart, xEnd) => {
+                if (!Number.isFinite(xStart) || !Number.isFinite(xEnd) || xEnd <= xStart) {
+                    return;
+                }
+
+                const connectFirstPoint = suppressNextIntervalBreak;
+                if (points.length > 0 && !connectFirstPoint) {
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+                suppressNextIntervalBreak = false;
+
+                const intervalSteps = Math.max(12, Math.ceil((xEnd - xStart) / baseStep));
+                for (let i = 0; i <= intervalSteps; i++) {
+                    const x = i === intervalSteps ? xEnd : xStart + (i * (xEnd - xStart) / intervalSteps);
+                    pushEvaluatedPoint(x, i !== 0 || connectFirstPoint);
+                }
+            };
+
+            let intervalStart = bufferedMinX;
+            for (const breakX of breakXs) {
+                sampleInterval(intervalStart, Math.min(bufferedMaxX, breakX - exclusionGap));
+                if (verticalAsymptoteXs.some(x => Math.abs(x - breakX) <= 1e-7)) {
+                    pushVerticalApproachPoint(breakX, -1, true);
+                    pushBreak();
+                    pushVerticalApproachPoint(breakX, 1, true);
+                    suppressNextIntervalBreak = true;
+                }
+                intervalStart = Math.max(bufferedMinX, breakX + exclusionGap);
+            }
+            sampleInterval(intervalStart, bufferedMaxX);
+
+            proxyFunc.points = points;
+            proxyFunc.displayPoints = points;
+            proxyFunc.holes = Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : [];
+            proxyFunc.asymptoteData = {
+                vertical: Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [],
+                horizontal: Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal.slice() : [],
+                oblique: Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : []
+            };
+            return points.some(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+        };
+
+        const branchResults = [];
+        for (const branchExpression of branchExpressions) {
+            const proxyFunc = {
+                ...func,
+                expression: 'y=' + branchExpression,
+                monomialYExplicitProxy: true,
+                monomialYKnownStructure: cachedStructure
+                    ? {
+                        vertical: Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [],
+                        horizontal: Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal.slice() : [],
+                        oblique: Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : [],
+                        holes: Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : []
+                    }
+                    : null,
+                points: []
+            };
+
+            if (cachedStructure) {
+                plotCachedMonomialBranch(proxyFunc, branchExpression);
+            } else {
+                await this.plotFunction(proxyFunc);
+            }
+
+            if (Array.isArray(proxyFunc.points) && proxyFunc.points.some(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) {
+                branchResults.push({ expression: branchExpression, proxyFunc });
+            }
+        }
+
+        let radicandRoots = [];
+        if (cachedStructure && Array.isArray(cachedStructure.radicandRoots)) {
+            radicandRoots = cachedStructure.radicandRoots.slice();
+        } else if ([2, 3].includes(monomialModel.power) && branchResults.length > 0) {
+            radicandRoots = this.findMonomialRadicandRoots(radicand);
+        }
+
+        if (monomialModel.power === 2 && radicandRoots.length > 0) {
+            for (const branchResult of branchResults) {
+                this.addMonomialBranchEndpointRoots(branchResult.proxyFunc, radicandRoots);
+            }
+        }
+
+        const zeroLimitExclusions = cachedStructure && Array.isArray(cachedStructure.zeroLimitExclusions)
+            ? cachedStructure.zeroLimitExclusions.slice()
+            : [];
+        if (!cachedStructure && domainExclusions.length > 0) {
             for (const exclusionX of domainExclusions) {
                 let tendsToZero = false;
                 for (const branchExpression of branchExpressions) {
@@ -8085,6 +8368,13 @@ class Graphiti {
         const pointsWithExclusionBreaks = [];
         const xSpan = this.viewport.maxX - this.viewport.minX;
         const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-8);
+        const segmentBreakXs = [
+            ...domainExclusions,
+            ...(cachedStructure && Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical : [])
+        ]
+            .filter(value => Number.isFinite(value))
+            .sort((a, b) => a - b)
+            .filter((value, index, values) => index === 0 || Math.abs(value - values[index - 1]) > 1e-7);
         const appendBranchPoints = (sourcePoints) => {
             if (pointsWithExclusionBreaks.length > 0) {
                 pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
@@ -8097,7 +8387,7 @@ class Graphiti {
                     continue;
                 }
 
-                const hitsExcludedX = domainExclusions.some(exclusionX => Math.abs(current.x - exclusionX) <= exclusionTolerance);
+                const hitsExcludedX = segmentBreakXs.some(exclusionX => Math.abs(current.x - exclusionX) <= exclusionTolerance);
                 if (hitsExcludedX) {
                     pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
                     continue;
@@ -8112,7 +8402,7 @@ class Graphiti {
 
                 const minX = Math.min(current.x, next.x);
                 const maxX = Math.max(current.x, next.x);
-                const crossesExclusion = domainExclusions.some(exclusionX => exclusionX > minX && exclusionX < maxX);
+                const crossesExclusion = segmentBreakXs.some(exclusionX => exclusionX > minX && exclusionX < maxX);
                 if (crossesExclusion) {
                     pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
                 }
@@ -8152,139 +8442,161 @@ class Graphiti {
             return result;
         };
 
-        const proxyAsymptotes = branchResults.map(branchResult => branchResult.proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] });
-        let filteredVertical = uniqueNumbers(proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []))
-            .filter(value => !isAtVerticalComponent(value));
-        const horizontal = uniqueNumbers(proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []));
-        const oblique = uniqueObliqueLines(proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []));
+        let filteredVertical;
+        let horizontal;
+        let oblique;
+        let filteredHoles;
 
-        const evaluateBranchLimit = (branchExpression, x0) => {
-            let expressionForEval = branchExpression;
-            if (this.angleMode === 'degrees') {
-                expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
-            }
+        if (cachedStructure) {
+            filteredVertical = Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [];
+            horizontal = Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal.slice() : [];
+            oblique = Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : [];
+            filteredHoles = Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : [];
+        } else {
+            const proxyAsymptotes = branchResults.map(branchResult => branchResult.proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] });
+            filteredVertical = uniqueNumbers(proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []))
+                .filter(value => !isAtVerticalComponent(value));
+            horizontal = uniqueNumbers(proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []));
+            oblique = uniqueObliqueLines(proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []));
 
-            let compiledExpression;
-            try {
-                compiledExpression = this.getCompiledExpression(expressionForEval);
-            } catch {
-                return null;
-            }
+            const evaluateBranchLimit = (branchExpression, x0) => {
+                let expressionForEval = branchExpression;
+                if (this.angleMode === 'degrees') {
+                    expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+                }
 
-            const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
-            const evalY = (x) => {
-                evalScope.x = x;
+                let compiledExpression;
                 try {
-                    const value = compiledExpression.evaluate(evalScope);
-                    return Number.isFinite(value) ? value : null;
+                    compiledExpression = this.getCompiledExpression(expressionForEval);
                 } catch {
                     return null;
                 }
-            };
 
-            const estimateSide = (direction) => {
-                const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12];
-                const values = [];
-                let sawHuge = false;
-
-                for (const delta of deltas) {
-                    const value = evalY(x0 + (direction * delta));
-                    if (value === null) {
-                        continue;
+                const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+                const evalY = (x) => {
+                    evalScope.x = x;
+                    try {
+                        const value = compiledExpression.evaluate(evalScope);
+                        return Number.isFinite(value) ? value : null;
+                    } catch {
+                        return null;
                     }
+                };
 
-                    if (Math.abs(value) > 1e6) {
-                        sawHuge = true;
-                        continue;
-                    }
+                const estimateSide = (direction) => {
+                    const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12];
+                    const values = [];
+                    let sawHuge = false;
 
-                    values.push(value);
-                }
-
-                if (values.length >= 2) {
-                    const last = values[values.length - 1];
-                    const previous = values[values.length - 2];
-                    const agreementTolerance = Math.max(1e-3, Math.max(Math.abs(last), Math.abs(previous)) * 5e-3);
-                    if (Math.abs(last - previous) <= agreementTolerance) {
-                        if (Math.abs(last) <= 1e-3 && Math.abs(previous) <= 2e-3) {
-                            return { type: 'finite', value: 0 };
+                    for (const delta of deltas) {
+                        const value = evalY(x0 + (direction * delta));
+                        if (value === null) {
+                            continue;
                         }
-                        return { type: 'finite', value: last };
+
+                        if (Math.abs(value) > 1e6) {
+                            sawHuge = true;
+                            continue;
+                        }
+
+                        values.push(value);
                     }
+
+                    if (values.length >= 2) {
+                        const last = values[values.length - 1];
+                        const previous = values[values.length - 2];
+                        const agreementTolerance = Math.max(1e-3, Math.max(Math.abs(last), Math.abs(previous)) * 5e-3);
+                        if (Math.abs(last - previous) <= agreementTolerance) {
+                            if (Math.abs(last) <= 1e-3 && Math.abs(previous) <= 2e-3) {
+                                return { type: 'finite', value: 0 };
+                            }
+                            return { type: 'finite', value: last };
+                        }
+                    }
+
+                    return sawHuge ? { type: 'asymptote' } : null;
+                };
+
+                const left = estimateSide(-1);
+                const right = estimateSide(1);
+                if ((left && left.type === 'asymptote') || (right && right.type === 'asymptote')) {
+                    return { type: 'asymptote' };
                 }
 
-                return sawHuge ? { type: 'asymptote' } : null;
+                if (left && right && left.type === 'finite' && right.type === 'finite') {
+                    const magnitude = Math.max(Math.abs(left.value), Math.abs(right.value));
+                    const agreementTolerance = Math.max(1e-3, magnitude * 5e-3);
+                    if (Math.abs(left.value - right.value) <= agreementTolerance) {
+                        return { type: 'hole', y: (left.value + right.value) * 0.5 };
+                    }
+                    return null;
+                }
+
+                if (left && left.type === 'finite') {
+                    return { type: 'hole', y: left.value };
+                }
+
+                if (right && right.type === 'finite') {
+                    return { type: 'hole', y: right.value };
+                }
+
+                return null;
             };
 
-            const left = estimateSide(-1);
-            const right = estimateSide(1);
-            if ((left && left.type === 'asymptote') || (right && right.type === 'asymptote')) {
-                return { type: 'asymptote' };
-            }
+            const derivedDomainHoles = [];
+            const derivedVerticalAsymptotes = [];
+            for (const exclusionX of domainExclusions) {
+                for (const branchExpression of branchExpressions) {
+                    const limit = evaluateBranchLimit(branchExpression, exclusionX);
+                    if (!limit) {
+                        continue;
+                    }
 
-            if (left && right && left.type === 'finite' && right.type === 'finite') {
-                const magnitude = Math.max(Math.abs(left.value), Math.abs(right.value));
-                const agreementTolerance = Math.max(1e-3, magnitude * 5e-3);
-                if (Math.abs(left.value - right.value) <= agreementTolerance) {
-                    return { type: 'hole', y: (left.value + right.value) * 0.5 };
+                    if (limit.type === 'hole' && Number.isFinite(limit.y)) {
+                        derivedDomainHoles.push({ x: exclusionX, y: limit.y });
+                    } else if (limit.type === 'asymptote') {
+                        derivedVerticalAsymptotes.push(exclusionX);
+                    }
                 }
-                return null;
             }
 
-            if (left && left.type === 'finite') {
-                return { type: 'hole', y: left.value };
+            if (derivedDomainHoles.length > 0) {
+                filteredVertical = filteredVertical.filter(value =>
+                    !derivedDomainHoles.some(hole => Math.abs(hole.x - value) <= 1e-5)
+                );
             }
 
-            if (right && right.type === 'finite') {
-                return { type: 'hole', y: right.value };
-            }
+            filteredVertical = uniqueNumbers([...filteredVertical, ...derivedVerticalAsymptotes]);
 
-            return null;
-        };
-
-        const derivedDomainHoles = [];
-        const derivedVerticalAsymptotes = [];
-        for (const exclusionX of domainExclusions) {
-            for (const branchExpression of branchExpressions) {
-                const limit = evaluateBranchLimit(branchExpression, exclusionX);
-                if (!limit) {
+            const mergedHoles = [
+                ...branchResults.flatMap(branchResult => Array.isArray(branchResult.proxyFunc.holes) ? branchResult.proxyFunc.holes : []),
+                ...derivedDomainHoles
+            ];
+            filteredHoles = [];
+            for (const hole of mergedHoles) {
+                if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
                     continue;
                 }
-
-                if (limit.type === 'hole' && Number.isFinite(limit.y)) {
-                    derivedDomainHoles.push({ x: exclusionX, y: limit.y });
-                } else if (limit.type === 'asymptote') {
-                    derivedVerticalAsymptotes.push(exclusionX);
+                if (isAtVerticalComponent(hole.x)) {
+                    continue;
+                }
+                const duplicate = filteredHoles.some(existing =>
+                    Math.abs(existing.x - hole.x) <= 1e-5 && Math.abs(existing.y - hole.y) <= 1e-5
+                );
+                if (!duplicate) {
+                    filteredHoles.push({ x: hole.x, y: hole.y });
                 }
             }
-        }
 
-        if (derivedDomainHoles.length > 0) {
-            filteredVertical = filteredVertical.filter(value =>
-                !derivedDomainHoles.some(hole => Math.abs(hole.x - value) <= 1e-5)
-            );
-        }
-
-        filteredVertical = uniqueNumbers([...filteredVertical, ...derivedVerticalAsymptotes]);
-
-        const mergedHoles = [
-            ...branchResults.flatMap(branchResult => Array.isArray(branchResult.proxyFunc.holes) ? branchResult.proxyFunc.holes : []),
-            ...derivedDomainHoles
-        ];
-        const filteredHoles = [];
-        for (const hole of mergedHoles) {
-            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
-                continue;
-            }
-            if (isAtVerticalComponent(hole.x)) {
-                continue;
-            }
-            const duplicate = filteredHoles.some(existing =>
-                Math.abs(existing.x - hole.x) <= 1e-5 && Math.abs(existing.y - hole.y) <= 1e-5
-            );
-            if (!duplicate) {
-                filteredHoles.push({ x: hole.x, y: hole.y });
-            }
+            this.setCachedMonomialYImplicitStructure(monomialModel.cacheKey, {
+                branchExpressions,
+                radicandRoots,
+                zeroLimitExclusions,
+                vertical: filteredVertical,
+                horizontal,
+                oblique,
+                holes: filteredHoles
+            });
         }
 
         if (verticalComponents.length > 0) {
@@ -8303,6 +8615,7 @@ class Graphiti {
         this.updateFunctionAsymptoteData(func, filteredVertical, horizontal, oblique, null);
         func.holes = filteredHoles;
         func.monomialYExplicitExpressions = branchExpressions.slice();
+        func.monomialYCacheKey = monomialModel.cacheKey || null;
         func.monomialYRadicandExpression = radicand;
         func.monomialYPower = monomialModel.power;
         func.monomialYVerticalComponents = verticalComponents.slice();
@@ -12226,6 +12539,7 @@ class Graphiti {
         delete func.affineExplicitExpression;
         delete func.affineVerticalComponents;
         delete func.monomialYExplicitExpressions;
+        delete func.monomialYCacheKey;
         delete func.monomialYRadicandExpression;
         delete func.monomialYPower;
         delete func.monomialYVerticalComponents;
@@ -13748,25 +14062,38 @@ class Graphiti {
         // Set new timer to recalculate intersections and turning points after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
-            this.frozenTurningPointBadges = []; // Clear frozen turning point badges
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
             // Replot explicit functions with updated viewport
+            const explicitReplotPromises = [];
             this.getCurrentFunctions().forEach(func => {
                 if (func.expression && func.enabled) {
-                    const functionType = this.detectFunctionType(func.expression);
+                    const functionType = this.getEffectiveFunctionType(func);
                     if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant') {
-                        this.plotFunction(func);
+                        explicitReplotPromises.push(this.plotFunction(func));
                     }
                 }
             });
             
             // Replot implicit functions and inequalities
             // For inequalities, this recalculates grid data at proper resolution
-            this.replotImplicitFunctions(true);
-            
-            // Skip badge calculations during polar animation or pause
-            if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+            const hasImplicitFunctionsToReplot = this.getCurrentFunctions().some(func => {
+                if (!func.expression || !func.enabled) return false;
+                const functionType = this.getEffectiveFunctionType(func);
+                return functionType === 'implicit' || functionType === 'implicit-inequality';
+            });
+            if (hasImplicitFunctionsToReplot) {
+                this.replotImplicitFunctions(true);
+            }
+
+            const refreshSignificantPoints = () => {
+                this.frozenTurningPointBadges = []; // Clear frozen turning point badges
+
+                // Skip badge calculations during polar animation or pause
+                if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+                    return;
+                }
+
                 if (this.showIntersections) {
                     this.calculateIntersectionsWithWorker();
                 }
@@ -13783,6 +14110,17 @@ class Graphiti {
                 
                 // Update badge positions to match recalculated significant points
                 this.updateBadgesFromSignificantPoints();
+            };
+
+            if (explicitReplotPromises.length > 0) {
+                Promise.all(explicitReplotPromises)
+                    .then(refreshSignificantPoints)
+                    .catch(error => {
+                        console.warn('Could not refresh significant points after viewport replot:', error);
+                        refreshSignificantPoints();
+                    });
+            } else {
+                refreshSignificantPoints();
             }
         }, 50); // Short delay optimized for fast implicit plotting
     }
@@ -20156,7 +20494,12 @@ class Graphiti {
                 const inside = pointInExpandedViewport(screen);
 
                 if (point.connected === false) {
-                    pathStarted = false;
+                    if (inside) {
+                        d += ` M ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                        pathStarted = true;
+                    } else {
+                        pathStarted = false;
+                    }
                     prevInside = inside;
                     continue;
                 }
@@ -20956,15 +21299,16 @@ class Graphiti {
         for (const func of functions) {
             if (!func || !func.enabled || !func.expression) continue;
 
-            const functionType = this.detectFunctionType(func.expression);
+            const rawFunctionType = this.detectFunctionType(func.expression);
+            const functionType = this.getEffectiveFunctionType(func);
             const isAffineExplicit = func.implicitRenderMode === 'affine-explicit';
             const points = func.displayPoints || func.points;
             const stroke = curveColorFor(func);
             const lineWidth = getSvgLineWidth(3);
 
-            const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality' || functionType === 'implicit-inequality';
+            const isInequality = rawFunctionType === 'explicit-inequality' || rawFunctionType === 'polar-inequality' || rawFunctionType === 'implicit-inequality';
             let inequalityMeta = null;
-            if (functionType === 'polar-inequality') {
+            if (rawFunctionType === 'polar-inequality') {
                 inequalityMeta = this.parsePolarInequality(func.expression);
             } else if (isInequality) {
                 inequalityMeta = this.parseInequality(func.expression);
@@ -20980,7 +21324,7 @@ class Graphiti {
             }
 
             if (isInequality && inequalityCount === 1) {
-                if (functionType === 'explicit-inequality') {
+                if (rawFunctionType === 'explicit-inequality') {
                     const inequality = inequalityMeta;
                     if (inequality) {
                         const fillPath = buildExplicitInequalityFillPath(points, inequality.operator);
@@ -20988,7 +21332,7 @@ class Graphiti {
                             pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18"');
                         }
                     }
-                } else if (functionType === 'polar-inequality') {
+                } else if (rawFunctionType === 'polar-inequality') {
                     const inequality = inequalityMeta;
                     if (inequality) {
                         if (inequality.operator === '<' || inequality.operator === '<=') {
@@ -21003,7 +21347,7 @@ class Graphiti {
                             }
                         }
                     }
-                } else if (functionType === 'implicit-inequality') {
+                } else if (rawFunctionType === 'implicit-inequality') {
                     const inequality = inequalityMeta;
                     if (inequality && func.gridData) {
                         const fillPath = buildImplicitInequalityFillPath(func, inequality.operator);
@@ -23281,7 +23625,7 @@ class Graphiti {
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
                 // Check if this is an implicit function
-                const isImplicit = func.expression && this.detectFunctionType(func.expression) === 'implicit';
+                const isImplicit = func.expression && this.getEffectiveFunctionType(func) === 'implicit';
                 
                 // Skip implicit functions if onlyExplicit is true
                 if (onlyExplicit && isImplicit) {
@@ -23317,7 +23661,7 @@ class Graphiti {
         // Get implicit functions and inequalities to replot
         const implicitFunctions = this.getCurrentFunctions().filter(func => {
             if (!func.expression || !func.enabled) return false;
-            const functionType = this.detectFunctionType(func.expression);
+            const functionType = this.getEffectiveFunctionType(func);
             // During viewport changes, skip inequalities - they'll use cached grid data
             // After viewport settles, recalculate everything for proper resolution
             if (this.isViewportChanging && functionType === 'implicit-inequality') {
@@ -25711,7 +26055,7 @@ class Graphiti {
         // Process explicit functions and theta-constant rays for fast intersection detection
         const explicitFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled || f.points.length === 0) return false;
-            const functionType = this.detectFunctionType(f.expression);
+            const functionType = this.getEffectiveFunctionType(f);
             return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'polar' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         });
 
@@ -25767,7 +26111,7 @@ class Graphiti {
         // During viewport changes, implicit functions may temporarily have empty points arrays
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled);
         const hasImplicitFunctions = allFunctions.some(f => {
-            const funcType = this.detectFunctionType(f.expression);
+            const funcType = this.getEffectiveFunctionType(f);
             return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
         });
         
@@ -25797,7 +26141,7 @@ class Graphiti {
         });
         
         const implicitFunctions = allFunctions.filter(f => {
-            const funcType = this.detectFunctionType(f.expression);
+            const funcType = this.getEffectiveFunctionType(f);
             return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
         });
         
@@ -25813,7 +26157,7 @@ class Graphiti {
         const highResFunctions = [];
         
         for (const func of allFunctions) {
-            const funcType = this.detectFunctionType(func.expression);
+            const funcType = this.getEffectiveFunctionType(func);
             if (funcType === 'implicit' || funcType === 'implicit-inequality') {
                 // Create a copy and replot at high resolution
                 const highResFunc = {
@@ -25835,7 +26179,7 @@ class Graphiti {
         // Use worker for intersection calculation with high-res data
         const workerData = {
             functions: highResFunctions.map(func => {
-                const funcType = this.detectFunctionType(func.expression);
+                const funcType = this.getEffectiveFunctionType(func);
                 return {
                     id: func.id,
                     expression: func.expression,
@@ -25926,7 +26270,7 @@ class Graphiti {
         for (const func of functions) {
             // For implicit functions, only track expression changes, not point changes
             // since points change with zoom but intersections remain the same
-            const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+            const isImplicit = this.getEffectiveFunctionType(func) === 'implicit';
             
             let currentState;
             if (isImplicit) {
@@ -25998,7 +26342,7 @@ class Graphiti {
         
         for (const func of functions) {
             if (this.functionChangeFlags.get(func.id)) {
-                const isImplicit = this.detectFunctionType(func.expression) === 'implicit';
+                const isImplicit = this.getEffectiveFunctionType(func) === 'implicit';
                 
                 // For implicit functions, check if we have any cached intersections
                 // If not, we need to calculate
@@ -28519,6 +28863,22 @@ class Graphiti {
             return turningPoints;
         }
 
+        const branchFunc = {
+            ...func,
+            expression: 'y=' + func.monomialYExplicitExpressions[0],
+            implicitRenderMode: null
+        };
+        const cachedStructure = this.getCachedMonomialYImplicitStructure(func.monomialYCacheKey);
+        if (cachedStructure && Array.isArray(cachedStructure.cubicTurningPoints)) {
+            return cachedStructure.cubicTurningPoints
+                .filter(point => point && Number.isFinite(point.x) && point.x >= this.viewport.minX && point.x <= this.viewport.maxX)
+                .filter(point => !this.isPointAtHoleForFunction(func, point.x, point.y))
+                .map(point => ({
+                    ...point,
+                    func: branchFunc
+                }));
+        }
+
         try {
             let radicandExpression = func.monomialYRadicandExpression.toLowerCase();
             let branchExpression = func.monomialYExplicitExpressions[0].toLowerCase();
@@ -28539,7 +28899,7 @@ class Graphiti {
             const derivativeStr = radicandDerivative.toString();
             const secondDerivative = this.cleanMath.derivative(radicandDerivative, 'x');
             const secondDerivativeStr = secondDerivative.toString();
-            const roots = this.findRootsInRange(derivativeStr, this.viewport.minX, this.viewport.maxX);
+            const roots = this.findRootsInRange(derivativeStr, -256, 256, 4096);
 
             if (roots.length === 0) {
                 return turningPoints;
@@ -28550,13 +28910,8 @@ class Graphiti {
             const compiledDerivative = this.getCompiledExpression(derivativeStr);
             const compiledSecondDerivative = this.getCompiledExpression(secondDerivativeStr);
             const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
-            const xSpan = Math.max(Math.abs(this.viewport.maxX - this.viewport.minX), 1);
+            const xSpan = 512;
             const signProbeOffset = Math.max(1e-5, xSpan * 1e-5);
-            const branchFunc = {
-                ...func,
-                expression: 'y=' + func.monomialYExplicitExpressions[0],
-                implicitRenderMode: null
-            };
 
             for (const x of roots) {
                 scope.x = x;
@@ -28603,11 +28958,25 @@ class Graphiti {
                     secondDerivative: secondDerivativeStr
                 });
             }
+
+            if (func.monomialYCacheKey) {
+                const existingStructure = this.getCachedMonomialYImplicitStructure(func.monomialYCacheKey) || {};
+                this.setCachedMonomialYImplicitStructure(func.monomialYCacheKey, {
+                    ...existingStructure,
+                    cubicTurningPoints: turningPoints.map(point => ({
+                        x: point.x,
+                        y: point.y,
+                        type: point.type,
+                        derivative: point.derivative,
+                        secondDerivative: point.secondDerivative
+                    }))
+                });
+            }
         } catch {
             return turningPoints;
         }
 
-        return turningPoints;
+        return turningPoints.filter(point => point.x >= this.viewport.minX && point.x <= this.viewport.maxX);
     }
     
     // Find turning points for implicit functions F(x,y) = 0
