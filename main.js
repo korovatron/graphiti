@@ -3118,8 +3118,6 @@ class Graphiti {
         this.explicitRationalStructureCache.clear();
         this.monomialYImplicitModelCache.clear();
         this.monomialYImplicitStructureCache.clear();
-        this.quadraticYImplicitModelCache.clear();
-        this.quadraticYImplicitStructureCache.clear();
     }
     
     // Regex pattern cache helpers for performance optimization
@@ -4163,7 +4161,9 @@ class Graphiti {
             const points = [];
             // Apply adaptive resolution based on function count (balanced for quality and performance)
             const functionCount = this.getCurrentFunctions().filter(f => f.enabled).length;
-            const adaptiveResolution = func.monomialYExplicitProxy
+            const adaptiveResolution = func.quadraticYExplicitProxy
+                ? Math.max(420, Math.min(900, Math.ceil(this.viewport.width * 0.95)))
+                : func.monomialYExplicitProxy
                 ? Math.max(700, Math.min(1400, Math.ceil(this.viewport.width * 1.5)))
                 : functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
             const expressionForSampling = processedExpression.toLowerCase();
@@ -7783,12 +7783,23 @@ class Graphiti {
         const combinedExpression = '(' + equation.leftExpression + ')-(' + equation.rightExpression + ')';
         const replaceYSymbol = (expression, replacement) => expression.replace(/\by\b/g, '(' + replacement + ')');
 
-        const cExpression = replaceYSymbol(combinedExpression, '0');
+        let cExpression = replaceYSymbol(combinedExpression, '0');
         const f1Expression = replaceYSymbol(combinedExpression, '1');
         const f2Expression = replaceYSymbol(combinedExpression, '2');
-        const aExpression = '(((' + f2Expression + ')-(2*(' + f1Expression + '))+(' + cExpression + '))/2)';
-        const bExpression = '(((4*(' + f1Expression + '))-(' + f2Expression + ')-(3*(' + cExpression + ')))/2)';
-        const discriminantExpression = '((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))';
+        let aExpression = '(((' + f2Expression + ')-(2*(' + f1Expression + '))+(' + cExpression + '))/2)';
+        let bExpression = '(((4*(' + f1Expression + '))-(' + f2Expression + ')-(3*(' + cExpression + ')))/2)';
+        const simplifyGeneratedExpression = (expression) => {
+            try {
+                const simplified = this.cleanMath.simplify(expression).toString();
+                return simplified || expression;
+            } catch {
+                return expression;
+            }
+        };
+        cExpression = simplifyGeneratedExpression(cExpression);
+        aExpression = simplifyGeneratedExpression(aExpression);
+        bExpression = simplifyGeneratedExpression(bExpression);
+        let discriminantExpression = simplifyGeneratedExpression('((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))');
 
         let combinedForEval = combinedExpression;
         if (this.angleMode === 'degrees') {
@@ -7874,9 +7885,223 @@ class Graphiti {
             return null;
         }
 
+        const formatNumberExpression = (value) => {
+            if (!Number.isFinite(value)) {
+                return null;
+            }
+            const roundedInteger = Math.round(value);
+            if (Math.abs(value - roundedInteger) <= 1e-12) {
+                return String(roundedInteger);
+            }
+            return Number(value.toPrecision(14)).toString();
+        };
+        const formatPolynomialExpression = (terms) => {
+            const parts = [];
+            for (const term of terms) {
+                if (!term || !Number.isFinite(term.coefficient) || Math.abs(term.coefficient) <= 1e-12) {
+                    continue;
+                }
+                const sign = term.coefficient < 0 ? '-' : '+';
+                const magnitude = Math.abs(term.coefficient);
+                const coefficientText = formatNumberExpression(magnitude);
+                if (!coefficientText) {
+                    continue;
+                }
+                const body = term.variable
+                    ? (Math.abs(magnitude - 1) <= 1e-12 ? term.variable : coefficientText + '*' + term.variable)
+                    : coefficientText;
+                parts.push({ sign, body });
+            }
+
+            if (parts.length === 0) {
+                return '0';
+            }
+
+            return parts.map((part, index) => {
+                if (index === 0) {
+                    return part.sign === '-' ? '-' + part.body : part.body;
+                }
+                return part.sign + part.body;
+            }).join('');
+        };
+
+        const polynomialCoeffsToExpression = (coeffs) => {
+            const terms = [];
+            const poly = this.normalizePolynomial(coeffs || [0]);
+            for (let power = poly.length - 1; power >= 0; power--) {
+                const coefficient = poly[power] || 0;
+                if (Math.abs(coefficient) <= 1e-12) {
+                    continue;
+                }
+                let variable = '';
+                if (power === 1) {
+                    variable = 'x';
+                } else if (power > 1) {
+                    variable = 'x^' + power;
+                }
+                terms.push({ coefficient, variable });
+            }
+            return formatPolynomialExpression(terms);
+        };
+
+        const simplifyCoefficientExpression = (expression) => {
+            const rationalParts = this.extractPolynomialRationalParts(expression);
+            if (rationalParts) {
+                const division = this.dividePolynomials(rationalParts.numerator, rationalParts.denominator);
+                if (this.getPolynomialDegree(division.remainder) < 0) {
+                    return polynomialCoeffsToExpression(division.quotient);
+                }
+            }
+            return simplifyGeneratedExpression(expression);
+        };
+
+        const expressionAdd = (left, right) => simplifyGeneratedExpression('(' + left + ')+(' + right + ')');
+        const expressionSub = (left, right) => simplifyGeneratedExpression('(' + left + ')-(' + right + ')');
+        const expressionMul = (left, right) => simplifyGeneratedExpression('(' + left + ')*(' + right + ')');
+        const expressionDiv = (left, right) => simplifyGeneratedExpression('(' + left + ')/(' + right + ')');
+
+        const addCoefficientArrays = (left, right, sign = 1) => {
+            if (!left || !right) return null;
+            const result = ['0', '0', '0'];
+            for (let i = 0; i < result.length; i++) {
+                result[i] = sign === 1
+                    ? expressionAdd(left[i] || '0', right[i] || '0')
+                    : expressionSub(left[i] || '0', right[i] || '0');
+            }
+            return result;
+        };
+
+        const multiplyCoefficientArrays = (left, right) => {
+            if (!left || !right) return null;
+            const result = ['0', '0', '0'];
+            for (let i = 0; i < left.length; i++) {
+                for (let j = 0; j < right.length; j++) {
+                    const leftExpression = left[i] || '0';
+                    const rightExpression = right[j] || '0';
+                    if ((leftExpression === '0' || rightExpression === '0') && i + j > 2) {
+                        continue;
+                    }
+                    if (i + j > 2) return null;
+                    result[i + j] = expressionAdd(result[i + j], expressionMul(leftExpression, rightExpression));
+                }
+            }
+            return result;
+        };
+
+        const getYDegree = (coefficients) => {
+            if (!coefficients) return -1;
+            for (let i = coefficients.length - 1; i >= 0; i--) {
+                const expression = (coefficients[i] || '0').trim();
+                if (expression === '0') {
+                    continue;
+                }
+                try {
+                    const simplified = this.cleanMath.simplify(expression).toString().trim();
+                    if (simplified === '0') {
+                        continue;
+                    }
+                } catch {
+                    // Treat unparsable generated expressions as non-zero so we fall back safely.
+                }
+                return i;
+            }
+            return -1;
+        };
+
+        const extractYPolynomialCoefficientExpressions = (node) => {
+            if (!node) return null;
+            if (node.type === 'ParenthesisNode') return extractYPolynomialCoefficientExpressions(node.content);
+            if (node.type === 'ConstantNode') return [String(node.value), '0', '0'];
+            if (node.type === 'SymbolNode') {
+                const symbol = String(node.name || '').toLowerCase();
+                if (symbol === 'y') return ['0', '1', '0'];
+                return [node.toString(), '0', '0'];
+            }
+            if (node.type !== 'OperatorNode') return [node.toString(), '0', '0'];
+
+            const args = node.args || [];
+            const op = node.op;
+            if (op === '+' && args.length >= 2) {
+                let result = extractYPolynomialCoefficientExpressions(args[0]);
+                for (let i = 1; i < args.length; i++) {
+                    result = addCoefficientArrays(result, extractYPolynomialCoefficientExpressions(args[i]), 1);
+                }
+                return result;
+            }
+            if (op === '-' && args.length === 1) {
+                const value = extractYPolynomialCoefficientExpressions(args[0]);
+                return value ? value.map(expression => expressionMul('-1', expression)) : null;
+            }
+            if (op === '-' && args.length >= 2) {
+                let result = extractYPolynomialCoefficientExpressions(args[0]);
+                for (let i = 1; i < args.length; i++) {
+                    result = addCoefficientArrays(result, extractYPolynomialCoefficientExpressions(args[i]), -1);
+                }
+                return result;
+            }
+            if (op === '*' && args.length >= 2) {
+                let result = extractYPolynomialCoefficientExpressions(args[0]);
+                for (let i = 1; i < args.length; i++) {
+                    result = multiplyCoefficientArrays(result, extractYPolynomialCoefficientExpressions(args[i]));
+                }
+                return result;
+            }
+            if (op === '/' && args.length === 2) {
+                const numerator = extractYPolynomialCoefficientExpressions(args[0]);
+                const denominator = extractYPolynomialCoefficientExpressions(args[1]);
+                if (!numerator || !denominator || getYDegree(denominator) > 0) return null;
+                return numerator.map(expression => expressionDiv(expression, denominator[0] || '1'));
+            }
+            if (op === '^' && args.length === 2) {
+                const exponentNode = args[1];
+                if (!exponentNode || exponentNode.type !== 'ConstantNode') return null;
+                const exponent = Number(exponentNode.value);
+                if (!Number.isInteger(exponent) || exponent < 0 || exponent > 2) return null;
+                const base = extractYPolynomialCoefficientExpressions(args[0]);
+                if (!base) return null;
+                let result = ['1', '0', '0'];
+                for (let i = 0; i < exponent; i++) {
+                    result = multiplyCoefficientArrays(result, base);
+                    if (!result) return null;
+                }
+                return result;
+            }
+            return [node.toString(), '0', '0'];
+        };
+
+        let coefficientDomainExclusions = [];
+        try {
+            const coefficientExpressions = extractYPolynomialCoefficientExpressions(this.cleanMath.parse(combinedExpression));
+            if (coefficientExpressions && getYDegree(coefficientExpressions) === 2) {
+                coefficientDomainExclusions = coefficientExpressions.flatMap(expression => this.findNestedPolynomialDenominatorRoots(expression));
+                cExpression = simplifyCoefficientExpression(coefficientExpressions[0] || '0');
+                bExpression = simplifyCoefficientExpression(coefficientExpressions[1] || '0');
+                aExpression = simplifyCoefficientExpression(coefficientExpressions[2] || '0');
+            }
+        } catch {
+            coefficientDomainExclusions = [];
+        }
+
+        const quadraticCoefficients = this.extractImplicitQuadraticCoefficients(equation);
+        if (quadraticCoefficients && Math.abs(quadraticCoefficients.C) > coefficientTolerance) {
+            aExpression = formatPolynomialExpression([
+                { coefficient: quadraticCoefficients.C, variable: '' }
+            ]);
+            bExpression = formatPolynomialExpression([
+                { coefficient: quadraticCoefficients.B, variable: 'x' },
+                { coefficient: quadraticCoefficients.E, variable: '' }
+            ]);
+            cExpression = formatPolynomialExpression([
+                { coefficient: quadraticCoefficients.A, variable: 'x^2' },
+                { coefficient: quadraticCoefficients.D, variable: 'x' },
+                { coefficient: quadraticCoefficients.F, variable: '' }
+            ]);
+        }
+        discriminantExpression = simplifyGeneratedExpression('((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))');
+
         const branchExpressions = [
-            '(-(' + bExpression + ')+sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))',
-            '(-(' + bExpression + ')-sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))'
+            simplifyGeneratedExpression('(-(' + bExpression + ')+sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))'),
+            simplifyGeneratedExpression('(-(' + bExpression + ')-sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))')
         ];
 
         const domainExclusionsRaw = [
@@ -7888,6 +8113,7 @@ class Graphiti {
             ...this.findNestedPolynomialDenominatorRoots(aExpression),
             ...this.findNestedPolynomialDenominatorRoots(bExpression),
             ...this.findNestedPolynomialDenominatorRoots(cExpression),
+            ...coefficientDomainExclusions,
             ...this.findMonomialRadicandRoots(aExpression)
         ];
         const domainExclusions = [];
@@ -7901,6 +8127,21 @@ class Graphiti {
         }
         domainExclusions.sort((a, b) => a - b);
 
+        const removableDomainExclusionsRaw = [
+            ...this.findNestedPolynomialDenominatorRoots(combinedExpression),
+            ...coefficientDomainExclusions
+        ];
+        const removableDomainExclusions = [];
+        for (const x of removableDomainExclusionsRaw) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+            if (!removableDomainExclusions.some(existing => Math.abs(existing - x) <= 1e-6)) {
+                removableDomainExclusions.push(x);
+            }
+        }
+        removableDomainExclusions.sort((a, b) => a - b);
+
         return {
             aExpression,
             bExpression,
@@ -7909,6 +8150,7 @@ class Graphiti {
             branchExpressions,
             discriminantRoots: this.findMonomialRadicandRoots(discriminantExpression),
             domainExclusions,
+            removableDomainExclusions,
             implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation)
         };
     }
@@ -9462,11 +9704,23 @@ class Graphiti {
             return false;
         }
 
+        const cachedStructure = this.getCachedQuadraticYImplicitStructure(quadraticModel.cacheKey);
+        const cachedBranchStructure = cachedStructure && cachedStructure.quadraticBranchStructureReady
+            ? {
+                vertical: Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [],
+                horizontal: Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal.slice() : [],
+                oblique: Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : [],
+                holes: Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : []
+            }
+            : null;
         const branchResults = [];
         for (const branchExpression of quadraticModel.branchExpressions) {
             const proxyFunc = {
                 ...func,
                 expression: 'y=' + branchExpression,
+                quadraticYExplicitProxy: !!cachedBranchStructure,
+                monomialYExplicitProxy: !!cachedBranchStructure,
+                monomialYKnownStructure: cachedBranchStructure,
                 points: []
             };
 
@@ -9493,6 +9747,43 @@ class Graphiti {
         const domainExclusions = Array.isArray(quadraticModel.domainExclusions)
             ? quadraticModel.domainExclusions.filter(value => Number.isFinite(value))
             : [];
+        const compileQuadraticCoefficient = (expression) => {
+            try {
+                const expressionForEval = this.angleMode === 'degrees'
+                    ? this.convertTrigToDegreeMode(expression)
+                    : expression;
+                return this.getCompiledExpression(expressionForEval);
+            } catch {
+                return null;
+            }
+        };
+        const aCompiled = compileQuadraticCoefficient(quadraticModel.aExpression);
+        const bCompiled = compileQuadraticCoefficient(quadraticModel.bExpression);
+        const cCompiled = compileQuadraticCoefficient(quadraticModel.cExpression);
+        const coefficientScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+        const pointMatchesQuadraticRelation = (point) => {
+            if (!aCompiled || !bCompiled || !cCompiled || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                return true;
+            }
+
+            coefficientScope.x = point.x;
+            try {
+                const aValue = aCompiled.evaluate(coefficientScope);
+                const bValue = bCompiled.evaluate(coefficientScope);
+                const cValue = cCompiled.evaluate(coefficientScope);
+                if (!Number.isFinite(aValue) || !Number.isFinite(bValue) || !Number.isFinite(cValue)) {
+                    return false;
+                }
+
+                const quadraticTerm = aValue * point.y * point.y;
+                const linearTerm = bValue * point.y;
+                const residual = Math.abs(quadraticTerm + linearTerm + cValue);
+                const scale = Math.max(1, Math.abs(quadraticTerm), Math.abs(linearTerm), Math.abs(cValue));
+                return residual <= Math.max(1e-5, scale * 1e-5);
+            } catch {
+                return false;
+            }
+        };
         const pointsWithExclusionBreaks = [];
         const xSpan = this.viewport.maxX - this.viewport.minX;
         const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-8);
@@ -9509,6 +9800,11 @@ class Graphiti {
             for (let i = 0; i < sourcePoints.length; i++) {
                 const current = sourcePoints[i];
                 if (!current || !Number.isFinite(current.x) || !Number.isFinite(current.y)) {
+                    pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                    continue;
+                }
+
+                if (!pointMatchesQuadraticRelation(current)) {
                     pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
                     continue;
                 }
@@ -9577,22 +9873,160 @@ class Graphiti {
             return result;
         };
 
+        const estimateQuadraticBranchHorizontalAsymptotes = () => {
+            const estimates = [];
+            const baseMagnitude = Math.max(1000, Math.abs(this.viewport.minX), Math.abs(this.viewport.maxX));
+            const multipliers = [1, 10, 100, 1000, 10000];
+
+            for (const branchExpression of quadraticModel.branchExpressions) {
+                let expressionForEval = branchExpression;
+                if (this.angleMode === 'degrees') {
+                    expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+                }
+
+                let compiledExpression;
+                try {
+                    compiledExpression = this.getCompiledExpression(expressionForEval);
+                } catch {
+                    continue;
+                }
+
+                const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+                const evalY = (x) => {
+                    evalScope.x = x;
+                    try {
+                        const value = compiledExpression.evaluate(evalScope);
+                        return Number.isFinite(value) ? value : null;
+                    } catch {
+                        return null;
+                    }
+                };
+
+                for (const direction of [-1, 1]) {
+                    const values = [];
+                    for (const multiplier of multipliers) {
+                        const value = evalY(direction * baseMagnitude * multiplier);
+                        if (value !== null && Math.abs(value) < 1e8) {
+                            values.push(value);
+                        }
+                    }
+
+                    if (values.length < 3) {
+                        continue;
+                    }
+
+                    const tail = values.slice(-3);
+                    const maxTailDelta = Math.max(
+                        Math.abs(tail[2] - tail[1]),
+                        Math.abs(tail[1] - tail[0])
+                    );
+                    const tailScale = Math.max(1, ...tail.map(value => Math.abs(value)));
+                    if (maxTailDelta > Math.max(1e-3, tailScale * 5e-3)) {
+                        continue;
+                    }
+
+                    const estimate = tail[2];
+                    const roundedInteger = Math.round(estimate);
+                    if (Math.abs(estimate - roundedInteger) <= 1e-3) {
+                        estimates.push(roundedInteger);
+                    } else if (Math.abs(estimate) <= 1e-3) {
+                        estimates.push(0);
+                    } else {
+                        estimates.push(estimate);
+                    }
+                }
+            }
+
+            return uniqueNumbers(estimates, 1e-3);
+        };
+
         const implicitAsymptotes = quadraticModel.implicitAsymptotes || { vertical: [], horizontal: [], oblique: [] };
         const proxyAsymptotes = branchResults.map(branchResult => branchResult.proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] });
+        const quadraticHorizontalAsymptotes = estimateQuadraticBranchHorizontalAsymptotes();
         const vertical = uniqueNumbers([
             ...proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []),
             ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
         ]);
-        const horizontal = uniqueNumbers([
-            ...proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
-            ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
-        ]);
+        const horizontal = quadraticHorizontalAsymptotes.length > 0
+            ? uniqueNumbers([
+                ...quadraticHorizontalAsymptotes,
+                ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
+            ], 1e-3)
+            : uniqueNumbers([
+                ...proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
+                ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
+            ], 1e-3);
         const oblique = uniqueObliqueLines([
             ...proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []),
             ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique : [])
         ]);
 
-        const mergedHoles = branchResults.flatMap(branchResult => Array.isArray(branchResult.proxyFunc.holes) ? branchResult.proxyFunc.holes : []);
+        const removableDomainExclusions = Array.isArray(quadraticModel.removableDomainExclusions)
+            ? quadraticModel.removableDomainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        const isNearRemovableDomainExclusion = (x) => removableDomainExclusions.some(exclusionX => Math.abs(x - exclusionX) <= 1e-6);
+        const mergedHoles = branchResults
+            .flatMap(branchResult => Array.isArray(branchResult.proxyFunc.holes) ? branchResult.proxyFunc.holes : [])
+            .filter(hole => hole && Number.isFinite(hole.x) && isNearRemovableDomainExclusion(hole.x));
+        const evaluateQuadraticBranchLimit = (branchExpression, x0) => {
+            let expressionForEval = branchExpression;
+            if (this.angleMode === 'degrees') {
+                expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+            }
+
+            let compiledExpression;
+            try {
+                compiledExpression = this.getCompiledExpression(expressionForEval);
+            } catch {
+                return null;
+            }
+
+            const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const evalY = (x) => {
+                evalScope.x = x;
+                try {
+                    const value = compiledExpression.evaluate(evalScope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            const directValue = evalY(x0);
+            if (directValue !== null && Math.abs(directValue) < 1e6) {
+                return directValue;
+            }
+
+            const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6];
+            const sideMeans = [];
+            for (const delta of deltas) {
+                const left = evalY(x0 - delta);
+                const right = evalY(x0 + delta);
+                if (left === null || right === null) {
+                    continue;
+                }
+                const magnitude = Math.max(Math.abs(left), Math.abs(right));
+                const agreementTolerance = Math.max(1e-3, magnitude * 5e-3);
+                if (magnitude < 1e6 && Math.abs(left - right) <= agreementTolerance) {
+                    sideMeans.push((left + right) * 0.5);
+                }
+            }
+
+            if (sideMeans.length === 0) {
+                return null;
+            }
+
+            return sideMeans[sideMeans.length - 1];
+        };
+
+        for (const exclusionX of removableDomainExclusions) {
+            for (const branchExpression of quadraticModel.branchExpressions) {
+                const limitY = evaluateQuadraticBranchLimit(branchExpression, exclusionX);
+                if (limitY !== null) {
+                    mergedHoles.push({ x: exclusionX, y: limitY });
+                }
+            }
+        }
         const filteredHoles = [];
         for (const hole of mergedHoles) {
             if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
@@ -9613,6 +10047,17 @@ class Graphiti {
         func.quadraticYDiscriminantExpression = quadraticModel.discriminantExpression;
         func.implicitRenderMode = 'quadratic-explicit';
         this.updateFunctionAsymptoteInfo(func);
+
+        if (quadraticModel.cacheKey) {
+            this.setCachedQuadraticYImplicitStructure(quadraticModel.cacheKey, {
+                ...(cachedStructure || {}),
+                quadraticBranchStructureReady: true,
+                vertical: vertical.slice(),
+                horizontal: horizontal.slice(),
+                oblique: oblique.map(line => ({ ...line })),
+                holes: filteredHoles.map(hole => ({ ...hole }))
+            });
+        }
 
         return true;
     }
