@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.114';
+const VERSION = '1.1.115';
 
 class Graphiti {
     constructor() {
@@ -20886,7 +20886,7 @@ class Graphiti {
             return labelText || '';
         };
 
-        const buildStandardPath = (points) => {
+        const buildStandardPath = (points, funcForBreaks = null) => {
             if (!Array.isArray(points) || points.length < 2) return '';
 
             const buffer = 100;
@@ -20899,51 +20899,85 @@ class Graphiti {
                 p.x >= clipMinX && p.x <= clipMaxX && p.y >= clipMinY && p.y <= clipMaxY
             );
 
+            const segmentIntersectsExpandedViewport = (a, b) => {
+                if (pointInExpandedViewport(a) || pointInExpandedViewport(b)) {
+                    return true;
+                }
+
+                const segMinX = Math.min(a.x, b.x);
+                const segMaxX = Math.max(a.x, b.x);
+                const segMinY = Math.min(a.y, b.y);
+                const segMaxY = Math.max(a.y, b.y);
+
+                return !(segMaxX < clipMinX || segMinX > clipMaxX || segMaxY < clipMinY || segMinY > clipMaxY);
+            };
+
+            const crossesKnownVerticalAsymptote = (prevWorld, nextWorld) => {
+                const asymptotes = funcForBreaks && funcForBreaks.explicitVerticalAsymptotes;
+                if (!Array.isArray(asymptotes) || asymptotes.length === 0 || !prevWorld || !nextWorld) {
+                    return false;
+                }
+
+                const minX = Math.min(prevWorld.x, nextWorld.x);
+                const maxX = Math.max(prevWorld.x, nextWorld.x);
+                return asymptotes.some(asymptoteX => Number.isFinite(asymptoteX) && asymptoteX > minX && asymptoteX < maxX);
+            };
+
             let d = '';
             let pathStarted = false;
-            let prevInside = false;
+            let previousScreen = null;
+            let previousWorld = null;
 
             for (let i = 0; i < points.length; i++) {
                 const point = points[i];
                 if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                     pathStarted = false;
-                    prevInside = false;
+                    previousScreen = null;
+                    previousWorld = null;
                     continue;
                 }
 
                 const screen = this.worldToScreen(point.x, point.y);
                 if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
                     pathStarted = false;
-                    prevInside = false;
+                    previousScreen = null;
+                    previousWorld = null;
                     continue;
                 }
 
                 const inside = pointInExpandedViewport(screen);
 
-                if (point.connected === false) {
+                if (point.connected === false || !previousScreen) {
                     if (inside) {
                         d += ` M ${svgNum(screen.x)} ${svgNum(screen.y)}`;
                         pathStarted = true;
                     } else {
                         pathStarted = false;
                     }
-                    prevInside = inside;
+                    previousScreen = screen;
+                    previousWorld = point;
                     continue;
                 }
 
-                if (inside) {
-                    if (!pathStarted || !prevInside) {
-                        d += ` M ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                if (crossesKnownVerticalAsymptote(previousWorld, point)) {
+                    pathStarted = false;
+                    previousScreen = screen;
+                    previousWorld = point;
+                    continue;
+                }
+
+                if (segmentIntersectsExpandedViewport(previousScreen, screen)) {
+                    if (!pathStarted) {
+                        d += ` M ${svgNum(previousScreen.x)} ${svgNum(previousScreen.y)}`;
                         pathStarted = true;
-                    } else {
-                        d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
                     }
-                } else if (pathStarted && prevInside) {
-                    // End this visible segment when it leaves the expanded viewport.
+                    d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                } else {
                     pathStarted = false;
                 }
 
-                prevInside = inside;
+                previousScreen = screen;
+                previousWorld = point;
             }
 
             return d.trim();
@@ -20951,6 +20985,24 @@ class Graphiti {
 
         const buildImplicitSegmentPaths = (points) => {
             if (!Array.isArray(points) || points.length < 2) return [];
+
+            const buffer = 100;
+            const clipMinX = -buffer;
+            const clipMaxX = width + buffer;
+            const clipMinY = -buffer;
+            const clipMaxY = height + buffer;
+            const segmentIntersectsExpandedViewport = (a, b) => {
+                const endpointInside = (p) => p.x >= clipMinX && p.x <= clipMaxX && p.y >= clipMinY && p.y <= clipMaxY;
+                if (endpointInside(a) || endpointInside(b)) {
+                    return true;
+                }
+
+                const segMinX = Math.min(a.x, b.x);
+                const segMaxX = Math.max(a.x, b.x);
+                const segMinY = Math.min(a.y, b.y);
+                const segMaxY = Math.max(a.y, b.y);
+                return !(segMaxX < clipMinX || segMinX > clipMaxX || segMaxY < clipMinY || segMinY > clipMaxY);
+            };
 
             const segments = [];
             for (let i = 0; i < points.length - 1; i += 3) {
@@ -20963,6 +21015,10 @@ class Graphiti {
                 const start = this.worldToScreen(startPoint.x, startPoint.y);
                 const end = this.worldToScreen(endPoint.x, endPoint.y);
                 if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(end.x) || !Number.isFinite(end.y)) {
+                    continue;
+                }
+
+                if (!segmentIntersectsExpandedViewport(start, end)) {
                     continue;
                 }
 
@@ -21811,7 +21867,7 @@ class Graphiti {
                             }
                         }
                     } else {
-                        const pathData = buildStandardPath(points);
+                        const pathData = buildStandardPath(points, func);
                         if (pathData) {
                             let dash = '';
                             if (isInequality && isStrictInequality) {
