@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.112';
+const VERSION = '1.1.114';
 
 class Graphiti {
     constructor() {
@@ -7670,6 +7670,7 @@ class Graphiti {
             horizontal: Array.isArray(value.horizontal) ? value.horizontal.slice() : undefined,
             oblique: Array.isArray(value.oblique) ? value.oblique.map(line => ({ ...line })) : undefined,
             holes: Array.isArray(value.holes) ? value.holes.map(hole => ({ ...hole })) : undefined,
+            squareTurningPoints: Array.isArray(value.squareTurningPoints) ? value.squareTurningPoints.map(point => ({ ...point })) : undefined,
             cubicTurningPoints: Array.isArray(value.cubicTurningPoints) ? value.cubicTurningPoints.map(point => ({ ...point })) : undefined
         };
     }
@@ -7813,11 +7814,69 @@ class Graphiti {
             }
 
             const verticalComponents = this.findAffineImplicitVerticalComponents(aCompiled, bCompiled);
+            const constantCoefficient = (() => {
+                let baseline = null;
+                let finiteSamples = 0;
+                for (const x of sampleXs) {
+                    if (!Number.isFinite(x)) {
+                        continue;
+                    }
+                    scope.x = x;
+                    try {
+                        const value = aCompiled.evaluate(scope);
+                        if (!Number.isFinite(value)) {
+                            continue;
+                        }
+                        if (baseline === null) {
+                            baseline = value;
+                        } else if (Math.abs(value - baseline) > Math.max(1e-10, Math.abs(baseline) * 1e-10)) {
+                            return null;
+                        }
+                        finiteSamples++;
+                    } catch {
+                        continue;
+                    }
+                }
+
+                if (baseline === null || finiteSamples < 3 || Math.abs(baseline) < 1e-12) {
+                    return null;
+                }
+
+                const rounded = Math.round(baseline);
+                return Math.abs(baseline - rounded) < 1e-12 ? rounded : baseline;
+            })();
+            let radicandExpression;
+            if (constantCoefficient === -1) {
+                radicandExpression = '(' + bExpression + ')';
+            } else if (constantCoefficient === 1) {
+                radicandExpression = '-(' + bExpression + ')';
+            } else if (constantCoefficient !== null) {
+                radicandExpression = '-(' + bExpression + ')/(' + constantCoefficient + ')';
+            } else {
+                radicandExpression = '-(' + bExpression + ')/(' + aExpression + ')';
+            }
+            if (constantCoefficient !== null && radicandExpression.includes('(0)')) {
+                try {
+                    const simplifiedRadicand = this.cleanMath.simplify(radicandExpression).toString();
+                    if (simplifiedRadicand && (simplifiedRadicand.length < radicandExpression.length || this.extractPolynomialRationalParts(simplifiedRadicand))) {
+                        radicandExpression = simplifiedRadicand;
+                    }
+                } catch {
+                    // Keep the generated expression if simplification fails.
+                }
+            }
             const domainExclusionsRaw = [
                 ...this.detectVerticalAsymptotes(combinedExpression),
                 ...this.detectVerticalAsymptotes(aExpression),
-                ...this.detectVerticalAsymptotes(bExpression)
+                ...this.detectVerticalAsymptotes(bExpression),
+                ...this.findNestedPolynomialDenominatorRoots(combinedExpression),
+                ...this.findNestedPolynomialDenominatorRoots(aExpression),
+                ...this.findNestedPolynomialDenominatorRoots(bExpression)
             ];
+            const radicandRationalParts = this.extractPolynomialRationalParts(radicandExpression);
+            if (radicandRationalParts) {
+                domainExclusionsRaw.push(...this.findPolynomialRealRoots(radicandRationalParts.denominator));
+            }
             const domainExclusions = [];
             for (const x of domainExclusionsRaw) {
                 if (!Number.isFinite(x)) {
@@ -7831,7 +7890,7 @@ class Graphiti {
 
             return {
                 power,
-                radicandExpression: '-(' + bExpression + ')/(' + aExpression + ')',
+                radicandExpression,
                 verticalComponents,
                 domainExclusions
             };
@@ -8264,7 +8323,7 @@ class Graphiti {
         const branchExpressions = monomialModel.power === 2
             ? ['sqrt(' + radicand + ')', '-sqrt(' + radicand + ')']
             : ['sign(' + radicand + ')*abs(' + radicand + ')^(1/3)'];
-        const cachedStructure = this.getCachedMonomialYImplicitStructure(monomialModel.cacheKey);
+        let cachedStructure = this.getCachedMonomialYImplicitStructure(monomialModel.cacheKey);
         const verticalComponents = Array.isArray(monomialModel.verticalComponents)
             ? monomialModel.verticalComponents.filter(value => Number.isFinite(value))
             : [];
@@ -8272,6 +8331,15 @@ class Graphiti {
         const domainExclusions = Array.isArray(monomialModel.domainExclusions)
             ? monomialModel.domainExclusions.filter(value => Number.isFinite(value) && !isAtVerticalComponent(value))
             : [];
+        if (cachedStructure) {
+            const cachedDomainExclusions = Array.isArray(cachedStructure.domainExclusions) ? cachedStructure.domainExclusions : [];
+            const hasCurrentDomainExclusions = domainExclusions.every(value =>
+                cachedDomainExclusions.some(cachedValue => Math.abs(cachedValue - value) <= 1e-7)
+            );
+            if (!hasCurrentDomainExclusions) {
+                cachedStructure = null;
+            }
+        }
 
         const plotCachedMonomialBranch = (proxyFunc, branchExpression) => {
             let expressionForEval = branchExpression;
@@ -8666,7 +8734,7 @@ class Graphiti {
                 };
 
                 const estimateSide = (direction) => {
-                    const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12];
+                    const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
                     const values = [];
                     let sawHuge = false;
 
@@ -8771,6 +8839,7 @@ class Graphiti {
             }
 
             this.setCachedMonomialYImplicitStructure(monomialModel.cacheKey, {
+                domainExclusions: domainExclusions.slice(),
                 branchExpressions,
                 radicandRoots,
                 zeroLimitExclusions,
@@ -11752,6 +11821,59 @@ class Graphiti {
         } catch {
             return null;
         }
+    }
+
+    findNestedPolynomialDenominatorRoots(expression) {
+        const roots = [];
+        if (!expression || !String(expression).includes('/')) {
+            return roots;
+        }
+
+        const addRootsFromNode = (node) => {
+            const coeffs = this.extractPolynomialCoeffs(node);
+            if (!coeffs || this.getPolynomialDegree(coeffs) < 1) {
+                return;
+            }
+
+            for (const root of this.findPolynomialRealRoots(coeffs)) {
+                if (!Number.isFinite(root)) {
+                    continue;
+                }
+                if (!roots.some(existing => Math.abs(existing - root) <= 1e-7)) {
+                    roots.push(root);
+                }
+            }
+        };
+
+        const visit = (node) => {
+            if (!node) {
+                return;
+            }
+
+            if (node.type === 'ParenthesisNode') {
+                visit(node.content);
+                return;
+            }
+
+            if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+                addRootsFromNode(node.args[1]);
+            }
+
+            if (Array.isArray(node.args)) {
+                for (const arg of node.args) {
+                    visit(arg);
+                }
+            }
+        };
+
+        try {
+            visit(this.cleanMath.parse(expression));
+        } catch {
+            return [];
+        }
+
+        roots.sort((a, b) => a - b);
+        return roots;
     }
 
     extractPolynomialCoeffs(node) {
@@ -28655,6 +28777,12 @@ class Graphiti {
                     continue;
                 }
 
+                if (func.implicitRenderMode === 'monomial-explicit' && func.monomialYPower === 2 && func.monomialYRadicandExpression && Array.isArray(func.monomialYExplicitExpressions)) {
+                    const squareTurningPoints = this.findMonomialSquareTurningPointsForFunction(func);
+                    turningPoints.push(...squareTurningPoints);
+                    continue;
+                }
+
                 if (func.implicitRenderMode === 'monomial-explicit' && func.monomialYPower === 3 && func.monomialYRadicandExpression && Array.isArray(func.monomialYExplicitExpressions)) {
                     const cubicTurningPoints = this.findMonomialCubicTurningPointsForFunction(func);
                     turningPoints.push(...cubicTurningPoints);
@@ -29161,6 +29289,147 @@ class Graphiti {
         }
         
         return turningPoints;
+    }
+
+    findMonomialSquareTurningPointsForFunction(func) {
+        const turningPoints = [];
+        if (!func || func.monomialYPower !== 2 || !func.monomialYRadicandExpression || !Array.isArray(func.monomialYExplicitExpressions) || func.monomialYExplicitExpressions.length === 0) {
+            return turningPoints;
+        }
+
+        const cachedStructure = this.getCachedMonomialYImplicitStructure(func.monomialYCacheKey);
+        if (cachedStructure && Array.isArray(cachedStructure.squareTurningPoints)) {
+            return cachedStructure.squareTurningPoints
+                .filter(point => point && Number.isFinite(point.x) && point.x >= this.viewport.minX && point.x <= this.viewport.maxX)
+                .filter(point => !this.isPointAtHoleForFunction(func, point.x, point.y))
+                .map(point => ({
+                    ...point,
+                    func: {
+                        ...func,
+                        expression: point.branchExpression ? 'y=' + point.branchExpression : func.expression,
+                        implicitRenderMode: null
+                    }
+                }));
+        }
+
+        try {
+            let radicandExpression = func.monomialYRadicandExpression.toLowerCase();
+            if (this.angleMode === 'degrees') {
+                const hasTrigRadicand = this.getCachedRegex('regularTrigWithX').test(radicandExpression);
+                if (hasTrigRadicand) {
+                    radicandExpression = this.convertTrigToDegreeMode(radicandExpression);
+                }
+            }
+
+            math.parse(radicandExpression);
+            let derivativeStr = null;
+            let roots = [];
+            const rationalParts = this.extractPolynomialRationalParts(radicandExpression);
+            if (rationalParts) {
+                const derivativeNumerator = this.normalizePolynomial(this.subtractPolynomials(
+                    this.multiplyPolynomials(this.derivativePolynomial(rationalParts.numerator), rationalParts.denominator),
+                    this.multiplyPolynomials(rationalParts.numerator, this.derivativePolynomial(rationalParts.denominator))
+                ));
+                derivativeStr = 'd/dx(' + radicandExpression + ')';
+                roots = this.findPolynomialRealRoots(derivativeNumerator);
+            } else {
+                const radicandDerivative = this.cleanMath.derivative(radicandExpression, 'x');
+                derivativeStr = radicandDerivative.toString();
+                roots = this.findRootsInRange(derivativeStr, -256, 256, 4096);
+            }
+
+            if (roots.length === 0) {
+                return turningPoints;
+            }
+
+            const compiledRadicand = this.getCompiledExpression(radicandExpression);
+            const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const secondDerivativeStr = 'numeric';
+            const evaluateRadicandAt = (x) => {
+                scope.x = x;
+                try {
+                    const value = compiledRadicand.evaluate(scope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+            const estimateSecondDerivative = (x) => {
+                const h = Math.max(1e-4, Math.abs(x) * 1e-5);
+                const left = evaluateRadicandAt(x - h);
+                const centre = evaluateRadicandAt(x);
+                const right = evaluateRadicandAt(x + h);
+                if (left === null || centre === null || right === null) {
+                    return null;
+                }
+                return (left - (2 * centre) + right) / (h * h);
+            };
+
+            for (const x of roots) {
+                const radicandValue = evaluateRadicandAt(x);
+                if (!Number.isFinite(x) || !Number.isFinite(radicandValue) || radicandValue <= 1e-10) {
+                    continue;
+                }
+
+                const yMagnitude = Math.sqrt(radicandValue);
+                const secondValue = estimateSecondDerivative(x);
+                if (!Number.isFinite(yMagnitude) || this.isPointAtHoleForFunction(func, x, yMagnitude)) {
+                    continue;
+                }
+
+                for (const branchExpression of func.monomialYExplicitExpressions) {
+                    const isLowerBranch = branchExpression.trim().startsWith('-');
+                    const y = isLowerBranch ? -yMagnitude : yMagnitude;
+                    if (this.isPointAtHoleForFunction(func, x, y)) {
+                        continue;
+                    }
+
+                    let type = 'horizontal-tangent';
+                    if (Number.isFinite(secondValue) && Math.abs(secondValue) > 1e-10) {
+                        const branchSecondSign = isLowerBranch ? -secondValue : secondValue;
+                        type = branchSecondSign > 0 ? 'minimum' : 'maximum';
+                    }
+
+                    let snappedX = x;
+                    let snappedY = y;
+                    if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                    if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+                    turningPoints.push({
+                        x: snappedX,
+                        y: snappedY,
+                        func: {
+                            ...func,
+                            expression: 'y=' + branchExpression,
+                            implicitRenderMode: null
+                        },
+                        type,
+                        derivative: derivativeStr,
+                        secondDerivative: secondDerivativeStr,
+                        branchExpression
+                    });
+                }
+            }
+
+            if (func.monomialYCacheKey) {
+                const existingStructure = this.getCachedMonomialYImplicitStructure(func.monomialYCacheKey) || {};
+                this.setCachedMonomialYImplicitStructure(func.monomialYCacheKey, {
+                    ...existingStructure,
+                    squareTurningPoints: turningPoints.map(point => ({
+                        x: point.x,
+                        y: point.y,
+                        type: point.type,
+                        derivative: point.derivative,
+                        secondDerivative: point.secondDerivative,
+                        branchExpression: point.branchExpression
+                    }))
+                });
+            }
+        } catch {
+            return turningPoints;
+        }
+
+        return turningPoints.filter(point => point.x >= this.viewport.minX && point.x <= this.viewport.maxX);
     }
 
     findMonomialCubicTurningPointsForFunction(func) {
