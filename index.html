@@ -1530,7 +1530,7 @@
             left: -100% !important;
             width: 100% !important;
             max-width: 330px !important; /* Simplified for iOS compatibility */
-            height: 100vh !important; /* Fixed viewport height to prevent extension */
+            height: var(--actual-vh, 100vh) !important; /* Match the visible viewport on iOS Safari */
             z-index: 15;
             transition: left 0.3s ease;
             overflow-y: scroll; /* Always scroll to prevent iOS PWA touch fall-through */
