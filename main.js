@@ -6047,6 +6047,36 @@ class Graphiti {
         return func && func.expression ? this.detectFunctionType(func.expression) : 'explicit';
     }
 
+    refreshFastPathImplicitCoverageForViewport() {
+        if (this.plotMode !== 'cartesian') {
+            return;
+        }
+
+        const viewportWidth = this.viewport.maxX - this.viewport.minX;
+        if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+            return;
+        }
+
+        const edgeMargin = viewportWidth * 0.2;
+        this.getCurrentFunctions().forEach(func => {
+            if (!func || !func.enabled || !func.expression || !this.isExplicitImplicitFastPath(func)) {
+                return;
+            }
+
+            const finiteXs = (func.points || [])
+                .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+                .map(point => point.x);
+            const minPointX = finiteXs.length > 0 ? Math.min(...finiteXs) : Infinity;
+            const maxPointX = finiteXs.length > 0 ? Math.max(...finiteXs) : -Infinity;
+
+            if (finiteXs.length === 0 || this.viewport.minX < minPointX + edgeMargin || this.viewport.maxX > maxPointX - edgeMargin) {
+                this.plotFunction(func).catch(error => {
+                    console.warn('Could not refresh fast-path implicit viewport coverage:', error);
+                });
+            }
+        });
+    }
+
     parseParametricEquation(expression) {
         // Parse parametric format: (x_expr, y_expr)
         // Returns: { xExpr: string, yExpr: string } or null if invalid
@@ -14047,6 +14077,7 @@ class Graphiti {
         }
         
         this.isViewportChanging = true;
+        this.refreshFastPathImplicitCoverageForViewport();
         
         // Schedule implicit intersection recalculation after viewport changes settle
         this.scheduleImplicitIntersectionCalculation();
@@ -23830,8 +23861,9 @@ class Graphiti {
         // Only clear points if NOT during viewport changes - otherwise keep them visible
         if (!this.isViewportChanging) {
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && this.detectFunctionType(func.expression) === 'implicit') {
+                if (func.expression && this.getEffectiveFunctionType(func) === 'implicit') {
                     func.points = [];
+                    func.displayPoints = [];
                     if (func.cachedPoints) {
                         delete func.cachedPoints;
                     }
