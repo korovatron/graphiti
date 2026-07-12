@@ -8939,7 +8939,7 @@ class Graphiti {
                 this.addMonomialBranchHoleApproachPoints(proxyFunc, branchExpression, zeroLimitExclusionsForCache, exclusionGap);
             }
 
-            proxyFunc.points = proxyFunc.points || points;
+            proxyFunc.points = points;
             proxyFunc.displayPoints = proxyFunc.points;
             proxyFunc.holes = Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : [];
             proxyFunc.asymptoteData = {
@@ -9053,6 +9053,27 @@ class Graphiti {
                     this.addMonomialBranchHoleApproachPoints(branchResult.proxyFunc, branchResult.expression, excludedRoots, exclusionTolerance);
                 }
             }
+        }
+
+        if (branchResults.length === 0 && cachedStructure) {
+            func.points = [];
+            func._viewportCoverageSampleRange = null;
+            this.updateFunctionAsymptoteData(
+                func,
+                Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [],
+                Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal.slice() : [],
+                Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : [],
+                null
+            );
+            func.holes = Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : [];
+            func.monomialYExplicitExpressions = branchExpressions.slice();
+            func.monomialYCacheKey = monomialModel.cacheKey || null;
+            func.monomialYRadicandExpression = radicand;
+            func.monomialYPower = monomialModel.power;
+            func.monomialYVerticalComponents = verticalComponents.slice();
+            func.implicitRenderMode = 'monomial-explicit';
+            this.updateFunctionAsymptoteInfo(func);
+            return true;
         }
 
         if (branchResults.length === 0 && verticalComponents.length === 0) {
@@ -9263,6 +9284,27 @@ class Graphiti {
                 }
             }
 
+            const rationalParts = this.extractPolynomialRationalParts(radicand);
+            if (rationalParts) {
+                const numeratorAt = (x) => this.evaluatePolynomial(rationalParts.numerator, x);
+                const denominatorDerivative = this.derivativePolynomial(rationalParts.denominator);
+                const denominatorDerivativeAt = (x) => this.evaluatePolynomial(denominatorDerivative, x);
+                for (const exclusionX of domainExclusions) {
+                    if (derivedDomainHoles.some(hole => Math.abs(hole.x - exclusionX) <= 1e-5)) {
+                        continue;
+                    }
+
+                    const numeratorValue = numeratorAt(exclusionX);
+                    const denominatorSlope = denominatorDerivativeAt(exclusionX);
+                    if (Number.isFinite(numeratorValue) && Number.isFinite(denominatorSlope) && Math.abs(numeratorValue) > 1e-8 && Math.abs(denominatorSlope) > 1e-10) {
+                        const hasRealSide = branchExpressions.length === 1 || ((numeratorValue / denominatorSlope) !== 0);
+                        if (hasRealSide && !derivedVerticalAsymptotes.some(value => Math.abs(value - exclusionX) <= 1e-7)) {
+                            derivedVerticalAsymptotes.push(exclusionX);
+                        }
+                    }
+                }
+            }
+
             if (derivedDomainHoles.length > 0) {
                 filteredVertical = filteredVertical.filter(value =>
                     !derivedDomainHoles.some(hole => Math.abs(hole.x - value) <= 1e-5)
@@ -9337,6 +9379,85 @@ class Graphiti {
         let expressionForEval = radicandExpression;
         if (this.angleMode === 'degrees') {
             expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+        }
+
+        const rationalParts = this.extractPolynomialRationalParts(radicandExpression);
+        if (rationalParts) {
+            const denominatorRoots = this.findPolynomialRealRoots(rationalParts.denominator);
+            const addRationalRoot = (roots, root) => {
+                if (!Number.isFinite(root)) {
+                    return;
+                }
+                const rounded = Math.abs(root - Math.round(root)) < 1e-10 ? Math.round(root) : root;
+                if (!roots.some(existing => Math.abs(existing - rounded) <= 1e-7)) {
+                    roots.push(rounded);
+                }
+            };
+            const findNumeratorRoots = () => {
+                const directRoots = this.findPolynomialRealRoots(rationalParts.numerator);
+                if (directRoots.length > 0 || this.getPolynomialDegree(rationalParts.numerator) <= 2) {
+                    return directRoots;
+                }
+
+                const roots = [];
+                const minX = -256;
+                const maxX = 256;
+                const samples = 4096;
+                const step = (maxX - minX) / samples;
+                const zeroTolerance = 1e-9;
+                let prevX = minX;
+                let prevValue = this.evaluatePolynomial(rationalParts.numerator, prevX);
+
+                const bisectRoot = (leftX, rightX, leftValue) => {
+                    let a = leftX;
+                    let b = rightX;
+                    let fa = leftValue;
+                    for (let iter = 0; iter < 60; iter++) {
+                        const mid = (a + b) * 0.5;
+                        const fm = this.evaluatePolynomial(rationalParts.numerator, mid);
+                        if (!Number.isFinite(fm)) {
+                            break;
+                        }
+                        if (Math.abs(fm) <= zeroTolerance || Math.abs(b - a) <= 1e-10) {
+                            return mid;
+                        }
+                        if (fa * fm <= 0) {
+                            b = mid;
+                        } else {
+                            a = mid;
+                            fa = fm;
+                        }
+                    }
+                    return (a + b) * 0.5;
+                };
+
+                for (let i = 1; i <= samples; i++) {
+                    const x = i === samples ? maxX : minX + i * step;
+                    const value = this.evaluatePolynomial(rationalParts.numerator, x);
+                    if (!Number.isFinite(prevValue) || !Number.isFinite(value)) {
+                        prevX = x;
+                        prevValue = value;
+                        continue;
+                    }
+                    if (Math.abs(prevValue) <= zeroTolerance) {
+                        addRationalRoot(roots, prevX);
+                    } else if (Math.abs(value) <= zeroTolerance) {
+                        addRationalRoot(roots, x);
+                    } else if (prevValue * value < 0) {
+                        addRationalRoot(roots, bisectRoot(prevX, x, prevValue));
+                    }
+                    prevX = x;
+                    prevValue = value;
+                }
+                return roots;
+            };
+            const numeratorRoots = findNumeratorRoots()
+                .filter(root => !denominatorRoots.some(exclusion => Math.abs(exclusion - root) <= 1e-7));
+            if (numeratorRoots.length > 0) {
+                return numeratorRoots
+                    .map(root => Math.abs(root - Math.round(root)) < 1e-10 ? Math.round(root) : root)
+                    .sort((a, b) => a - b);
+            }
         }
 
         let compiledExpression;
@@ -13028,6 +13149,18 @@ class Graphiti {
             }
         }
         return this.normalizePolynomial(out);
+    }
+
+    derivativePolynomial(poly) {
+        if (!Array.isArray(poly) || poly.length <= 1) {
+            return [0];
+        }
+
+        const derivative = [];
+        for (let i = 1; i < poly.length; i++) {
+            derivative.push((poly[i] || 0) * i);
+        }
+        return this.normalizePolynomial(derivative);
     }
 
     dividePolynomials(numerator, denominator) {
