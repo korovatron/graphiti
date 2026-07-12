@@ -4017,7 +4017,11 @@ class Graphiti {
         }
         
         if (functionType === 'implicit' || functionType === 'implicit-inequality') {
-            this.clearFunctionAsymptoteData(func);
+            const preserveFastPathMetadata = this.isExplicitImplicitFastPath(func) &&
+                (this.isViewportChanging || func._preserveFastPathMetadataDuringViewportRefresh);
+            if (!preserveFastPathMetadata) {
+                this.clearFunctionAsymptoteData(func);
+            }
             await this.plotImplicitFunction(func, false, this.isStartup);
             return;
         }
@@ -4183,6 +4187,7 @@ class Graphiti {
             const bufferSize = viewportWidth * 0.5;
             const bufferedMinX = this.viewport.minX - bufferSize;
             const bufferedMaxX = this.viewport.maxX + bufferSize;
+            func._viewportCoverageSampleRange = { minX: bufferedMinX, maxX: bufferedMaxX };
             const knownMonomialProxyStructure = func.monomialYExplicitProxy && func.monomialYKnownStructure
                 ? func.monomialYKnownStructure
                 : null;
@@ -4863,9 +4868,11 @@ class Graphiti {
             this.clearFunctionAsymptoteData(func);
         }
         
-        // Track plotting time for performance monitoring
+        // Track plotting time for performance monitoring and viewport coverage heuristics
+        const elapsed = performance.now() - startTime;
+        func._lastViewportCoveragePlotMs = elapsed;
+        func._lastViewportCoveragePlotAt = performance.now();
         if (this.performance.enabled) {
-            const elapsed = performance.now() - startTime;
             this.performance.plotTimes.set(func.id, elapsed);
         }
     }
@@ -6059,13 +6066,14 @@ class Graphiti {
 
         const edgeMargin = viewportWidth * 0.2;
         const now = performance.now();
-        const looksExpensiveExplicit = (func) => {
+        const getExplicitRefreshRisk = (func) => {
             const expression = this.convertFromLatex(func.expression || '').toLowerCase();
-            return /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expression) ||
+            const highRisk = /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expression) ||
                 /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expression) ||
-                /\b(log|ln|sqrt|asin|acos|atan|abs|sign)\s*\(/.test(expression) ||
                 /\/[^(]*x|\/\s*\([^)]*x/.test(expression) ||
                 expression.length > 80;
+            const needsTimingProof = /\b(log|ln|sqrt|asin|acos|atan|abs|sign)\s*\(/.test(expression);
+            return { highRisk, needsTimingProof };
         };
 
         this.getCurrentFunctions().forEach(func => {
@@ -6089,12 +6097,17 @@ class Graphiti {
                 const lastPlotMs = Number.isFinite(func._lastViewportCoveragePlotMs)
                     ? func._lastViewportCoveragePlotMs
                     : this.performance.plotTimes.get(func.id);
-                const expensiveHint = looksExpensiveExplicit(func);
-                const maxAllowedMs = expensiveHint ? 8 : 24;
+                const { highRisk, needsTimingProof } = getExplicitRefreshRisk(func);
+                if (highRisk) {
+                    return;
+                }
+
+                const maxAllowedMs = needsTimingProof ? 32 : 24;
                 const slowSimpleCooldownMs = 900;
-                const slowSimpleStillCoolingDown = !expensiveHint && Number.isFinite(lastPlotMs) && lastPlotMs > maxAllowedMs &&
-                    func._lastViewportCoverageRefreshAt && now - func._lastViewportCoverageRefreshAt < slowSimpleCooldownMs;
-                if ((!Number.isFinite(lastPlotMs) && expensiveHint) || slowSimpleStillCoolingDown || (expensiveHint && Number.isFinite(lastPlotMs) && lastPlotMs > maxAllowedMs)) {
+                const lastPlotAt = func._lastViewportCoveragePlotAt || func._lastViewportCoverageRefreshAt || 0;
+                const slowSimpleStillCoolingDown = Number.isFinite(lastPlotMs) && lastPlotMs > maxAllowedMs &&
+                    lastPlotAt && now - lastPlotAt < slowSimpleCooldownMs;
+                if ((needsTimingProof && !Number.isFinite(lastPlotMs)) || slowSimpleStillCoolingDown) {
                     return;
                 }
             }
@@ -6109,6 +6122,7 @@ class Graphiti {
                     this.plotFunction(func)
                         .then(() => {
                             func._lastViewportCoveragePlotMs = performance.now() - start;
+                            func._lastViewportCoveragePlotAt = performance.now();
                         })
                         .catch(error => {
                             console.warn('Could not refresh explicit viewport coverage:', error);
@@ -6121,22 +6135,37 @@ class Graphiti {
             }
 
             const finiteXs = finitePoints.map(point => point.x);
-            const minPointX = Math.min(...finiteXs);
-            const maxPointX = Math.max(...finiteXs);
+            const sampleRange = func._viewportCoverageSampleRange;
+            const minCoverageX = sampleRange && Number.isFinite(sampleRange.minX)
+                ? sampleRange.minX
+                : Math.min(...finiteXs);
+            const maxCoverageX = sampleRange && Number.isFinite(sampleRange.maxX)
+                ? sampleRange.maxX
+                : Math.max(...finiteXs);
+            const finiteEdgeMargin = edgeMargin * 1.5;
+            const hasFiniteSamplesNearLeftEdge = finiteXs.some(x => x <= minCoverageX + finiteEdgeMargin);
+            const hasFiniteSamplesNearRightEdge = finiteXs.some(x => x >= maxCoverageX - finiteEdgeMargin);
+            const needsLeftRefresh = this.viewport.minX < minCoverageX + edgeMargin && hasFiniteSamplesNearLeftEdge;
+            const needsRightRefresh = this.viewport.maxX > maxCoverageX - edgeMargin && hasFiniteSamplesNearRightEdge;
 
-            if (this.viewport.minX < minPointX + edgeMargin || this.viewport.maxX > maxPointX - edgeMargin) {
+            if (needsLeftRefresh || needsRightRefresh) {
                 func._viewportCoverageRefreshPending = true;
+                if (isFastPathImplicit) {
+                    func._preserveFastPathMetadataDuringViewportRefresh = true;
+                }
                 func._lastViewportCoverageRefreshAt = now;
                 const start = performance.now();
                 this.plotFunction(func)
                     .then(() => {
                         func._lastViewportCoveragePlotMs = performance.now() - start;
+                        func._lastViewportCoveragePlotAt = performance.now();
                     })
                     .catch(error => {
                         console.warn('Could not refresh viewport coverage:', error);
                     })
                     .finally(() => {
                         func._viewportCoverageRefreshPending = false;
+                        delete func._preserveFastPathMetadataDuringViewportRefresh;
                     });
             }
         });
@@ -7983,6 +8012,9 @@ class Graphiti {
         }
 
         func.points = pointsWithExclusionBreaks;
+        if (proxyFunc._viewportCoverageSampleRange) {
+            func._viewportCoverageSampleRange = { ...proxyFunc._viewportCoverageSampleRange };
+        }
 
         const derivedDomainHoles = [];
         const derivedVerticalAsymptotes = [];
@@ -8074,6 +8106,33 @@ class Graphiti {
                 16,
                 64
             ].filter(x => Number.isFinite(x) && !isNearExcludedX(x));
+
+            const affineSamples = testXs
+                .map(x => ({ x, y: evalAffineY(x) }))
+                .filter(sample => Number.isFinite(sample.y));
+            let branchIsLinear = false;
+            if (affineSamples.length >= 5) {
+                const first = affineSamples[0];
+                const second = affineSamples.find(sample => Math.abs(sample.x - first.x) > Math.max(1e-8, Math.abs(xSpan) * 1e-12));
+                if (second) {
+                    const m = (second.y - first.y) / (second.x - first.x);
+                    const b = first.y - (m * first.x);
+                    let maxResidual = 0;
+                    let maxScale = 1;
+                    for (const sample of affineSamples) {
+                        const expectedY = (m * sample.x) + b;
+                        const residual = Math.abs(sample.y - expectedY);
+                        const scale = Math.max(1, Math.abs(sample.y), Math.abs(expectedY));
+                        maxResidual = Math.max(maxResidual, residual);
+                        maxScale = Math.max(maxScale, scale);
+                    }
+                    branchIsLinear = maxResidual <= Math.max(1e-7, maxScale * 1e-10);
+                }
+            }
+
+            if (branchIsLinear) {
+                oblique = [];
+            }
 
             const isCoincidentLine = (line) => {
                 if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
@@ -8215,6 +8274,7 @@ class Graphiti {
             const bufferSize = viewportWidth * 0.5;
             const bufferedMinX = this.viewport.minX - bufferSize;
             const bufferedMaxX = this.viewport.maxX + bufferSize;
+            proxyFunc._viewportCoverageSampleRange = { minX: bufferedMinX, maxX: bufferedMaxX };
             const bufferedRange = Math.max(bufferedMaxX - bufferedMinX, 1e-12);
             const resolution = Math.max(550, Math.min(1100, Math.ceil(this.viewport.width * 1.2)));
             const baseStep = bufferedRange / resolution;
@@ -8509,6 +8569,15 @@ class Graphiti {
         }
 
         func.points = pointsWithExclusionBreaks;
+        const sampledRanges = branchResults
+            .map(branchResult => branchResult.proxyFunc._viewportCoverageSampleRange)
+            .filter(range => range && Number.isFinite(range.minX) && Number.isFinite(range.maxX));
+        if (sampledRanges.length > 0) {
+            func._viewportCoverageSampleRange = {
+                minX: Math.min(...sampledRanges.map(range => range.minX)),
+                maxX: Math.max(...sampledRanges.map(range => range.maxX))
+            };
+        }
 
         const uniqueNumbers = (values, tolerance = 1e-6) => {
             const result = [];
@@ -8846,24 +8915,79 @@ class Graphiti {
         }
 
         const xTolerance = Math.max(1e-8, (this.viewport.maxX - this.viewport.minX) * 1e-8);
+        const segments = [];
+        let currentSegment = [];
+        const flushSegment = () => {
+            if (currentSegment.length > 0) {
+                segments.push(currentSegment);
+                currentSegment = [];
+            }
+        };
+
+        for (const point of proxyFunc.points) {
+            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                currentSegment.push({ ...point });
+            } else {
+                flushSegment();
+            }
+        }
+        flushSegment();
+
+        if (segments.length === 0) {
+            segments.push([]);
+        }
+
+        const allFinitePoints = () => segments.flatMap(segment => segment);
+        const getSegmentDistance = (segment, root) => {
+            if (!segment || segment.length === 0) {
+                return Infinity;
+            }
+            const xs = segment.map(point => point.x);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            if (root >= minX - xTolerance && root <= maxX + xTolerance) {
+                return 0;
+            }
+            return Math.min(Math.abs(root - minX), Math.abs(root - maxX));
+        };
+
         for (const root of roots) {
             if (!Number.isFinite(root)) {
                 continue;
             }
 
-            const exists = proxyFunc.points.some(point =>
+            const exists = allFinitePoints().some(point =>
                 point && Number.isFinite(point.x) && Number.isFinite(point.y) &&
                 Math.abs(point.x - root) <= xTolerance && Math.abs(point.y) <= 1e-5
             );
             if (!exists) {
-                proxyFunc.points.push({ x: root, y: 0, connected: true });
+                let bestSegment = segments[0];
+                let bestDistance = getSegmentDistance(bestSegment, root);
+                for (const segment of segments.slice(1)) {
+                    const distance = getSegmentDistance(segment, root);
+                    if (distance < bestDistance) {
+                        bestSegment = segment;
+                        bestDistance = distance;
+                    }
+                }
+                bestSegment.push({ x: root, y: 0, connected: true });
             }
         }
 
-        proxyFunc.points.sort((a, b) => {
-            const ax = a && Number.isFinite(a.x) ? a.x : Infinity;
-            const bx = b && Number.isFinite(b.x) ? b.x : Infinity;
-            return ax - bx;
+        proxyFunc.points = segments.flatMap((segment, segmentIndex) => {
+            const sortedSegment = segment
+                .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+                .sort((a, b) => a.x - b.x);
+            if (sortedSegment.length === 0) {
+                return [];
+            }
+
+            if (segmentIndex > 0) {
+                sortedSegment[0] = { ...sortedSegment[0], connected: false };
+                return [{ x: NaN, y: NaN, connected: false }, ...sortedSegment];
+            }
+
+            return sortedSegment;
         });
     }
 
@@ -12633,6 +12757,7 @@ class Graphiti {
         delete func.holes;
         delete func.affineExplicitExpression;
         delete func.affineVerticalComponents;
+        delete func._viewportCoverageSampleRange;
         delete func.monomialYExplicitExpressions;
         delete func.monomialYCacheKey;
         delete func.monomialYRadicandExpression;
