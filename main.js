@@ -7996,9 +7996,9 @@ class Graphiti {
         }
 
         let radicandRoots = [];
-        if (monomialModel.power === 2 && branchResults.length > 0) {
+        if ([2, 3].includes(monomialModel.power) && branchResults.length > 0) {
             radicandRoots = this.findMonomialRadicandRoots(radicand);
-            if (radicandRoots.length > 0) {
+            if (monomialModel.power === 2 && radicandRoots.length > 0) {
                 for (const branchResult of branchResults) {
                     this.addMonomialBranchEndpointRoots(branchResult.proxyFunc, radicandRoots);
                 }
@@ -8013,13 +8013,62 @@ class Graphiti {
             ? monomialModel.domainExclusions.filter(value => Number.isFinite(value) && !isAtVerticalComponent(value))
             : [];
 
-        if (monomialModel.power === 2 && radicandRoots.length > 0 && domainExclusions.length > 0) {
-            const excludedRoots = radicandRoots.filter(root =>
-                domainExclusions.some(exclusionX => Math.abs(root - exclusionX) <= 1e-6)
-            );
+        const zeroLimitExclusions = [];
+        if (domainExclusions.length > 0) {
+            for (const exclusionX of domainExclusions) {
+                let tendsToZero = false;
+                for (const branchExpression of branchExpressions) {
+                    let expressionForEval = branchExpression;
+                    if (this.angleMode === 'degrees') {
+                        expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+                    }
+
+                    let compiledExpression;
+                    try {
+                        compiledExpression = this.getCompiledExpression(expressionForEval);
+                    } catch {
+                        continue;
+                    }
+
+                    const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+                    for (const direction of [-1, 1]) {
+                        for (const delta of [1e-8, 1e-9, 1e-10, 1e-11, 1e-12]) {
+                            evalScope.x = exclusionX + direction * delta;
+                            try {
+                                const value = compiledExpression.evaluate(evalScope);
+                                if (Number.isFinite(value) && Math.abs(value) <= 1e-3) {
+                                    tendsToZero = true;
+                                    break;
+                                }
+                            } catch {
+                                // Try a smaller offset or the other side.
+                            }
+                        }
+                        if (tendsToZero) {
+                            break;
+                        }
+                    }
+                    if (tendsToZero) {
+                        break;
+                    }
+                }
+
+                if (tendsToZero && !zeroLimitExclusions.some(existing => Math.abs(existing - exclusionX) <= 1e-7)) {
+                    zeroLimitExclusions.push(exclusionX);
+                }
+            }
+        }
+
+        if ((radicandRoots.length > 0 || zeroLimitExclusions.length > 0) && domainExclusions.length > 0) {
+            const excludedRoots = [
+                ...radicandRoots.filter(root =>
+                    domainExclusions.some(exclusionX => Math.abs(root - exclusionX) <= 1e-6)
+                ),
+                ...zeroLimitExclusions
+            ].filter((root, index, roots) => roots.findIndex(other => Math.abs(other - root) <= 1e-7) === index);
             if (excludedRoots.length > 0) {
                 const xSpan = this.viewport.maxX - this.viewport.minX;
-                const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-6);
+                const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-8);
                 for (const branchResult of branchResults) {
                     this.addMonomialBranchHoleApproachPoints(branchResult.proxyFunc, branchResult.expression, excludedRoots, exclusionTolerance);
                 }
@@ -8032,7 +8081,7 @@ class Graphiti {
 
         const pointsWithExclusionBreaks = [];
         const xSpan = this.viewport.maxX - this.viewport.minX;
-        const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-6);
+        const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-8);
         const appendBranchPoints = (sourcePoints) => {
             if (pointsWithExclusionBreaks.length > 0) {
                 pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
@@ -8131,7 +8180,7 @@ class Graphiti {
             };
 
             const estimateSide = (direction) => {
-                const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
+                const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12];
                 const values = [];
                 let sawHuge = false;
 
@@ -8434,7 +8483,7 @@ class Graphiti {
             }
         };
 
-        const baseOffset = Math.max(exclusionTolerance * 1.25, Math.abs(this.viewport.maxX - this.viewport.minX) / Math.max(1, this.viewport.width) * 0.002, 1e-12);
+        const baseOffset = Math.max(exclusionTolerance * 1.25, Math.abs(this.viewport.maxX - this.viewport.minX) / Math.max(1, this.viewport.width) * 0.000001, 1e-12);
         const multipliers = [1, 2, 4, 8, 16, 32, 64];
 
         for (const root of roots) {
