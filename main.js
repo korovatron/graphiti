@@ -107,6 +107,7 @@ class Graphiti {
         // Expression compilation cache for performance optimization
         this.expressionCache = new Map(); // Map<string, CompiledExpression>
         this.parsedImplicitEquations = new Map(); // Map<string, {leftExpression, rightExpression}>
+        this.explicitRationalStructureCache = new Map(); // Map<string, expression-level holes/asymptotes>
         this.monomialYImplicitModelCache = new Map(); // Map<string, monomial model>
         this.monomialYImplicitStructureCache = new Map(); // Map<string, expression-level holes/asymptotes>
         
@@ -3112,6 +3113,7 @@ class Graphiti {
     clearExpressionCache() {
         // Clear the entire cache when functions are modified
         this.expressionCache.clear();
+        this.explicitRationalStructureCache.clear();
         this.monomialYImplicitModelCache.clear();
         this.monomialYImplicitStructureCache.clear();
     }
@@ -4191,12 +4193,19 @@ class Graphiti {
             const knownMonomialProxyStructure = func.monomialYExplicitProxy && func.monomialYKnownStructure
                 ? func.monomialYKnownStructure
                 : null;
-            const algebraicAsymptotes = knownMonomialProxyStructure ? null : this.tryDeriveAlgebraicRationalAsymptotes(processedExpression);
+            const cachedRationalStructure = knownMonomialProxyStructure
+                ? null
+                : this.getCachedExplicitRationalStructure(processedExpression, compiledExpression, hasInverseTrig);
+            const algebraicAsymptotes = cachedRationalStructure ? cachedRationalStructure.algebraicAsymptotes : null;
             const numericVerticalAsymptotes = knownMonomialProxyStructure
                 ? (Array.isArray(knownMonomialProxyStructure.vertical) ? knownMonomialProxyStructure.vertical.slice() : [])
+                : cachedRationalStructure
+                    ? cachedRationalStructure.numericVertical.slice()
                 : this.detectVerticalAsymptotes(processedExpression, bufferedMinX, bufferedMaxX);
             const explicitVerticalAsymptotes = knownMonomialProxyStructure
                 ? numericVerticalAsymptotes
+                : cachedRationalStructure
+                    ? cachedRationalStructure.vertical.slice()
                 : algebraicAsymptotes && algebraicAsymptotes.vertical.length > 0
                     ? algebraicAsymptotes.vertical
                     : numericVerticalAsymptotes;
@@ -4210,18 +4219,24 @@ class Graphiti {
             // Skip numeric fitting to avoid zoom-dependent false positives (for example tan(x) -> y=+-2/15).
             const numericHorizontalAsymptotes = knownMonomialProxyStructure
                 ? (Array.isArray(knownMonomialProxyStructure.horizontal) ? knownMonomialProxyStructure.horizontal.slice() : [])
+                : cachedRationalStructure
+                ? cachedRationalStructure.numericHorizontal.slice()
                 : shouldSkipNumericHorizontalAsymptotes
                 ? []
                 : this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
             const horizontalAsymptotes = knownMonomialProxyStructure
                 ? numericHorizontalAsymptotes
+                : cachedRationalStructure
+                ? cachedRationalStructure.horizontal.slice()
                 : algebraicAsymptotes
                 ? algebraicAsymptotes.horizontal
                 : numericHorizontalAsymptotes;
 
-            const obliqueDetection = knownMonomialProxyStructure ? null : this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
+            const obliqueDetection = knownMonomialProxyStructure || cachedRationalStructure ? null : this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
             const obliqueAsymptotes = obliqueDetection && Array.isArray(obliqueDetection.lines)
                 ? obliqueDetection.lines
+                : cachedRationalStructure
+                    ? cachedRationalStructure.oblique.map(line => ({ ...line }))
                 : knownMonomialProxyStructure && Array.isArray(knownMonomialProxyStructure.oblique)
                     ? knownMonomialProxyStructure.oblique.map(line => ({ ...line }))
                 : [];
@@ -4235,12 +4250,15 @@ class Graphiti {
                 : null;
             const removableHoles = knownMonomialProxyStructure && Array.isArray(knownMonomialProxyStructure.holes)
                 ? knownMonomialProxyStructure.holes.map(hole => ({ ...hole }))
+                : cachedRationalStructure
+                ? cachedRationalStructure.holes.map(hole => ({ ...hole }))
                 : this.detectRemovableDiscontinuities(
                     processedExpression,
                     compiledExpression,
                     hasInverseTrig
                 );
             func.holes = removableHoles;
+            func._useExplicitCurveRenderCache = !!cachedRationalStructure || (explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0);
 
             const asymptoteSources = {
                 vertical: explicitVerticalAsymptotes.map(value => ({
@@ -11445,6 +11463,51 @@ class Graphiti {
         return holes;
     }
 
+    getCachedExplicitRationalStructure(processedExpression, compiledExpression, hasInverseTrig = false) {
+        if (!processedExpression || !compiledExpression || !processedExpression.includes('/')) {
+            return null;
+        }
+
+        const cacheKey = `${this.angleMode}|${hasInverseTrig ? 'inverse' : 'plain'}|${processedExpression}`;
+        const cached = this.explicitRationalStructureCache.get(cacheKey);
+        if (cached) {
+            return this.cloneMonomialYCacheValue(cached);
+        }
+
+        const algebraicAsymptotes = this.tryDeriveAlgebraicRationalAsymptotes(processedExpression);
+        if (!algebraicAsymptotes) {
+            return null;
+        }
+
+        const numericVertical = this.detectVerticalAsymptotes(processedExpression);
+        const numericHorizontal = this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
+        const obliqueDetection = this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
+        const numericOblique = obliqueDetection && Array.isArray(obliqueDetection.lines)
+            ? obliqueDetection.lines
+            : [];
+
+        const structure = {
+            algebraicAsymptotes: {
+                vertical: Array.isArray(algebraicAsymptotes.vertical) ? algebraicAsymptotes.vertical.slice() : [],
+                horizontal: Array.isArray(algebraicAsymptotes.horizontal) ? algebraicAsymptotes.horizontal.slice() : [],
+                oblique: Array.isArray(algebraicAsymptotes.oblique) ? algebraicAsymptotes.oblique.map(line => ({ ...line })) : []
+            },
+            numericVertical: Array.isArray(numericVertical) ? numericVertical.slice() : [],
+            numericHorizontal: Array.isArray(numericHorizontal) ? numericHorizontal.slice() : [],
+            vertical: algebraicAsymptotes.vertical.length > 0 ? algebraicAsymptotes.vertical.slice() : numericVertical.slice(),
+            horizontal: algebraicAsymptotes.horizontal.slice(),
+            oblique: algebraicAsymptotes.oblique.length > 0 ? algebraicAsymptotes.oblique.map(line => ({ ...line })) : numericOblique.map(line => ({ ...line })),
+            holes: this.detectRemovableDiscontinuities(
+                processedExpression,
+                compiledExpression,
+                hasInverseTrig
+            )
+        };
+
+        this.explicitRationalStructureCache.set(cacheKey, this.cloneMonomialYCacheValue(structure));
+        return this.cloneMonomialYCacheValue(structure);
+    }
+
     extractTopLevelDivisionNodes(expression) {
         try {
             let node = this.cleanMath.parse(expression);
@@ -12818,6 +12881,18 @@ class Graphiti {
 
         const equations = this.buildAsymptoteDisplayLatex(func);
         const holeEquations = this.buildHoleDisplayLatex(func);
+
+        const asymptoteSignature = JSON.stringify(equations);
+        const holesSignature = JSON.stringify(holeEquations);
+        if (equationList.dataset.asymptoteSignature === asymptoteSignature &&
+            (!holesList || holesList.dataset.holesSignature === holesSignature)) {
+            return;
+        }
+
+        equationList.dataset.asymptoteSignature = asymptoteSignature;
+        if (holesList) {
+            holesList.dataset.holesSignature = holesSignature;
+        }
 
         equationList.innerHTML = '';
         if (equations.length === 0) {
@@ -14282,9 +14357,16 @@ class Graphiti {
             clearTimeout(this.intersectionDebounceTimer);
         }
         
+        const hasAsymptoteHeavyExplicitReplot = this.getCurrentFunctions().some(func => {
+            if (!func || !func.enabled || !func.expression) return false;
+            return func._useExplicitCurveRenderCache && this.getEffectiveFunctionType(func) === 'explicit';
+        });
+        const viewportSettleDelay = hasAsymptoteHeavyExplicitReplot ? 180 : 50;
+
         // Set new timer to recalculate intersections and turning points after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
+            this.saveViewportBounds();
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
             // Replot explicit functions with updated viewport
@@ -14345,7 +14427,7 @@ class Graphiti {
             } else {
                 refreshSignificantPoints();
             }
-        }, 50); // Short delay optimized for fast implicit plotting
+        }, viewportSettleDelay);
     }
     
     findIntersections() {
@@ -18955,7 +19037,7 @@ class Graphiti {
                     this.viewport.maxY += worldDeltaY;
                     
                     // Update range inputs to reflect the pan (immediate for responsiveness)
-                    this.updateRangeInputs();
+                    this.updateRangeInputs(true);
                     
                     // During panning, just redraw existing points without recalculating
                     // This dramatically improves performance (75fps instead of <20fps with 5 functions)
@@ -19831,7 +19913,7 @@ class Graphiti {
                     
                     // Update viewport scale based on new X range for proper grid/label spacing
                     this.updateViewportScale();
-                    this.updateRangeInputs();
+                    this.updateRangeInputs(true);
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
@@ -19857,7 +19939,7 @@ class Graphiti {
                     
                     // Update viewport scale based on new Y range for proper grid/label spacing
                     this.updateViewportScale();
-                    this.updateRangeInputs();
+                    this.updateRangeInputs(true);
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
@@ -19890,7 +19972,7 @@ class Graphiti {
                     this.viewport.maxY = newMaxY;
                     
                     this.updateViewportScale();
-                    this.updateRangeInputs();
+                    this.updateRangeInputs(true);
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
@@ -23071,7 +23153,7 @@ class Graphiti {
             
             // Update scale for consistent grid/label spacing
             this.updateViewportScale();
-            this.updateRangeInputs();
+            this.updateRangeInputs(true);
             
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
@@ -23101,7 +23183,7 @@ class Graphiti {
             
             // Update scale for consistent grid/label spacing
             this.updateViewportScale();
-            this.updateRangeInputs();
+            this.updateRangeInputs(true);
             
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
@@ -33281,6 +33363,11 @@ class Graphiti {
             return false;
         };
 
+        const activeExplicitDecimation = this.isViewportChanging && func._useExplicitCurveRenderCache && !isInequality && func.points.length > 1600;
+        const activeExplicitStep = activeExplicitDecimation
+            ? Math.max(1, Math.ceil(func.points.length / 1400))
+            : 1;
+
         for (let i = 0; i < func.points.length; i++) {
             const point = func.points[i];
 
@@ -33292,6 +33379,10 @@ class Graphiti {
                 }
                 previousScreenPos = null;
                 previousWorldPoint = null;
+                continue;
+            }
+
+            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && i < func.points.length - 1) {
                 continue;
             }
 
