@@ -37411,13 +37411,12 @@ class Graphiti {
                         functionPanel.style.left = '0';
                         functionPanel.classList.remove('hidden');
                         
-                        // Also ensure overlay is visible when panel is open
+                        // Overlay is intentionally disabled; keep it from dimming or blocking the canvas.
                         if (mobileOverlay) {
-                            mobileOverlay.style.display = 'block';
-                            mobileOverlay.style.visibility = 'visible';
-                            mobileOverlay.style.opacity = '1';
+                            mobileOverlay.style.display = 'none';
+                            mobileOverlay.style.visibility = 'hidden';
+                            mobileOverlay.style.opacity = '0';
                             mobileOverlay.style.zIndex = '14';
-                            mobileOverlay.offsetHeight;
                         }
                     } else {
                         // Panel should be closed - force it to closed position
