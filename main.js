@@ -1170,6 +1170,32 @@ class Graphiti {
             applyBlurStyles();
         }, 40);
     }
+
+    clearStaleMathFieldFocusStyles(activeField) {
+        const computedStyle = getComputedStyle(document.documentElement);
+        const borderColor = computedStyle.getPropertyValue('--border-color').trim() || '#555';
+
+        document.querySelectorAll('math-field').forEach(field => {
+            if (!field || field === activeField) {
+                return;
+            }
+
+            if (field.getAttribute('read-only') === 'true' || field.classList.contains('asymptote-equation-field')) {
+                return;
+            }
+
+            const funcDiv = field.closest('.function-item');
+            if ((funcDiv && funcDiv.classList.contains('function-error') && field.classList.contains('mathlive-input')) || field.classList.contains('input-error')) {
+                field.style.setProperty('box-shadow', 'none', 'important');
+                return;
+            }
+
+            field.style.setProperty('--border', `1px solid ${borderColor}`, 'important');
+            field.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+            field.style.setProperty('box-shadow', 'none', 'important');
+            field.style.setProperty('outline', 'none', 'important');
+        });
+    }
     
     // Initialize polar range MathLive fields with proper styling
     initializePolarRangeFields() {
@@ -1201,6 +1227,7 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
+                    this.clearStaleMathFieldFocusStyles(field);
                     this.lastEditableMathField = field;
                     // Check for landscape editing restriction first
                     if (this.shouldRestrictLandscapeEditing()) {
@@ -1297,6 +1324,7 @@ class Graphiti {
                 
                 // Add focus event listeners to set focus border (using focusin for better shadow DOM support)
                 field.addEventListener('focusin', () => {
+                    this.clearStaleMathFieldFocusStyles(field);
                     this.lastEditableMathField = field;
                     // Check for landscape editing restriction first
                     if (this.shouldRestrictLandscapeEditing()) {
@@ -2601,6 +2629,7 @@ class Graphiti {
         
         // Add focus/blur listeners to apply consistent styling with polar range fields
         mathField.addEventListener('focusin', () => {
+            this.clearStaleMathFieldFocusStyles(mathField);
             this.lastEditableMathField = mathField;
             // Check for landscape editing restriction first
             if (this.shouldRestrictLandscapeEditing()) {
@@ -2812,6 +2841,7 @@ class Graphiti {
             
             // Add focus styling
             lowerLimitField.addEventListener('focusin', () => {
+                this.clearStaleMathFieldFocusStyles(lowerLimitField);
                 this.lastEditableMathField = lowerLimitField;
                 // Check for landscape editing restriction first
                 if (this.shouldRestrictLandscapeEditing()) {
@@ -2890,6 +2920,7 @@ class Graphiti {
             
             // Add focus styling
             upperLimitField.addEventListener('focusin', () => {
+                this.clearStaleMathFieldFocusStyles(upperLimitField);
                 this.lastEditableMathField = upperLimitField;
                 // Check for landscape editing restriction first
                 if (this.shouldRestrictLandscapeEditing()) {
