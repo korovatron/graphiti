@@ -1759,7 +1759,7 @@ class Graphiti {
             'implicit-equations': {
                 expressions: [
                     '\\frac{x^2}{16}+\\frac{y^2}{9}=1',                 // Ellipse
-                    'x^3+y^3=3xy',                                      // Folium of Descartes
+                    '\\frac{x-4}{x+1}y^3-\\left(x+2\\right)=0',         // Cubic y-monomial with hole and turning points
                     'y^2=x^3-x'                                         // Cubic curve
                 ],
                 description: 'Implicit Equations Demo',
@@ -4149,7 +4149,9 @@ class Graphiti {
             const points = [];
             // Apply adaptive resolution based on function count (balanced for quality and performance)
             const functionCount = this.getCurrentFunctions().filter(f => f.enabled).length;
-            const adaptiveResolution = functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
+            const adaptiveResolution = func.monomialYExplicitProxy
+                ? Math.max(700, Math.min(1400, Math.ceil(this.viewport.width * 1.5)))
+                : functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
             const expressionForSampling = processedExpression.toLowerCase();
             const hasXVariable = /\bx\b/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
@@ -4256,7 +4258,7 @@ class Graphiti {
                 maxPlotResolution = Math.min(Math.max(adaptiveResolution, asymptoteResolution), asymptoteResolutionCap);
             }
 
-            if (hasExplicitVerticalAsymptotes && !hasDensePeriodicAsymptotes) {
+            if (hasExplicitVerticalAsymptotes && !hasDensePeriodicAsymptotes && !func.monomialYExplicitProxy) {
                 // Rational-style asymptotes can still alias into diagonals at wide zoom.
                 // Increase baseline sampling density when explicit asymptotes are detected.
                 const asymptoteZoomFactor = Math.max(1, Math.min(6, Math.ceil(viewportWidth / 200)));
@@ -7985,6 +7987,7 @@ class Graphiti {
             const proxyFunc = {
                 ...func,
                 expression: 'y=' + branchExpression,
+                monomialYExplicitProxy: true,
                 points: []
             };
 
@@ -8300,6 +8303,7 @@ class Graphiti {
         this.updateFunctionAsymptoteData(func, filteredVertical, horizontal, oblique, null);
         func.holes = filteredHoles;
         func.monomialYExplicitExpressions = branchExpressions.slice();
+        func.monomialYRadicandExpression = radicand;
         func.monomialYPower = monomialModel.power;
         func.monomialYVerticalComponents = verticalComponents.slice();
         func.implicitRenderMode = 'monomial-explicit';
@@ -12222,6 +12226,7 @@ class Graphiti {
         delete func.affineExplicitExpression;
         delete func.affineVerticalComponents;
         delete func.monomialYExplicitExpressions;
+        delete func.monomialYRadicandExpression;
         delete func.monomialYPower;
         delete func.monomialYVerticalComponents;
 
@@ -28000,6 +28005,12 @@ class Graphiti {
                     continue;
                 }
 
+                if (func.implicitRenderMode === 'monomial-explicit' && func.monomialYPower === 3 && func.monomialYRadicandExpression && Array.isArray(func.monomialYExplicitExpressions)) {
+                    const cubicTurningPoints = this.findMonomialCubicTurningPointsForFunction(func);
+                    turningPoints.push(...cubicTurningPoints);
+                    continue;
+                }
+
                 if (func.implicitRenderMode === 'monomial-explicit' && Array.isArray(func.monomialYExplicitExpressions)) {
                     for (const branchExpression of func.monomialYExplicitExpressions) {
                         try {
@@ -28499,6 +28510,103 @@ class Graphiti {
             }
         }
         
+        return turningPoints;
+    }
+
+    findMonomialCubicTurningPointsForFunction(func) {
+        const turningPoints = [];
+        if (!func || func.monomialYPower !== 3 || !func.monomialYRadicandExpression || !Array.isArray(func.monomialYExplicitExpressions) || func.monomialYExplicitExpressions.length === 0) {
+            return turningPoints;
+        }
+
+        try {
+            let radicandExpression = func.monomialYRadicandExpression.toLowerCase();
+            let branchExpression = func.monomialYExplicitExpressions[0].toLowerCase();
+            if (this.angleMode === 'degrees') {
+                const hasTrigRadicand = this.getCachedRegex('regularTrigWithX').test(radicandExpression);
+                if (hasTrigRadicand) {
+                    radicandExpression = this.convertTrigToDegreeMode(radicandExpression);
+                }
+
+                const hasTrigBranch = this.getCachedRegex('regularTrigWithX').test(branchExpression);
+                if (hasTrigBranch) {
+                    branchExpression = this.convertTrigToDegreeMode(branchExpression);
+                }
+            }
+
+            math.parse(radicandExpression);
+            const radicandDerivative = this.cleanMath.derivative(radicandExpression, 'x');
+            const derivativeStr = radicandDerivative.toString();
+            const secondDerivative = this.cleanMath.derivative(radicandDerivative, 'x');
+            const secondDerivativeStr = secondDerivative.toString();
+            const roots = this.findRootsInRange(derivativeStr, this.viewport.minX, this.viewport.maxX);
+
+            if (roots.length === 0) {
+                return turningPoints;
+            }
+
+            const compiledBranch = this.getCompiledExpression(branchExpression);
+            const compiledRadicand = this.getCompiledExpression(radicandExpression);
+            const compiledDerivative = this.getCompiledExpression(derivativeStr);
+            const compiledSecondDerivative = this.getCompiledExpression(secondDerivativeStr);
+            const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const xSpan = Math.max(Math.abs(this.viewport.maxX - this.viewport.minX), 1);
+            const signProbeOffset = Math.max(1e-5, xSpan * 1e-5);
+            const branchFunc = {
+                ...func,
+                expression: 'y=' + func.monomialYExplicitExpressions[0],
+                implicitRenderMode: null
+            };
+
+            for (const x of roots) {
+                scope.x = x;
+                const y = compiledBranch.evaluate(scope);
+                const radicandValue = compiledRadicand.evaluate(scope);
+                if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radicandValue)) {
+                    continue;
+                }
+
+                if (Math.abs(radicandValue) <= 1e-10 || this.isPointAtHoleForFunction(func, x, y)) {
+                    continue;
+                }
+
+                let type = 'horizontal-tangent';
+                const secondValue = compiledSecondDerivative.evaluate(scope);
+                if (Number.isFinite(secondValue) && Math.abs(secondValue) > 1e-10) {
+                    type = secondValue > 0 ? 'minimum' : 'maximum';
+                } else {
+                    scope.x = x - signProbeOffset;
+                    const leftDerivative = compiledDerivative.evaluate(scope);
+                    scope.x = x + signProbeOffset;
+                    const rightDerivative = compiledDerivative.evaluate(scope);
+                    if (Number.isFinite(leftDerivative) && Number.isFinite(rightDerivative)) {
+                        if (leftDerivative < 0 && rightDerivative > 0) {
+                            type = 'minimum';
+                        } else if (leftDerivative > 0 && rightDerivative < 0) {
+                            type = 'maximum';
+                        }
+                    }
+                    scope.x = x;
+                }
+
+                let snappedX = x;
+                let snappedY = y;
+                if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+                turningPoints.push({
+                    x: snappedX,
+                    y: snappedY,
+                    func: branchFunc,
+                    type,
+                    derivative: derivativeStr,
+                    secondDerivative: secondDerivativeStr
+                });
+            }
+        } catch {
+            return turningPoints;
+        }
+
         return turningPoints;
     }
     
