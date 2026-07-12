@@ -16263,12 +16263,24 @@ class Graphiti {
                         this.virtualKeyboardDismissLockUntil = 0;
                         this.keyboardDismissedByCanvas = false;
 
-                        // Focus on the currently focused math field, or the first one if none focused
-                        const focusedField = document.activeElement?.matches('math-field') 
-                            ? document.activeElement 
-                            : document.querySelector('math-field');
+                        // Button clicks can move document.activeElement to the button, so
+                        // prefer the last editable MathLive field the user actually used.
+                        const activeMathField = document.activeElement?.matches('math-field')
+                            ? document.activeElement
+                            : null;
+                        const lastEditableField = this.lastEditableMathField && document.contains(this.lastEditableMathField)
+                            ? this.lastEditableMathField
+                            : null;
+                        const focusedField = activeMathField || lastEditableField || document.querySelector('math-field');
                         if (focusedField) {
                             focusedField.focus();
+                            if ('target' in window.mathVirtualKeyboard) {
+                                try {
+                                    window.mathVirtualKeyboard.target = focusedField;
+                                } catch {
+                                    // Ignore target assignment failures.
+                                }
+                            }
                         }
                         this.virtualKeyboardShowBypass = true;
                         try {
