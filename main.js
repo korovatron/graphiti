@@ -13245,6 +13245,10 @@ class Graphiti {
     findPolynomialRealRoots(coeffs) {
         const poly = this.normalizePolynomial(coeffs || [0]);
         const degree = this.getPolynomialDegree(poly);
+        if (degree < 1) {
+            return [];
+        }
+
         if (degree === 1) {
             const a = poly[1];
             const b = poly[0] || 0;
