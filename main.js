@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.124';
+const VERSION = '1.1.125';
 
 class Graphiti {
     constructor() {
@@ -26066,14 +26066,14 @@ class Graphiti {
                 }
             });
         } else {
-            // No saved Cartesian functions - add default y=cos(x)
+            // No saved Cartesian functions - add default rational function
             addedDefaultFunctions = true;
             const id = this.nextFunctionId++;
             const color = this.functionColors[0];
             
             const func = {
                 id: id,
-                expression: 'y=\\cos(x)',
+                expression: 'y=\\frac{x^2+1}{x-1}',
                 points: [],
                 color: color,
                 enabled: true,
