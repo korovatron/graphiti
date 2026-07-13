@@ -14245,8 +14245,16 @@ class Graphiti {
 
         const asymptoteSignature = JSON.stringify(equations);
         const holesSignature = JSON.stringify(holeEquations);
+        const asymptoteVisibilityIsCurrent = equations.length > 0
+            ? infoContainer.classList.contains('visible')
+            : !infoContainer.classList.contains('visible');
+        const holesVisibilityIsCurrent = !holesContainer || holeEquations.length > 0
+            ? !holesContainer || holesContainer.classList.contains('visible')
+            : !holesContainer.classList.contains('visible');
         if (equationList.dataset.asymptoteSignature === asymptoteSignature &&
-            (!holesList || holesList.dataset.holesSignature === holesSignature)) {
+            (!holesList || holesList.dataset.holesSignature === holesSignature) &&
+            asymptoteVisibilityIsCurrent &&
+            holesVisibilityIsCurrent) {
             return;
         }
 
