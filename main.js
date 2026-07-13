@@ -7788,12 +7788,50 @@ class Graphiti {
         const f2Expression = replaceYSymbol(combinedExpression, '2');
         let aExpression = '(((' + f2Expression + ')-(2*(' + f1Expression + '))+(' + cExpression + '))/2)';
         let bExpression = '(((4*(' + f1Expression + '))-(' + f2Expression + ')-(3*(' + cExpression + ')))/2)';
+        const expandScientificNotation = (expression) => String(expression || '').replace(/(?:\d+\.?\d*|\.\d+)e[+-]?\d+/gi, (token) => {
+            const parts = token.toLowerCase().split('e');
+            if (parts.length !== 2) {
+                return token;
+            }
+
+            const exponent = Number(parts[1]);
+            if (!Number.isInteger(exponent)) {
+                return token;
+            }
+
+            let mantissa = parts[0];
+            const sign = mantissa.startsWith('-') ? '-' : '';
+            if (sign) {
+                mantissa = mantissa.slice(1);
+            }
+
+            const mantissaParts = mantissa.split('.');
+            const integerPart = mantissaParts[0] || '0';
+            const fractionalPart = mantissaParts[1] || '';
+            const digits = (integerPart + fractionalPart).replace(/^0+(?=\d)/, '') || '0';
+            const decimalIndex = integerPart.length + exponent;
+            let expanded;
+            if (decimalIndex <= 0) {
+                expanded = '0.' + '0'.repeat(Math.abs(decimalIndex)) + digits;
+            } else if (decimalIndex >= digits.length) {
+                expanded = digits + '0'.repeat(decimalIndex - digits.length);
+            } else {
+                expanded = digits.slice(0, decimalIndex) + '.' + digits.slice(decimalIndex);
+            }
+
+            expanded = expanded.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+            if (expanded === '' || expanded === '.') {
+                expanded = '0';
+            }
+            return sign + expanded;
+        });
+
         const simplifyGeneratedExpression = (expression) => {
             try {
                 const simplified = this.cleanMath.simplify(expression).toString();
-                return simplified || expression;
+                return expandScientificNotation(simplified || expression);
             } catch {
-                return expression;
+                return expandScientificNotation(expression);
             }
         };
         cExpression = simplifyGeneratedExpression(cExpression);
@@ -8335,7 +8373,8 @@ class Graphiti {
                 power,
                 radicandExpression,
                 verticalComponents,
-                domainExclusions
+                domainExclusions,
+                implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation)
             };
         }
 
@@ -9159,8 +9198,19 @@ class Graphiti {
                 if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
                     continue;
                 }
-                if (!result.some(existing => Math.abs(existing.m - line.m) <= 1e-6 && Math.abs(existing.b - line.b) <= 1e-5)) {
-                    result.push(line);
+                const existing = result.find(candidate => {
+                    const leftDelta = Math.abs(((candidate.m * this.viewport.minX) + candidate.b) - ((line.m * this.viewport.minX) + line.b));
+                    const rightDelta = Math.abs(((candidate.m * this.viewport.maxX) + candidate.b) - ((line.m * this.viewport.maxX) + line.b));
+                    const maxWorldDelta = Math.max(leftDelta, rightDelta);
+                    const maxPixelDelta = maxWorldDelta * Math.max(1, this.viewport.scale || 1);
+                    return maxPixelDelta <= 3;
+                });
+                if (!existing) {
+                    result.push({ ...line });
+                } else if (line.source === 'algebraic' || line.confidence === 'algebraic') {
+                    existing.m = line.m;
+                    existing.b = line.b;
+                    existing.direction = Number.isFinite(line.direction) ? line.direction : 0;
                 }
             }
             return result;
@@ -9171,17 +9221,37 @@ class Graphiti {
         let oblique;
         let filteredHoles;
 
+        const implicitAsymptotes = monomialModel.implicitAsymptotes || { vertical: [], horizontal: [], oblique: [] };
+
         if (cachedStructure) {
-            filteredVertical = Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical.slice() : [];
-            horizontal = Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal.slice() : [];
-            oblique = Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : [];
+            filteredVertical = uniqueNumbers([
+                ...(Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical : []),
+                ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
+            ]).filter(value => !isAtVerticalComponent(value));
+            horizontal = uniqueNumbers([
+                ...(Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal : []),
+                ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
+            ]);
+            oblique = uniqueObliqueLines([
+                ...(Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : []),
+                ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique.map(line => ({ ...line, source: 'algebraic' })) : [])
+            ]);
             filteredHoles = Array.isArray(cachedStructure.holes) ? cachedStructure.holes.map(hole => ({ ...hole })) : [];
         } else {
             const proxyAsymptotes = branchResults.map(branchResult => branchResult.proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] });
-            filteredVertical = uniqueNumbers(proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []))
+            filteredVertical = uniqueNumbers([
+                ...proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []),
+                ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
+            ])
                 .filter(value => !isAtVerticalComponent(value));
-            horizontal = uniqueNumbers(proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []));
-            oblique = uniqueObliqueLines(proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []));
+            horizontal = uniqueNumbers([
+                ...proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
+                ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
+            ]);
+            oblique = uniqueObliqueLines([
+                ...proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []),
+                ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique.map(line => ({ ...line, source: 'algebraic' })) : [])
+            ]);
 
             const evaluateBranchLimit = (branchExpression, x0) => {
                 let expressionForEval = branchExpression;
@@ -10081,8 +10151,19 @@ class Graphiti {
                 if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
                     continue;
                 }
-                if (!result.some(existing => Math.abs(existing.m - line.m) <= 1e-6 && Math.abs(existing.b - line.b) <= 1e-5)) {
-                    result.push(line);
+                const existing = result.find(candidate => {
+                    const leftDelta = Math.abs(((candidate.m * this.viewport.minX) + candidate.b) - ((line.m * this.viewport.minX) + line.b));
+                    const rightDelta = Math.abs(((candidate.m * this.viewport.maxX) + candidate.b) - ((line.m * this.viewport.maxX) + line.b));
+                    const maxWorldDelta = Math.max(leftDelta, rightDelta);
+                    const maxPixelDelta = maxWorldDelta * Math.max(1, this.viewport.scale || 1);
+                    return maxPixelDelta <= 3;
+                });
+                if (!existing) {
+                    result.push({ ...line });
+                } else if (line.source === 'algebraic' || line.confidence === 'algebraic') {
+                    existing.m = line.m;
+                    existing.b = line.b;
+                    existing.direction = Number.isFinite(line.direction) ? line.direction : 0;
                 }
             }
             return result;
@@ -10173,7 +10254,7 @@ class Graphiti {
             ], 1e-3);
         const oblique = uniqueObliqueLines([
             ...proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []),
-            ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique : [])
+            ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique.map(line => ({ ...line, source: 'algebraic' })) : [])
         ]);
 
         const removableDomainExclusions = Array.isArray(quadraticModel.removableDomainExclusions)
