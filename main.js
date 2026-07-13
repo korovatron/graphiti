@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 
 class Graphiti {
     constructor() {
@@ -8340,16 +8340,113 @@ class Graphiti {
             }
             domainExclusions.sort((a, b) => a - b);
 
+            const implicitAsymptotes = this.detectImplicitHyperbolaAsymptotes(equation) || { vertical: [], horizontal: [], oblique: [] };
+            const monomialAsymptotes = this.deriveMonomialYImplicitAsymptotes(radicandExpression, power);
+            if (monomialAsymptotes) {
+                implicitAsymptotes.horizontal = this.mergeNumericValues(
+                    monomialAsymptotes.horizontal,
+                    implicitAsymptotes.horizontal,
+                    1e-6
+                );
+            }
+
             return {
                 power,
                 radicandExpression,
                 verticalComponents,
                 domainExclusions,
-                implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation)
+                implicitAsymptotes
             };
         }
 
         return null;
+    }
+
+    deriveMonomialYImplicitAsymptotes(radicandExpression, power) {
+        if (!radicandExpression || ![2, 3].includes(power)) {
+            return null;
+        }
+
+        let rationalParts = this.extractPolynomialRationalParts(radicandExpression);
+        if (!rationalParts) {
+            try {
+                const simplifiedRadicand = this.cleanMath.simplify(radicandExpression).toString();
+                if (simplifiedRadicand && simplifiedRadicand !== radicandExpression) {
+                    rationalParts = this.extractPolynomialRationalParts(simplifiedRadicand);
+                }
+            } catch {
+                rationalParts = null;
+            }
+        }
+        if (!rationalParts) {
+            return null;
+        }
+
+        const numeratorDegree = this.getPolynomialDegree(rationalParts.numerator);
+        const denominatorDegree = this.getPolynomialDegree(rationalParts.denominator);
+        if (denominatorDegree < 0 || numeratorDegree > denominatorDegree) {
+            return null;
+        }
+
+        const radicandLimit = numeratorDegree < denominatorDegree
+            ? 0
+            : rationalParts.numerator[numeratorDegree] / rationalParts.denominator[denominatorDegree];
+        if (!Number.isFinite(radicandLimit)) {
+            return null;
+        }
+
+        const horizontal = [];
+        if (power === 2) {
+            if (radicandLimit < -1e-12) {
+                return null;
+            }
+
+            const limitY = Math.sqrt(Math.max(0, radicandLimit));
+            horizontal.push(this.snapNearSimpleNumber(limitY));
+            if (limitY > 1e-12) {
+                horizontal.push(this.snapNearSimpleNumber(-limitY));
+            }
+        } else {
+            const limitY = Math.sign(radicandLimit) * Math.pow(Math.abs(radicandLimit), 1 / 3);
+            horizontal.push(this.snapNearSimpleNumber(limitY));
+        }
+
+        return { vertical: [], horizontal: this.mergeNumericValues(horizontal, [], 1e-8), oblique: [] };
+    }
+
+    snapNearSimpleNumber(value) {
+        if (!Number.isFinite(value)) {
+            return value;
+        }
+
+        const roundedInteger = Math.round(value);
+        if (Math.abs(value - roundedInteger) <= 1e-10) {
+            return roundedInteger;
+        }
+
+        return value;
+    }
+
+    mergeNumericValues(primaryValues = [], secondaryValues = [], tolerance = 1e-6) {
+        const result = [];
+        const addValue = (value) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            if (!result.some(existing => Math.abs(existing - value) <= tolerance)) {
+                result.push(value);
+            }
+        };
+
+        for (const value of primaryValues || []) {
+            addValue(value);
+        }
+        for (const value of secondaryValues || []) {
+            addValue(value);
+        }
+
+        result.sort((a, b) => a - b);
+        return result;
     }
 
     findAffineImplicitVerticalComponents(aCompiled, bCompiled) {
@@ -9194,15 +9291,28 @@ class Graphiti {
 
         const implicitAsymptotes = monomialModel.implicitAsymptotes || { vertical: [], horizontal: [], oblique: [] };
 
+        const mergeExactHorizontalAsymptotes = (estimatedValues, exactValues) => {
+            const exact = Array.isArray(exactValues) ? exactValues.filter(Number.isFinite) : [];
+            const estimated = Array.isArray(estimatedValues) ? estimatedValues.filter(Number.isFinite) : [];
+            if (exact.length === 0) {
+                return uniqueNumbers(estimated);
+            }
+
+            const filteredEstimated = estimated.filter(value =>
+                !exact.some(exactValue => Math.abs(value - exactValue) <= 5e-3)
+            );
+            return uniqueNumbers([...exact, ...filteredEstimated], 1e-6);
+        };
+
         if (cachedStructure) {
             filteredVertical = uniqueNumbers([
                 ...(Array.isArray(cachedStructure.vertical) ? cachedStructure.vertical : []),
                 ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
             ]).filter(value => !isAtVerticalComponent(value));
-            horizontal = uniqueNumbers([
-                ...(Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal : []),
-                ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
-            ]);
+            horizontal = mergeExactHorizontalAsymptotes(
+                Array.isArray(cachedStructure.horizontal) ? cachedStructure.horizontal : [],
+                Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : []
+            );
             oblique = uniqueObliqueLines([
                 ...(Array.isArray(cachedStructure.oblique) ? cachedStructure.oblique.map(line => ({ ...line })) : []),
                 ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique.map(line => ({ ...line, source: 'algebraic' })) : [])
@@ -9215,10 +9325,10 @@ class Graphiti {
                 ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
             ])
                 .filter(value => !isAtVerticalComponent(value));
-            horizontal = uniqueNumbers([
-                ...proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
-                ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
-            ]);
+            horizontal = mergeExactHorizontalAsymptotes(
+                proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
+                Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : []
+            );
             oblique = uniqueObliqueLines([
                 ...proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []),
                 ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique.map(line => ({ ...line, source: 'algebraic' })) : [])
