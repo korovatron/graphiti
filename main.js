@@ -13269,8 +13269,93 @@ class Graphiti {
             return [(-b + sqrtD) / (2 * a), (-b - sqrtD) / (2 * a)];
         }
 
-        // Higher-degree roots fall back to numeric asymptote detection paths.
-        return [];
+        const roots = [];
+        const addRoot = (root) => {
+            if (!Number.isFinite(root)) {
+                return;
+            }
+
+            const rounded = Math.abs(root - Math.round(root)) < 1e-9 ? Math.round(root) : root;
+            if (!roots.some(existing => Math.abs(existing - rounded) <= 1e-7)) {
+                roots.push(rounded);
+            }
+        };
+
+        const leadingCoeff = Math.abs(poly[degree] || 0);
+        const maxLowerCoeff = Math.max(0, ...poly.slice(0, degree).map(value => Math.abs(value || 0)));
+        const cauchyBound = leadingCoeff > 1e-12 ? 1 + (maxLowerCoeff / leadingCoeff) : 256;
+        const maxX = Math.min(10000, Math.max(32, cauchyBound * 1.25));
+        const minX = -maxX;
+        const samples = Math.max(4096, Math.min(32768, Math.ceil(maxX * 64)));
+        const step = (maxX - minX) / samples;
+        const zeroTolerance = 1e-8;
+
+        const bisectRoot = (leftX, rightX, leftValue) => {
+            let a = leftX;
+            let b = rightX;
+            let fa = leftValue;
+
+            for (let iter = 0; iter < 60; iter++) {
+                const mid = (a + b) * 0.5;
+                const fm = this.evaluatePolynomial(poly, mid);
+                if (!Number.isFinite(fm)) {
+                    break;
+                }
+                if (Math.abs(fm) <= zeroTolerance || Math.abs(b - a) <= 1e-10) {
+                    return mid;
+                }
+                if (fa * fm <= 0) {
+                    b = mid;
+                } else {
+                    a = mid;
+                    fa = fm;
+                }
+            }
+
+            return (a + b) * 0.5;
+        };
+
+        let prevX = minX;
+        let prevValue = this.evaluatePolynomial(poly, prevX);
+        if (Number.isFinite(prevValue) && Math.abs(prevValue) <= zeroTolerance) {
+            addRoot(prevX);
+        }
+
+        for (let i = 1; i <= samples; i++) {
+            const x = i === samples ? maxX : minX + i * step;
+            const value = this.evaluatePolynomial(poly, x);
+            if (!Number.isFinite(prevValue) || !Number.isFinite(value)) {
+                prevX = x;
+                prevValue = value;
+                continue;
+            }
+
+            if (Math.abs(value) <= zeroTolerance) {
+                addRoot(x);
+            } else if (prevValue * value < 0) {
+                addRoot(bisectRoot(prevX, x, prevValue));
+            }
+
+            prevX = x;
+            prevValue = value;
+        }
+
+        const coefficientScale = Math.max(1, ...poly.map(value => Math.abs(value || 0)));
+        const stationaryTolerance = Math.max(zeroTolerance, coefficientScale * 1e-8);
+        const derivativeRoots = this.findPolynomialRealRoots(this.derivativePolynomial(poly));
+        for (const root of derivativeRoots) {
+            if (!Number.isFinite(root) || root < minX || root > maxX) {
+                continue;
+            }
+
+            const value = this.evaluatePolynomial(poly, root);
+            if (Number.isFinite(value) && Math.abs(value) <= stationaryTolerance) {
+                addRoot(root);
+            }
+        }
+
+        roots.sort((a, b) => a - b);
+        return roots;
     }
 
     detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig = false) {
