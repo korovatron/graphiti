@@ -12424,6 +12424,9 @@ class Graphiti {
         const hasDecayingExponentialTail =
             /(?:^|[^a-z])e\^(?:\{|\()?-([0-9.]*\*?)?x(?:\}|\))?/.test(normalizedExpression) ||
             /(?:^|[^a-z])exp\(-([0-9.]*\*?)?x\)/.test(normalizedExpression);
+        const hasExponentialTailFamily = hasDecayingExponentialTail ||
+            /(?:^|[^a-z])e\^(?:\{|\()?[-+]?([0-9.]*\*?)?x(?:\}|\))?/.test(normalizedExpression) ||
+            /(?:^|[^a-z])exp\([-+]?([0-9.]*\*?)?x\)/.test(normalizedExpression);
         const hasHyperbolicTailFamily = /(^|[^a-z])(tanh|coth|sech|csch)\s*\(/.test(normalizedExpression);
 
         const currentViewport = this.plotMode === 'cartesian' ? this.cartesianViewport : this.polarViewport;
@@ -12460,7 +12463,7 @@ class Graphiti {
                 return null;
             }
 
-            const tail = samples.slice(-4);
+            const tail = hasExponentialTailFamily ? samples.slice(0, 4) : samples.slice(-4);
             const tailY = tail.map(sample => sample.y);
             const absValues = tailY.map(v => Math.abs(v));
             const maxAbs = Math.max(1, ...absValues);
@@ -12518,7 +12521,9 @@ class Graphiti {
             const nearAbsY = Math.abs(tail[0].y);
             const farAbsY = Math.abs(tail[tail.length - 1].y);
             const nonDecayingMagnitude = farAbsY >= Math.max(nearAbsY * 0.9, nearAbsY - 1e-6);
-            if (!hasDecayingExponentialTail && !hasHyperbolicTailFamily && nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
+            const exponentialTailMovesTowardLimit = hasExponentialTailFamily &&
+                Math.abs(tail[0].y - tail[tail.length - 1].y) > Math.max(1e-10, Math.abs(intercept) * 1e-12);
+            if (!exponentialTailMovesTowardLimit && !hasDecayingExponentialTail && !hasHyperbolicTailFamily && nearestOffset <= onTheLineTolerance && furthestOffset <= onTheLineTolerance && nonDecayingMagnitude) {
                 return null;
             }
 
@@ -12600,6 +12605,14 @@ class Graphiti {
 
             if (nearZeroCandidate && decaysTowardZero && boundedReciprocalEnvelope) {
                 return 0;
+            }
+
+            if (exponentialTailMovesTowardLimit) {
+                const farTailY = tail[tail.length - 1].y;
+                const exponentialSnapTolerance = Math.max(1e-4, Math.abs(intercept) * 1e-4);
+                if (Math.abs(farTailY - intercept) <= exponentialSnapTolerance) {
+                    return farTailY;
+                }
             }
 
             return intercept;

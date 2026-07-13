@@ -1065,9 +1065,9 @@
             width: 100%;
             max-width: 100%;
             font-size: 14px !important;
-            line-height: 1 !important;
-            min-height: 0 !important;
-            padding: 0 !important;
+            line-height: 1.35 !important;
+            min-height: 24px !important;
+            padding: 2px 0 !important;
             margin: 0 !important;
             border: none !important;
             background: transparent !important;
@@ -1082,6 +1082,7 @@
             -webkit-user-select: none !important;
             outline: none !important;
             box-shadow: none !important;
+            overflow: visible !important;
         }
 
         .asymptote-equation-field:focus,
@@ -1100,15 +1101,21 @@
             font-size: 14px !important;
             padding: 0 !important;
             white-space: normal;
-            line-height: 1;
+            line-height: 1.35;
+            overflow: visible !important;
             user-select: none !important;
             -webkit-user-select: none !important;
+        }
+
+        .asymptote-equation-field::part(container) {
+            overflow: visible !important;
         }
 
         /* Must be more specific than .function-item math-field::part(content) below */
         .function-item .asymptote-equation-field::part(content) {
             font-size: 14px !important;
-            line-height: 1 !important;
+            line-height: 1.35 !important;
+            overflow: visible !important;
         }
 
         .integral-limit-row {
