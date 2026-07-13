@@ -1726,14 +1726,11 @@ class Graphiti {
         const demoSets = {
             'explicit-functions': {
                 expressions: [
-                    'y=e^{x}',                                          // Exponential function
-                    'y=\\ln(x)',                                        // Natural logarithm
-                    'y=\\log(x)',                                       // Common logarithm (base 10)
-                    'y=\\sqrt{x}',                                      // Square root
-                    'y=\\left|x\\right|'                                // Absolute value
+                    'y=\\frac{x^4}{32}-\\frac{x^2}{2}+1',              // Double-well quartic
+                    'y=e^{-\\frac{1}{5}x^2}\\cos\\left(5x\\right)'     // Damped oscillation
                 ],
                 description: 'Explicit Functions Demo',
-                viewport: { minX: -3, maxX: 8, minY: -3, maxY: 8 }
+                viewport: { minX: -6, maxX: 6, minY: -3, maxY: 4 }
             },
             'inequality-intersection': {
                 expressions: [
@@ -1763,39 +1760,11 @@ class Graphiti {
             },
             'implicit-equations': {
                 expressions: [
-                    '\\frac{x^2}{16}+\\frac{y^2}{9}=1',                 // Ellipse
-                    '\\frac{x-4}{x+1}y^3-\\left(x+2\\right)=0',         // Cubic y-monomial with hole and turning points
-                    'y^2=x^3-x'                                         // Cubic curve
+                    '\\frac{x-4}{x-1}y^3-\\frac{x+2}{x-1}=0',          // Cubic y-monomial with visible removable hole
+                    'y^2-xy=1'                                          // Quadratic in y with two asymptotes
                 ],
                 description: 'Implicit Equations Demo',
-                viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5 }
-            },
-            'y-monomial-implicit': {
-                expressions: [
-                    '\\frac{x-1}{x+1}y-x+1=0',                         // y-monomial, n=1: line + hole + vertical component
-                    'x^2+y^2=1',                                         // y-monomial, n=2: circle rendered as explicit branches
-                    'y^3-x=0'                                            // y-monomial, n=3: cubic root branch
-                ],
-                description: 'Y-Monomial Implicit Form Demo',
                 viewport: { minX: -6, maxX: 6, minY: -6, maxY: 6 }
-            },
-            'asymptotes-rational': {
-                expressions: [
-                    'y=\\frac{2x+1}{x-2}',                             // Linear/linear rational (horizontal + vertical asymptotes)
-                    'y=\\frac{x^2+1}{x-1}',                            // Oblique asymptote y=x+1 with vertical x=1
-                    'y=\\frac{x^2-1}{x^2-x}'                           // Removable hole at x=1 and vertical asymptote at x=0
-                ],
-                description: 'Asymptotes & Holes Demo',
-                viewport: { minX: -8, maxX: 8, minY: -8, maxY: 8 }
-            },
-            'asymptotes-non-rational': {
-                expressions: [
-                    'y=e^{-x}+1',                                       // Horizontal asymptote y=1
-                    'y=\\tan\\left(x\\right)',                     // Periodic vertical asymptotes
-                    'y=\\arctan\\left(x\\right)'                   // Horizontal asymptotes y=±pi/2
-                ],
-                description: 'Non-Rational Asymptotes Demo',
-                viewport: { minX: -8, maxX: 8, minY: -4, maxY: 4 }
             },
             'tangents-normals': {
                 expressions: [
