@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.1.122';
+const VERSION = '1.1.123';
 
 class Graphiti {
     constructor() {
@@ -14434,6 +14434,7 @@ class Graphiti {
             const intercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
             const unitSlopeTolerance = 0.015;
             const slopeLatex = this.formatAsymptoteCoefficientLatex(slope);
+            const slopeTimesXLatex = `{${slopeLatex}}x`;
             const interceptLatex = this.formatAsymptoteCoefficientLatex(Math.abs(intercept));
             const interceptDisplaysAsZero = intercept === 0 || interceptLatex === '0' || interceptLatex === '-0';
             const sign = intercept >= 0 ? '+' : '-';
@@ -14443,7 +14444,7 @@ class Graphiti {
             } else if (Math.abs(slope + 1) < unitSlopeTolerance) {
                 equations.push(interceptDisplaysAsZero ? 'y = -x' : `y = -x ${sign} ${interceptLatex}`);
             } else {
-                equations.push(interceptDisplaysAsZero ? `y = ${slopeLatex}x` : `y = ${slopeLatex}x ${sign} ${interceptLatex}`);
+                equations.push(interceptDisplaysAsZero ? `y = ${slopeTimesXLatex}` : `y = ${slopeTimesXLatex} ${sign} ${interceptLatex}`);
             }
         }
 
