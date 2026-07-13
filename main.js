@@ -10245,7 +10245,7 @@ class Graphiti {
             ...proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []),
             ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
         ]);
-        const horizontal = quadraticHorizontalAsymptotes.length > 0
+        let horizontal = quadraticHorizontalAsymptotes.length > 0
             ? uniqueNumbers([
                 ...quadraticHorizontalAsymptotes,
                 ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
@@ -10254,10 +10254,18 @@ class Graphiti {
                 ...proxyAsymptotes.flatMap(data => Array.isArray(data.horizontal) ? data.horizontal : []),
                 ...(Array.isArray(implicitAsymptotes.horizontal) ? implicitAsymptotes.horizontal : [])
             ], 1e-3);
-        const oblique = uniqueObliqueLines([
+        const rawOblique = uniqueObliqueLines([
             ...proxyAsymptotes.flatMap(data => Array.isArray(data.oblique) ? data.oblique : []),
             ...(Array.isArray(implicitAsymptotes.oblique) ? implicitAsymptotes.oblique.map(line => ({ ...line, source: 'algebraic' })) : [])
         ]);
+        const zeroSlopeObliqueTolerance = 1e-6;
+        const zeroSlopeObliqueHorizontals = rawOblique
+            .filter(line => Math.abs(line.m) <= zeroSlopeObliqueTolerance)
+            .map(line => Math.abs(line.b) <= 1e-9 ? 0 : line.b);
+        if (zeroSlopeObliqueHorizontals.length > 0) {
+            horizontal = uniqueNumbers([...horizontal, ...zeroSlopeObliqueHorizontals], 1e-3);
+        }
+        const oblique = rawOblique.filter(line => Math.abs(line.m) > zeroSlopeObliqueTolerance);
 
         const removableDomainExclusions = Array.isArray(quadraticModel.removableDomainExclusions)
             ? quadraticModel.removableDomainExclusions.filter(value => Number.isFinite(value))
