@@ -14535,13 +14535,16 @@ class Graphiti {
             const slope = Math.abs(line.m - roundedSlope) < 1e-6 ? roundedSlope : line.m;
             const intercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
             const unitSlopeTolerance = 0.015;
+            const zeroSlopeTolerance = 1e-9;
             const slopeLatex = this.formatAsymptoteCoefficientLatex(slope);
-            const slopeTimesXLatex = `{${slopeLatex}}x`;
+            const slopeTimesXLatex = `${slopeLatex}x`;
             const interceptLatex = this.formatAsymptoteCoefficientLatex(Math.abs(intercept));
             const interceptDisplaysAsZero = intercept === 0 || interceptLatex === '0' || interceptLatex === '-0';
             const sign = intercept >= 0 ? '+' : '-';
 
-            if (Math.abs(slope - 1) < unitSlopeTolerance) {
+            if (Math.abs(slope) < zeroSlopeTolerance) {
+                equations.push(`y = ${this.formatAsymptoteCoefficientLatex(intercept)}`);
+            } else if (Math.abs(slope - 1) < unitSlopeTolerance) {
                 equations.push(interceptDisplaysAsZero ? 'y = x' : `y = x ${sign} ${interceptLatex}`);
             } else if (Math.abs(slope + 1) < unitSlopeTolerance) {
                 equations.push(interceptDisplaysAsZero ? 'y = -x' : `y = -x ${sign} ${interceptLatex}`);
