@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.10';
+const VERSION = '1.2.12';
 
 class Graphiti {
     constructor() {
@@ -16850,6 +16850,10 @@ class Graphiti {
         this.intersectionDebounceTimer = setTimeout(() => {
             this.isViewportChanging = false;
             this.saveViewportBounds();
+            const showViewportWorkIndicator = this.shouldShowViewportWorkIndicator();
+            if (showViewportWorkIndicator) {
+                this.showGraphWorkIndicator();
+            }
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
             // Replot explicit functions with updated viewport
@@ -16898,6 +16902,10 @@ class Graphiti {
                 
                 // Update badge positions to match recalculated significant points
                 this.updateBadgesFromSignificantPoints();
+
+                if (showViewportWorkIndicator && !this.implicitIntersectionsPending) {
+                    this.hideGraphWorkIndicator();
+                }
             };
 
             if (explicitReplotPromises.length > 0) {
@@ -19406,14 +19414,15 @@ class Graphiti {
             this.tempSession = true;
             this.hasInitialized = true;
             this.changeState(this.states.GRAPHING);
-            this.showGraphBuildOverlay();
-            await this.waitForGraphBuildOverlayPaint();
+            const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(sharedState.functions || []);
             try {
                 await this.applySharedState(sharedState);
                 // Show temporary session banner
                 this.showTempSessionBanner();
             } finally {
-                this.hideGraphBuildOverlay();
+                if (showBuildOverlay) {
+                    this.hideGraphBuildOverlay();
+                }
             }
         } else {
             // Normal startup - show title screen
@@ -19747,8 +19756,8 @@ class Graphiti {
         // Mode toggle button
         const modeToggle = document.getElementById('mode-toggle');
         if (modeToggle) {
-            modeToggle.addEventListener('click', () => {
-                this.togglePlotMode();
+            modeToggle.addEventListener('click', async () => {
+                await this.togglePlotMode();
             });
         }
 
@@ -26017,7 +26026,7 @@ class Graphiti {
         }
     }
     
-    togglePlotMode() {
+    async togglePlotMode() {
         // Always stop and fully reset polar animation when switching modes (from either direction)
         // This ensures clean state whether switching from polar or back to polar
         if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
@@ -26280,6 +26289,8 @@ class Graphiti {
         if (!hasBlankFunction) {
             this.addFunction('');
         }
+
+        const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(this.getCurrentFunctions());
         
         // Update virtual keyboards for the new mode
         this.updateVirtualKeyboardsForMode();
@@ -26323,8 +26334,14 @@ class Graphiti {
         // Update range inputs to reflect the current viewport values (no recalculation)
         this.updateRangeInputs();
 
-        // Replot all functions in current mode (this will trigger a draw)
-        this.replotAllFunctions();
+        try {
+            // Replot all functions in current mode (this will trigger a draw)
+            await this.replotAllFunctions();
+        } finally {
+            if (showBuildOverlay) {
+                this.hideGraphBuildOverlay();
+            }
+        }
         
         // Update parameter sliders for the current mode
         this.updateParameterSliders();
@@ -26792,8 +26809,6 @@ class Graphiti {
         this.hasInitialized = true;
         
         this.changeState(this.states.GRAPHING);
-        this.showGraphBuildOverlay();
-        await this.waitForGraphBuildOverlayPaint();
         
         // Try to load saved functions from localStorage first to check if any exist
         const savedData = this.loadFunctionsFromLocalStorage();
@@ -26872,6 +26887,11 @@ class Graphiti {
             // Update virtual keyboards to match the loaded mode
             this.updateVirtualKeyboardsForMode();
         }
+
+        const savedFunctionsForCurrentMode = this.plotMode === 'polar'
+            ? savedData.polar || []
+            : savedData.cartesian || [];
+        const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(savedFunctionsForCurrentMode);
         
         // savedData was already loaded above to check for saved functions
         
@@ -27070,7 +27090,9 @@ class Graphiti {
 
             // Final draw to show everything
             this.draw();
-            this.hideGraphBuildOverlay();
+            if (showBuildOverlay) {
+                this.hideGraphBuildOverlay();
+            }
         };
 
         // If there are no implicit functions, finish after explicit plotting completes.
@@ -27141,6 +27163,69 @@ class Graphiti {
         }, 200);
     }
 
+    shouldShowGraphBuildOverlayForFunctions(functions) {
+        if (!Array.isArray(functions)) {
+            return false;
+        }
+
+        const enabledExpressionCount = functions.filter(func =>
+            func &&
+            func.enabled &&
+            func.expression &&
+            func.expression.trim()
+        ).length;
+
+        return enabledExpressionCount >= 2;
+    }
+
+    async showGraphBuildOverlayForFunctions(functions) {
+        if (!this.shouldShowGraphBuildOverlayForFunctions(functions)) {
+            return false;
+        }
+
+        this.showGraphBuildOverlay();
+        await this.waitForGraphBuildOverlayPaint();
+        return true;
+    }
+
+    shouldShowViewportWorkIndicator() {
+        if (this.plotMode !== 'cartesian') {
+            return false;
+        }
+
+        const enabledImplicitCount = this.getCurrentFunctions().filter(func => {
+            if (!func || !func.enabled || !func.expression || !func.expression.trim()) {
+                return false;
+            }
+
+            const functionType = this.detectFunctionType(func.expression);
+            return functionType === 'implicit' || functionType === 'implicit-inequality';
+        }).length;
+
+        return enabledImplicitCount >= 2;
+    }
+
+    showGraphWorkIndicator() {
+        const indicator = document.getElementById('graph-work-indicator');
+        if (!indicator) return;
+
+        indicator.classList.remove('hidden');
+        indicator.offsetHeight;
+        indicator.classList.add('visible');
+    }
+
+    hideGraphWorkIndicator() {
+        const indicator = document.getElementById('graph-work-indicator');
+        if (!indicator) return;
+
+        indicator.classList.remove('visible');
+        setTimeout(() => {
+            if (!indicator.classList.contains('visible')) {
+                indicator.classList.add('hidden');
+            }
+        }, 150);
+    }
+
     waitForGraphBuildOverlayPaint() {
         return new Promise(resolve => {
             requestAnimationFrame(() => {
@@ -27185,7 +27270,7 @@ class Graphiti {
                 allSpans.push(span);
                 charIndex++;
             });
-            
+
             // Add space between words (except after last word)
             if (wordIdx < words.length - 1) {
                 const space = document.createElement('span');
@@ -29203,6 +29288,7 @@ class Graphiti {
             }
             this.updateBadgesFromSignificantPoints();
             this.updateBadgeScreenPositions();
+            this.hideGraphWorkIndicator();
         }
         
         // Only trigger redraw if viewport is not changing AND no implicit intersections are pending

@@ -248,6 +248,36 @@
             transition: none;
         }
 
+        .graph-work-indicator {
+            position: absolute;
+            right: calc(18px + var(--safe-area-right, 0px));
+            bottom: calc(18px + var(--safe-area-bottom, 0px));
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(6px);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 75;
+        }
+
+        .graph-work-indicator.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .graph-work-indicator .graph-build-pulses {
+            height: 22px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .graph-work-indicator .graph-build-pulses span {
+            width: 8px;
+            height: 22px;
+            border-radius: 4px;
+        }
+
         .graph-build-indicator {
             display: flex;
             flex-direction: column;
@@ -2620,6 +2650,15 @@
                         <span></span>
                     </div>
                     <div>Preparing graphs ...</div>
+                </div>
+            </div>
+
+            <div id="graph-work-indicator" class="graph-work-indicator hidden" aria-hidden="true">
+                <div class="graph-build-pulses">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
                 </div>
             </div>
             
