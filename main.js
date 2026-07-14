@@ -8493,7 +8493,9 @@ class Graphiti {
             }
             domainExclusions.sort((a, b) => a - b);
 
-            const implicitAsymptotes = this.detectImplicitHyperbolaAsymptotes(equation) || { vertical: [], horizontal: [], oblique: [] };
+            const implicitAsymptotes = this.detectImplicitHyperbolaAsymptotes(equation) ||
+                this.detectPolynomialImplicitAsymptotes(equation) ||
+                { vertical: [], horizontal: [], oblique: [] };
             const monomialAsymptotes = this.deriveMonomialYImplicitAsymptotes(radicandExpression, power);
             if (monomialAsymptotes) {
                 implicitAsymptotes.horizontal = this.mergeNumericValues(
@@ -8640,7 +8642,7 @@ class Graphiti {
         }
 
         const aTolerance = Math.max(1e-7, scaleA * 1e-6);
-        const bTolerance = Math.max(1e-4, scaleB * 5e-4);
+        const bTolerance = Math.max(1e-8, scaleB * 1e-12);
 
         const bisectRoot = (leftX, rightX, leftValue, rightValue) => {
             if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) {
@@ -15633,12 +15635,47 @@ class Graphiti {
         }
 
         const slopeRoots = this.findPolynomialRealRoots(leadingSlopePoly);
-        if (!Array.isArray(slopeRoots) || slopeRoots.length === 0) {
-            return null;
+        const verticalDirectionPoly = new Array(degree + 1).fill(0);
+        const nextVerticalDirectionPoly = new Array(degree).fill(0);
+        for (const [key, value] of Object.entries(coeffMap)) {
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-12) {
+                continue;
+            }
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            const totalDegree = px + py;
+            if (totalDegree === degree) {
+                verticalDirectionPoly[px] += value;
+            } else if (totalDegree === degree - 1) {
+                nextVerticalDirectionPoly[px] += value;
+            }
         }
 
         const derivativeLeading = this.derivativePolynomial(leadingSlopePoly);
+        const derivativeVerticalLeading = this.derivativePolynomial(verticalDirectionPoly);
+        const verticalDirectionRoots = this.findPolynomialRealRoots(verticalDirectionPoly);
+        const vertical = [];
+        const horizontal = [];
         const oblique = [];
+        const addUniqueVertical = (x) => {
+            if (!Number.isFinite(x)) {
+                return;
+            }
+            const snapped = Math.abs(x - Math.round(x)) < 1e-10 ? Math.round(x) : x;
+            if (!vertical.some(existing => Math.abs(existing - snapped) <= Math.max(1e-8, Math.abs(existing) * 1e-6))) {
+                vertical.push(snapped);
+            }
+        };
+        const addUniqueHorizontal = (y) => {
+            if (!Number.isFinite(y)) {
+                return;
+            }
+            const snapped = Math.abs(y - Math.round(y)) < 1e-10 ? Math.round(y) : y;
+            if (!horizontal.some(existing => Math.abs(existing - snapped) <= Math.max(1e-8, Math.abs(existing) * 1e-6))) {
+                horizontal.push(snapped);
+            }
+        };
         const addUniqueOblique = (line) => {
             if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
                 return;
@@ -15652,7 +15689,7 @@ class Graphiti {
             oblique.push(line);
         };
 
-        for (const slope of slopeRoots) {
+        for (const slope of Array.isArray(slopeRoots) ? slopeRoots : []) {
             if (!Number.isFinite(slope) || Math.abs(slope) > 1e6) {
                 continue;
             }
@@ -15675,18 +15712,88 @@ class Graphiti {
             for (const intercept of interceptCandidates) {
                 const validation = this.validatePolynomialImplicitAsymptote(coeffMap, slope, intercept);
                 if (validation.accepted) {
-                    addUniqueOblique({
-                        m: slope,
-                        b: intercept,
-                        direction: validation.direction
-                    });
+                    if (Math.abs(slope) <= 1e-10) {
+                        addUniqueHorizontal(intercept);
+                    } else {
+                        addUniqueOblique({
+                            m: slope,
+                            b: intercept,
+                            direction: validation.direction
+                        });
+                    }
                     break;
                 }
             }
         }
 
+        for (const xPerY of Array.isArray(verticalDirectionRoots) ? verticalDirectionRoots : []) {
+            if (!Number.isFinite(xPerY) || Math.abs(xPerY) > 1e-6) {
+                continue;
+            }
+
+            const leadingDerivativeAtDirection = this.evaluatePolynomial(derivativeVerticalLeading, xPerY);
+            const nextAtDirection = this.evaluatePolynomial(nextVerticalDirectionPoly, xPerY);
+            const interceptCandidates = [];
+            if (Number.isFinite(leadingDerivativeAtDirection) && Math.abs(leadingDerivativeAtDirection) > 1e-9) {
+                const intercept = -nextAtDirection / leadingDerivativeAtDirection;
+                if (Number.isFinite(intercept)) {
+                    interceptCandidates.push(Math.abs(intercept) < 1e-10 ? 0 : intercept);
+                }
+            } else {
+                interceptCandidates.push(0);
+            }
+
+            for (const intercept of interceptCandidates) {
+                const validation = this.validatePolynomialImplicitVerticalAsymptote(coeffMap, intercept);
+                if (validation.accepted) {
+                    addUniqueVertical(intercept);
+                    break;
+                }
+            }
+        }
+
+        vertical.sort((a, b) => a - b);
+        horizontal.sort((a, b) => a - b);
         oblique.sort((a, b) => a.m - b.m);
-        return oblique.length > 0 ? { vertical: [], horizontal: [], oblique } : null;
+        return vertical.length > 0 || horizontal.length > 0 || oblique.length > 0 ? { vertical, horizontal, oblique } : null;
+    }
+
+    validatePolynomialImplicitVerticalAsymptote(coeffMap, intercept) {
+        if (!coeffMap || !Number.isFinite(intercept)) {
+            return { accepted: false };
+        }
+
+        const scale = Math.max(20, Math.abs(this.viewport?.maxY || 10), Math.abs(this.viewport?.minY || -10));
+        const sampleMagnitudes = [scale, scale * 2, scale * 4];
+        let passCount = 0;
+
+        for (const sign of [1, -1]) {
+            const distances = [];
+            let validSamples = 0;
+            for (const magnitude of sampleMagnitudes) {
+                const y = sign * magnitude;
+                const nearestDistance = this.findNearestBivariateXRootDistance(coeffMap, intercept, y);
+                distances.push(nearestDistance);
+                if (Number.isFinite(nearestDistance)) {
+                    validSamples++;
+                }
+            }
+
+            if (validSamples < 2) {
+                continue;
+            }
+
+            const finiteDistances = distances.filter(Number.isFinite);
+            const last = finiteDistances[finiteDistances.length - 1];
+            const first = finiteDistances[0];
+            const middle = finiteDistances.length > 2 ? finiteDistances[1] : first;
+            const finalTolerance = Math.max(0.12, 10 / (sampleMagnitudes[sampleMagnitudes.length - 1] * sampleMagnitudes[sampleMagnitudes.length - 1]));
+            if (last <= finalTolerance && last <= middle * 0.85 && middle <= first * 1.15) {
+                passCount++;
+            }
+        }
+
+        return { accepted: passCount > 0 };
     }
 
     validatePolynomialImplicitAsymptote(coeffMap, slope, intercept) {
@@ -15748,6 +15855,24 @@ class Graphiti {
                 continue;
             }
             coeffs[py] = (coeffs[py] || 0) + (value * Math.pow(x, px));
+        }
+
+        return this.normalizePolynomial(coeffs.length > 0 ? coeffs : [0]);
+    }
+
+    evaluateBivariatePolynomialAsX(coeffMap, y) {
+        const coeffs = [];
+        for (const [key, value] of Object.entries(coeffMap || {})) {
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-12) {
+                continue;
+            }
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                continue;
+            }
+            coeffs[px] = (coeffs[px] || 0) + (value * Math.pow(y, py));
         }
 
         return this.normalizePolynomial(coeffs.length > 0 ? coeffs : [0]);
@@ -15834,6 +15959,73 @@ class Graphiti {
         for (const root of roots) {
             if (Number.isFinite(root)) {
                 nearestDistance = Math.min(nearestDistance, Math.abs(root - targetY));
+            }
+        }
+
+        return nearestDistance;
+    }
+
+    findNearestBivariateXRootDistance(coeffMap, targetX, y) {
+        const targetValue = this.evaluateBivariatePolynomialValue(coeffMap, targetX, y);
+        if (!Number.isFinite(targetValue)) {
+            return Infinity;
+        }
+        if (Math.abs(targetValue) <= 1e-8) {
+            return 0;
+        }
+
+        let nearestDistance = Infinity;
+        const bracketRoot = (leftX, rightX, leftValue) => {
+            let a = leftX;
+            let b = rightX;
+            let fa = leftValue;
+            for (let iter = 0; iter < 60; iter++) {
+                const mid = (a + b) * 0.5;
+                const fm = this.evaluateBivariatePolynomialValue(coeffMap, mid, y);
+                if (!Number.isFinite(fm)) {
+                    break;
+                }
+                if (Math.abs(fm) <= 1e-8 || Math.abs(b - a) <= 1e-10) {
+                    return Math.abs(mid - targetX);
+                }
+                if (fa * fm <= 0) {
+                    b = mid;
+                } else {
+                    a = mid;
+                    fa = fm;
+                }
+            }
+            return Math.abs(((a + b) * 0.5) - targetX);
+        };
+
+        const windows = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2];
+        for (const window of windows) {
+            for (const direction of [-1, 1]) {
+                const probeX = targetX + (direction * window);
+                const probeValue = this.evaluateBivariatePolynomialValue(coeffMap, probeX, y);
+                if (!Number.isFinite(probeValue)) {
+                    continue;
+                }
+                if (Math.abs(probeValue) <= 1e-8) {
+                    nearestDistance = Math.min(nearestDistance, Math.abs(probeX - targetX));
+                } else if (targetValue * probeValue < 0) {
+                    nearestDistance = Math.min(nearestDistance, bracketRoot(targetX, probeX, targetValue));
+                }
+            }
+            if (Number.isFinite(nearestDistance)) {
+                return nearestDistance;
+            }
+        }
+
+        const xCoeffs = this.evaluateBivariatePolynomialAsX(coeffMap, y);
+        const roots = this.findPolynomialRealRoots(xCoeffs);
+        if (!Array.isArray(roots) || roots.length === 0) {
+            return Infinity;
+        }
+
+        for (const root of roots) {
+            if (Number.isFinite(root)) {
+                nearestDistance = Math.min(nearestDistance, Math.abs(root - targetX));
             }
         }
 
