@@ -227,6 +227,86 @@
             pointer-events: none;
             z-index: 10;
         }
+
+        .graph-build-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(5, 12, 20, 0.52);
+            backdrop-filter: blur(2px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease;
+            z-index: 80;
+        }
+
+        .graph-build-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transition: none;
+        }
+
+        .graph-build-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 0;
+            text-align: center;
+        }
+
+        .graph-build-pulses {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 28px;
+        }
+
+        .graph-build-pulses span {
+            width: 10px;
+            height: 28px;
+            border-radius: 5px;
+            transform: scaleY(0.35);
+            animation: graphBuildPulse 0.9s ease-in-out infinite;
+            will-change: transform, opacity;
+        }
+
+        .graph-build-pulses span:nth-child(1) {
+            background: #ff355e;
+            animation-delay: 0s;
+        }
+
+        .graph-build-pulses span:nth-child(2) {
+            background: #ffb000;
+            animation-delay: 0.12s;
+        }
+
+        .graph-build-pulses span:nth-child(3) {
+            background: #39ff14;
+            animation-delay: 0.24s;
+        }
+
+        .graph-build-pulses span:nth-child(4) {
+            background: #00c8ff;
+            animation-delay: 0.36s;
+        }
+
+        @keyframes graphBuildPulse {
+            0%, 100% {
+                opacity: 0.55;
+                transform: scaleY(0.35);
+            }
+            50% {
+                opacity: 1;
+                transform: scaleY(1);
+            }
+        }
         
         .ui-panel {
             position: absolute;
@@ -2529,6 +2609,18 @@
                         </a>
                     </span>
                 </p>
+            </div>
+
+            <div id="graph-build-overlay" class="graph-build-overlay hidden" aria-live="polite" aria-busy="true">
+                <div class="graph-build-indicator">
+                    <div class="graph-build-pulses" aria-hidden="true">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <div>Preparing graphs ...</div>
+                </div>
             </div>
             
             <!-- Function Input Panel -->

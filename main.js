@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.9';
+const VERSION = '1.2.10';
 
 class Graphiti {
     constructor() {
@@ -19406,9 +19406,15 @@ class Graphiti {
             this.tempSession = true;
             this.hasInitialized = true;
             this.changeState(this.states.GRAPHING);
-            await this.applySharedState(sharedState);
-            // Show temporary session banner
-            this.showTempSessionBanner();
+            this.showGraphBuildOverlay();
+            await this.waitForGraphBuildOverlayPaint();
+            try {
+                await this.applySharedState(sharedState);
+                // Show temporary session banner
+                this.showTempSessionBanner();
+            } finally {
+                this.hideGraphBuildOverlay();
+            }
         } else {
             // Normal startup - show title screen
             this.tempSession = false;
@@ -25486,9 +25492,21 @@ class Graphiti {
                 }).filter(linked => linked !== null);
             }
             
-            // Trigger full redraw and analysis
+            // Trigger full redraw and analysis while the build overlay is still visible.
             this.draw();
-            this.handleViewportChange();
+            if (this.showIntersections) {
+                this.intersections = this.calculateIntersectionsWithWorker(true);
+            }
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers();
+            }
+            this.updateBadgesFromSignificantPoints();
+            this.updateBadgeScreenPositions();
+            this.draw();
             
             console.log('Shared state applied successfully');
         } catch (error) {
@@ -26774,6 +26792,8 @@ class Graphiti {
         this.hasInitialized = true;
         
         this.changeState(this.states.GRAPHING);
+        this.showGraphBuildOverlay();
+        await this.waitForGraphBuildOverlayPaint();
         
         // Try to load saved functions from localStorage first to check if any exist
         const savedData = this.loadFunctionsFromLocalStorage();
@@ -27019,62 +27039,50 @@ class Graphiti {
         const explicitFunctions = allFunctions.filter(func => this.detectFunctionType(func.expression) !== 'implicit');
         const implicitFunctions = allFunctions.filter(func => this.detectFunctionType(func.expression) === 'implicit');
         
-        // Start explicit functions immediately in parallel (they're fast)
-        setTimeout(() => {
-            explicitFunctions.forEach(func => {
-                this.plotFunctionWithValidation(func).then(() => this.draw());
-            });
-            
-            // If there are no implicit functions, we need to calculate intercepts/intersections/turning points here
-            if (implicitFunctions.length === 0) {
-                // All functions done (only explicit ones)
-                this.isStartup = false;
-                
-                // Calculate initial intersections after all functions are plotted
-                if (this.showIntersections) {
-                    this.intersections = this.calculateIntersectionsWithWorker();
-                }
-                
-                // Calculate initial turning points
-                if (this.showTurningPoints) {
-                    this.turningPoints = this.findTurningPoints();
-                }
-                
-                // Calculate initial intercepts
-                if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
-                }
-                
-                // Final draw to show everything
-                this.draw();
+        // Start explicit functions in parallel after the overlay has had a chance to paint.
+        const explicitPlotPromises = explicitFunctions.map(func => new Promise(resolve => {
+            setTimeout(() => {
+                this.plotFunctionWithValidation(func)
+                    .then(() => this.draw())
+                    .finally(resolve);
+            }, 0);
+        }));
+
+        const finishStartupBuild = async () => {
+            await Promise.allSettled(explicitPlotPromises);
+            this.isStartup = false;
+
+            // Calculate initial intersections after all functions are plotted
+            if (this.showIntersections) {
+                this.intersections = this.calculateIntersectionsWithWorker();
             }
-        }, 0);
+
+            // Calculate initial turning points
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
+
+            // Calculate initial intercepts
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
+            }
+
+            // Final draw to show everything
+            this.draw();
+            this.hideGraphBuildOverlay();
+        };
+
+        // If there are no implicit functions, finish after explicit plotting completes.
+        if (implicitFunctions.length === 0) {
+            finishStartupBuild();
+        }
         
         // Plot implicit functions sequentially with progressive appearance
         const plotNextImplicit = async (index) => {
             if (index >= implicitFunctions.length) {
                 // All implicit functions done
-                this.isStartup = false;
-                
-                // Calculate initial intersections after all functions are plotted
-                if (this.showIntersections) {
-                    this.intersections = this.calculateIntersectionsWithWorker();
-                }
-                
-                // Calculate initial turning points
-                if (this.showTurningPoints) {
-                    this.turningPoints = this.findTurningPoints();
-                }
-                
-                // Calculate initial intercepts
-                if (this.showIntercepts) {
-                    this.intercepts = this.findAxisIntercepts();
-                    this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
-                }
-                
-                // Final draw to show everything
-                this.draw();
+                await finishStartupBuild();
                 return;
             }
             
@@ -27108,6 +27116,39 @@ class Graphiti {
         
         // Show keyboard shortcuts hint after a short delay (only on non-touch devices)
         this.showKeyboardHint();
+    }
+
+    showGraphBuildOverlay() {
+        const overlay = document.getElementById('graph-build-overlay');
+        if (!overlay) return;
+
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-busy', 'true');
+        overlay.offsetHeight;
+        overlay.classList.add('visible');
+    }
+
+    hideGraphBuildOverlay() {
+        const overlay = document.getElementById('graph-build-overlay');
+        if (!overlay) return;
+
+        overlay.classList.remove('visible');
+        overlay.setAttribute('aria-busy', 'false');
+        setTimeout(() => {
+            if (!overlay.classList.contains('visible')) {
+                overlay.classList.add('hidden');
+            }
+        }, 200);
+    }
+
+    waitForGraphBuildOverlayPaint() {
+        return new Promise(resolve => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    setTimeout(resolve, 180);
+                });
+            });
+        });
     }
     
     initSineWaveTagline() {
