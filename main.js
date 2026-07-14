@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.12';
+const VERSION = '1.2.13';
 
 class Graphiti {
     constructor() {
@@ -1858,6 +1858,13 @@ class Graphiti {
                 ],
                 description: 'Derivatives & Turning Points Demo',
                 viewport: { minX: -3, maxX: 3, minY: -5, maxY: 5 }
+            },
+            'better-than-desmos': {
+                expressions: [
+                    'y^2=\\frac{1}{x^2-y^3}'
+                ],
+                description: 'Better than Desmos Demo',
+                viewport: { minX: -4, maxX: 4, minY: -3, maxY: 3 }
             }
         };
         
