@@ -8498,7 +8498,8 @@ class Graphiti {
             discriminantRoots: this.findMonomialRadicandRoots(discriminantExpression),
             domainExclusions,
             removableDomainExclusions,
-            implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation)
+            implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation) ||
+                this.detectPolynomialImplicitAsymptotes(equation)
         };
     }
 
