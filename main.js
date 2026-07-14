@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.13';
+const VERSION = '1.2.14';
 
 class Graphiti {
     constructor() {
@@ -36813,7 +36813,7 @@ class Graphiti {
             return;
         }
 
-        const radius = Math.max(this.getLineWidth(4), 4);
+        const radius = Math.max(this.getLineWidth(5), 5);
         const lineWidth = this.getLineWidth(3);
         const bgColor = this.getCanvasBackgroundColor();
 
