@@ -7609,6 +7609,38 @@ class Graphiti {
             ...this.detectVerticalAsymptotes(aExpression),
             ...this.detectVerticalAsymptotes(bExpression)
         ];
+
+        let explicitExpression = '-(' + bExpression + ')/(' + aExpression + ')';
+        try {
+            const simplifiedExplicit = this.cleanMath.simplify(explicitExpression).toString();
+            if (simplifiedExplicit) {
+                explicitExpression = simplifiedExplicit;
+            }
+        } catch {
+            // Keep generated expression if symbolic simplification fails.
+        }
+
+        const originalDenominators = this.extractDivisionDenominatorExpressions(combinedExpression);
+        for (const denominatorExpression of originalDenominators) {
+            let branchDenominator = replaceYSymbol(denominatorExpression, explicitExpression);
+            try {
+                branchDenominator = this.cleanMath.simplify(branchDenominator).toString();
+            } catch {
+                // Use the substituted denominator as-is.
+            }
+
+            try {
+                const denominatorCoeffs = this.extractPolynomialCoeffs(this.cleanMath.parse(branchDenominator));
+                if (denominatorCoeffs && this.getPolynomialDegree(denominatorCoeffs) >= 1) {
+                    domainExclusionsRaw.push(...this.findPolynomialRealRoots(denominatorCoeffs));
+                } else {
+                    domainExclusionsRaw.push(...this.findExpressionRealRoots(branchDenominator));
+                }
+            } catch {
+                domainExclusionsRaw.push(...this.findExpressionRealRoots(branchDenominator));
+            }
+        }
+
         const domainExclusions = [];
         for (const x of domainExclusionsRaw) {
             if (!Number.isFinite(x)) {
@@ -7620,13 +7652,134 @@ class Graphiti {
         }
         domainExclusions.sort((a, b) => a - b);
 
-        const explicitExpression = '-(' + bExpression + ')/(' + aExpression + ')';
-
         return {
             explicitExpression,
             verticalComponents,
             domainExclusions
         };
+    }
+
+    extractDivisionDenominatorExpressions(expression) {
+        const denominators = [];
+        if (!expression || !String(expression).includes('/')) {
+            return denominators;
+        }
+
+        const visit = (node) => {
+            if (!node) {
+                return;
+            }
+
+            if (node.type === 'ParenthesisNode') {
+                visit(node.content);
+                return;
+            }
+
+            if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+                denominators.push(node.args[1].toString());
+            }
+
+            if (Array.isArray(node.args)) {
+                for (const arg of node.args) {
+                    visit(arg);
+                }
+            }
+        };
+
+        try {
+            visit(this.cleanMath.parse(expression));
+        } catch {
+            return [];
+        }
+
+        return denominators;
+    }
+
+    findExpressionRealRoots(expression, rangeMin = -256, rangeMax = 256) {
+        const roots = [];
+        if (!expression || !Number.isFinite(rangeMin) || !Number.isFinite(rangeMax) || rangeMax <= rangeMin) {
+            return roots;
+        }
+
+        let compiledExpression;
+        try {
+            compiledExpression = this.getCompiledExpression(expression);
+        } catch {
+            return roots;
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+        const evaluateAtX = (x) => {
+            scope.x = x;
+            try {
+                const value = compiledExpression.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const addRoot = (root) => {
+            if (!Number.isFinite(root)) {
+                return;
+            }
+
+            const rounded = Math.abs(root - Math.round(root)) < 1e-10 ? Math.round(root) : root;
+            if (!roots.some(existing => Math.abs(existing - rounded) <= 1e-7)) {
+                roots.push(rounded);
+            }
+        };
+
+        const bisectRoot = (leftX, rightX, leftValue) => {
+            let a = leftX;
+            let b = rightX;
+            let fa = leftValue;
+            for (let iter = 0; iter < 60; iter++) {
+                const mid = (a + b) * 0.5;
+                const fm = evaluateAtX(mid);
+                if (fm === null) {
+                    break;
+                }
+                if (Math.abs(fm) <= 1e-10 || Math.abs(b - a) <= 1e-10) {
+                    return mid;
+                }
+                if (fa * fm <= 0) {
+                    b = mid;
+                } else {
+                    a = mid;
+                    fa = fm;
+                }
+            }
+            return (a + b) * 0.5;
+        };
+
+        const samples = 4096;
+        const step = (rangeMax - rangeMin) / samples;
+        let prevX = rangeMin;
+        let prevValue = evaluateAtX(prevX);
+        for (let i = 1; i <= samples; i++) {
+            const x = i === samples ? rangeMax : rangeMin + (i * step);
+            const value = evaluateAtX(x);
+            if (prevValue === null || value === null) {
+                prevX = x;
+                prevValue = value;
+                continue;
+            }
+
+            if (Math.abs(prevValue) <= 1e-9) {
+                addRoot(prevX);
+            } else if (Math.abs(value) <= 1e-9) {
+                addRoot(x);
+            } else if (prevValue * value < 0) {
+                addRoot(bisectRoot(prevX, x, prevValue));
+            }
+
+            prevX = x;
+            prevValue = value;
+        }
+
+        roots.sort((a, b) => a - b);
+        return roots;
     }
 
     getMonomialYImplicitCacheKey(equation) {
