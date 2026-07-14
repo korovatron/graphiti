@@ -6017,6 +6017,15 @@ class Graphiti {
         return func && func.expression ? this.detectFunctionType(func.expression) : 'explicit';
     }
 
+    isMathematicallyImplicitFunction(func) {
+        if (!func || !func.expression) {
+            return false;
+        }
+
+        const functionType = this.detectFunctionType(func.expression);
+        return functionType === 'implicit' || functionType === 'implicit-inequality' || functionType === 'parametric';
+    }
+
     refreshExplicitCoverageForViewport() {
         if (this.plotMode !== 'cartesian') {
             return;
@@ -28931,10 +28940,7 @@ class Graphiti {
 
         // Check if we have implicit functions that will need calculation
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
-        const hasImplicitFunctions = allFunctions.some(f => {
-            const funcType = this.detectFunctionType(f.expression);
-            return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
-        });
+        const hasImplicitFunctions = allFunctions.some(f => this.isMathematicallyImplicitFunction(f));
         
         // Set pending flag BEFORE calculating explicit intersections
         // This prevents updateCombinedIntersections from recalculating tangent/normal with stale data
@@ -28963,6 +28969,7 @@ class Graphiti {
         // Process explicit functions and theta-constant rays for fast intersection detection
         const explicitFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled || f.points.length === 0) return false;
+            if (this.isMathematicallyImplicitFunction(f)) return false;
             const functionType = this.getEffectiveFunctionType(f);
             return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'polar' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         });
@@ -29018,10 +29025,7 @@ class Graphiti {
         // Check for implicit functions by TYPE, not by whether they currently have points
         // During viewport changes, implicit functions may temporarily have empty points arrays
         const allFunctions = this.getCurrentFunctions().filter(f => f.enabled);
-        const hasImplicitFunctions = allFunctions.some(f => {
-            const funcType = this.getEffectiveFunctionType(f);
-            return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
-        });
+        const hasImplicitFunctions = allFunctions.some(f => this.isMathematicallyImplicitFunction(f));
         
         if (!hasImplicitFunctions) {
             this.implicitIntersections = [];
@@ -29048,10 +29052,7 @@ class Graphiti {
             return points.length > 0;
         });
         
-        const implicitFunctions = allFunctions.filter(f => {
-            const funcType = this.getEffectiveFunctionType(f);
-            return funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric';
-        });
+        const implicitFunctions = allFunctions.filter(f => this.isMathematicallyImplicitFunction(f));
         
         // Need at least one implicit function and another function
         if (implicitFunctions.length === 0 || allFunctions.length < 2) {
@@ -29065,8 +29066,8 @@ class Graphiti {
         const highResFunctions = [];
         
         for (const func of allFunctions) {
-            const funcType = this.getEffectiveFunctionType(func);
-            if (funcType === 'implicit' || funcType === 'implicit-inequality') {
+            const detectedType = this.detectFunctionType(func.expression);
+            if (detectedType === 'implicit' || detectedType === 'implicit-inequality') {
                 // Create a copy and replot at high resolution
                 const highResFunc = {
                     ...func,
@@ -29087,7 +29088,7 @@ class Graphiti {
         // Use worker for intersection calculation with high-res data
         const workerData = {
             functions: highResFunctions.map(func => {
-                const funcType = this.getEffectiveFunctionType(func);
+                const funcType = this.detectFunctionType(func.expression);
                 return {
                     id: func.id,
                     expression: func.expression,
@@ -29178,7 +29179,7 @@ class Graphiti {
         for (const func of functions) {
             // For implicit functions, only track expression changes, not point changes
             // since points change with zoom but intersections remain the same
-            const isImplicit = this.getEffectiveFunctionType(func) === 'implicit';
+            const isImplicit = this.isMathematicallyImplicitFunction(func);
             
             let currentState;
             if (isImplicit) {
@@ -29250,7 +29251,7 @@ class Graphiti {
         
         for (const func of functions) {
             if (this.functionChangeFlags.get(func.id)) {
-                const isImplicit = this.getEffectiveFunctionType(func) === 'implicit';
+                const isImplicit = this.isMathematicallyImplicitFunction(func);
                 
                 // For implicit functions, check if we have any cached intersections
                 // If not, we need to calculate
