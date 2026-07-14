@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.5';
+const VERSION = '1.2.6';
 
 class Graphiti {
     constructor() {
