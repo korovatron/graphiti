@@ -2939,48 +2939,8 @@ class Graphiti {
             });
         }
         
-        colorIndicator.addEventListener('click', () => {
-            // Clear badges for this function when toggling visibility
-            this.removeBadgesForFunction(func.id);
-            // Clear intersection badges that involve this function only
-            this.removeIntersectionBadgesForFunction(func.id);
-            // Update integral limit fields to hide them when badges are removed
-            this.updateIntegralLimitFields();
-            func.enabled = !func.enabled;
-            this.updateFunctionVisualState(func, funcDiv);
-            
-            // Invalidate inequality intersection cache when toggling enabled state
-            this.invalidateInequalityIntersectionCache();
-            
-            // Save the updated enabled state to localStorage
-            this.saveFunctionsToLocalStorage();
-            
-            // Update parameter sliders visibility based on enabled functions
-            this.updateParameterSliders();
-            
-            // Replot all functions to ensure proper display with new state
-            this.replotAllFunctions();
-            
-            // Clear intersection arrays and frozen badges before recalculating to prevent stale data
-            this.intersections = [];
-            this.explicitIntersections = [];
-            this.implicitIntersections = [];
-            this.frozenIntersectionBadges = [];
-            this.frozenInterceptBadges = []; // Clear frozen intercepts too
-            this.frozenTurningPointBadges = []; // Clear frozen turning points too
-            
-            // Recalculate intersections and turning points with the new function state
-            if (this.showIntersections) {
-                this.calculateIntersectionsWithWorker();
-            }
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
-                this.draw();
-            }
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
-                this.draw();
-            }
+        colorIndicator.addEventListener('click', async () => {
+            await this.toggleFunctionVisibility(func, funcDiv);
         });
         
         removeBtn.addEventListener('click', () => {
@@ -3000,6 +2960,13 @@ class Graphiti {
     }
     
     updateFunctionVisualState(func, funcDiv) {
+        if (!funcDiv && func && func.id !== undefined) {
+            funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
+        }
+        if (!funcDiv) {
+            return;
+        }
+
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const mathField = funcDiv.querySelector('math-field');
         this.applyFunctionBadgeStyle(func, funcDiv);
@@ -26520,6 +26487,78 @@ class Graphiti {
         this.handleViewportChange();
         
         this.draw();
+    }
+
+    async toggleFunctionVisibility(func, funcDiv) {
+        if (!func) {
+            return;
+        }
+
+        const wasEnabled = !!func.enabled;
+
+        this.removeBadgesForFunction(func.id);
+        this.removeIntersectionBadgesForFunction(func.id);
+        this.updateIntegralLimitFields();
+
+        func.enabled = !func.enabled;
+        this.updateFunctionVisualState(func, funcDiv);
+
+        this.invalidateInequalityIntersectionCache();
+        this.saveFunctionsToLocalStorage();
+        this.updateParameterSliders();
+
+        this.intersections = [];
+        this.explicitIntersections = [];
+        this.implicitIntersections = [];
+        this.frozenIntersectionBadges = [];
+        this.frozenInterceptBadges = [];
+        this.frozenTurningPointBadges = [];
+
+        let replottedEnabledFunction = false;
+        if (func.enabled && !wasEnabled && func.expression && func.expression.trim()) {
+            await this.plotFunctionWithValidation(func);
+            replottedEnabledFunction = true;
+            if (!func.points || func.points.length === 0) {
+                this.removeBadgesForFunction(func.id);
+                this.removeIntersectionBadgesForFunction(func.id);
+            }
+        }
+
+        if (replottedEnabledFunction) {
+            this.updateBadgesFromSignificantPoints();
+        } else {
+            this.refreshSignificantPointsAfterVisibilityChange(func, wasEnabled, func.enabled);
+        }
+        this.updateIntegralPairs();
+        this.draw();
+    }
+
+    refreshSignificantPointsAfterVisibilityChange(func, wasEnabled, isEnabled) {
+        if (wasEnabled && !isEnabled) {
+            if (Array.isArray(this.turningPoints)) {
+                this.turningPoints = this.turningPoints.filter(point => !point.func || point.func.id !== func.id);
+            }
+            if (Array.isArray(this.intercepts)) {
+                this.intercepts = this.intercepts.filter(point => point.functionId !== func.id);
+                if (this.showIntercepts) {
+                    this.cullInterceptMarkers();
+                }
+            }
+        } else if (!wasEnabled && isEnabled) {
+            if (this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
+            if (this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers();
+            }
+        }
+
+        if (this.showIntersections) {
+            this.calculateIntersectionsWithWorker();
+        }
+
+        this.updateBadgesFromSignificantPoints();
     }
 
     replotImplicitFunctions(immediate = false) {
