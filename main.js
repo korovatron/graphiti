@@ -6037,7 +6037,8 @@ class Graphiti {
         return !!func && (
             func.implicitRenderMode === 'affine-explicit' ||
             func.implicitRenderMode === 'monomial-explicit' ||
-            func.implicitRenderMode === 'quadratic-explicit'
+            func.implicitRenderMode === 'quadratic-explicit' ||
+            func.implicitRenderMode === 'quadratic-x-explicit'
         );
     }
 
@@ -7307,56 +7308,94 @@ class Graphiti {
             // Safe implicit fast-path: equations affine in y can be rendered as an
             // explicit equivalent y = -B(x)/A(x), which enables the mature explicit
             // asymptote/hole pipeline and avoids marching-squares artefacts.
+            let denominatorClearedEquation = null;
             if (functionType === 'implicit') {
-                const affineModel = this.tryBuildAffineImplicitModel(equation);
-                if (affineModel) {
-                    const handled = await this.plotImplicitAffineAsExplicit(func, affineModel);
-                    if (handled) {
-                        // Keep implicit cache flow consistent with other implicit render modes.
-                        this.applyImplicitFunctionPoints(func, func.points || []);
-                        this.draw();
-                        this.activeImplicitCalculations.delete(func.id);
+                denominatorClearedEquation = this.buildDenominatorClearedImplicitEquation(equation);
+                const fastPathEquations = denominatorClearedEquation
+                    ? [equation, denominatorClearedEquation]
+                    : [equation];
 
-                        if (this.performance.enabled) {
-                            const elapsed = performance.now() - startTime;
-                            this.performance.plotTimes.set(func.id, elapsed);
+                for (const candidateEquation of fastPathEquations) {
+                    const affineModel = this.tryBuildAffineImplicitModel(candidateEquation);
+                    if (affineModel) {
+                        this.applyDenominatorClearedDomainExclusions(affineModel, candidateEquation);
+                        const handled = await this.plotImplicitAffineAsExplicit(func, affineModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            // Keep implicit cache flow consistent with other implicit render modes.
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            this.draw();
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
                         }
-                        return;
+                    }
+
+                    const monomialModel = this.getCachedMonomialYImplicitModel(candidateEquation);
+                    if (monomialModel) {
+                        this.applyDenominatorClearedDomainExclusions(monomialModel, candidateEquation);
+                        const handled = await this.plotImplicitMonomialYAsExplicit(func, monomialModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            // Keep implicit cache flow consistent with other implicit render modes.
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            this.draw();
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
+                        }
+                    }
+
+                    const quadraticModel = this.getCachedQuadraticYImplicitModel(candidateEquation);
+                    if (quadraticModel) {
+                        this.applyDenominatorClearedDomainExclusions(quadraticModel, candidateEquation);
+                        const handled = await this.plotImplicitQuadraticYAsExplicit(func, quadraticModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            // Keep implicit cache flow consistent with other implicit render modes.
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            this.draw();
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
+                        }
+                    }
+
+                    const quadraticXModel = this.tryBuildQuadraticXImplicitModel(candidateEquation);
+                    if (quadraticXModel) {
+                        this.applyDenominatorClearedDomainExclusions(quadraticXModel, candidateEquation);
+                        const handled = await this.plotImplicitQuadraticXAsExplicit(func, quadraticXModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            // Keep implicit cache flow consistent with other implicit render modes.
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            this.draw();
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
+                        }
                     }
                 }
 
-                const monomialModel = this.getCachedMonomialYImplicitModel(equation);
-                if (monomialModel) {
-                    const handled = await this.plotImplicitMonomialYAsExplicit(func, monomialModel);
-                    if (handled) {
-                        // Keep implicit cache flow consistent with other implicit render modes.
-                        this.applyImplicitFunctionPoints(func, func.points || []);
-                        this.draw();
-                        this.activeImplicitCalculations.delete(func.id);
-
-                        if (this.performance.enabled) {
-                            const elapsed = performance.now() - startTime;
-                            this.performance.plotTimes.set(func.id, elapsed);
-                        }
-                        return;
-                    }
-                }
-
-                const quadraticModel = this.getCachedQuadraticYImplicitModel(equation);
-                if (quadraticModel) {
-                    const handled = await this.plotImplicitQuadraticYAsExplicit(func, quadraticModel);
-                    if (handled) {
-                        // Keep implicit cache flow consistent with other implicit render modes.
-                        this.applyImplicitFunctionPoints(func, func.points || []);
-                        this.draw();
-                        this.activeImplicitCalculations.delete(func.id);
-
-                        if (this.performance.enabled) {
-                            const elapsed = performance.now() - startTime;
-                            this.performance.plotTimes.set(func.id, elapsed);
-                        }
-                        return;
-                    }
+                if (denominatorClearedEquation && denominatorClearedEquation.denominatorClearedFromEquation &&
+                    denominatorClearedEquation.denominatorClearedFromEquation.domainExclusions.length === 0) {
+                    equation = denominatorClearedEquation;
                 }
             }
 
@@ -7449,7 +7488,10 @@ class Graphiti {
                                 return;
                             }
 
-                            const coarsePoints = coarseResult.points || coarseResult;
+                            const coarsePoints = this.filterDenominatorClearedPoints(
+                                coarseResult.points || coarseResult,
+                                equation
+                            );
 
                             if (this.isCalculationCancelled(func.id, calculationId)) {
                                 this.activeImplicitCalculations.delete(func.id);
@@ -7474,7 +7516,7 @@ class Graphiti {
                             this.activeImplicitCalculations.delete(func.id);
                             return;
                         }
-                        points = result.points || result;
+                        points = this.filterDenominatorClearedPoints(result.points || result, equation);
                         implicitRenderMode = 'marching-standard';
                         if (result.gridData) {
                             func.gridData = result.gridData;
@@ -7496,6 +7538,10 @@ class Graphiti {
                 return;
             }
             
+            points = this.filterDenominatorClearedPoints(points, equation);
+            if (equation && equation.denominatorClearedFromEquation) {
+                func.implicitDenominatorCleared = true;
+            }
             func.implicitRenderMode = implicitRenderMode;
             this.applyImplicitFunctionPoints(func, points);
             // Ensure the refined implicit result is visible immediately, not only after next interaction.
@@ -7693,6 +7739,161 @@ class Graphiti {
         }
 
         return denominators;
+    }
+
+    buildDenominatorClearedImplicitEquation(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '(' + equation.leftExpression + ')-(' + equation.rightExpression + ')';
+        const denominators = this.extractDivisionDenominatorExpressions(combinedExpression)
+            .filter((expression, index, expressions) => expression && expressions.indexOf(expression) === index);
+        if (denominators.length === 0 || denominators.length > 4) {
+            return null;
+        }
+
+        const multiplier = denominators.map(expression => '(' + expression + ')').join('*');
+        let clearedLeft = '((' + equation.leftExpression + ')*(' + multiplier + '))';
+        let clearedRight = '((' + equation.rightExpression + ')*(' + multiplier + '))';
+        try {
+            clearedLeft = this.cleanMath.simplify(clearedLeft).toString();
+            clearedRight = this.cleanMath.simplify(clearedRight).toString();
+        } catch {
+            // Keep the generated expressions if simplification fails.
+        }
+
+        if (!clearedLeft || !clearedRight) {
+            return null;
+        }
+
+        if (clearedLeft === equation.leftExpression && clearedRight === equation.rightExpression) {
+            return null;
+        }
+
+        const domainExclusions = [];
+        for (const denominator of denominators) {
+            if (/\by\b/.test(denominator)) {
+                continue;
+            }
+
+            let roots = [];
+            try {
+                const denominatorCoeffs = this.extractPolynomialCoeffs(this.cleanMath.parse(denominator));
+                if (denominatorCoeffs && this.getPolynomialDegree(denominatorCoeffs) >= 1) {
+                    roots = this.findPolynomialRealRoots(denominatorCoeffs);
+                } else {
+                    roots = this.findExpressionRealRoots(denominator);
+                }
+            } catch {
+                roots = this.findExpressionRealRoots(denominator);
+            }
+
+            for (const root of roots) {
+                if (!Number.isFinite(root)) {
+                    continue;
+                }
+                if (!domainExclusions.some(existing => Math.abs(existing - root) <= 1e-6)) {
+                    domainExclusions.push(root);
+                }
+            }
+        }
+        domainExclusions.sort((a, b) => a - b);
+
+        return {
+            leftExpression: clearedLeft,
+            rightExpression: clearedRight,
+            denominatorClearedFromEquation: {
+                leftExpression: equation.leftExpression,
+                rightExpression: equation.rightExpression,
+                denominators,
+                domainExclusions
+            }
+        };
+    }
+
+    applyDenominatorClearedDomainExclusions(model, equation) {
+        const metadata = equation && equation.denominatorClearedFromEquation;
+        if (!model || !metadata || !Array.isArray(metadata.domainExclusions) || metadata.domainExclusions.length === 0) {
+            return;
+        }
+
+        const mergeValues = (existingValues = [], newValues = []) => {
+            const merged = [];
+            for (const value of [...existingValues, ...newValues]) {
+                if (!Number.isFinite(value)) {
+                    continue;
+                }
+                if (!merged.some(existing => Math.abs(existing - value) <= 1e-6)) {
+                    merged.push(value);
+                }
+            }
+            merged.sort((a, b) => a - b);
+            return merged;
+        };
+
+        model.domainExclusions = mergeValues(model.domainExclusions, metadata.domainExclusions);
+        model.removableDomainExclusions = mergeValues(model.removableDomainExclusions, metadata.domainExclusions);
+    }
+
+    filterDenominatorClearedFastPathPoints(func, equation) {
+        const metadata = equation && equation.denominatorClearedFromEquation;
+        if (!func || !metadata || !metadata.leftExpression || !metadata.rightExpression || !Array.isArray(func.points)) {
+            return;
+        }
+
+        const filteredPoints = this.filterDenominatorClearedPoints(func.points, equation);
+        func.points = filteredPoints;
+        func.displayPoints = filteredPoints;
+        func.implicitDenominatorCleared = true;
+    }
+
+    filterDenominatorClearedPoints(points, equation) {
+        const metadata = equation && equation.denominatorClearedFromEquation;
+        if (!metadata || !metadata.leftExpression || !metadata.rightExpression || !Array.isArray(points)) {
+            return points;
+        }
+
+        let leftCompiled;
+        let rightCompiled;
+        try {
+            leftCompiled = this.getCompiledExpression(metadata.leftExpression);
+            rightCompiled = this.getCompiledExpression(metadata.rightExpression);
+        } catch {
+            return points;
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        const filteredPoints = [];
+        for (const point of points) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                filteredPoints.push({ x: NaN, y: NaN, connected: false });
+                continue;
+            }
+
+            scope.x = point.x;
+            scope.y = point.y;
+            let keepPoint = false;
+            try {
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                if (Number.isFinite(leftValue) && Number.isFinite(rightValue)) {
+                    const residual = Math.abs(leftValue - rightValue);
+                    const scale = Math.max(1, Math.abs(leftValue), Math.abs(rightValue));
+                    keepPoint = residual <= Math.max(1e-4, scale * 1e-4);
+                }
+            } catch {
+                keepPoint = false;
+            }
+
+            if (keepPoint) {
+                filteredPoints.push({ ...point });
+            } else {
+                filteredPoints.push({ x: NaN, y: NaN, connected: false });
+            }
+        }
+
+        return filteredPoints;
     }
 
     findExpressionRealRoots(expression, rangeMin = -256, rangeMax = 256) {
@@ -10625,6 +10826,129 @@ class Graphiti {
                 holes: filteredHoles.map(hole => ({ ...hole }))
             });
         }
+
+        return true;
+    }
+
+    swapImplicitXYExpression(expression) {
+        if (!expression) {
+            return expression;
+        }
+
+        return String(expression)
+            .replace(/\bx\b/g, '__graphiti_swap_x__')
+            .replace(/\by\b/g, 'x')
+            .replace(/__graphiti_swap_x__/g, 'y');
+    }
+
+    tryBuildQuadraticXImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const swappedEquation = {
+            leftExpression: this.swapImplicitXYExpression(equation.leftExpression),
+            rightExpression: this.swapImplicitXYExpression(equation.rightExpression)
+        };
+        const swappedModel = this.tryBuildQuadraticYImplicitModel(swappedEquation);
+        if (!swappedModel) {
+            return null;
+        }
+
+        return {
+            ...swappedModel,
+            cacheKey: null,
+            quadraticXImplicitModel: true
+        };
+    }
+
+    async plotImplicitQuadraticXAsExplicit(func, quadraticXModel) {
+        if (!func || !quadraticXModel) {
+            return false;
+        }
+
+        const proxyFunc = {
+            ...func,
+            points: [],
+            displayPoints: []
+        };
+
+        const handled = await this.plotImplicitQuadraticYAsExplicit(proxyFunc, quadraticXModel);
+        if (!handled || !Array.isArray(proxyFunc.points) || proxyFunc.points.length === 0) {
+            return false;
+        }
+
+        func.points = proxyFunc.points.map(point => {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                return { x: NaN, y: NaN, connected: false };
+            }
+            return {
+                ...point,
+                x: point.y,
+                y: point.x
+            };
+        });
+        func.displayPoints = func.points;
+        func.holes = Array.isArray(proxyFunc.holes)
+            ? proxyFunc.holes
+                .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+                .map(hole => ({ x: hole.y, y: hole.x }))
+            : [];
+
+        const sourceAsymptotes = proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] };
+        const vertical = [];
+        const horizontal = [];
+        const oblique = [];
+        const addUnique = (target, value, tolerance = 1e-6) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            const snapped = Math.abs(value - Math.round(value)) < 1e-10 ? Math.round(value) : value;
+            if (!target.some(existing => Math.abs(existing - snapped) <= tolerance)) {
+                target.push(snapped);
+            }
+        };
+        const addUniqueOblique = (line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return;
+            }
+            if (!oblique.some(existing =>
+                Math.abs(existing.m - line.m) <= Math.max(1e-8, Math.abs(existing.m) * 1e-6) &&
+                Math.abs(existing.b - line.b) <= Math.max(1e-8, Math.abs(existing.b) * 1e-6)
+            )) {
+                oblique.push(line);
+            }
+        };
+
+        for (const value of Array.isArray(sourceAsymptotes.vertical) ? sourceAsymptotes.vertical : []) {
+            addUnique(horizontal, value);
+        }
+        for (const value of Array.isArray(sourceAsymptotes.horizontal) ? sourceAsymptotes.horizontal : []) {
+            addUnique(vertical, value);
+        }
+        for (const line of Array.isArray(sourceAsymptotes.oblique) ? sourceAsymptotes.oblique : []) {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                continue;
+            }
+            if (Math.abs(line.m) <= 1e-10) {
+                addUnique(vertical, line.b);
+            } else {
+                addUniqueOblique({
+                    m: 1 / line.m,
+                    b: -line.b / line.m,
+                    direction: Number.isFinite(line.direction) ? line.direction : 0,
+                    source: line.source
+                });
+            }
+        }
+
+        vertical.sort((a, b) => a - b);
+        horizontal.sort((a, b) => a - b);
+        oblique.sort((a, b) => a.m - b.m);
+        this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
+        func.quadraticXExplicitExpressions = quadraticXModel.branchExpressions.slice();
+        func.implicitRenderMode = 'quadratic-x-explicit';
+        this.updateFunctionAsymptoteInfo(func);
 
         return true;
     }
@@ -29001,13 +29325,89 @@ class Graphiti {
             result = [];
         }
 
-        result = result.filter(pt => !this.isPointAtFunctionHole(pt.functionId, pt.x, pt.y));
+        result = result.filter(pt =>
+            !this.isPointAtFunctionHole(pt.functionId, pt.x, pt.y) &&
+            this.isValidAxisInterceptPoint(pt)
+        );
         
         // Stamp stable IDs onto each intercept
         for (const pt of result) {
             pt.id = this.generateSignificantPointId(pt.type, pt.functionId, null, pt.x, pt.y);
         }
         return result;
+    }
+
+    isValidAxisInterceptPoint(point) {
+        if (!point || point.functionId === null || point.functionId === undefined) {
+            return true;
+        }
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+            return false;
+        }
+
+        const func = this.findFunctionById(point.functionId);
+        if (!func || !func.expression || !func.expression.trim()) {
+            return true;
+        }
+
+        const functionType = this.detectFunctionType(func.expression);
+        try {
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                const equation = functionType === 'implicit-inequality'
+                    ? this.parseImplicitInequality(func.expression)
+                    : this.parseImplicitEquation(func.expression);
+                if (!equation) {
+                    return true;
+                }
+
+                const leftCompiled = this.getCompiledExpression(equation.leftExpression);
+                const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+                const scope = this.getEvaluationScope({ x: point.x, y: point.y, pi: Math.PI, e: Math.E });
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) {
+                    return false;
+                }
+
+                const residual = Math.abs(leftValue - rightValue);
+                const scale = Math.max(1, Math.abs(leftValue), Math.abs(rightValue));
+                return residual <= Math.max(1e-4, scale * 1e-4);
+            }
+
+            if (functionType === 'explicit' || functionType === 'explicit-inequality') {
+                let expression = func.expression;
+                if (functionType === 'explicit-inequality') {
+                    const inequality = this.parseInequality(func.expression);
+                    if (!inequality || inequality.leftSide.toLowerCase() !== 'y') {
+                        return true;
+                    }
+                    expression = 'y=' + inequality.rightSide;
+                }
+
+                let converted = this.convertFromLatex(expression);
+                if (converted.includes('=')) {
+                    converted = converted.split('=').slice(1).join('=').trim();
+                }
+                if (this.angleMode === 'degrees') {
+                    converted = this.convertTrigToDegreeMode(converted);
+                }
+
+                const compiled = this.getCompiledExpression(converted);
+                const scope = this.getEvaluationScope({ x: point.x, pi: Math.PI, e: Math.E });
+                const yValue = compiled.evaluate(scope);
+                if (!Number.isFinite(yValue)) {
+                    return false;
+                }
+
+                const residual = Math.abs(yValue - point.y);
+                const scale = Math.max(1, Math.abs(yValue), Math.abs(point.y));
+                return residual <= Math.max(1e-4, scale * 1e-4);
+            }
+        } catch {
+            return false;
+        }
+
+        return true;
     }
 
     isPointAtFunctionHole(functionId, x, y) {
