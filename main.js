@@ -3282,7 +3282,7 @@ class Graphiti {
                             throw new Error('Invalid implicit equation/inequality format');
                         }
                         // Test evaluation at multiple sample points (some may hit asymptotes)
-                        const testPoints = [[1, 1], [0, 0], [2, 2], [-1, -1], [0.5, 0.5]];
+                        const testPoints = [[1, 2], [2, 1], [-1, 2], [2, -1], [0.5, -0.5], [1, 1], [0, 0], [2, 2], [-1, -1], [0.5, 0.5]];
                         let validEvaluation = false;
                         for (const [testX, testY] of testPoints) {
                             try {
