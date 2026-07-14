@@ -32118,6 +32118,43 @@ class Graphiti {
         // Get current viewport bounds for searching
         const xMin = this.plotMode === 'polar' ? -10 : this.viewport.minX;
         const xMax = this.plotMode === 'polar' ? 10 : this.viewport.maxX;
+
+        const evaluateDerivativeAt = (xValue) => {
+            let processedDerivativeExpr = derivativeStr;
+            if (this.angleMode === 'degrees') {
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedDerivativeExpr);
+                if (hasRegularTrigWithX) {
+                    processedDerivativeExpr = this.convertTrigToDegreeMode(processedDerivativeExpr);
+                }
+            }
+
+            const compiledDerivative = this.getCompiledExpression(processedDerivativeExpr);
+            return compiledDerivative.evaluate(this.getEvaluationScope({x: xValue}));
+        };
+
+        const isLocallyFlatDerivativeRoot = (xValue) => {
+            const range = Math.max(Math.abs(xMax - xMin), 1);
+            const offset = Math.max(range * 0.002, 1e-3);
+            const sampleOffsets = [-2 * offset, -offset, offset, 2 * offset];
+            const sampledValues = [];
+
+            for (const sampleOffset of sampleOffsets) {
+                try {
+                    const value = evaluateDerivativeAt(xValue + sampleOffset);
+                    if (Number.isFinite(value)) {
+                        sampledValues.push(value);
+                    }
+                } catch {
+                    // Domain boundaries and asymptotes are handled by the surrounding candidate filters.
+                }
+            }
+
+            if (sampledValues.length < 3) {
+                return false;
+            }
+
+            return sampledValues.every(value => Math.abs(value) <= 1e-7);
+        };
         
         // Use numerical method to find roots of f'(x) = 0
         const roots = this.findRootsInRange(derivativeStr, xMin, xMax);
@@ -32207,6 +32244,10 @@ class Graphiti {
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
                 if (isFinite(x) && isFinite(y)) {
+                    if (type === 'inflection' && isLocallyFlatDerivativeRoot(x)) {
+                        continue;
+                    }
+
                     // Snap very close points to exactly origin
                     let snappedX = x;
                     let snappedY = y;
