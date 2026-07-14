@@ -9227,6 +9227,36 @@ class Graphiti {
                 const crossesExclusion = segmentBreakXs.some(exclusionX => exclusionX > minX && exclusionX < maxX);
                 if (crossesExclusion) {
                     pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                    continue;
+                }
+
+                const exclusionApproachDistance = Math.max(
+                    exclusionTolerance * 1000,
+                    Math.abs(xSpan) / Math.max(1, this.viewport.width) * 2,
+                    Math.abs(xSpan) * 1e-5
+                );
+                const departsVerticalExclusion = segmentBreakXs.some(exclusionX => {
+                    const currentDistance = Math.abs(current.x - exclusionX);
+                    const nextDistance = Math.abs(next.x - exclusionX);
+                    return currentDistance <= exclusionApproachDistance && nextDistance > currentDistance;
+                });
+                if (departsVerticalExclusion) {
+                    const currentScreen = this.worldToScreen(current.x, current.y);
+                    const nextScreen = this.worldToScreen(next.x, next.y);
+                    const screenDx = Math.abs(nextScreen.x - currentScreen.x);
+                    const screenDy = Math.abs(nextScreen.y - currentScreen.y);
+                    const currentOutsideViewport = current.y < this.viewport.minY || current.y > this.viewport.maxY;
+                    if (currentOutsideViewport || (screenDx <= 3 && screenDy >= 24)) {
+                        pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
+                        if (currentOutsideViewport && next.y >= this.viewport.minY && next.y <= this.viewport.maxY) {
+                            const boundaryY = current.y > this.viewport.maxY ? this.viewport.maxY : this.viewport.minY;
+                            const interpolation = (boundaryY - current.y) / (next.y - current.y);
+                            const boundaryX = current.x + interpolation * (next.x - current.x);
+                            if (Number.isFinite(boundaryX) && interpolation >= 0 && interpolation <= 1) {
+                                pointsWithExclusionBreaks.push({ x: boundaryX, y: boundaryY, connected: false });
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -9298,10 +9328,7 @@ class Graphiti {
                 return uniqueNumbers(estimated);
             }
 
-            const filteredEstimated = estimated.filter(value =>
-                !exact.some(exactValue => Math.abs(value - exactValue) <= 5e-3)
-            );
-            return uniqueNumbers([...exact, ...filteredEstimated], 1e-6);
+            return uniqueNumbers(exact, 1e-6);
         };
 
         if (cachedStructure) {
