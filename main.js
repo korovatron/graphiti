@@ -1861,7 +1861,8 @@ class Graphiti {
             },
             'better-than-desmos': {
                 expressions: [
-                    'y^2=\\frac{1}{x^2-y^3}'
+                    'y^2=\\frac{1}{x^2-y^3}',
+                    '\\left(y-1\\right)\\left(y-\\frac{1}{x}\\right)=0'
                 ],
                 description: 'Better than Desmos Demo',
                 viewport: { minX: -4, maxX: 4, minY: -3, maxY: 3 }
@@ -10699,6 +10700,43 @@ class Graphiti {
         if (zeroSlopeObliqueHorizontals.length > 0) {
             horizontal = uniqueNumbers([...horizontal, ...zeroSlopeObliqueHorizontals], 1e-3);
         }
+        const horizontalLineIsQuadraticComponent = (yValue) => {
+            if (!aCompiled || !bCompiled || !cCompiled || !Number.isFinite(yValue)) {
+                return false;
+            }
+
+            const sampleXs = [-64, -16, -4, -1, -0.25, 0.25, 1, 4, 16, 64];
+            let acceptedSamples = 0;
+            let maxNormalisedResidual = 0;
+
+            for (const x of sampleXs) {
+                if (segmentBreakXs.some(exclusionX => Math.abs(x - exclusionX) <= exclusionTolerance)) {
+                    continue;
+                }
+
+                coefficientScope.x = x;
+                try {
+                    const aValue = aCompiled.evaluate(coefficientScope);
+                    const bValue = bCompiled.evaluate(coefficientScope);
+                    const cValue = cCompiled.evaluate(coefficientScope);
+                    if (!Number.isFinite(aValue) || !Number.isFinite(bValue) || !Number.isFinite(cValue)) {
+                        continue;
+                    }
+
+                    const quadraticTerm = aValue * yValue * yValue;
+                    const linearTerm = bValue * yValue;
+                    const residual = Math.abs(quadraticTerm + linearTerm + cValue);
+                    const scale = Math.max(1, Math.abs(quadraticTerm), Math.abs(linearTerm), Math.abs(cValue));
+                    maxNormalisedResidual = Math.max(maxNormalisedResidual, residual / scale);
+                    acceptedSamples++;
+                } catch {
+                    // Ignore samples where this horizontal candidate is outside the original domain.
+                }
+            }
+
+            return acceptedSamples >= 5 && maxNormalisedResidual <= 1e-8;
+        };
+        horizontal = horizontal.filter(value => !horizontalLineIsQuadraticComponent(value));
         const oblique = rawOblique.filter(line => Math.abs(line.m) > zeroSlopeObliqueTolerance);
 
         const removableDomainExclusions = Array.isArray(quadraticModel.removableDomainExclusions)
@@ -10739,9 +10777,17 @@ class Graphiti {
 
             const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6];
             const sideMeans = [];
+            const leftValues = [];
+            const rightValues = [];
             for (const delta of deltas) {
                 const left = evalY(x0 - delta);
                 const right = evalY(x0 + delta);
+                if (left !== null && Math.abs(left) < 1e6) {
+                    leftValues.push(left);
+                }
+                if (right !== null && Math.abs(right) < 1e6) {
+                    rightValues.push(right);
+                }
                 if (left === null || right === null) {
                     continue;
                 }
@@ -10752,11 +10798,76 @@ class Graphiti {
                 }
             }
 
-            if (sideMeans.length === 0) {
-                return null;
+            if (sideMeans.length > 0) {
+                return sideMeans[sideMeans.length - 1];
             }
 
-            return sideMeans[sideMeans.length - 1];
+            const stableOneSidedLimit = (values) => {
+                if (values.length < 3) {
+                    return null;
+                }
+                const tail = values.slice(-3);
+                const maxDelta = Math.max(
+                    Math.abs(tail[2] - tail[1]),
+                    Math.abs(tail[1] - tail[0])
+                );
+                const scale = Math.max(1, ...tail.map(value => Math.abs(value)));
+                return maxDelta <= Math.max(1e-3, scale * 5e-3) ? tail[2] : null;
+            };
+
+            const leftLimit = stableOneSidedLimit(leftValues);
+            if (leftLimit !== null) {
+                return leftLimit;
+            }
+
+            return stableOneSidedLimit(rightValues);
+        };
+
+        const hasQuadraticBranchVerticalBlowUp = (branchExpression, x0) => {
+            let expressionForEval = branchExpression;
+            if (this.angleMode === 'degrees') {
+                expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+            }
+
+            let compiledExpression;
+            try {
+                compiledExpression = this.getCompiledExpression(expressionForEval);
+            } catch {
+                return false;
+            }
+
+            const evalScope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+            const evalY = (x) => {
+                evalScope.x = x;
+                try {
+                    const value = compiledExpression.evaluate(evalScope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            for (const direction of [-1, 1]) {
+                const values = [];
+                for (const delta of [1e-2, 1e-3, 1e-4, 1e-5, 1e-6]) {
+                    const value = evalY(x0 + direction * delta);
+                    if (value !== null) {
+                        values.push(Math.abs(value));
+                    }
+                }
+
+                if (values.length < 3) {
+                    continue;
+                }
+
+                const tail = values.slice(-3);
+                const growsTowardExclusion = tail[2] > 1e4 && tail[2] > tail[1] * 5 && tail[1] > tail[0] * 5;
+                if (growsTowardExclusion) {
+                    return true;
+                }
+            }
+
+            return false;
         };
 
         for (const exclusionX of removableDomainExclusions) {
@@ -10767,6 +10878,18 @@ class Graphiti {
                 }
             }
         }
+
+        const derivedVerticalAsymptotes = [];
+        for (const exclusionX of domainExclusions) {
+            const hasBlowUp = quadraticModel.branchExpressions.some(branchExpression =>
+                hasQuadraticBranchVerticalBlowUp(branchExpression, exclusionX)
+            );
+            if (hasBlowUp) {
+                derivedVerticalAsymptotes.push(exclusionX);
+            }
+        }
+        const finalVertical = uniqueNumbers([...vertical, ...derivedVerticalAsymptotes]);
+
         const filteredHoles = [];
         for (const hole of mergedHoles) {
             if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
@@ -10780,7 +10903,7 @@ class Graphiti {
             }
         }
 
-        this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
+        this.updateFunctionAsymptoteData(func, finalVertical, horizontal, oblique, null);
         func.holes = filteredHoles;
         func.quadraticYExplicitExpressions = quadraticModel.branchExpressions.slice();
         func.quadraticYCacheKey = quadraticModel.cacheKey || null;
@@ -10792,7 +10915,7 @@ class Graphiti {
             this.setCachedQuadraticYImplicitStructure(quadraticModel.cacheKey, {
                 ...(cachedStructure || {}),
                 quadraticBranchStructureReady: true,
-                vertical: vertical.slice(),
+                vertical: finalVertical.slice(),
                 horizontal: horizontal.slice(),
                 oblique: oblique.map(line => ({ ...line })),
                 holes: filteredHoles.map(hole => ({ ...hole }))
@@ -36841,6 +36964,7 @@ class Graphiti {
             } else {
                 // Perfect cache hit - viewport and data match
                 this.ctx.drawImage(cached.canvas, 0, 0);
+                this.drawFunctionHoles(func);
                 return;
             }
         }
@@ -37023,6 +37147,7 @@ class Graphiti {
         
         // Draw to main canvas
         this.ctx.drawImage(offscreenCanvas, 0, 0);
+        this.drawFunctionHoles(func);
     }
     
     groupConnectedPoints(points) {
