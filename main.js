@@ -8451,6 +8451,17 @@ class Graphiti {
             simplifyGeneratedExpression('(-(' + bExpression + ')-sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))')
         ];
 
+        let verticalComponents = [];
+        try {
+            verticalComponents = this.findQuadraticImplicitVerticalComponents(
+                this.getCompiledExpression(aExpression),
+                this.getCompiledExpression(bExpression),
+                this.getCompiledExpression(cExpression)
+            );
+        } catch {
+            verticalComponents = [];
+        }
+
         const domainExclusionsRaw = [
             ...this.detectVerticalAsymptotes(combinedExpression),
             ...this.detectVerticalAsymptotes(aExpression),
@@ -8496,6 +8507,7 @@ class Graphiti {
             discriminantExpression,
             branchExpressions,
             discriminantRoots: this.findMonomialRadicandRoots(discriminantExpression),
+            verticalComponents,
             domainExclusions,
             removableDomainExclusions,
             implicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation) ||
@@ -8904,6 +8916,115 @@ class Graphiti {
                     if (!candidates.some(existing => Math.abs(existing - rounded) <= 1e-5)) {
                         candidates.push(rounded);
                     }
+                }
+            }
+
+            prevX = x;
+            prevA = currentA;
+        }
+
+        candidates.sort((a, b) => a - b);
+        return candidates;
+    }
+
+    findQuadraticImplicitVerticalComponents(aCompiled, bCompiled, cCompiled) {
+        if (!aCompiled || !bCompiled || !cCompiled) {
+            return [];
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+        const evaluateAtX = (compiled, x) => {
+            scope.x = x;
+            try {
+                const value = compiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const minX = -256;
+        const maxX = 256;
+        const samples = 4096;
+        const step = (maxX - minX) / samples;
+
+        let scaleA = 0;
+        let scaleB = 0;
+        let scaleC = 0;
+        for (let i = 0; i <= samples; i++) {
+            const x = minX + (i * step);
+            const aValue = evaluateAtX(aCompiled, x);
+            const bValue = evaluateAtX(bCompiled, x);
+            const cValue = evaluateAtX(cCompiled, x);
+            if (aValue !== null) scaleA = Math.max(scaleA, Math.abs(aValue));
+            if (bValue !== null) scaleB = Math.max(scaleB, Math.abs(bValue));
+            if (cValue !== null) scaleC = Math.max(scaleC, Math.abs(cValue));
+        }
+
+        const aTolerance = Math.max(1e-7, scaleA * 1e-6);
+        const bTolerance = Math.max(1e-7, scaleB * 1e-6);
+        const cTolerance = Math.max(1e-7, scaleC * 1e-6);
+        const isCommonZero = (x) => {
+            const aValue = evaluateAtX(aCompiled, x);
+            const bValue = evaluateAtX(bCompiled, x);
+            const cValue = evaluateAtX(cCompiled, x);
+            return aValue !== null && bValue !== null && cValue !== null &&
+                Math.abs(aValue) <= aTolerance &&
+                Math.abs(bValue) <= bTolerance &&
+                Math.abs(cValue) <= cTolerance;
+        };
+
+        const bisectRoot = (compiled, leftX, rightX, leftValue) => {
+            let a = leftX;
+            let b = rightX;
+            let fa = leftValue;
+
+            for (let iter = 0; iter < 50; iter++) {
+                const mid = (a + b) * 0.5;
+                const fm = evaluateAtX(compiled, mid);
+                if (fm === null) {
+                    break;
+                }
+
+                if (Math.abs(fm) <= aTolerance || Math.abs(b - a) <= 1e-9) {
+                    return mid;
+                }
+
+                if (fa * fm <= 0) {
+                    b = mid;
+                } else {
+                    a = mid;
+                    fa = fm;
+                }
+            }
+
+            return (a + b) * 0.5;
+        };
+
+        const candidates = [];
+        let prevX = minX;
+        let prevA = evaluateAtX(aCompiled, prevX);
+
+        for (let i = 1; i <= samples; i++) {
+            const x = minX + (i * step);
+            const currentA = evaluateAtX(aCompiled, x);
+            if (prevA === null || currentA === null) {
+                prevX = x;
+                prevA = currentA;
+                continue;
+            }
+
+            let root = null;
+            if (prevA * currentA < 0) {
+                root = bisectRoot(aCompiled, prevX, x, prevA);
+            } else if (Math.abs(currentA) <= aTolerance) {
+                root = x;
+            }
+
+            if (root !== null && Number.isFinite(root) && isCommonZero(root)) {
+                const rounded = Math.abs(root - Math.round(root)) < 1e-8 ? Math.round(root) : root;
+                if (!candidates.some(existing => Math.abs(existing - rounded) <= 1e-5)) {
+                    candidates.push(rounded);
                 }
             }
 
@@ -10470,6 +10591,10 @@ class Graphiti {
         const domainExclusions = Array.isArray(quadraticModel.domainExclusions)
             ? quadraticModel.domainExclusions.filter(value => Number.isFinite(value))
             : [];
+        const verticalComponents = Array.isArray(quadraticModel.verticalComponents)
+            ? quadraticModel.verticalComponents.filter(value => Number.isFinite(value))
+            : [];
+        const isAtVerticalComponent = (x) => verticalComponents.some(value => Math.abs(value - x) <= 1e-5);
         const compileQuadraticCoefficient = (expression) => {
             try {
                 const expressionForEval = this.angleMode === 'degrees'
@@ -10680,7 +10805,7 @@ class Graphiti {
         const vertical = uniqueNumbers([
             ...proxyAsymptotes.flatMap(data => Array.isArray(data.vertical) ? data.vertical : []),
             ...(Array.isArray(implicitAsymptotes.vertical) ? implicitAsymptotes.vertical : [])
-        ]);
+        ]).filter(value => !isAtVerticalComponent(value));
         let horizontal = quadraticHorizontalAsymptotes.length > 0
             ? uniqueNumbers([
                 ...quadraticHorizontalAsymptotes,
@@ -10896,6 +11021,9 @@ class Graphiti {
             if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
                 continue;
             }
+            if (isAtVerticalComponent(hole.x)) {
+                continue;
+            }
             const duplicate = filteredHoles.some(existing =>
                 Math.abs(existing.x - hole.x) <= 1e-5 && Math.abs(existing.y - hole.y) <= 1e-5
             );
@@ -10904,11 +11032,25 @@ class Graphiti {
             }
         }
 
+        if (verticalComponents.length > 0) {
+            const ySpan = this.viewport.maxY - this.viewport.minY;
+            const yMin = this.viewport.minY - ySpan * 0.5;
+            const yMax = this.viewport.maxY + ySpan * 0.5;
+
+            for (const x of verticalComponents) {
+                func.points.push({ x: NaN, y: NaN, connected: false });
+                func.points.push({ x, y: yMin, connected: false });
+                func.points.push({ x, y: yMax, connected: true });
+                func.points.push({ x: NaN, y: NaN, connected: false });
+            }
+        }
+
         this.updateFunctionAsymptoteData(func, finalVertical, horizontal, oblique, null);
         func.holes = filteredHoles;
         func.quadraticYExplicitExpressions = quadraticModel.branchExpressions.slice();
         func.quadraticYCacheKey = quadraticModel.cacheKey || null;
         func.quadraticYDiscriminantExpression = quadraticModel.discriminantExpression;
+        func.quadraticYVerticalComponents = verticalComponents.slice();
         func.implicitRenderMode = 'quadratic-explicit';
         this.updateFunctionAsymptoteInfo(func);
 
@@ -10919,7 +11061,8 @@ class Graphiti {
                 vertical: finalVertical.slice(),
                 horizontal: horizontal.slice(),
                 oblique: oblique.map(line => ({ ...line })),
-                holes: filteredHoles.map(hole => ({ ...hole }))
+                holes: filteredHoles.map(hole => ({ ...hole })),
+                verticalComponents: verticalComponents.slice()
             });
         }
 
@@ -36804,12 +36947,58 @@ class Graphiti {
             this.ctx.stroke();
         }
 
+        this.drawExplicitImplicitVerticalComponents(func);
+
         // Draw asymptotes after the curve so dashed obliques remain visible.
         this.drawFunctionAsymptotes(func);
         this.drawFunctionHoles(func);
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
+    }
+
+    drawExplicitImplicitVerticalComponents(func, context = this.ctx) {
+        if (!func || !context) {
+            return;
+        }
+
+        const componentSources = [
+            ...(Array.isArray(func.affineVerticalComponents) ? func.affineVerticalComponents : []),
+            ...(Array.isArray(func.quadraticYVerticalComponents) ? func.quadraticYVerticalComponents : [])
+        ];
+        const verticalComponents = [];
+        for (const x of componentSources) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+            if (!verticalComponents.some(existing => Math.abs(existing - x) <= 1e-7)) {
+                verticalComponents.push(x);
+            }
+        }
+
+        if (verticalComponents.length === 0) {
+            return;
+        }
+
+        context.save();
+        context.strokeStyle = func.color;
+        context.lineWidth = this.getLineWidth(3);
+        context.setLineDash([]);
+
+        for (const x of verticalComponents) {
+            if (x < this.viewport.minX || x > this.viewport.maxX) {
+                continue;
+            }
+
+            const start = this.worldToScreen(x, this.viewport.minY);
+            const end = this.worldToScreen(x, this.viewport.maxY);
+            context.beginPath();
+            context.moveTo(start.x, start.y);
+            context.lineTo(end.x, end.y);
+            context.stroke();
+        }
+
+        context.restore();
     }
 
     getCanvasBackgroundColor() {
