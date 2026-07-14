@@ -9508,7 +9508,11 @@ class Graphiti {
                     domainExclusions.some(exclusionX => Math.abs(root - exclusionX) <= 1e-6)
                 ),
                 ...zeroLimitExclusions
-            ].filter((root, index, roots) => roots.findIndex(other => Math.abs(other - root) <= 1e-7) === index);
+            ]
+                .filter(root => !Array.isArray(monomialModel.implicitAsymptotes?.vertical) ||
+                    !monomialModel.implicitAsymptotes.vertical.some(asymptoteX => Math.abs(asymptoteX - root) <= 1e-6)
+                )
+                .filter((root, index, roots) => roots.findIndex(other => Math.abs(other - root) <= 1e-7) === index);
             if (excludedRoots.length > 0) {
                 const xSpan = this.viewport.maxX - this.viewport.minX;
                 const exclusionTolerance = Math.max(1e-12, Math.abs(xSpan) * 1e-8);
@@ -9879,19 +9883,6 @@ class Graphiti {
             });
         }
 
-        if (verticalComponents.length > 0) {
-            const ySpan = this.viewport.maxY - this.viewport.minY;
-            const yMin = this.viewport.minY - ySpan * 0.5;
-            const yMax = this.viewport.maxY + ySpan * 0.5;
-
-            for (const x of verticalComponents) {
-                func.points.push({ x: NaN, y: NaN, connected: false });
-                func.points.push({ x, y: yMin, connected: false });
-                func.points.push({ x, y: yMax, connected: true });
-                func.points.push({ x: NaN, y: NaN, connected: false });
-            }
-        }
-
         this.updateFunctionAsymptoteData(func, filteredVertical, horizontal, oblique, null);
         func.holes = filteredHoles;
         func.monomialYExplicitExpressions = branchExpressions.slice();
@@ -9987,11 +9978,9 @@ class Graphiti {
             };
             const numeratorRoots = findNumeratorRoots()
                 .filter(root => !denominatorRoots.some(exclusion => Math.abs(exclusion - root) <= 1e-7));
-            if (numeratorRoots.length > 0) {
-                return numeratorRoots
-                    .map(root => Math.abs(root - Math.round(root)) < 1e-10 ? Math.round(root) : root)
-                    .sort((a, b) => a - b);
-            }
+            return numeratorRoots
+                .map(root => Math.abs(root - Math.round(root)) < 1e-10 ? Math.round(root) : root)
+                .sort((a, b) => a - b);
         }
 
         let compiledExpression;
