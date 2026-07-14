@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.6';
+const VERSION = '1.2.8';
 
 class Graphiti {
     constructor() {
@@ -29156,6 +29156,10 @@ class Graphiti {
         // Rebind any significant-point badges (especially intersections) to recalculated points.
         // This is critical for async implicit recalculations where marker locations update later.
         if (!this.implicitIntersectionsPending) {
+            if (this.showIntercepts && !this.isViewportChanging) {
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers();
+            }
             this.updateBadgesFromSignificantPoints();
             this.updateBadgeScreenPositions();
         }
@@ -29779,6 +29783,10 @@ class Graphiti {
                     const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
                     const leftCompiled = this.getCompiledExpression(equation.leftExpression);
                     const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+
+                    if (this.isImplicitAxisComponent(leftCompiled, rightCompiled, scope, 'x', xMin, xMax)) {
+                        return [];
+                    }
                     
                     let prevValue = null;
                     let prevX = null;
@@ -29821,8 +29829,17 @@ class Graphiti {
                             
                             if (isFinite(value) && prevValue !== null && prevValue * value <= 0) {
                                 // Sign change detected - intercept between prevX and x
-                                // Use linear interpolation for better accuracy
-                                let interceptX = prevX - prevValue * (x - prevX) / (value - prevValue);
+                                // Use bisection for stable accuracy across viewport-dependent sample spacing.
+                                let interceptX = this.refineImplicitAxisRoot(
+                                    leftCompiled,
+                                    rightCompiled,
+                                    scope,
+                                    'x',
+                                    prevX,
+                                    x,
+                                    prevValue,
+                                    value
+                                );
                                 
                                 if (isFinite(interceptX)) {
                                     // Filter out intercepts AT asymptotes (fake crossings from discontinuities)
@@ -30154,6 +30171,10 @@ class Graphiti {
                     const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
                     const leftCompiled = this.getCompiledExpression(equation.leftExpression);
                     const rightCompiled = this.getCompiledExpression(equation.rightExpression);
+
+                    if (this.isImplicitAxisComponent(leftCompiled, rightCompiled, scope, 'y', yMin, yMax)) {
+                        return [];
+                    }
                     
                     let prevValue = null;
                     let prevY = null;
@@ -30196,8 +30217,17 @@ class Graphiti {
                             
                             if (isFinite(value) && prevValue !== null && prevValue * value <= 0) {
                                 // Sign change detected - intercept between prevY and y
-                                // Use linear interpolation for better accuracy
-                                let interceptY = prevY - prevValue * (y - prevY) / (value - prevValue);
+                                // Use bisection for stable accuracy across viewport-dependent sample spacing.
+                                let interceptY = this.refineImplicitAxisRoot(
+                                    leftCompiled,
+                                    rightCompiled,
+                                    scope,
+                                    'y',
+                                    prevY,
+                                    y,
+                                    prevValue,
+                                    value
+                                );
                                 
                                 if (isFinite(interceptY)) {
                                     // Snap very close intercepts to exactly y=0
@@ -30499,6 +30529,96 @@ class Graphiti {
         }
         
         return result;
+    }
+
+    isImplicitAxisComponent(leftCompiled, rightCompiled, scope, variable, minValue, maxValue) {
+        if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue === maxValue) {
+            return false;
+        }
+
+        const sampleRatios = [0.05, 0.17, 0.31, 0.47, 0.63, 0.79, 0.95];
+        let finiteSamples = 0;
+
+        for (const ratio of sampleRatios) {
+            const value = minValue + (maxValue - minValue) * ratio;
+            scope[variable] = value;
+
+            let leftValue;
+            let rightValue;
+            try {
+                leftValue = leftCompiled.evaluate(scope);
+                rightValue = rightCompiled.evaluate(scope);
+            } catch (error) {
+                continue;
+            }
+
+            if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) {
+                continue;
+            }
+
+            finiteSamples++;
+            const residual = Math.abs(leftValue - rightValue);
+            const scale = Math.max(1, Math.abs(leftValue), Math.abs(rightValue));
+            if (residual > scale * 1e-7) {
+                return false;
+            }
+        }
+
+        return finiteSamples >= 4;
+    }
+
+    refineImplicitAxisRoot(leftCompiled, rightCompiled, scope, variable, lower, upper, lowerValue, upperValue) {
+        if (!Number.isFinite(lower) || !Number.isFinite(upper)) {
+            return null;
+        }
+
+        if (Number.isFinite(lowerValue) && Math.abs(lowerValue) <= 1e-10) {
+            return lower;
+        }
+        if (Number.isFinite(upperValue) && Math.abs(upperValue) <= 1e-10) {
+            return upper;
+        }
+        if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue) || lowerValue * upperValue > 0) {
+            return null;
+        }
+
+        let left = lower;
+        let right = upper;
+        let leftValue = lowerValue;
+        let rightValue = upperValue;
+
+        for (let i = 0; i < 60; i++) {
+            const mid = (left + right) / 2;
+            scope[variable] = mid;
+
+            let midValue;
+            try {
+                const leftVal = leftCompiled.evaluate(scope);
+                const rightVal = rightCompiled.evaluate(scope);
+                midValue = leftVal - rightVal;
+            } catch (error) {
+                return null;
+            }
+
+            if (!Number.isFinite(midValue)) {
+                return null;
+            }
+            if (Math.abs(midValue) <= 1e-10 || Math.abs(right - left) <= 1e-10) {
+                return mid;
+            }
+
+            if (leftValue * midValue <= 0) {
+                right = mid;
+                rightValue = midValue;
+            } else if (rightValue * midValue <= 0) {
+                left = mid;
+                leftValue = midValue;
+            } else {
+                return null;
+            }
+        }
+
+        return (left + right) / 2;
     }
 
     bisectionMethod(expression, x1, x2, variable = 'y') {
@@ -37175,7 +37295,8 @@ class Graphiti {
                 markersInViewport.push({
                     screenX: screenPos.x,
                     screenY: screenPos.y,
-                    intercept: intercept
+                    intercept: intercept,
+                    intercepts: [intercept]
                 });
             }
         }
@@ -37186,6 +37307,7 @@ class Graphiti {
         
         for (const marker of markersInViewport) {
             let tooClose = false;
+            let coincidentMarker = null;
             
             // Check if this marker is too close to any already accepted marker
             for (const accepted of culledMarkers) {
@@ -37195,11 +37317,23 @@ class Graphiti {
                 );
                 
                 if (distance < minDistance) {
+                    const samePoint = Math.abs(marker.intercept.x - accepted.intercept.x) <= 1e-8 &&
+                        Math.abs(marker.intercept.y - accepted.intercept.y) <= 1e-8;
+                    if (samePoint) {
+                        coincidentMarker = accepted;
+                    }
                     tooClose = true;
                     break;
                 }
             }
             
+            if (coincidentMarker) {
+                coincidentMarker.intercepts = coincidentMarker.intercepts || [coincidentMarker.intercept];
+                coincidentMarker.intercepts.push(marker.intercept);
+                coincidentMarker.intercept = marker.intercept;
+                continue;
+            }
+
             // Only add marker if it's not too close to existing ones
             if (!tooClose) {
                 culledMarkers.push(marker);
@@ -37382,15 +37516,27 @@ class Graphiti {
         
         // First check regular intercepts (when viewport is stable)
         if (!this.isViewportChanging) {
-            for (const intercept of this.intercepts) {
-                const interceptScreen = this.worldToScreen(intercept.x, intercept.y);
+            const markers = this.culledInterceptMarkers && this.culledInterceptMarkers.length > 0
+                ? this.culledInterceptMarkers
+                : this.intercepts.map(intercept => {
+                    const screenPos = this.worldToScreen(intercept.x, intercept.y);
+                    return {
+                        screenX: screenPos.x,
+                        screenY: screenPos.y,
+                        intercept,
+                        intercepts: [intercept]
+                    };
+                });
+
+            for (const marker of markers) {
                 const distance = Math.sqrt(
-                    Math.pow(screenX - interceptScreen.x, 2) + 
-                    Math.pow(screenY - interceptScreen.y, 2)
+                    Math.pow(screenX - marker.screenX, 2) +
+                    Math.pow(screenY - marker.screenY, 2)
                 );
                 
                 if (distance <= tolerance) {
-                    return intercept;
+                    const intercepts = marker.intercepts || [marker.intercept];
+                    return intercepts[intercepts.length - 1];
                 }
             }
         }
