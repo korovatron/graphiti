@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.14';
+const VERSION = '1.2.15';
 
 class Graphiti {
     constructor() {
@@ -32113,7 +32113,7 @@ class Graphiti {
         return turningPoints;
     }
     
-    findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression = null) {
+    findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression = null, options = {}) {
         const turningPoints = [];
         
         // Get current viewport bounds for searching
@@ -32155,6 +32155,27 @@ class Graphiti {
             }
 
             return sampledValues.every(value => Math.abs(value) <= 1e-7);
+        };
+
+        const isOneSidedFlatDerivativeRoot = (xValue) => {
+            const range = Math.max(Math.abs(xMax - xMin), 1);
+            const offset = Math.max(range * 0.002, 1e-3);
+            const sampleSide = (direction) => {
+                const values = [];
+                for (const multiplier of [0.5, 1, 2]) {
+                    try {
+                        const value = evaluateDerivativeAt(xValue + direction * offset * multiplier);
+                        if (Number.isFinite(value)) {
+                            values.push(value);
+                        }
+                    } catch {
+                        // Domain boundaries and asymptotes are handled by the surrounding candidate filters.
+                    }
+                }
+                return values;
+            };
+            const sideIsFlat = (values) => values.length >= 2 && values.every(value => Math.abs(value) <= 1e-7);
+            return sideIsFlat(sampleSide(-1)) || sideIsFlat(sampleSide(1));
         };
         
         // Use numerical method to find roots of f'(x) = 0
@@ -32245,7 +32266,8 @@ class Graphiti {
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
                 if (isFinite(x) && isFinite(y)) {
-                    if (type === 'inflection' && isLocallyFlatDerivativeRoot(x)) {
+                    if ((type === 'inflection' && isLocallyFlatDerivativeRoot(x)) ||
+                        (options.skipOneSidedFlatRoots && isOneSidedFlatDerivativeRoot(x))) {
                         continue;
                     }
 
@@ -32593,7 +32615,8 @@ class Graphiti {
                     branchFunc,
                     derivativeStr,
                     secondDerivativeStr,
-                    processedExpression
+                    processedExpression,
+                    { skipOneSidedFlatRoots: true }
                 );
                 for (const point of branchTurningPoints) {
                     turningPoints.push({
