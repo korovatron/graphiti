@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.17';
+const VERSION = '1.2.18';
 
 class Graphiti {
     constructor() {
@@ -16363,6 +16363,10 @@ class Graphiti {
             return { accepted: false };
         }
 
+        if (this.isBivariatePolynomialZeroOnVerticalLine(coeffMap, intercept)) {
+            return { accepted: false };
+        }
+
         const scale = Math.max(20, Math.abs(this.viewport?.maxY || 10), Math.abs(this.viewport?.minY || -10));
         const sampleMagnitudes = [scale, scale * 2, scale * 4];
         let passCount = 0;
@@ -16398,6 +16402,10 @@ class Graphiti {
 
     validatePolynomialImplicitAsymptote(coeffMap, slope, intercept) {
         if (!coeffMap || !Number.isFinite(slope) || !Number.isFinite(intercept)) {
+            return { accepted: false, direction: 0 };
+        }
+
+        if (this.isBivariatePolynomialZeroOnLine(coeffMap, slope, intercept)) {
             return { accepted: false, direction: 0 };
         }
 
@@ -16440,6 +16448,63 @@ class Graphiti {
 
         const direction = directionPasses.length === 2 ? 0 : directionPasses[0];
         return { accepted: true, direction };
+    }
+
+    isBivariatePolynomialZeroOnLine(coeffMap, slope, intercept) {
+        if (!coeffMap || !Number.isFinite(slope) || !Number.isFinite(intercept)) {
+            return false;
+        }
+
+        let substituted = [0];
+        const linePolynomial = [intercept, slope];
+        for (const [key, value] of Object.entries(coeffMap || {})) {
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-12) {
+                continue;
+            }
+
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return false;
+            }
+
+            let yPower = [1];
+            for (let i = 0; i < py; i++) {
+                yPower = this.multiplyPolynomials(yPower, linePolynomial);
+            }
+
+            const term = new Array(px).fill(0).concat(this.scalePolynomial(yPower, value));
+            substituted = this.addPolynomials(substituted, term);
+        }
+
+        return this.normalizePolynomial(substituted).every(value => Math.abs(value) <= 1e-8);
+    }
+
+    isBivariatePolynomialZeroOnVerticalLine(coeffMap, intercept) {
+        if (!coeffMap || !Number.isFinite(intercept)) {
+            return false;
+        }
+
+        let substituted = [0];
+        for (const [key, value] of Object.entries(coeffMap || {})) {
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-12) {
+                continue;
+            }
+
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return false;
+            }
+
+            const term = new Array(py + 1).fill(0);
+            term[py] = value * Math.pow(intercept, px);
+            substituted = this.addPolynomials(substituted, term);
+        }
+
+        return this.normalizePolynomial(substituted).every(value => Math.abs(value) <= 1e-8);
     }
 
     evaluateBivariatePolynomialAsY(coeffMap, x) {

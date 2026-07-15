@@ -1,0 +1,12 @@
+{
+  "name": "graphiti",
+  "version": "1.2.18",
+  "private": true,
+  "scripts": {
+    "test": "node --check main.js && node --check intersection-worker.js && node --check sw.js && node tests/intersection-contact.test.js && node tests/graph-contracts.test.js",
+    "test:graphs": "node tests/graph-contracts.test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.45.3"
+  }
+}
