@@ -4112,6 +4112,7 @@ class Graphiti {
                 : functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
             const expressionForSampling = processedExpression.toLowerCase();
             const hasXVariable = /\bx\b/.test(expressionForSampling);
+            const hasStepDiscontinuityFunction = /(^|[^a-z])(floor|ceil|sign)\s*\(/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
             const hasReciprocalPeriodicTrigWithX = hasXVariable && /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expressionForSampling);
             const shouldSkipNumericHorizontalAsymptotes = hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX;
@@ -4729,6 +4730,25 @@ class Graphiti {
                     const segmentAnalysis = analyseSegment(prevPoint.x, prevPoint.y, point.x, point.y);
                     const segmentMinX = Math.min(prevPoint.x, point.x);
                     const segmentMaxX = Math.max(prevPoint.x, point.x);
+                    let hasStepFunctionJump = false;
+
+                    if (hasStepDiscontinuityFunction && yDiff > Math.max(1e-9, Math.max(Math.abs(prevPoint.y), Math.abs(point.y), 1) * 1e-8)) {
+                        for (const t of [0.25, 0.5, 0.75]) {
+                            const sampleX = prevPoint.x + (point.x - prevPoint.x) * t;
+                            const sampleY = evaluateAtX(sampleX);
+                            if (sampleY === null) {
+                                continue;
+                            }
+
+                            const linearY = prevPoint.y + (point.y - prevPoint.y) * t;
+                            const residual = Math.abs(sampleY - linearY);
+                            const sampleScale = Math.max(1, Math.abs(prevPoint.y), Math.abs(point.y), Math.abs(sampleY));
+                            if (residual > Math.max(1e-6, sampleScale * 1e-5)) {
+                                hasStepFunctionJump = true;
+                                break;
+                            }
+                        }
+                    }
 
                     let alignedAsymptoteX = null;
                     if (verticalAsymptotesForSegmentChecks && verticalAsymptotesForSegmentChecks.length > 0) {
@@ -4745,6 +4765,12 @@ class Graphiti {
                     const hasForcedAsymptoteBreak = alignedAsymptoteX !== null;
                     const hasDiscontinuity = segmentAnalysis.hasDiscontinuity || hasForcedAsymptoteBreak;
                     
+                    if (hasStepFunctionJump) {
+                        processedPoints.push({ x: prevPoint.x, y: NaN, connected: false });
+                        processedPoints.push({ x: point.x, y: point.y, connected: false });
+                        continue;
+                    }
+
                     // If there's a sudden large jump, insert a break
                     if (yDiff > jumpThreshold || hasDiscontinuity) {
                         if (hasForcedAsymptoteBreak) {
