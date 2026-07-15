@@ -4112,7 +4112,7 @@ class Graphiti {
                 : functionCount > 10 ? 800 : functionCount > 6 ? 1200 : 2000;
             const expressionForSampling = processedExpression.toLowerCase();
             const hasXVariable = /\bx\b/.test(expressionForSampling);
-            const hasStepDiscontinuityFunction = /(^|[^a-z])(floor|ceil|sign)\s*\(/.test(expressionForSampling);
+            const hasStepDiscontinuityFunction = !func.monomialYExplicitProxy && /(^|[^a-z])(floor|ceil|sign)\s*\(/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
             const hasReciprocalPeriodicTrigWithX = hasXVariable && /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expressionForSampling);
             const shouldSkipNumericHorizontalAsymptotes = hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX;
@@ -4733,6 +4733,7 @@ class Graphiti {
                     let hasStepFunctionJump = false;
 
                     if (hasStepDiscontinuityFunction && yDiff > Math.max(1e-9, Math.max(Math.abs(prevPoint.y), Math.abs(point.y), 1) * 1e-8)) {
+                        let hasPlateauSample = false;
                         for (const t of [0.25, 0.5, 0.75]) {
                             const sampleX = prevPoint.x + (point.x - prevPoint.x) * t;
                             const sampleY = evaluateAtX(sampleX);
@@ -4740,10 +4741,15 @@ class Graphiti {
                                 continue;
                             }
 
+                            const endpointTolerance = Math.max(1e-6, Math.max(Math.abs(prevPoint.y), Math.abs(point.y), Math.abs(sampleY), 1) * 1e-4);
+                            if (Math.min(Math.abs(sampleY - prevPoint.y), Math.abs(sampleY - point.y)) <= endpointTolerance) {
+                                hasPlateauSample = true;
+                            }
+
                             const linearY = prevPoint.y + (point.y - prevPoint.y) * t;
                             const residual = Math.abs(sampleY - linearY);
                             const sampleScale = Math.max(1, Math.abs(prevPoint.y), Math.abs(point.y), Math.abs(sampleY));
-                            if (residual > Math.max(1e-6, sampleScale * 1e-5)) {
+                            if (hasPlateauSample && residual > Math.max(1e-6, sampleScale * 1e-5)) {
                                 hasStepFunctionJump = true;
                                 break;
                             }
