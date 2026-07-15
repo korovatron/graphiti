@@ -235,8 +235,11 @@ function findIntersectionsBetweenFunctions(func1, func2, plotMode) {
 
 function findImplicitIntersections(func1, func2) {
     const intersections = [];
+    const contactCandidates = [];
     const segments1 = getLineSegments(func1.points);
     const segments2 = getLineSegments(func2.points);
+    const contactTolerance = 0.05;
+    const contactClusterTolerance = 0.5;
     
     // Simple O(n²) approach but with reasonable segment counts
     for (const seg1 of segments1) {
@@ -267,11 +270,88 @@ function findImplicitIntersections(func1, func2) {
                         isApproximate: true
                     });
                 }
+                continue;
             }
+
+            const contact = findSegmentContact(seg1.start, seg1.end, seg2.start, seg2.end, contactTolerance);
+            if (contact) {
+                contactCandidates.push(contact);
+            }
+        }
+    }
+
+    contactCandidates.sort((a, b) => a.distance - b.distance);
+    for (const contact of contactCandidates) {
+        const isDuplicate = intersections.some(existing => 
+            Math.hypot(existing.x - contact.x, existing.y - contact.y) < contactClusterTolerance
+        );
+
+        if (!isDuplicate) {
+            let snappedX = contact.x;
+            let snappedY = contact.y;
+            if (Math.abs(snappedX) < 0.02) snappedX = 0;
+            if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+            intersections.push({
+                x: snappedX,
+                y: snappedY,
+                func1: func1,
+                func2: func2,
+                isApproximate: true,
+                isTangent: true
+            });
         }
     }
     
     return intersections;
+}
+
+function findSegmentContact(p1, p2, p3, p4, tolerance) {
+    const closestPointOnSegment = (point, start, end) => {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const lengthSquared = (dx * dx) + (dy * dy);
+        if (lengthSquared <= 1e-20) {
+            return { x: start.x, y: start.y };
+        }
+
+        const t = Math.max(0, Math.min(1, (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / lengthSquared));
+        return {
+            x: start.x + (t * dx),
+            y: start.y + (t * dy)
+        };
+    };
+
+    const candidates = [];
+    for (const point of [p1, p2]) {
+        const closest = closestPointOnSegment(point, p3, p4);
+        candidates.push({ a: point, b: closest });
+    }
+    for (const point of [p3, p4]) {
+        const closest = closestPointOnSegment(point, p1, p2);
+        candidates.push({ a: closest, b: point });
+    }
+
+    let best = null;
+    let bestDistance = Infinity;
+    for (const candidate of candidates) {
+        const distance = Math.hypot(candidate.a.x - candidate.b.x, candidate.a.y - candidate.b.y);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = candidate;
+        }
+    }
+
+    if (!best || bestDistance > tolerance) {
+        return null;
+    }
+
+    return {
+        x: (best.a.x + best.b.x) * 0.5,
+        y: (best.a.y + best.b.y) * 0.5,
+        distance: bestDistance,
+        isTangent: true
+    };
 }
 
 function findMixedIntersections(func1, func2, func1IsImplicit) {

@@ -19407,9 +19407,12 @@ class Graphiti {
     
     findIntersectionsGeometric(func1, func2) {
         const intersections = [];
+        const contactCandidates = [];
         const points1 = func1.points;
         const points2 = func2.points;
         const tolerance = 0.05; // Intersection proximity threshold
+        const contactTolerance = 0.05;
+        const contactClusterTolerance = 0.5;
         
         // Extract line segments from both functions
         const segments1 = this.extractLineSegments(points1);
@@ -19443,11 +19446,90 @@ class Graphiti {
                             isApproximate: false
                         });
                     }
+                    continue;
                 }
+
+                const contact = this.findSegmentContact(seg1, seg2, contactTolerance);
+                if (contact) {
+                    contactCandidates.push(contact);
+                }
+            }
+        }
+
+        contactCandidates.sort((a, b) => a.distance - b.distance);
+        for (const contact of contactCandidates) {
+            const isDuplicate = intersections.some(existing =>
+                Math.hypot(existing.x - contact.x, existing.y - contact.y) < contactClusterTolerance
+            );
+
+            if (!isDuplicate) {
+                let snappedX = contact.x;
+                let snappedY = contact.y;
+                if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+                intersections.push({
+                    x: snappedX,
+                    y: snappedY,
+                    func1: func1,
+                    func2: func2,
+                    isApproximate: true,
+                    isTangent: true
+                });
             }
         }
         
         return intersections;
+    }
+
+    findSegmentContact(seg1, seg2, tolerance) {
+        const closestPointOnSegment = (point, start, end) => {
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const lengthSquared = (dx * dx) + (dy * dy);
+            if (lengthSquared <= 1e-20) {
+                return { x: start.x, y: start.y };
+            }
+
+            const t = Math.max(0, Math.min(1, (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / lengthSquared));
+            return {
+                x: start.x + (t * dx),
+                y: start.y + (t * dy)
+            };
+        };
+
+        const { start: p1, end: p2 } = seg1;
+        const { start: p3, end: p4 } = seg2;
+        const candidates = [];
+        for (const point of [p1, p2]) {
+            const closest = closestPointOnSegment(point, p3, p4);
+            candidates.push({ a: point, b: closest });
+        }
+        for (const point of [p3, p4]) {
+            const closest = closestPointOnSegment(point, p1, p2);
+            candidates.push({ a: closest, b: point });
+        }
+
+        let best = null;
+        let bestDistance = Infinity;
+        for (const candidate of candidates) {
+            const distance = Math.hypot(candidate.a.x - candidate.b.x, candidate.a.y - candidate.b.y);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = candidate;
+            }
+        }
+
+        if (!best || bestDistance > tolerance) {
+            return null;
+        }
+
+        return {
+            x: (best.a.x + best.b.x) * 0.5,
+            y: (best.a.y + best.b.y) * 0.5,
+            distance: bestDistance,
+            isTangent: true
+        };
     }
     
     extractLineSegments(points) {
