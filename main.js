@@ -16054,11 +16054,20 @@ class Graphiti {
             return null;
         }
 
-        const { A, B, C, D, E } = coefficients;
+        const { A, B, C, D, E, F } = coefficients;
         const discriminant = (B * B) - (4 * A * C);
 
         // Only hyperbolas (including rectangular hyperbolas) have asymptotes here.
         if (!Number.isFinite(discriminant) || discriminant <= 1e-12) {
+            return null;
+        }
+
+        // Degenerate conics such as a pair of intersecting lines satisfy the
+        // homogeneous quadratic exactly, so those lines are components of the
+        // graph rather than asymptotes.
+        const conicDeterminantScaled = (4 * A * C * F) + (B * D * E) - (A * E * E) - (C * D * D) - (F * B * B);
+        const coefficientScale = Math.max(1, Math.abs(A), Math.abs(B), Math.abs(C), Math.abs(D), Math.abs(E), Math.abs(F));
+        if (!Number.isFinite(conicDeterminantScaled) || Math.abs(conicDeterminantScaled) <= Math.pow(coefficientScale, 3) * 1e-10) {
             return null;
         }
 
