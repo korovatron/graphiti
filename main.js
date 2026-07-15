@@ -9739,14 +9739,10 @@ class Graphiti {
                     return currentDistance <= exclusionApproachDistance && nextDistance > currentDistance;
                 });
                 if (departsVerticalExclusion) {
-                    const currentScreen = this.worldToScreen(current.x, current.y);
-                    const nextScreen = this.worldToScreen(next.x, next.y);
-                    const screenDx = Math.abs(nextScreen.x - currentScreen.x);
-                    const screenDy = Math.abs(nextScreen.y - currentScreen.y);
                     const currentOutsideViewport = current.y < this.viewport.minY || current.y > this.viewport.maxY;
-                    if (currentOutsideViewport || (screenDx <= 3 && screenDy >= 24)) {
+                    if (currentOutsideViewport) {
                         pointsWithExclusionBreaks.push({ x: NaN, y: NaN, connected: false });
-                        if (currentOutsideViewport && next.y >= this.viewport.minY && next.y <= this.viewport.maxY) {
+                        if (next.y >= this.viewport.minY && next.y <= this.viewport.maxY) {
                             const boundaryY = current.y > this.viewport.maxY ? this.viewport.maxY : this.viewport.minY;
                             const interpolation = (boundaryY - current.y) / (next.y - current.y);
                             const boundaryX = current.x + interpolation * (next.x - current.x);
