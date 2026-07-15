@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.20';
+const VERSION = '1.2.21';
 
 class Graphiti {
     constructor() {
@@ -6088,6 +6088,7 @@ class Graphiti {
         return !!func && (
             func.implicitRenderMode === 'affine-explicit' ||
             func.implicitRenderMode === 'monomial-explicit' ||
+            func.implicitRenderMode === 'monomial-x-explicit' ||
             func.implicitRenderMode === 'quadratic-explicit' ||
             func.implicitRenderMode === 'quadratic-x-explicit' ||
             func.implicitRenderMode === 'product-factors'
@@ -7442,6 +7443,27 @@ class Graphiti {
                         }
                     }
 
+                    const monomialXModel = this.tryBuildMonomialXImplicitModel(candidateEquation);
+                    if (monomialXModel) {
+                        this.applyDenominatorClearedDomainExclusions(monomialXModel, candidateEquation);
+                        const handled = await this.plotImplicitMonomialXAsExplicit(func, monomialXModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            // Keep implicit cache flow consistent with other implicit render modes.
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!suppressDraw) {
+                                this.draw();
+                            }
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
+                        }
+                    }
+
                     const quadraticModel = this.getCachedQuadraticYImplicitModel(candidateEquation);
                     if (quadraticModel) {
                         this.applyDenominatorClearedDomainExclusions(quadraticModel, candidateEquation);
@@ -8166,6 +8188,11 @@ class Graphiti {
         for (const point of points) {
             if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                 filteredPoints.push({ x: NaN, y: NaN, connected: false });
+                continue;
+            }
+
+            if (point.monomialViewportBoundary === true) {
+                filteredPoints.push({ ...point });
                 continue;
             }
 
@@ -9868,7 +9895,13 @@ class Graphiti {
             radicandRoots = this.findMonomialRadicandRoots(radicand);
         }
 
-        if (monomialModel.power === 2 && radicandRoots.length > 0) {
+        if (monomialModel.power === 3 && radicandRoots.length > 0) {
+            for (const branchResult of branchResults) {
+                this.addMonomialCubicRootApproachPoints(branchResult.proxyFunc, branchResult.expression, radicandRoots);
+            }
+        }
+
+        if ([2, 3].includes(monomialModel.power) && radicandRoots.length > 0) {
             for (const branchResult of branchResults) {
                 this.addMonomialBranchEndpointRoots(branchResult.proxyFunc, radicandRoots);
             }
@@ -10589,6 +10622,65 @@ class Graphiti {
 
             return sortedSegment;
         });
+    }
+
+    addMonomialCubicRootApproachPoints(proxyFunc, branchExpression, roots) {
+        if (!proxyFunc || !Array.isArray(proxyFunc.points) || !branchExpression || !Array.isArray(roots) || roots.length === 0) {
+            return;
+        }
+
+        let expressionForEval = branchExpression;
+        if (this.angleMode === 'degrees') {
+            expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
+        }
+
+        let compiledExpression;
+        try {
+            compiledExpression = this.getCompiledExpression(expressionForEval);
+        } catch {
+            return;
+        }
+
+        const viewportWidth = Math.max(1e-12, this.viewport.maxX - this.viewport.minX);
+        const minDelta = Math.max(viewportWidth * 1e-8, 1e-10);
+        const maxDelta = Math.max(viewportWidth * 0.08, minDelta);
+        const multipliers = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
+        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
+        const existingTolerance = Math.max(1e-10, viewportWidth * 1e-9);
+
+        const hasNearbyPoint = (x) => proxyFunc.points.some(point =>
+            point && Number.isFinite(point.x) && Math.abs(point.x - x) <= existingTolerance
+        );
+
+        for (const root of roots) {
+            if (!Number.isFinite(root)) {
+                continue;
+            }
+
+            for (const direction of [-1, 1]) {
+                for (const multiplier of multipliers) {
+                    const delta = minDelta * multiplier;
+                    if (delta > maxDelta) {
+                        break;
+                    }
+
+                    const x = root + direction * delta;
+                    if (hasNearbyPoint(x)) {
+                        continue;
+                    }
+
+                    scope.x = x;
+                    try {
+                        const y = compiledExpression.evaluate(scope);
+                        if (Number.isFinite(y)) {
+                            proxyFunc.points.push({ x, y, connected: true, monomialRootApproach: true });
+                        }
+                    } catch {
+                        // Some one-sided roots are not real on both sides.
+                    }
+                }
+            }
+        }
     }
 
     addMonomialBranchHoleApproachPoints(proxyFunc, branchExpression, roots, exclusionTolerance) {
@@ -11409,6 +11501,260 @@ class Graphiti {
             cacheKey: null,
             quadraticXImplicitModel: true
         };
+    }
+
+    tryBuildMonomialXImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const swappedEquation = {
+            leftExpression: this.swapImplicitXYExpression(equation.leftExpression),
+            rightExpression: this.swapImplicitXYExpression(equation.rightExpression)
+        };
+        const swappedModel = this.tryBuildMonomialYImplicitModel(swappedEquation);
+        if (!swappedModel) {
+            return null;
+        }
+
+        return {
+            ...swappedModel,
+            cacheKey: null,
+            originalImplicitAsymptotes: this.detectImplicitHyperbolaAsymptotes(equation) ||
+                this.detectPolynomialImplicitAsymptotes(equation) ||
+                { vertical: [], horizontal: [], oblique: [] },
+            monomialXImplicitModel: true
+        };
+    }
+
+    async plotImplicitMonomialXAsExplicit(func, monomialXModel) {
+        if (!func || !monomialXModel) {
+            return false;
+        }
+
+        const proxyFunc = {
+            ...func,
+            points: [],
+            displayPoints: []
+        };
+
+        const originalViewport = { ...this.cartesianViewport };
+        const swappedViewport = {
+            ...originalViewport,
+            minX: originalViewport.minY,
+            maxX: originalViewport.maxY,
+            minY: originalViewport.minX,
+            maxY: originalViewport.maxX
+        };
+        const swappedXSpan = Math.max(1e-12, swappedViewport.maxX - swappedViewport.minX);
+        const swappedYSpan = Math.max(1e-12, swappedViewport.maxY - swappedViewport.minY);
+        swappedViewport.scale = Math.min(
+            swappedViewport.width / swappedXSpan,
+            swappedViewport.height / swappedYSpan
+        );
+
+        let handled = false;
+        try {
+            Object.assign(this.cartesianViewport, swappedViewport);
+            handled = await this.plotImplicitMonomialYAsExplicit(proxyFunc, monomialXModel);
+        } finally {
+            Object.assign(this.cartesianViewport, originalViewport);
+        }
+        if (!handled || !Array.isArray(proxyFunc.points) || proxyFunc.points.length === 0) {
+            return false;
+        }
+
+        const mappedPoints = proxyFunc.points.map(point => {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                return { x: NaN, y: NaN, connected: false };
+            }
+            return {
+                ...point,
+                x: point.y,
+                y: point.x
+            };
+        });
+        func.points = this.addMonomialXViewportBoundaryContinuations(mappedPoints);
+        func.displayPoints = func.points;
+        func.holes = Array.isArray(proxyFunc.holes)
+            ? proxyFunc.holes
+                .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+                .map(hole => ({ x: hole.y, y: hole.x }))
+            : [];
+
+        const sourceAsymptotes = proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] };
+        const vertical = [];
+        const horizontal = [];
+        const oblique = [];
+        const addUnique = (target, value, tolerance = 1e-6) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            const snapped = Math.abs(value - Math.round(value)) < 1e-10 ? Math.round(value) : value;
+            if (!target.some(existing => Math.abs(existing - snapped) <= tolerance)) {
+                target.push(snapped);
+            }
+        };
+        const addUniqueOblique = (line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return;
+            }
+            if (!oblique.some(existing =>
+                Math.abs(existing.m - line.m) <= Math.max(1e-8, Math.abs(existing.m) * 1e-6) &&
+                Math.abs(existing.b - line.b) <= Math.max(1e-8, Math.abs(existing.b) * 1e-6)
+            )) {
+                oblique.push(line);
+            }
+        };
+
+        for (const value of Array.isArray(sourceAsymptotes.vertical) ? sourceAsymptotes.vertical : []) {
+            addUnique(horizontal, value);
+        }
+        for (const value of Array.isArray(sourceAsymptotes.horizontal) ? sourceAsymptotes.horizontal : []) {
+            addUnique(vertical, value);
+        }
+        for (const line of Array.isArray(sourceAsymptotes.oblique) ? sourceAsymptotes.oblique : []) {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                continue;
+            }
+            if (Math.abs(line.m) <= 1e-10) {
+                addUnique(vertical, line.b);
+            } else {
+                addUniqueOblique({
+                    m: 1 / line.m,
+                    b: -line.b / line.m,
+                    direction: Number.isFinite(line.direction) ? line.direction : 0,
+                    source: line.source
+                });
+            }
+        }
+
+        const originalAsymptotes = monomialXModel.originalImplicitAsymptotes || { vertical: [], horizontal: [], oblique: [] };
+        for (const value of Array.isArray(originalAsymptotes.vertical) ? originalAsymptotes.vertical : []) {
+            addUnique(vertical, value);
+        }
+        for (const value of Array.isArray(originalAsymptotes.horizontal) ? originalAsymptotes.horizontal : []) {
+            addUnique(horizontal, value);
+        }
+        for (const line of Array.isArray(originalAsymptotes.oblique) ? originalAsymptotes.oblique : []) {
+            addUniqueOblique({ ...line, source: line.source || 'algebraic' });
+        }
+
+        vertical.sort((a, b) => a - b);
+        horizontal.sort((a, b) => a - b);
+        oblique.sort((a, b) => a.m - b.m);
+        this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
+        func.monomialXExplicitExpressions = Array.isArray(proxyFunc.monomialYExplicitExpressions)
+            ? proxyFunc.monomialYExplicitExpressions.slice()
+            : [];
+        func.monomialXRadicandExpression = proxyFunc.monomialYRadicandExpression || monomialXModel.radicandExpression || null;
+        func.monomialXPower = monomialXModel.power;
+        func.implicitRenderMode = 'monomial-x-explicit';
+        this.updateFunctionAsymptoteInfo(func);
+
+        return true;
+    }
+
+    addMonomialXViewportBoundaryContinuations(points) {
+        if (!Array.isArray(points) || points.length === 0) {
+            return points;
+        }
+
+        const minX = this.viewport.minX;
+        const maxX = this.viewport.maxX;
+        const minY = this.viewport.minY;
+        const maxY = this.viewport.maxY;
+        const isFinitePoint = point => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+        const isInside = point => isFinitePoint(point) && point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
+        const boundaryPointBetween = (insidePoint, outsidePoint) => {
+            if (!isInside(insidePoint) || !isFinitePoint(outsidePoint)) {
+                return null;
+            }
+
+            const candidates = [];
+            const dx = outsidePoint.x - insidePoint.x;
+            const dy = outsidePoint.y - insidePoint.y;
+            const addCandidate = (t) => {
+                if (!Number.isFinite(t) || t <= 0 || t >= 1) {
+                    return;
+                }
+                const x = insidePoint.x + dx * t;
+                const y = insidePoint.y + dy * t;
+                if (x >= minX - 1e-9 && x <= maxX + 1e-9 && y >= minY - 1e-9 && y <= maxY + 1e-9) {
+                    candidates.push({ x, y, t });
+                }
+            };
+
+            if (Math.abs(dx) > 1e-12) {
+                addCandidate((minX - insidePoint.x) / dx);
+                addCandidate((maxX - insidePoint.x) / dx);
+            }
+            if (Math.abs(dy) > 1e-12) {
+                addCandidate((minY - insidePoint.y) / dy);
+                addCandidate((maxY - insidePoint.y) / dy);
+            }
+            if (candidates.length === 0) {
+                return null;
+            }
+
+            candidates.sort((a, b) => a.t - b.t);
+            return candidates[0];
+        };
+
+        const findNextFinite = (startIndex) => {
+            for (let i = startIndex; i < points.length; i++) {
+                if (isFinitePoint(points[i])) {
+                    return points[i];
+                }
+            }
+            return null;
+        };
+        const findPreviousFinite = (startIndex) => {
+            for (let i = startIndex; i >= 0; i--) {
+                if (isFinitePoint(points[i])) {
+                    return points[i];
+                }
+            }
+            return null;
+        };
+
+        const output = [];
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            if (isInside(point) && point.connected === false && point.monomialRootApproach !== true) {
+                const previous = findPreviousFinite(i - 1);
+                if (previous && !isInside(previous)) {
+                    const boundaryPoint = boundaryPointBetween(point, previous);
+                    if (boundaryPoint) {
+                        output.push({ x: boundaryPoint.x, y: boundaryPoint.y, connected: false, monomialViewportBoundary: true });
+                        output.push({ ...point, connected: true });
+                        continue;
+                    }
+                }
+            }
+
+            output.push(point);
+            if (!isInside(point)) {
+                continue;
+            }
+            if (point.monomialRootApproach === true) {
+                continue;
+            }
+
+            const next = isFinitePoint(points[i + 1]) ? points[i + 1] : findNextFinite(i + 1);
+            if (!next || isInside(next)) {
+                continue;
+            }
+
+            const boundaryPoint = boundaryPointBetween(point, next);
+            if (!boundaryPoint) {
+                continue;
+            }
+
+            output.push({ x: boundaryPoint.x, y: boundaryPoint.y, connected: true, monomialViewportBoundary: true });
+        }
+
+        return output;
     }
 
     async plotImplicitQuadraticXAsExplicit(func, quadraticXModel) {
