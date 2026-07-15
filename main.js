@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.23';
+const VERSION = '1.2.24';
 
 class Graphiti {
     constructor() {
@@ -28254,7 +28254,7 @@ class Graphiti {
         // Clear existing content
         taglineContainer.innerHTML = '';
         
-        const text = 'Any Curve You Like';
+        const text = 'Where graphs teach maths';
         const words = text.split(' ');
         
         // White color throughout
