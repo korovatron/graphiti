@@ -2712,7 +2712,7 @@ class Graphiti {
         mathField.addEventListener('input', () => {
             // Store LaTeX directly instead of converting
             try {
-                const latex = mathField.getValue();
+                const latex = this.restoreEmptyMathLivePlaceholders(mathField.getValue(), mathField);
                 func.expression = latex; // Store LaTeX format
 
                 // Remove derived asymptote/hole info immediately when field is empty.
@@ -2764,7 +2764,7 @@ class Graphiti {
             if (e.key === 'Enter') {
                 // Force immediate plotting on Enter, bypassing debounce
                 try {
-                    const latex = mathField.getValue();
+                    const latex = this.restoreEmptyMathLivePlaceholders(mathField.getValue(), mathField);
                     func.expression = latex; // Store LaTeX format
                     
                     // Clear expression cache when function expression changes
@@ -3102,6 +3102,28 @@ class Graphiti {
         }
 
         return /#\?|#0|\\placeholder|\\Box|[□▢]|[\^_]\s*(?:\{\s*\}|[)\]}]|$)/.test(value);
+    }
+
+    restoreEmptyMathLivePlaceholders(expression, mathField = null) {
+        const value = String(expression || '');
+        const restored = value
+            .replace(/\^\s*\{\s*\}/g, '^{#?}')
+            .replace(/_\s*\{\s*\}/g, '_{#?}');
+
+        if (mathField && restored !== value && !mathField._graphitiRestoringPlaceholder) {
+            mathField._graphitiRestoringPlaceholder = true;
+            try {
+                if (typeof mathField.setValue === 'function') {
+                    mathField.setValue(restored);
+                } else {
+                    mathField.value = restored;
+                }
+            } finally {
+                mathField._graphitiRestoringPlaceholder = false;
+            }
+        }
+
+        return restored;
     }
     
     async plotFunctionWithValidation(func) {

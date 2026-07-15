@@ -319,6 +319,32 @@ async function assertIncompleteExpressionsDoNotPlot(page) {
     }
 }
 
+async function assertEmptyMathLivePlaceholdersAreRestored(page) {
+    const cases = [
+        { expression: 'y=x^{}', expected: 'y=x^{#?}' },
+        { expression: 'y=x_{}', expected: 'y=x_{#?}' },
+        { expression: 'y=x^{}+a_{}', expected: 'y=x^{#?}+a_{#?}' }
+    ];
+
+    const results = await page.evaluate((cases) => {
+        const graphiti = window.graphiti;
+        return cases.map(testCase => {
+            const restored = graphiti.restoreEmptyMathLivePlaceholders(testCase.expression);
+            return {
+                expression: testCase.expression,
+                expected: testCase.expected,
+                restored,
+                incomplete: graphiti.hasIncompleteMathLiveInput(restored)
+            };
+        });
+    }, cases);
+
+    for (const result of results) {
+        assert.strictEqual(result.restored, result.expected, `${result.expression}: should restore empty placeholder`);
+        assert.strictEqual(result.incomplete, true, `${result.restored}: restored placeholder should stay incomplete`);
+    }
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -364,6 +390,7 @@ async function assertIncompleteExpressionsDoNotPlot(page) {
         }
 
         await assertIncompleteExpressionsDoNotPlot(page);
+    await assertEmptyMathLivePlaceholdersAreRestored(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {
