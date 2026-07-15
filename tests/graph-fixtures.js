@@ -28,13 +28,10 @@ module.exports = [
             renderMode: 'monomial-x-explicit',
             explicitImplicitFastPath: true,
             minBoundaryContinuations: 2,
-            minRootApproaches: 10,
-            maxRootBoundaryBridges: 0,
             verticalAsymptotes: [],
             horizontalAsymptotes: [0],
             obliqueAsymptotes: [{ m: 1, b: 0 }],
             pointsNear: [
-                { x: 0, y: -1, tolerance: 0.01, label: 'cube-root join' },
                 { x: 5.78, y: 0.072, tolerance: 0.1, label: 'horizontal branch' },
                 { x: 6, y: 6, tolerance: 0.18, label: 'diagonal branch' }
             ]

@@ -256,20 +256,6 @@ async function plotFixture(page, fixture) {
             intercepts: graphiti.intercepts.filter(point => point.functionId === func.id),
             finitePointCount: finitePoints.length,
             boundaryContinuationCount: finitePoints.filter(point => point.monomialViewportBoundary === true).length,
-            rootApproachCount: finitePoints.filter(point => point.monomialRootApproach === true).length,
-            rootBoundaryBridgeCount: (func.points || []).reduce((count, point, index, points) => {
-                if (index === 0 || !point || point.connected === false || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-                    return count;
-                }
-                const previous = points[index - 1];
-                if (!previous || !Number.isFinite(previous.x) || !Number.isFinite(previous.y)) {
-                    return count;
-                }
-                const bridgesRootToBoundary =
-                    (previous.monomialRootApproach === true && point.monomialViewportBoundary === true) ||
-                    (previous.monomialViewportBoundary === true && point.monomialRootApproach === true);
-                return bridgesRootToBoundary ? count + 1 : count;
-            }, 0),
             finiteSegmentStarts: finitePoints.filter(point => point.connected === false).length,
             pointProbeDistances
         };
@@ -392,18 +378,6 @@ async function assertEmptyMathLivePlaceholdersAreRestored(page) {
                 assert(
                     actual.boundaryContinuationCount >= expected.minBoundaryContinuations,
                     `${label}: expected at least ${expected.minBoundaryContinuations} boundary continuations, got ${actual.boundaryContinuationCount}`
-                );
-            }
-            if (Number.isFinite(expected.minRootApproaches)) {
-                assert(
-                    actual.rootApproachCount >= expected.minRootApproaches,
-                    `${label}: expected at least ${expected.minRootApproaches} root approach samples, got ${actual.rootApproachCount}`
-                );
-            }
-            if (Number.isFinite(expected.maxRootBoundaryBridges)) {
-                assert(
-                    actual.rootBoundaryBridgeCount <= expected.maxRootBoundaryBridges,
-                    `${label}: expected at most ${expected.maxRootBoundaryBridges} root-boundary bridges, got ${actual.rootBoundaryBridgeCount}`
                 );
             }
             assertApproxSet(actual.asymptoteData.vertical, expected.verticalAsymptotes || [], 0.03, `${label} vertical asymptotes`);

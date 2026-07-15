@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.21';
+const VERSION = '1.2.22';
 
 class Graphiti {
     constructor() {
@@ -9895,13 +9895,7 @@ class Graphiti {
             radicandRoots = this.findMonomialRadicandRoots(radicand);
         }
 
-        if (monomialModel.power === 3 && radicandRoots.length > 0) {
-            for (const branchResult of branchResults) {
-                this.addMonomialCubicRootApproachPoints(branchResult.proxyFunc, branchResult.expression, radicandRoots);
-            }
-        }
-
-        if ([2, 3].includes(monomialModel.power) && radicandRoots.length > 0) {
+        if (monomialModel.power === 2 && radicandRoots.length > 0) {
             for (const branchResult of branchResults) {
                 this.addMonomialBranchEndpointRoots(branchResult.proxyFunc, radicandRoots);
             }
@@ -10622,65 +10616,6 @@ class Graphiti {
 
             return sortedSegment;
         });
-    }
-
-    addMonomialCubicRootApproachPoints(proxyFunc, branchExpression, roots) {
-        if (!proxyFunc || !Array.isArray(proxyFunc.points) || !branchExpression || !Array.isArray(roots) || roots.length === 0) {
-            return;
-        }
-
-        let expressionForEval = branchExpression;
-        if (this.angleMode === 'degrees') {
-            expressionForEval = this.convertTrigToDegreeMode(expressionForEval);
-        }
-
-        let compiledExpression;
-        try {
-            compiledExpression = this.getCompiledExpression(expressionForEval);
-        } catch {
-            return;
-        }
-
-        const viewportWidth = Math.max(1e-12, this.viewport.maxX - this.viewport.minX);
-        const minDelta = Math.max(viewportWidth * 1e-8, 1e-10);
-        const maxDelta = Math.max(viewportWidth * 0.08, minDelta);
-        const multipliers = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
-        const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
-        const existingTolerance = Math.max(1e-10, viewportWidth * 1e-9);
-
-        const hasNearbyPoint = (x) => proxyFunc.points.some(point =>
-            point && Number.isFinite(point.x) && Math.abs(point.x - x) <= existingTolerance
-        );
-
-        for (const root of roots) {
-            if (!Number.isFinite(root)) {
-                continue;
-            }
-
-            for (const direction of [-1, 1]) {
-                for (const multiplier of multipliers) {
-                    const delta = minDelta * multiplier;
-                    if (delta > maxDelta) {
-                        break;
-                    }
-
-                    const x = root + direction * delta;
-                    if (hasNearbyPoint(x)) {
-                        continue;
-                    }
-
-                    scope.x = x;
-                    try {
-                        const y = compiledExpression.evaluate(scope);
-                        if (Number.isFinite(y)) {
-                            proxyFunc.points.push({ x, y, connected: true, monomialRootApproach: true });
-                        }
-                    } catch {
-                        // Some one-sided roots are not real on both sides.
-                    }
-                }
-            }
-        }
     }
 
     addMonomialBranchHoleApproachPoints(proxyFunc, branchExpression, roots, exclusionTolerance) {
@@ -11538,28 +11473,7 @@ class Graphiti {
             displayPoints: []
         };
 
-        const originalViewport = { ...this.cartesianViewport };
-        const swappedViewport = {
-            ...originalViewport,
-            minX: originalViewport.minY,
-            maxX: originalViewport.maxY,
-            minY: originalViewport.minX,
-            maxY: originalViewport.maxX
-        };
-        const swappedXSpan = Math.max(1e-12, swappedViewport.maxX - swappedViewport.minX);
-        const swappedYSpan = Math.max(1e-12, swappedViewport.maxY - swappedViewport.minY);
-        swappedViewport.scale = Math.min(
-            swappedViewport.width / swappedXSpan,
-            swappedViewport.height / swappedYSpan
-        );
-
-        let handled = false;
-        try {
-            Object.assign(this.cartesianViewport, swappedViewport);
-            handled = await this.plotImplicitMonomialYAsExplicit(proxyFunc, monomialXModel);
-        } finally {
-            Object.assign(this.cartesianViewport, originalViewport);
-        }
+        const handled = await this.plotImplicitMonomialYAsExplicit(proxyFunc, monomialXModel);
         if (!handled || !Array.isArray(proxyFunc.points) || proxyFunc.points.length === 0) {
             return false;
         }
@@ -11721,7 +11635,7 @@ class Graphiti {
         const output = [];
         for (let i = 0; i < points.length; i++) {
             const point = points[i];
-            if (isInside(point) && point.connected === false && point.monomialRootApproach !== true) {
+            if (isInside(point) && point.connected === false) {
                 const previous = findPreviousFinite(i - 1);
                 if (previous && !isInside(previous)) {
                     const boundaryPoint = boundaryPointBetween(point, previous);
@@ -11735,9 +11649,6 @@ class Graphiti {
 
             output.push(point);
             if (!isInside(point)) {
-                continue;
-            }
-            if (point.monomialRootApproach === true) {
                 continue;
             }
 
