@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.22';
+const VERSION = '1.2.23';
 
 class Graphiti {
     constructor() {
@@ -13820,7 +13820,11 @@ class Graphiti {
         }
 
         const normalizedExpression = (processedExpression || '').toLowerCase().replace(/\s+/g, '');
+        const hasGaussianDecayEnvelope =
+            /(?:^|[^a-z])e\^(?:\{|\()?-\(?[0-9.*/()]*x\^2[0-9.*/()]*\)?(?:\}|\))?/.test(normalizedExpression) ||
+            /(?:^|[^a-z])exp\(-\(?[0-9.*/()]*x\^2[0-9.*/()]*\)?\)/.test(normalizedExpression);
         const hasDecayingExponentialTail =
+            hasGaussianDecayEnvelope ||
             /(?:^|[^a-z])e\^(?:\{|\()?-([0-9.]*\*?)?x(?:\}|\))?/.test(normalizedExpression) ||
             /(?:^|[^a-z])exp\(-([0-9.]*\*?)?x\)/.test(normalizedExpression);
         const hasExponentialTailFamily = hasDecayingExponentialTail ||

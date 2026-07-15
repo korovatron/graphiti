@@ -9,7 +9,26 @@ const defaultViewport = {
     height: 720
 };
 
+const farZoomViewport = {
+    minX: -100,
+    maxX: 100,
+    minY: -100,
+    maxY: 100,
+    width: 960,
+    height: 720
+};
+
 module.exports = [
+    {
+        name: 'gaussian damped cosine keeps horizontal asymptote when zoomed far out',
+        expression: 'y=e^(-x^2/5)*cos(5*x)',
+        viewport: farZoomViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: []
+        }
+    },
     {
         name: 'implicit reciprocal cubic denominator has only horizontal asymptote',
         expression: 'y^2=1/(x^2-y^3)',
