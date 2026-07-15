@@ -3094,6 +3094,15 @@ class Graphiti {
     getCachedRegex(patternName) {
         return this.regexCache.get(patternName);
     }
+
+    hasIncompleteMathLiveInput(expression) {
+        const value = String(expression || '').trim();
+        if (!value) {
+            return false;
+        }
+
+        return /#\?|#0|\\placeholder|\\Box|[□▢]|[\^_]\s*(?:\{\s*\}|[)\]}]|$)/.test(value);
+    }
     
     async plotFunctionWithValidation(func) {
         try {
@@ -3133,6 +3142,10 @@ class Graphiti {
             // Check for incomplete expressions (ending with operators)
             if (this.getCachedRegex('operatorEnd').test(func.expression.trim())) {
                 throw new Error('Incomplete expression ending with operator');
+            }
+
+            if (this.hasIncompleteMathLiveInput(func.expression)) {
+                throw new Error('Incomplete MathLive placeholder expression');
             }
             
             // Check if math.js is available
@@ -3926,6 +3939,15 @@ class Graphiti {
         }
         
         if (!func.expression.trim()) {
+            func.points = [];
+            this.clearFunctionAsymptoteData(func);
+            if (this.performance.enabled) {
+                this.performance.plotTimes.set(func.id, 0);
+            }
+            return;
+        }
+
+        if (this.hasIncompleteMathLiveInput(func.expression)) {
             func.points = [];
             this.clearFunctionAsymptoteData(func);
             if (this.performance.enabled) {

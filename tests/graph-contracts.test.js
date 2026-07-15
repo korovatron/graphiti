@@ -261,6 +261,64 @@ async function plotFixture(page, fixture) {
     }, { expression: fixture.expression, viewport: fixture.viewport, pointProbes });
 }
 
+async function assertIncompleteExpressionsDoNotPlot(page) {
+    const cases = [
+        'y^2=1/(x^2-y^)',
+        'y^2=1/(x^2-y^{})',
+        'y^2=1/(x^2-y^{#?})',
+        'y^2=1/(x^2-y^{#0})'
+    ];
+
+    const results = await page.evaluate(async (expressions) => {
+        const graphiti = window.graphiti;
+        const out = [];
+        for (const expression of expressions) {
+            graphiti.plotMode = 'cartesian';
+            graphiti.cartesianFunctions = [];
+            graphiti.polarFunctions = [];
+            graphiti.nextFunctionId = 1;
+            graphiti.showIntersections = false;
+            graphiti.showTurningPoints = false;
+            graphiti.showIntercepts = false;
+            graphiti.input.persistentBadges = [];
+
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [{ x: 1, y: 1, connected: false }],
+                color: '#4A90E2',
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+
+            const startedAt = performance.now();
+            await Promise.race([
+                graphiti.plotFunctionWithValidation(func),
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out validating ${expression}`)), 500))
+            ]);
+
+            out.push({
+                expression,
+                elapsed: performance.now() - startedAt,
+                pointsLength: Array.isArray(func.points) ? func.points.length : 0,
+                hasIncompleteMathLiveInput: graphiti.hasIncompleteMathLiveInput(expression),
+                endsWithOperator: graphiti.getCachedRegex('operatorEnd').test(expression.trim())
+            });
+        }
+        return out;
+    }, cases);
+
+    for (const result of results) {
+        assert(
+            result.hasIncompleteMathLiveInput || result.endsWithOperator,
+            `${result.expression}: should be recognised as incomplete`
+        );
+        assert.strictEqual(result.pointsLength, 0, `${result.expression}: should not plot stale or new points`);
+        assert(result.elapsed < 500, `${result.expression}: validation should return quickly, took ${result.elapsed}ms`);
+    }
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -304,6 +362,8 @@ async function plotFixture(page, fixture) {
                 );
             }
         }
+
+        await assertIncompleteExpressionsDoNotPlot(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {
