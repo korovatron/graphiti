@@ -138,6 +138,9 @@ module.exports = [
         expression: '(x^2+y^2-4)*(y-x)=0',
         viewport: defaultViewport,
         expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            maxFiniteSegmentStarts: 8,
             verticalAsymptotes: [],
             horizontalAsymptotes: [],
             obliqueAsymptotes: [],
@@ -147,6 +150,28 @@ module.exports = [
                 { x: -2, y: 0, tolerance: 0.08, label: 'circle left point' },
                 { x: 0, y: 2, tolerance: 0.08, label: 'circle top point' },
                 { x: 0, y: -2, tolerance: 0.08, label: 'circle bottom point' },
+                { x: -6, y: -6, tolerance: 0.12, label: 'diagonal line extends to lower-left viewport' },
+                { x: 6, y: 6, tolerance: 0.12, label: 'diagonal line extends to upper-right viewport' }
+            ]
+        }
+    },
+    {
+        name: 'ellipse union full diagonal line',
+        expression: '(x^2/9+y^2/4-1)*(y-x)=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            maxFiniteSegmentStarts: 8,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            holes: [],
+            pointsNear: [
+                { x: 3, y: 0, tolerance: 0.1, label: 'ellipse right point' },
+                { x: -3, y: 0, tolerance: 0.1, label: 'ellipse left point' },
+                { x: 0, y: 2, tolerance: 0.1, label: 'ellipse top point' },
+                { x: 0, y: -2, tolerance: 0.1, label: 'ellipse bottom point' },
                 { x: -6, y: -6, tolerance: 0.12, label: 'diagonal line extends to lower-left viewport' },
                 { x: 6, y: 6, tolerance: 0.12, label: 'diagonal line extends to upper-right viewport' }
             ]

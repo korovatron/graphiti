@@ -245,6 +245,9 @@ async function plotFixture(page, fixture) {
         return {
             expression: func.expression,
             renderMode: func.implicitRenderMode || null,
+            explicitImplicitFastPath: typeof graphiti.isExplicitImplicitFastPath === 'function'
+                ? graphiti.isExplicitImplicitFastPath(func)
+                : false,
             asymptoteData: func.asymptoteData || { vertical: [], horizontal: [], oblique: [] },
             holes: Array.isArray(func.holes) ? func.holes : [],
             verticalComponents: metadataVerticalComponents,
@@ -252,6 +255,7 @@ async function plotFixture(page, fixture) {
             verticalComponentStats,
             intercepts: graphiti.intercepts.filter(point => point.functionId === func.id),
             finitePointCount: finitePoints.length,
+            finiteSegmentStarts: finitePoints.filter(point => point.connected === false).length,
             pointProbeDistances
         };
     }, { expression: fixture.expression, viewport: fixture.viewport, pointProbes });
@@ -273,6 +277,18 @@ async function plotFixture(page, fixture) {
             const label = fixture.name;
 
             assert(actual.finitePointCount > 0, `${label}: expected plotted points`);
+            if (expected.renderMode) {
+                assert.strictEqual(actual.renderMode, expected.renderMode, `${label}: render mode`);
+            }
+            if (typeof expected.explicitImplicitFastPath === 'boolean') {
+                assert.strictEqual(actual.explicitImplicitFastPath, expected.explicitImplicitFastPath, `${label}: draw-path classification`);
+            }
+            if (Number.isFinite(expected.maxFiniteSegmentStarts)) {
+                assert(
+                    actual.finiteSegmentStarts <= expected.maxFiniteSegmentStarts,
+                    `${label}: expected at most ${expected.maxFiniteSegmentStarts} finite segment starts, got ${actual.finiteSegmentStarts}`
+                );
+            }
             assertApproxSet(actual.asymptoteData.vertical, expected.verticalAsymptotes || [], 0.03, `${label} vertical asymptotes`);
             assertApproxSet(actual.asymptoteData.horizontal, expected.horizontalAsymptotes || [], 0.03, `${label} horizontal asymptotes`);
             assertApproxLines(actual.asymptoteData.oblique, expected.obliqueAsymptotes || [], { m: 0.035, b: 0.08 }, `${label} oblique asymptotes`);
