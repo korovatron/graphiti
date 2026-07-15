@@ -24652,8 +24652,9 @@ class Graphiti {
                 }
             }
 
-            if (isAffineExplicit && Array.isArray(func.affineVerticalComponents) && func.affineVerticalComponents.length > 0) {
-                for (const x of func.affineVerticalComponents) {
+            const explicitImplicitVerticalComponents = this.getImplicitVerticalComponents(func);
+            if (explicitImplicitVerticalComponents.length > 0) {
+                for (const x of explicitImplicitVerticalComponents) {
                     if (!Number.isFinite(x)) continue;
                     if (x < this.viewport.minX || x > this.viewport.maxX) continue;
                     const screen = this.worldToScreen(x, 0);
@@ -30309,7 +30310,7 @@ class Graphiti {
                     const rightCompiled = this.getCompiledExpression(equation.rightExpression);
 
                     if (this.isImplicitAxisComponent(leftCompiled, rightCompiled, scope, 'x', xMin, xMax)) {
-                        return [];
+                        return this.buildImplicitAxisComponentIntercepts(func, 'x', xMin, xMax, maxInterceptsToDisplay);
                     }
                     
                     let prevValue = null;
@@ -30697,7 +30698,7 @@ class Graphiti {
                     const rightCompiled = this.getCompiledExpression(equation.rightExpression);
 
                     if (this.isImplicitAxisComponent(leftCompiled, rightCompiled, scope, 'y', yMin, yMax)) {
-                        return [];
+                        return this.buildImplicitAxisComponentIntercepts(func, 'y', yMin, yMax, maxInterceptsToDisplay);
                     }
                     
                     let prevValue = null;
@@ -31053,6 +31054,49 @@ class Graphiti {
         }
         
         return result;
+    }
+
+    getImplicitVerticalComponents(func) {
+        if (!func) {
+            return [];
+        }
+
+        const componentSources = [
+            ...(Array.isArray(func.affineVerticalComponents) ? func.affineVerticalComponents : []),
+            ...(Array.isArray(func.monomialYVerticalComponents) ? func.monomialYVerticalComponents : []),
+            ...(Array.isArray(func.quadraticYVerticalComponents) ? func.quadraticYVerticalComponents : [])
+        ];
+        const verticalComponents = [];
+        for (const x of componentSources) {
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+            if (!verticalComponents.some(existing => Math.abs(existing - x) <= 1e-7)) {
+                verticalComponents.push(x);
+            }
+        }
+
+        verticalComponents.sort((a, b) => a - b);
+        return verticalComponents;
+    }
+
+    buildImplicitAxisComponentIntercepts(func, axis, minValue, maxValue, maxCount) {
+        if (!func || !Number.isFinite(minValue) || !Number.isFinite(maxValue) || maxValue < minValue) {
+            return [];
+        }
+
+        if (minValue > 0 || maxValue < 0) {
+            return [];
+        }
+
+        return [{
+            x: 0,
+            y: 0,
+            type: axis === 'x' ? 'x-intercept' : 'y-intercept',
+            functionId: func.id,
+            color: func.color,
+            isAxisComponentIntercept: true
+        }];
     }
 
     isImplicitAxisComponent(leftCompiled, rightCompiled, scope, variable, minValue, maxValue) {
@@ -37085,19 +37129,7 @@ class Graphiti {
             return;
         }
 
-        const componentSources = [
-            ...(Array.isArray(func.affineVerticalComponents) ? func.affineVerticalComponents : []),
-            ...(Array.isArray(func.quadraticYVerticalComponents) ? func.quadraticYVerticalComponents : [])
-        ];
-        const verticalComponents = [];
-        for (const x of componentSources) {
-            if (!Number.isFinite(x)) {
-                continue;
-            }
-            if (!verticalComponents.some(existing => Math.abs(existing - x) <= 1e-7)) {
-                verticalComponents.push(x);
-            }
-        }
+        const verticalComponents = this.getImplicitVerticalComponents(func);
 
         if (verticalComponents.length === 0) {
             return;
