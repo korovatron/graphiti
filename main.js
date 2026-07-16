@@ -17227,6 +17227,12 @@ class Graphiti {
                     roots = roots.filter(root => !options.excludedXRoots.some(exclusionX => Math.abs(root - exclusionX) <= 1e-6));
                 }
                 if (roots.length === 1) {
+                    const quadraticCoefficient = xOnly ? A : C;
+                    const linearCoefficient = xOnly ? D : E;
+                    const repeatedLineDiscriminant = (linearCoefficient * linearCoefficient) - (4 * quadraticCoefficient * F);
+                    if (Math.abs(quadraticCoefficient) > tolerance && Math.abs(repeatedLineDiscriminant) <= Math.max(tolerance, coefficientScale * coefficientScale * 1e-9)) {
+                        return { label: 'degenerate conic', confidence: 'structural' };
+                    }
                     return { label: 'line', confidence: 'strong' };
                 }
                 if (roots.length === 2) {
