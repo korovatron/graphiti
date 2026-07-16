@@ -16185,6 +16185,9 @@ class Graphiti {
         if (this.plotMode === 'polar' && functionType === 'theta-constant') {
             return { label: 'polar ray', confidence: 'exact' };
         }
+        if (functionType === 'parametric') {
+            return this.classifyParametricFunctionShape(expression);
+        }
 
         if (!['explicit', 'implicit'].includes(functionType)) {
             return null;
@@ -16196,6 +16199,488 @@ class Graphiti {
         }
 
         return this.classifyImplicitEquationShape(equation, 0);
+    }
+
+    classifyParametricFunctionShape(expression) {
+        const parametric = this.parseParametricEquation(expression);
+        if (!parametric) {
+            return null;
+        }
+
+        let xNode;
+        let yNode;
+        try {
+            xNode = this.cleanMath.parse(this.normalizeParametricShapeExpression(parametric.xExpr));
+            yNode = this.cleanMath.parse(this.normalizeParametricShapeExpression(parametric.yExpr));
+        } catch {
+            return null;
+        }
+
+        const xPolynomial = this.extractParametricShapePolynomialCoordinate(xNode);
+        const yPolynomial = this.extractParametricShapePolynomialCoordinate(yNode);
+        if (this.isParametricShapeQuadraticPolynomial(xPolynomial) && this.isParametricShapeLinearPolynomial(yPolynomial)) {
+            return { label: 'parabola', confidence: 'exact' };
+        }
+        if (this.isParametricShapeLinearPolynomial(xPolynomial) && this.isParametricShapeQuadraticPolynomial(yPolynomial)) {
+            return { label: 'parabola', confidence: 'exact' };
+        }
+
+        const xReciprocal = this.extractParametricShapeReciprocalCoordinate(xNode);
+        const yReciprocal = this.extractParametricShapeReciprocalCoordinate(yNode);
+        if ((this.isParametricShapeLinearPolynomial(xPolynomial) && yReciprocal) ||
+            (this.isParametricShapeLinearPolynomial(yPolynomial) && xReciprocal)) {
+            return { label: 'hyperbola', confidence: 'exact' };
+        }
+
+        const xCoordinate = this.extractParametricShapeCoordinate(xNode);
+        const yCoordinate = this.extractParametricShapeCoordinate(yNode);
+        if (!xCoordinate || !yCoordinate) {
+            return null;
+        }
+
+        if (xCoordinate.kind === 'affine' && yCoordinate.kind === 'affine') {
+            if (Math.abs(xCoordinate.coefficient) > 1e-9 || Math.abs(yCoordinate.coefficient) > 1e-9) {
+                return { label: 'line', confidence: 'exact' };
+            }
+            return null;
+        }
+
+        if (xCoordinate.kind !== 'trig' || yCoordinate.kind !== 'trig') {
+            return null;
+        }
+
+        const frequencyTolerance = Math.max(1, Math.abs(xCoordinate.frequency), Math.abs(yCoordinate.frequency)) * 1e-9;
+        const sameFrequency = Math.abs(xCoordinate.frequency - yCoordinate.frequency) <= frequencyTolerance;
+        if (sameFrequency) {
+            if (this.angleDistanceModulo(xCoordinate.phase - yCoordinate.phase, 0, Math.PI) <= 1e-8) {
+                return { label: 'line', confidence: 'exact' };
+            }
+            if (this.angleDistanceModulo(xCoordinate.phase - yCoordinate.phase, Math.PI / 2, Math.PI) <= 1e-8) {
+                const amplitudeTolerance = Math.max(1, xCoordinate.amplitude, yCoordinate.amplitude) * 1e-8;
+                return {
+                    label: Math.abs(xCoordinate.amplitude - yCoordinate.amplitude) <= amplitudeTolerance ? 'circle' : 'ellipse',
+                    confidence: 'exact'
+                };
+            }
+        }
+
+        return null;
+    }
+
+    normalizeParametricShapeExpression(expression) {
+        return String(expression || '')
+            .trim()
+            .toLowerCase()
+            .replace(/θ/g, 'theta')
+            .replace(/(\d)([a-zA-Z])/g, '$1*$2')
+            .replace(/(\))([a-zA-Z])/g, '$1*$2');
+    }
+
+    extractParametricShapeCoordinate(node) {
+        const terms = [];
+        const collect = (candidate, sign = 1) => {
+            if (!candidate) {
+                return false;
+            }
+            if (candidate.type === 'ParenthesisNode') {
+                return collect(candidate.content, sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '+' && candidate.args.length === 2) {
+                return collect(candidate.args[0], sign) && collect(candidate.args[1], sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 2) {
+                return collect(candidate.args[0], sign) && collect(candidate.args[1], -sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 1) {
+                return collect(candidate.args[0], -sign);
+            }
+
+            const constant = this.evaluateParametricShapeConstant(candidate);
+            if (constant !== null) {
+                terms.push({ kind: 'constant', value: sign * constant });
+                return true;
+            }
+            const affine = this.extractParametricShapeTMultiple(candidate);
+            if (affine) {
+                terms.push({ kind: 'affine', coefficient: sign * affine.coefficient });
+                return true;
+            }
+            const trig = this.extractParametricShapeTrigTerm(candidate);
+            if (trig) {
+                terms.push({ ...trig, coefficient: sign * trig.coefficient });
+                return true;
+            }
+            return false;
+        };
+
+        if (!collect(node)) {
+            return null;
+        }
+
+        const constant = terms
+            .filter(term => term.kind === 'constant')
+            .reduce((sum, term) => sum + term.value, 0);
+        const affineTerms = terms.filter(term => term.kind === 'affine' && Math.abs(term.coefficient) > 1e-9);
+        const trigTerms = terms.filter(term => term.kind === 'trig' && Math.abs(term.coefficient) > 1e-9);
+
+        if (affineTerms.length <= 1 && trigTerms.length === 0) {
+            return { kind: 'affine', coefficient: affineTerms.length === 1 ? affineTerms[0].coefficient : 0, constant };
+        }
+        if (affineTerms.length === 0 && trigTerms.length === 1) {
+            const trig = trigTerms[0];
+            let amplitude = trig.coefficient;
+            let phase = trig.trig === 'sin' ? trig.phase - (Math.PI / 2) : trig.phase;
+            if (amplitude < 0) {
+                amplitude = -amplitude;
+                phase += Math.PI;
+            }
+            return {
+                kind: 'trig',
+                amplitude,
+                frequency: trig.frequency,
+                phase,
+                constant
+            };
+        }
+
+        return null;
+    }
+
+    extractParametricShapePolynomialCoordinate(node) {
+        const polynomial = this.extractParametricShapePolynomialCoefficients(node, 2);
+        return polynomial ? this.normalizePolynomial(polynomial).slice(0, 3) : null;
+    }
+
+    extractParametricShapePolynomialCoefficients(node, maxDegree = 2) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractParametricShapePolynomialCoefficients(node.content, maxDegree);
+        }
+
+        const constant = this.evaluateParametricShapeConstant(node);
+        if (constant !== null) {
+            return [constant];
+        }
+
+        if (node.type === 'SymbolNode' && String(node.name).toLowerCase() === 't') {
+            return [0, 1];
+        }
+        if (node.type !== 'OperatorNode') {
+            return null;
+        }
+
+        const args = node.args || [];
+        const trim = (coeffs) => {
+            if (!coeffs || coeffs.length > maxDegree + 1) {
+                return null;
+            }
+            const normalized = this.normalizePolynomial(coeffs);
+            return normalized.length <= maxDegree + 1 ? normalized : null;
+        };
+        const add = (left, right, sign = 1) => {
+            if (!left || !right) {
+                return null;
+            }
+            const length = Math.max(left.length, right.length);
+            const result = new Array(length).fill(0);
+            for (let i = 0; i < length; i++) {
+                result[i] = (left[i] || 0) + (sign * (right[i] || 0));
+            }
+            return trim(result);
+        };
+        const multiply = (left, right) => {
+            if (!left || !right) {
+                return null;
+            }
+            const result = new Array(left.length + right.length - 1).fill(0);
+            for (let i = 0; i < left.length; i++) {
+                for (let j = 0; j < right.length; j++) {
+                    if (i + j > maxDegree) {
+                        return null;
+                    }
+                    result[i + j] += left[i] * right[j];
+                }
+            }
+            return trim(result);
+        };
+
+        if (node.op === '+' && args.length >= 2) {
+            return args.reduce((accumulator, arg) => add(accumulator, this.extractParametricShapePolynomialCoefficients(arg, maxDegree)), [0]);
+        }
+        if (node.op === '-' && args.length === 1) {
+            const inner = this.extractParametricShapePolynomialCoefficients(args[0], maxDegree);
+            return inner ? trim(inner.map(value => -value)) : null;
+        }
+        if (node.op === '-' && args.length >= 2) {
+            let result = this.extractParametricShapePolynomialCoefficients(args[0], maxDegree);
+            for (let i = 1; i < args.length; i++) {
+                result = add(result, this.extractParametricShapePolynomialCoefficients(args[i], maxDegree), -1);
+            }
+            return result;
+        }
+        if (node.op === '*' && args.length >= 2) {
+            return args.reduce((accumulator, arg) => multiply(accumulator, this.extractParametricShapePolynomialCoefficients(arg, maxDegree)), [1]);
+        }
+        if (node.op === '/' && args.length === 2) {
+            const numerator = this.extractParametricShapePolynomialCoefficients(args[0], maxDegree);
+            const denominator = this.evaluateParametricShapeConstant(args[1]);
+            return numerator && denominator !== null && Math.abs(denominator) > 1e-12
+                ? trim(numerator.map(value => value / denominator))
+                : null;
+        }
+        if (node.op === '^' && args.length === 2) {
+            const base = this.extractParametricShapePolynomialCoefficients(args[0], maxDegree);
+            const exponent = this.evaluateParametricShapeConstant(args[1]);
+            if (!base || exponent === null || Math.abs(exponent - Math.round(exponent)) > 1e-12 || exponent < 0 || exponent > maxDegree) {
+                return null;
+            }
+            let result = [1];
+            for (let i = 0; i < exponent; i++) {
+                result = multiply(result, base);
+            }
+            return trim(result);
+        }
+
+        return null;
+    }
+
+    isParametricShapeLinearPolynomial(polynomial) {
+        const normalized = polynomial ? this.normalizePolynomial(polynomial) : null;
+        return !!normalized && normalized.length === 2 && Math.abs(normalized[1]) > 1e-9;
+    }
+
+    isParametricShapeQuadraticPolynomial(polynomial) {
+        const normalized = polynomial ? this.normalizePolynomial(polynomial) : null;
+        return !!normalized && normalized.length === 3 && Math.abs(normalized[2]) > 1e-9;
+    }
+
+    extractParametricShapeReciprocalCoordinate(node) {
+        const terms = [];
+        const collect = (candidate, sign = 1) => {
+            if (!candidate) {
+                return false;
+            }
+            if (candidate.type === 'ParenthesisNode') {
+                return collect(candidate.content, sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '+' && candidate.args.length === 2) {
+                return collect(candidate.args[0], sign) && collect(candidate.args[1], sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 2) {
+                return collect(candidate.args[0], sign) && collect(candidate.args[1], -sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 1) {
+                return collect(candidate.args[0], -sign);
+            }
+
+            const constant = this.evaluateParametricShapeConstant(candidate);
+            if (constant !== null) {
+                terms.push({ kind: 'constant', value: sign * constant });
+                return true;
+            }
+            const reciprocal = this.extractParametricShapeReciprocalTerm(candidate);
+            if (reciprocal) {
+                terms.push({ ...reciprocal, coefficient: sign * reciprocal.coefficient });
+                return true;
+            }
+            return false;
+        };
+
+        if (!collect(node)) {
+            return null;
+        }
+
+        const reciprocalTerms = terms.filter(term => term.kind === 'reciprocal' && Math.abs(term.coefficient) > 1e-9);
+        return reciprocalTerms.length === 1 ? reciprocalTerms[0] : null;
+    }
+
+    extractParametricShapeReciprocalTerm(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractParametricShapeReciprocalTerm(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractParametricShapeReciprocalTerm(node.args[0]);
+            return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluateParametricShapeConstant(node.args[0]);
+            const rightReciprocal = this.extractParametricShapeReciprocalTerm(node.args[1]);
+            if (leftConstant !== null && rightReciprocal) {
+                return { ...rightReciprocal, coefficient: leftConstant * rightReciprocal.coefficient };
+            }
+            const rightConstant = this.evaluateParametricShapeConstant(node.args[1]);
+            const leftReciprocal = this.extractParametricShapeReciprocalTerm(node.args[0]);
+            if (rightConstant !== null && leftReciprocal) {
+                return { ...leftReciprocal, coefficient: rightConstant * leftReciprocal.coefficient };
+            }
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && node.args.length === 2) {
+            const numerator = this.evaluateParametricShapeConstant(node.args[0]);
+            const denominator = this.extractParametricShapeTAffine(node.args[1]);
+            if (numerator !== null && Math.abs(numerator) > 1e-9 && denominator && Math.abs(denominator.coefficient) > 1e-9) {
+                return { kind: 'reciprocal', coefficient: numerator, denominator };
+            }
+        }
+
+        return null;
+    }
+
+    evaluateParametricShapeConstant(node) {
+        if (!node || /\b(theta|t|x|y|r)\b/i.test(node.toString())) {
+            return null;
+        }
+
+        try {
+            const value = node.evaluate(this.getEvaluationScope({ pi: Math.PI, e: Math.E }));
+            return Number.isFinite(value) ? value : null;
+        } catch {
+            return null;
+        }
+    }
+
+    extractParametricShapeTMultiple(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractParametricShapeTMultiple(node.content);
+        }
+        if (node.type === 'SymbolNode' && String(node.name).toLowerCase() === 't') {
+            return { coefficient: 1 };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractParametricShapeTMultiple(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluateParametricShapeConstant(node.args[0]);
+            const rightTerm = this.extractParametricShapeTMultiple(node.args[1]);
+            if (leftConstant !== null && rightTerm) {
+                return { coefficient: leftConstant * rightTerm.coefficient };
+            }
+            const rightConstant = this.evaluateParametricShapeConstant(node.args[1]);
+            const leftTerm = this.extractParametricShapeTMultiple(node.args[0]);
+            if (rightConstant !== null && leftTerm) {
+                return { coefficient: rightConstant * leftTerm.coefficient };
+            }
+        }
+
+        return null;
+    }
+
+    extractParametricShapeTAffine(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractParametricShapeTAffine(node.content);
+        }
+        const tMultiple = this.extractParametricShapeTMultiple(node);
+        if (tMultiple) {
+            return { coefficient: tMultiple.coefficient, constant: 0 };
+        }
+        const constant = this.evaluateParametricShapeConstant(node);
+        if (constant !== null) {
+            return { coefficient: 0, constant };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractParametricShapeTAffine(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient, constant: -inner.constant } : null;
+        }
+        if (node.type === 'OperatorNode' && ['+', '-'].includes(node.op) && node.args.length === 2) {
+            const left = this.extractParametricShapeTAffine(node.args[0]);
+            const right = this.extractParametricShapeTAffine(node.args[1]);
+            if (!left || !right) {
+                return null;
+            }
+            const sign = node.op === '-' ? -1 : 1;
+            return {
+                coefficient: left.coefficient + (sign * right.coefficient),
+                constant: left.constant + (sign * right.constant)
+            };
+        }
+
+        return null;
+    }
+
+    extractParametricShapeTrigTerm(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractParametricShapeTrigTerm(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractParametricShapeTrigTerm(node.args[0]);
+            return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluateParametricShapeConstant(node.args[0]);
+            const rightTrig = this.extractParametricShapeTrigTerm(node.args[1]);
+            if (leftConstant !== null && rightTrig) {
+                return { ...rightTrig, coefficient: leftConstant * rightTrig.coefficient };
+            }
+            const rightConstant = this.evaluateParametricShapeConstant(node.args[1]);
+            const leftTrig = this.extractParametricShapeTrigTerm(node.args[0]);
+            if (rightConstant !== null && leftTrig) {
+                return { ...leftTrig, coefficient: rightConstant * leftTrig.coefficient };
+            }
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            if (!['sin', 'cos'].includes(name) || !node.args || node.args.length !== 1) {
+                return null;
+            }
+            const tAffine = this.extractParametricShapeTAffine(node.args[0]);
+            if (!tAffine || !Number.isFinite(tAffine.coefficient) || tAffine.coefficient <= 0) {
+                return null;
+            }
+            return { kind: 'trig', trig: name, frequency: tAffine.coefficient, coefficient: 1, phase: tAffine.constant };
+        }
+
+        return null;
+    }
+
+    angleDistanceModulo(value, target, period) {
+        if (!Number.isFinite(value) || !Number.isFinite(target) || !Number.isFinite(period) || period <= 0) {
+            return Infinity;
+        }
+
+        let difference = Math.abs(value - target) % period;
+        if (difference > period / 2) {
+            difference = period - difference;
+        }
+        return difference;
+    }
+
+    snapNearInteger(value) {
+        if (!Number.isFinite(value)) {
+            return 0;
+        }
+
+        const rounded = Math.round(value);
+        return Math.abs(value - rounded) <= Math.max(1e-9, Math.abs(value) * 1e-9) ? rounded : 0;
+    }
+
+    greatestCommonDivisor(leftValue, rightValue) {
+        let left = Math.abs(Math.trunc(leftValue));
+        let right = Math.abs(Math.trunc(rightValue));
+        while (right !== 0) {
+            const remainder = left % right;
+            left = right;
+            right = remainder;
+        }
+        return left || 1;
     }
 
     classifyPolarFunctionShape(expression) {

@@ -436,6 +436,41 @@ async function assertShapeClassification(page) {
     assert.strictEqual(polarResults.betaZeroCircle, 'circle', 'polar trig with zero frequency should classify as circle');
     assert.strictEqual(polarResults.betaThreeRose, 'rose curve', 'non-zero parameter frequency should not collapse to circle');
 
+    const parametricResults = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.angleMode = 'radians';
+        graphiti.parameters.alpha.value = 2;
+
+        const cases = [
+            { expression: '(t,2*t+1)', expected: 'line' },
+            { expression: '(2,t)', expected: 'line' },
+            { expression: '(2*cos(t),2*sin(t))', expected: 'circle' },
+            { expression: '(1+3*cos(t),-1+2*sin(t))', expected: 'ellipse' },
+            { expression: '(alpha*cos(t),alpha*sin(t))', expected: 'circle' },
+            { expression: '(t^2,2*t)', expected: 'parabola' },
+            { expression: '\\left(\\left(2t\\right)^2,5t\\right)', expected: 'parabola' },
+            { expression: '(2*t+1,t^2-3)', expected: 'parabola' },
+            { expression: '(t,1/t)', expected: 'hyperbola' },
+            { expression: '(1+2*t,-1+3/t)', expected: 'hyperbola' },
+            { expression: '(sin(t),sin(t))', expected: 'line' },
+            { expression: '(sin(2*t),sin(3*t))', expected: null }
+        ];
+
+        return cases.map(testCase => {
+            const shape = graphiti.classifyFunctionShape(testCase.expression);
+            return {
+                expression: testCase.expression,
+                expected: testCase.expected,
+                actual: shape && shape.label ? shape.label : null
+            };
+        });
+    });
+
+    for (const result of parametricResults) {
+        assert.strictEqual(result.actual, result.expected, `${result.expression}: parametric shape classification`);
+    }
+
     const domResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
