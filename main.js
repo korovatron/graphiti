@@ -2366,6 +2366,10 @@ class Graphiti {
                     ></math-field>
                 </div>
             </div>
+            <div class="shape-info-container" data-function-id="${func.id}">
+                <div class="shape-info-title">Shape</div>
+                <div class="shape-info-value"></div>
+            </div>
             <div class="asymptote-info-container" data-function-id="${func.id}">
                 <div class="asymptote-info-title">Asymptotes</div>
                 <div class="asymptote-equation-list"></div>
@@ -15811,6 +15815,10 @@ class Graphiti {
         if (!func.enabled) {
             const hiddenFuncItem = document.querySelector(`[data-function-id="${func.id}"]`);
             if (hiddenFuncItem) {
+                const hiddenShapeContainer = hiddenFuncItem.querySelector('.shape-info-container');
+                if (hiddenShapeContainer) {
+                    hiddenShapeContainer.classList.remove('visible');
+                }
                 const hiddenInfoContainer = hiddenFuncItem.querySelector('.asymptote-info-container');
                 if (hiddenInfoContainer) {
                     hiddenInfoContainer.classList.remove('visible');
@@ -15830,6 +15838,10 @@ class Graphiti {
 
         // Do not display derived asymptote/hole info while expression is invalid.
         if (funcItem.classList.contains('function-error')) {
+            const errorShapeContainer = funcItem.querySelector('.shape-info-container');
+            if (errorShapeContainer) {
+                errorShapeContainer.classList.remove('visible');
+            }
             const errorInfoContainer = funcItem.querySelector('.asymptote-info-container');
             if (errorInfoContainer) {
                 errorInfoContainer.classList.remove('visible');
@@ -15842,6 +15854,14 @@ class Graphiti {
         }
 
         this.applyFunctionBadgeStyle(func, funcItem);
+
+        const shapeContainer = funcItem.querySelector('.shape-info-container');
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+        const shape = this.classifyFunctionShape(func);
+        const shapeLabel = shape && shape.label ? shape.label : '';
+        const shapeVisibilityIsCurrent = shapeLabel
+            ? shapeContainer && shapeContainer.classList.contains('visible')
+            : !shapeContainer || !shapeContainer.classList.contains('visible');
 
         const infoContainer = funcItem.querySelector('.asymptote-info-container');
         const equationList = infoContainer ? infoContainer.querySelector('.asymptote-equation-list') : null;
@@ -15865,9 +15885,21 @@ class Graphiti {
             : !holesContainer.classList.contains('visible');
         if (equationList.dataset.asymptoteSignature === asymptoteSignature &&
             (!holesList || holesList.dataset.holesSignature === holesSignature) &&
+            (!shapeValue || shapeValue.dataset.shapeSignature === shapeLabel) &&
             asymptoteVisibilityIsCurrent &&
-            holesVisibilityIsCurrent) {
+            holesVisibilityIsCurrent &&
+            shapeVisibilityIsCurrent) {
             return;
+        }
+
+        if (shapeContainer && shapeValue) {
+            shapeValue.dataset.shapeSignature = shapeLabel;
+            shapeValue.textContent = shapeLabel;
+            if (shapeLabel) {
+                shapeContainer.classList.add('visible');
+            } else {
+                shapeContainer.classList.remove('visible');
+            }
         }
 
         equationList.dataset.asymptoteSignature = asymptoteSignature;
@@ -15979,6 +16011,190 @@ class Graphiti {
         }
 
         return equations;
+    }
+
+    classifyFunctionShape(funcOrExpression) {
+        const expression = typeof funcOrExpression === 'string'
+            ? funcOrExpression
+            : (funcOrExpression && funcOrExpression.expression);
+        if (!expression || !String(expression).trim() || this.hasIncompleteMathLiveInput(expression)) {
+            return null;
+        }
+
+        const functionType = this.detectFunctionType(expression);
+        if (!['explicit', 'implicit'].includes(functionType)) {
+            return null;
+        }
+
+        const equation = this.parseImplicitEquation(expression);
+        if (!equation) {
+            return null;
+        }
+
+        return this.classifyImplicitEquationShape(equation, 0);
+    }
+
+    classifyImplicitEquationShape(equation, depth = 0) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression || depth > 2) {
+            return null;
+        }
+
+        const factorExpressions = depth === 0 ? this.extractZeroProductFactorExpressions(equation) : null;
+        if (Array.isArray(factorExpressions) && factorExpressions.length > 1) {
+            const componentLabels = [];
+            for (const factorExpression of factorExpressions) {
+                const component = this.classifyImplicitEquationShape({
+                    leftExpression: factorExpression,
+                    rightExpression: '0'
+                }, depth + 1);
+                if (!component || !component.label) {
+                    return null;
+                }
+                componentLabels.push(component.label);
+            }
+
+            if (componentLabels.every(label => label === 'line')) {
+                return {
+                    label: componentLabels.length === 2 ? 'line pair' : 'line components',
+                    confidence: 'strong'
+                };
+            }
+
+            const uniqueLabels = [];
+            for (const label of componentLabels) {
+                if (!uniqueLabels.includes(label)) {
+                    uniqueLabels.push(label);
+                }
+            }
+            return {
+                label: uniqueLabels.join(' + '),
+                confidence: 'strong'
+            };
+        }
+
+        const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
+        return coeffMap ? this.classifyPolynomialCoeffMapShape(coeffMap) : null;
+    }
+
+    extractImplicitPolynomialCoeffMap(equation, maxTotalDegree = 2) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '(' + equation.leftExpression + ')-(' + equation.rightExpression + ')';
+        try {
+            return this.extractBivariatePolynomialCoefficients(this.cleanMath.parse(combinedExpression), maxTotalDegree);
+        } catch {
+            return null;
+        }
+    }
+
+    classifyPolynomialCoeffMapShape(coeffMap) {
+        if (!coeffMap) {
+            return null;
+        }
+
+        const coefficientScale = Math.max(1, ...Object.values(coeffMap).map(value => Math.abs(value || 0)));
+        const tolerance = coefficientScale * 1e-9;
+        const getCoeff = (px, py) => {
+            const value = coeffMap[`${px},${py}`] || 0;
+            return Math.abs(value) <= tolerance ? 0 : value;
+        };
+
+        let degree = -1;
+        for (const [key, value] of Object.entries(coeffMap)) {
+            if (!Number.isFinite(value) || Math.abs(value) <= tolerance) {
+                continue;
+            }
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return null;
+            }
+            degree = Math.max(degree, px + py);
+        }
+
+        if (degree < 1) {
+            return null;
+        }
+        if (degree === 1) {
+            return { label: 'line', confidence: 'exact' };
+        }
+        if (degree !== 2) {
+            return null;
+        }
+
+        const A = getCoeff(2, 0);
+        const B = getCoeff(1, 1);
+        const C = getCoeff(0, 2);
+        const D = getCoeff(1, 0);
+        const E = getCoeff(0, 1);
+        const F = getCoeff(0, 0);
+        const discriminant = (B * B) - (4 * A * C);
+        const conicDeterminantScaled = (4 * A * C * F) + (B * D * E) - (A * E * E) - (C * D * D) - (F * B * B);
+        const degenerateTolerance = Math.pow(coefficientScale, 3) * 1e-9;
+
+        if (Math.abs(conicDeterminantScaled) <= degenerateTolerance) {
+            const xOnly = Math.abs(B) <= tolerance && Math.abs(C) <= tolerance && Math.abs(E) <= tolerance;
+            const yOnly = Math.abs(A) <= tolerance && Math.abs(B) <= tolerance && Math.abs(D) <= tolerance;
+            if (xOnly || yOnly) {
+                const roots = xOnly
+                    ? this.findPolynomialRealRoots([F, D, A])
+                    : this.findPolynomialRealRoots([F, E, C]);
+                if (roots.length === 1) {
+                    return { label: 'line', confidence: 'strong' };
+                }
+                if (roots.length === 2) {
+                    return { label: 'line pair', confidence: 'strong' };
+                }
+            }
+            if (this.isDegenerateConicLinePair(A, B, C, D, E, F, tolerance)) {
+                return { label: 'line pair', confidence: 'strong' };
+            }
+            return { label: 'degenerate conic', confidence: 'structural' };
+        }
+
+        if (Math.abs(discriminant) <= Math.max(tolerance, coefficientScale * coefficientScale * 1e-9)) {
+            return { label: 'parabola', confidence: 'exact' };
+        }
+
+        if (discriminant < 0) {
+            if (!this.conicHasRealEllipsePoints(A, B, C, D, E, F, tolerance)) {
+                return null;
+            }
+            if (Math.abs(B) <= tolerance && Math.abs(A - C) <= Math.max(tolerance, coefficientScale * 1e-9)) {
+                return { label: 'circle', confidence: 'exact' };
+            }
+            return { label: 'ellipse', confidence: 'exact' };
+        }
+
+        return { label: 'hyperbola', confidence: 'exact' };
+    }
+
+    isDegenerateConicLinePair(A, B, C, D, E, F, tolerance = 1e-9) {
+        const samples = [[-2, -2], [-1, 0], [0, 1], [1, -1], [2, 2]];
+        const evaluate = (x, y) => (A * x * x) + (B * x * y) + (C * y * y) + (D * x) + (E * y) + F;
+        const hasPositive = samples.some(([x, y]) => evaluate(x, y) > tolerance);
+        const hasNegative = samples.some(([x, y]) => evaluate(x, y) < -tolerance);
+        return hasPositive && hasNegative;
+    }
+
+    conicHasRealEllipsePoints(A, B, C, D, E, F, tolerance = 1e-9) {
+        const denominator = (4 * A * C) - (B * B);
+        if (!Number.isFinite(denominator) || Math.abs(denominator) <= tolerance) {
+            return true;
+        }
+
+        const h = ((B * E) - (2 * C * D)) / denominator;
+        const k = ((B * D) - (2 * A * E)) / denominator;
+        if (!Number.isFinite(h) || !Number.isFinite(k)) {
+            return true;
+        }
+
+        const centreValue = (A * h * h) + (B * h * k) + (C * k * k) + (D * h) + (E * k) + F;
+        const quadraticSign = Math.abs(A) > tolerance ? Math.sign(A) : Math.sign(C);
+        return quadraticSign === 0 || (quadraticSign * centreValue) < -tolerance;
     }
 
     buildHoleDisplayLatex(func) {
@@ -32787,6 +33003,10 @@ class Graphiti {
                 if (func.implicitRenderMode === 'quadratic-explicit' && Array.isArray(func.quadraticYExplicitExpressions)) {
                     const quadraticTurningPoints = this.findQuadraticYTurningPointsForFunction(func);
                     turningPoints.push(...quadraticTurningPoints);
+                    continue;
+                }
+
+                if (isExplicitFastPath && detectedType === 'implicit') {
                     continue;
                 }
                 

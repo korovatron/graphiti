@@ -346,6 +346,133 @@ async function assertEmptyMathLivePlaceholdersAreRestored(page) {
     }
 }
 
+async function assertShapeClassification(page) {
+    const cases = [
+        { expression: 'x^2+y^2=1', expected: 'circle' },
+        { expression: '2*x^2+2*y^2=2', expected: 'circle' },
+        { expression: 'x^2=1-y^2', expected: 'circle' },
+        { expression: 'x^2/9+y^2/4=1', expected: 'ellipse' },
+        { expression: 'x^2-y^2=1', expected: 'hyperbola' },
+        { expression: 'y=x^2', expected: 'parabola' },
+        { expression: 'y=2*x+1', expected: 'line' },
+        { expression: '(x^2+y^2-4)*(y-x)=0', expected: 'circle + line' },
+        { expression: 'x*y=0', expected: 'line pair' },
+        { expression: 'x^2+y^2+1=0', expected: null }
+    ];
+
+    const results = await page.evaluate((cases) => {
+        const graphiti = window.graphiti;
+        return cases.map(testCase => {
+            const shape = graphiti.classifyFunctionShape(testCase.expression);
+            return {
+                expression: testCase.expression,
+                expected: testCase.expected,
+                actual: shape && shape.label ? shape.label : null
+            };
+        });
+    }, cases);
+
+    for (const result of results) {
+        assert.strictEqual(result.actual, result.expected, `${result.expression}: shape classification`);
+    }
+
+    const domResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('x^2+y^2=1');
+        const func = graphiti.cartesianFunctions[0];
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const asymptoteContainer = item ? item.querySelector('.asymptote-info-container') : null;
+        const holesContainer = item ? item.querySelector('.holes-info-container') : null;
+        const childClasses = item ? Array.from(item.children).map(child => child.className) : [];
+
+        return {
+            label: shapeContainer ? shapeContainer.querySelector('.shape-info-value').textContent : null,
+            visible: shapeContainer ? shapeContainer.classList.contains('visible') : false,
+            shapeIndex: childClasses.indexOf('shape-info-container visible'),
+            asymptoteIndex: childClasses.indexOf('asymptote-info-container'),
+            holesIndex: childClasses.indexOf('holes-info-container'),
+            hasAsymptoteContainer: !!asymptoteContainer,
+            hasHolesContainer: !!holesContainer
+        };
+    });
+
+    assert.strictEqual(domResult.label, 'circle', 'shape label should render in function panel');
+    assert.strictEqual(domResult.visible, true, 'shape label should be visible');
+    assert(domResult.hasAsymptoteContainer, 'shape DOM check should find asymptote container');
+    assert(domResult.hasHolesContainer, 'shape DOM check should find holes container');
+    assert(domResult.shapeIndex >= 0, 'shape row should exist in function item');
+    assert(domResult.shapeIndex < domResult.asymptoteIndex, 'shape row should render before asymptote metadata');
+    assert(domResult.shapeIndex < domResult.holesIndex, 'shape row should render before hole metadata');
+}
+
+async function assertImplicitFastPathTurningPointsStayQuiet(page) {
+    const cases = [
+        '\\frac13y^2x=0',
+        'x^2-y^2=4',
+        'xy=1',
+        '\\left(y-2\\right)\\left(x^2+y^2-7\\right)=0'
+    ];
+
+    const result = await page.evaluate(async (cases) => {
+        const graphiti = window.graphiti;
+        const messages = [];
+        const originalWarn = console.warn;
+        const originalError = console.error;
+        console.warn = (...args) => {
+            messages.push(args.map(String).join(' '));
+        };
+        console.error = (...args) => {
+            messages.push(args.map(String).join(' '));
+        };
+
+        try {
+            graphiti.plotMode = 'cartesian';
+            graphiti.cartesianFunctions = [];
+            graphiti.polarFunctions = [];
+            graphiti.nextFunctionId = 1;
+            graphiti.showIntersections = false;
+            graphiti.showTurningPoints = true;
+            graphiti.showIntercepts = false;
+
+            for (const expression of cases) {
+                const func = {
+                    id: graphiti.nextFunctionId++,
+                    expression,
+                    points: [],
+                    color: '#4A90E2',
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+                graphiti.cartesianFunctions.push(func);
+                await graphiti.plotFunction(func);
+            }
+
+            graphiti.findTurningPoints();
+        } finally {
+            console.warn = originalWarn;
+            console.error = originalError;
+        }
+
+        return messages.filter(message =>
+            message.includes('Skipping turning points') ||
+            message.includes('Could not find turning points') ||
+            message.includes('Error finding implicit turning points')
+        );
+    }, cases);
+
+    assert.deepStrictEqual(result, [], `implicit fast-path turning point warnings: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -404,6 +531,8 @@ async function assertEmptyMathLivePlaceholdersAreRestored(page) {
 
         await assertIncompleteExpressionsDoNotPlot(page);
     await assertEmptyMathLivePlaceholdersAreRestored(page);
+        await assertShapeClassification(page);
+        await assertImplicitFastPathTurningPointsStayQuiet(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {
