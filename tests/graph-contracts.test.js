@@ -360,6 +360,8 @@ async function assertShapeClassification(page) {
         { expression: 'y=2*x+1', expected: 'line' },
         { expression: '(x^2+y^2-4)*(y-x)=0', expected: 'circle + line' },
         { expression: '(y-1/x)*(y-1)=0', expected: 'hyperbola + line' },
+        { expression: 'x*(y^2-x)=0', expected: 'line + parabola' },
+        { expression: 'x*y^2-x^2=0', expected: 'line + parabola' },
         { expression: 'x*y=0', expected: 'line pair' },
         { expression: 'x^2+y^2+1=0', expected: null }
     ];
@@ -545,6 +547,95 @@ async function assertStaleIntersectionMarkersAreDiscarded(page) {
     ], `frozen intersections should be filtered: ${JSON.stringify(result.frozen)}`);
 }
 
+async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
+    const results = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+
+        const runPair = async (expressions) => {
+            graphiti.plotMode = 'cartesian';
+            graphiti.cartesianFunctions = [];
+            graphiti.polarFunctions = [];
+            graphiti.nextFunctionId = 1;
+            graphiti.showIntersections = true;
+            graphiti.showTurningPoints = false;
+            graphiti.showIntercepts = false;
+            graphiti.input.persistentBadges = [];
+            graphiti.clearIntersectionState({ cancelWorker: true });
+
+            graphiti.canvas.width = 960;
+            graphiti.canvas.height = 720;
+            Object.assign(graphiti.cartesianViewport, {
+                minX: -8,
+                maxX: 8,
+                minY: -8,
+                maxY: 8,
+                width: 960,
+                height: 720,
+                centerX: 480,
+                centerY: 360,
+                scale: 60
+            });
+
+            const functions = [];
+            for (let index = 0; index < expressions.length; index++) {
+                functions.push(await addFunction(expressions[index], index === 0 ? '#4A90E2' : '#D0021B'));
+            }
+
+            graphiti.calculateIntersectionsWithWorker(true);
+
+            const startTime = Date.now();
+            while ((graphiti.implicitIntersectionsPending || graphiti.isWorkerCalculating) && Date.now() - startTime < 3000) {
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+
+            return {
+                verticalComponents: functions.flatMap(func => graphiti.getImplicitVerticalComponents(func)),
+                intersections: graphiti.intersections.map(point => ({ x: point.x, y: point.y }))
+            };
+        };
+
+        const addFunction = async (expression, color) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color,
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+            return func;
+        };
+
+        return {
+            expandedProduct: await runPair(['y=1', 'x*y^2-x^2=0']),
+            affineImplicit: await runPair(['y=5', 'y*(x-1)=x^2+1'])
+        };
+    });
+
+    const expandedProduct = results.expandedProduct;
+    assertApproxSet(expandedProduct.verticalComponents, [0], 0.04, 'expanded line/parabola vertical component metadata');
+    assert(
+        expandedProduct.intersections.some(point => approxEqual(point.x, 0, 0.04) && approxEqual(point.y, 1, 0.04)),
+        `expected y=1 to intersect vertical component at (0, 1), got ${JSON.stringify(expandedProduct.intersections)}`
+    );
+    assert(
+        expandedProduct.intersections.some(point => approxEqual(point.x, 1, 0.04) && approxEqual(point.y, 1, 0.04)),
+        `expected y=1 to intersect parabola at (1, 1), got ${JSON.stringify(expandedProduct.intersections)}`
+    );
+
+    const affineImplicit = results.affineImplicit;
+    assert(
+        affineImplicit.intersections.some(point => approxEqual(point.x, 2, 0.04) && approxEqual(point.y, 5, 0.04)),
+        `expected y=5 to intersect affine implicit curve at (2, 5), got ${JSON.stringify(affineImplicit.intersections)}`
+    );
+    assert(
+        affineImplicit.intersections.some(point => approxEqual(point.x, 3, 0.04) && approxEqual(point.y, 5, 0.04)),
+        `expected y=5 to intersect affine implicit curve at (3, 5), got ${JSON.stringify(affineImplicit.intersections)}`
+    );
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -602,10 +693,11 @@ async function assertStaleIntersectionMarkersAreDiscarded(page) {
         }
 
         await assertIncompleteExpressionsDoNotPlot(page);
-    await assertEmptyMathLivePlaceholdersAreRestored(page);
+        await assertEmptyMathLivePlaceholdersAreRestored(page);
         await assertShapeClassification(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
-    await assertStaleIntersectionMarkersAreDiscarded(page);
+        await assertStaleIntersectionMarkersAreDiscarded(page);
+        await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {

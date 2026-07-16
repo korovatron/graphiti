@@ -109,6 +109,10 @@ function findIntersections(functions, plotMode) {
             const func1 = enabledFunctions[i];
             const func2 = enabledFunctions[j];
             
+                if ((func1.isImplicit === false) && (func2.isImplicit === false)) {
+                    continue;
+                }
+            
             const pairIntersections = findIntersectionsBetweenFunctions(func1, func2, plotMode);
             intersections.push(...pairIntersections);
         }
@@ -245,6 +249,10 @@ function findImplicitIntersections(func1, func2) {
     // Simple O(n²) approach but with reasonable segment counts
     for (const seg1 of segments1) {
         for (const seg2 of segments2) {
+            if (!segmentsMightOverlap(seg1.start, seg1.end, seg2.start, seg2.end)) {
+                continue;
+            }
+
             const intersection = findLineSegmentIntersection(
                 seg1.start, seg1.end, seg2.start, seg2.end
             );
@@ -361,6 +369,11 @@ function findMixedIntersections(func1, func2, func1IsImplicit) {
     // Determine which function is explicit and which is implicit
     const explicitFunc = func1IsImplicit ? func2 : func1;
     const implicitFunc = func1IsImplicit ? func1 : func2;
+
+    const horizontalY = getConstantYValue(explicitFunc.points);
+    if (horizontalY !== null) {
+        return findHorizontalLineImplicitIntersections(implicitFunc, explicitFunc, horizontalY);
+    }
     
     // Get line segments from implicit function
     const implicitSegments = getLineSegments(implicitFunc.points);
@@ -372,6 +385,92 @@ function findMixedIntersections(func1, func2, func1IsImplicit) {
         intersections.push(...segmentIntersections);
     }
     
+    return intersections;
+}
+
+function getConstantYValue(points) {
+    if (!Array.isArray(points) || points.length < 2) {
+        return null;
+    }
+
+    let yValue = null;
+    let validCount = 0;
+    for (const point of points) {
+        if (!point || !isFinite(point.x) || !isFinite(point.y)) {
+            continue;
+        }
+        if (yValue === null) {
+            yValue = point.y;
+        } else if (Math.abs(point.y - yValue) > 1e-8) {
+            return null;
+        }
+        validCount++;
+    }
+
+    return validCount >= 2 ? yValue : null;
+}
+
+function findHorizontalLineImplicitIntersections(implicitFunc, explicitFunc, yValue) {
+    const intersections = [];
+    const segments = getLineSegments(implicitFunc.points);
+    const duplicateTolerance = 0.01;
+
+    const addIntersection = (x, y) => {
+        if (!isFinite(x) || !isFinite(y)) {
+            return;
+        }
+
+        let snappedX = x;
+        let snappedY = y;
+        if (Math.abs(snappedX) < 0.02) snappedX = 0;
+        if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+        const isDuplicate = intersections.some(existing =>
+            Math.abs(existing.x - snappedX) < duplicateTolerance &&
+            Math.abs(existing.y - snappedY) < duplicateTolerance
+        );
+        if (!isDuplicate) {
+            intersections.push({
+                x: snappedX,
+                y: snappedY,
+                func1: explicitFunc,
+                func2: implicitFunc,
+                isApproximate: true
+            });
+        }
+    };
+
+    for (const segment of segments) {
+        const start = segment.start;
+        const end = segment.end;
+        if (!start || !end || !isFinite(start.x) || !isFinite(start.y) || !isFinite(end.x) || !isFinite(end.y)) {
+            continue;
+        }
+
+        const startDelta = start.y - yValue;
+        const endDelta = end.y - yValue;
+        if (Math.abs(startDelta) <= 1e-10 && Math.abs(endDelta) <= 1e-10) {
+            addIntersection(start.x, yValue);
+            addIntersection(end.x, yValue);
+            continue;
+        }
+        if (Math.abs(startDelta) <= 1e-10) {
+            addIntersection(start.x, yValue);
+            continue;
+        }
+        if (Math.abs(endDelta) <= 1e-10) {
+            addIntersection(end.x, yValue);
+            continue;
+        }
+        if (startDelta * endDelta > 0) {
+            continue;
+        }
+
+        const ratio = Math.abs(startDelta) / (Math.abs(startDelta) + Math.abs(endDelta));
+        const x = start.x + (ratio * (end.x - start.x));
+        addIntersection(x, yValue);
+    }
+
     return intersections;
 }
 
@@ -391,6 +490,10 @@ function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
         
         // Skip if curve points are invalid
         if (isNaN(curveP1.x) || isNaN(curveP1.y) || isNaN(curveP2.x) || isNaN(curveP2.y)) {
+            continue;
+        }
+
+        if (!segmentsMightOverlap(segStart, segEnd, curveP1, curveP2)) {
             continue;
         }
         
@@ -428,6 +531,21 @@ function findSegmentCurveIntersections(segment, explicitFunc, implicitFunc) {
     }
     
     return intersections;
+}
+
+function segmentsMightOverlap(p1, p2, p3, p4) {
+    const minX1 = Math.min(p1.x, p2.x);
+    const maxX1 = Math.max(p1.x, p2.x);
+    const minY1 = Math.min(p1.y, p2.y);
+    const maxY1 = Math.max(p1.y, p2.y);
+    const minX2 = Math.min(p3.x, p4.x);
+    const maxX2 = Math.max(p3.x, p4.x);
+    const minY2 = Math.min(p3.y, p4.y);
+    const maxY2 = Math.max(p3.y, p4.y);
+    const tolerance = 1e-9;
+
+    return maxX1 + tolerance >= minX2 && maxX2 + tolerance >= minX1 &&
+        maxY1 + tolerance >= minY2 && maxY2 + tolerance >= minY1;
 }
 
 function getLineSegments(points) {

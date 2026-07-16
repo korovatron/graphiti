@@ -6106,6 +6106,28 @@ class Graphiti {
         return func && func.expression ? this.detectFunctionType(func.expression) : 'explicit';
     }
 
+    getIntersectionPointsWithImplicitVerticalComponents(func, sourcePoints = null) {
+        const points = Array.isArray(sourcePoints)
+            ? sourcePoints
+            : (func && Array.isArray(func.points) ? func.points : []);
+        const verticalComponents = this.getImplicitVerticalComponents(func);
+        if (verticalComponents.length === 0) {
+            return points;
+        }
+
+        const ySpan = Math.max(1e-12, this.viewport.maxY - this.viewport.minY);
+        const yMin = this.viewport.minY - ySpan * 0.5;
+        const yMax = this.viewport.maxY + ySpan * 0.5;
+        const augmentedPoints = points.slice();
+        for (const x of verticalComponents) {
+            augmentedPoints.push({ x: NaN, y: NaN, connected: false });
+            augmentedPoints.push({ x, y: yMin, connected: false });
+            augmentedPoints.push({ x, y: yMax, connected: true });
+            augmentedPoints.push({ x: NaN, y: NaN, connected: false });
+        }
+        return augmentedPoints;
+    }
+
     isMathematicallyImplicitFunction(func) {
         if (!func || !func.expression) {
             return false;
@@ -16128,6 +16150,11 @@ class Graphiti {
             return this.classifyPolynomialCoeffMapShape(coeffMap, { excludedXRoots });
         }
 
+        const commonMonomialComponent = this.classifyCommonMonomialFactorShape(equation);
+        if (commonMonomialComponent) {
+            return commonMonomialComponent;
+        }
+
         if (!equation.denominatorClearedFromEquation) {
             const denominatorClearedEquation = this.buildDenominatorClearedImplicitEquation(equation);
             if (denominatorClearedEquation) {
@@ -16136,6 +16163,89 @@ class Graphiti {
         }
 
         return null;
+    }
+
+    classifyCommonMonomialFactorShape(equation) {
+        const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 4);
+        if (!coeffMap) {
+            return null;
+        }
+
+        const coefficientScale = Math.max(1, ...Object.values(coeffMap).map(value => Math.abs(value || 0)));
+        const tolerance = coefficientScale * 1e-9;
+        const terms = [];
+        for (const [key, value] of Object.entries(coeffMap)) {
+            if (!Number.isFinite(value) || Math.abs(value) <= tolerance) {
+                continue;
+            }
+
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return null;
+            }
+            terms.push({ px, py, value });
+        }
+
+        if (terms.length === 0) {
+            return null;
+        }
+
+        const minXPower = Math.min(...terms.map(term => term.px));
+        const minYPower = Math.min(...terms.map(term => term.py));
+        if (minXPower === 0 && minYPower === 0) {
+            return null;
+        }
+
+        const labels = [];
+        if (minXPower > 0) {
+            labels.push('line');
+        }
+        if (minYPower > 0) {
+            labels.push('line');
+        }
+
+        const residualMap = {};
+        let residualDegree = 0;
+        for (const term of terms) {
+            const px = term.px - minXPower;
+            const py = term.py - minYPower;
+            residualDegree = Math.max(residualDegree, px + py);
+            if (px + py > 2) {
+                return null;
+            }
+            residualMap[`${px},${py}`] = term.value;
+        }
+
+        if (residualDegree > 0) {
+            const residualShape = this.classifyPolynomialCoeffMapShape(residualMap);
+            if (!residualShape || !residualShape.label) {
+                return null;
+            }
+            labels.push(residualShape.label);
+        }
+
+        if (labels.length === 0) {
+            return null;
+        }
+        if (labels.every(label => label === 'line')) {
+            return {
+                label: labels.length === 2 ? 'line pair' : (labels.length === 1 ? 'line' : 'line components'),
+                confidence: 'strong'
+            };
+        }
+
+        const uniqueLabels = [];
+        for (const label of labels) {
+            if (!uniqueLabels.includes(label)) {
+                uniqueLabels.push(label);
+            }
+        }
+        return {
+            label: uniqueLabels.join(' + '),
+            confidence: 'strong'
+        };
     }
 
     extractImplicitPolynomialCoeffMap(equation, maxTotalDegree = 2) {
@@ -30650,7 +30760,7 @@ class Graphiti {
                 return {
                     id: func.id,
                     expression: func.expression,
-                    points: func.points,
+                    points: this.getIntersectionPointsWithImplicitVerticalComponents(func),
                     color: func.color,
                     enabled: func.enabled,
                     isImplicit: funcType === 'implicit' || funcType === 'implicit-inequality' || funcType === 'parametric'
