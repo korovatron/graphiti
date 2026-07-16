@@ -382,6 +382,60 @@ async function assertShapeClassification(page) {
         assert.strictEqual(result.actual, result.expected, `${result.expression}: shape classification`);
     }
 
+    const polarResults = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.parameters.alpha.value = 1;
+        graphiti.parameters.beta.value = 1;
+
+        const cases = [
+            { expression: 'r=2', expected: 'circle' },
+            { expression: 'theta=pi/2', expected: 'polar ray' },
+            { expression: 'r=2*cos(theta)', expected: 'circle' },
+            { expression: 'r=1+cos(theta)', expected: 'cardioid' },
+            { expression: 'r=1+alpha*cos(theta+1)', expected: 'cardioid' },
+            { expression: 'r=1+2*cos(theta)', expected: 'limacon - inner loop' },
+            { expression: 'r=3+cos(theta)', expected: 'limacon - convex' },
+            { expression: 'r=2*cos(3*theta)', expected: 'rose curve - 3 petals' },
+            { expression: 'r=sin(4*theta)', expected: 'rose curve - 8 petals' },
+            { expression: 'r=theta', expected: 'Archimedean spiral' },
+            { expression: 'r=1+theta', expected: 'Archimedean spiral' }
+        ];
+
+        const fullRange = cases.map(testCase => {
+            const shape = graphiti.classifyFunctionShape(testCase.expression);
+            return {
+                expression: testCase.expression,
+                expected: testCase.expected,
+                actual: shape && shape.label ? shape.label : null
+            };
+        });
+
+        graphiti.polarSettings.thetaMax = Math.PI / 6;
+        const partialRose = graphiti.classifyFunctionShape('r=2*cos(3*theta)');
+        graphiti.parameters.beta.value = 0;
+        const betaZeroCircle = graphiti.classifyFunctionShape('r=alpha*cos(beta*theta)');
+        graphiti.parameters.beta.value = 3;
+        const betaThreeRose = graphiti.classifyFunctionShape('r=alpha*cos(beta*theta)');
+
+        return {
+            fullRange,
+            partialRose: partialRose && partialRose.label ? partialRose.label : null,
+            betaZeroCircle: betaZeroCircle && betaZeroCircle.label ? betaZeroCircle.label : null,
+            betaThreeRose: betaThreeRose && betaThreeRose.label ? betaThreeRose.label : null
+        };
+    });
+
+    for (const result of polarResults.fullRange) {
+        assert.strictEqual(result.actual, result.expected, `${result.expression}: polar shape classification`);
+    }
+    assert.strictEqual(polarResults.partialRose, 'rose curve', 'partial polar range should not claim visible rose petal count');
+    assert.strictEqual(polarResults.betaZeroCircle, 'circle', 'polar trig with zero frequency should classify as circle');
+    assert.strictEqual(polarResults.betaThreeRose, 'rose curve', 'non-zero parameter frequency should not collapse to circle');
+
     const domResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
@@ -448,6 +502,35 @@ async function assertShapeClassification(page) {
     assert.strictEqual(lineDomResult.classifiedLabel, 'line', 'single line should still classify as line');
     assert.strictEqual(lineDomResult.renderedLabel, '', 'single line shape label should not render text');
     assert.strictEqual(lineDomResult.visible, false, 'single line shape row should stay hidden');
+
+    const polarDomResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('r=1+cos(theta)');
+        const func = graphiti.polarFunctions[0];
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+
+        return {
+            renderedLabel: shapeValue ? shapeValue.textContent : null,
+            visible: shapeContainer ? shapeContainer.classList.contains('visible') : false
+        };
+    });
+
+    assert.strictEqual(polarDomResult.renderedLabel, 'cardioid', 'polar shape label should render in function panel');
+    assert.strictEqual(polarDomResult.visible, true, 'polar shape row should be visible');
 }
 
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {

@@ -16179,6 +16179,13 @@ class Graphiti {
         }
 
         const functionType = this.detectFunctionType(expression);
+        if (this.plotMode === 'polar' && functionType === 'polar') {
+            return this.classifyPolarFunctionShape(expression);
+        }
+        if (this.plotMode === 'polar' && functionType === 'theta-constant') {
+            return { label: 'polar ray', confidence: 'exact' };
+        }
+
         if (!['explicit', 'implicit'].includes(functionType)) {
             return null;
         }
@@ -16189,6 +16196,300 @@ class Graphiti {
         }
 
         return this.classifyImplicitEquationShape(equation, 0);
+    }
+
+    classifyPolarFunctionShape(expression) {
+        if (!expression || this.hasIncompleteMathLiveInput(expression)) {
+            return null;
+        }
+
+        let polarExpression = this.convertFromLatex(expression).trim().toLowerCase();
+        if (!polarExpression.startsWith('r=')) {
+            return null;
+        }
+
+        polarExpression = polarExpression
+            .substring(2)
+            .trim()
+            .replace(/θ/g, 'theta')
+            .replace(/(\d)([a-zA-Z])/g, '$1*$2')
+            .replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+        let node;
+        try {
+            node = this.cleanMath.parse(polarExpression);
+        } catch {
+            return null;
+        }
+
+        const asConstant = (candidate) => this.evaluatePolarShapeConstant(candidate);
+        const asThetaMultiple = (candidate) => this.extractPolarShapeThetaMultiple(candidate);
+        const asTrigTerm = (candidate) => this.extractPolarShapeTrigTerm(candidate);
+        const asAdditiveTerms = (candidate) => this.extractPolarShapeAdditiveTerms(candidate);
+
+        const constantValue = asConstant(node);
+        if (constantValue !== null && Math.abs(constantValue) > 1e-9) {
+            return { label: 'circle', confidence: 'exact' };
+        }
+
+        const parameterResolvedConstant = this.evaluatePolarShapeParameterResolvedConstant(node);
+        if (parameterResolvedConstant !== null && Math.abs(parameterResolvedConstant) > 1e-9) {
+            return { label: 'circle', confidence: 'parameter' };
+        }
+
+        const thetaTerm = asThetaMultiple(node);
+        if (thetaTerm && Math.abs(thetaTerm.coefficient) > 1e-9) {
+            return { label: 'Archimedean spiral', confidence: 'exact' };
+        }
+
+        const trigTerm = asTrigTerm(node);
+        if (trigTerm && Math.abs(trigTerm.coefficient) > 1e-9) {
+            if (Math.abs(trigTerm.multiplier - 1) <= 1e-9) {
+                return { label: 'circle', confidence: 'exact' };
+            }
+            if (Number.isInteger(trigTerm.multiplier) && trigTerm.multiplier > 0) {
+                const shape = { label: 'rose curve', confidence: 'exact' };
+                const petals = trigTerm.multiplier % 2 === 0 ? trigTerm.multiplier * 2 : trigTerm.multiplier;
+                const rangeRadians = this.getCurrentPolarThetaRangeRadians();
+                const fullRosePeriod = trigTerm.multiplier % 2 === 0
+                    ? (2 * Math.PI) / trigTerm.multiplier
+                    : Math.PI;
+                if (rangeRadians >= fullRosePeriod - 1e-6) {
+                    shape.label = `rose curve - ${petals} ${petals === 1 ? 'petal' : 'petals'}`;
+                    shape.petals = petals;
+                }
+                return shape;
+            }
+            return null;
+        }
+
+        const terms = asAdditiveTerms(node);
+        if (terms) {
+            const nonZeroTerms = terms.filter(term => Math.abs(term.coefficient) > 1e-9);
+            const constantTerms = nonZeroTerms.filter(term => term.kind === 'constant');
+            const trigTerms = nonZeroTerms.filter(term => term.kind === 'trig');
+            const thetaTerms = nonZeroTerms.filter(term => term.kind === 'theta');
+            if (thetaTerms.length === 1 && trigTerms.length === 0 && constantTerms.length <= 1) {
+                return { label: 'Archimedean spiral', confidence: 'exact' };
+            }
+            if (constantTerms.length === 1 && trigTerms.length === 1 && trigTerms[0].multiplier === 1) {
+                const a = Math.abs(constantTerms[0].coefficient);
+                const b = Math.abs(trigTerms[0].coefficient);
+                if (a <= 1e-9 || b <= 1e-9) {
+                    return null;
+                }
+                const tolerance = Math.max(a, b, 1) * 1e-8;
+                if (Math.abs(a - b) <= tolerance) {
+                    return { label: 'cardioid', confidence: 'exact' };
+                }
+                if (a < b) {
+                    return { label: 'limacon - inner loop', confidence: 'exact' };
+                }
+                if (a < 2 * b) {
+                    return { label: 'limacon - dimpled', confidence: 'exact' };
+                }
+                return { label: 'limacon - convex', confidence: 'exact' };
+            }
+        }
+
+        return null;
+    }
+
+    evaluatePolarShapeConstant(node) {
+        if (!node || /\b(theta|t|x|y|r)\b/i.test(node.toString())) {
+            return null;
+        }
+
+        try {
+            const value = node.evaluate(this.getEvaluationScope({ pi: Math.PI, e: Math.E }));
+            return Number.isFinite(value) ? value : null;
+        } catch {
+            return null;
+        }
+    }
+
+    evaluatePolarShapeParameterResolvedConstant(node) {
+        if (!node || !/\b(theta|t)\b/i.test(node.toString())) {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        try {
+            const referenceValue = node.evaluate(scope);
+            if (!Number.isFinite(referenceValue)) {
+                return null;
+            }
+
+            for (const theta of [0, Math.PI / 5, Math.PI / 2, Math.PI, 2 * Math.PI]) {
+                scope.theta = theta;
+                scope.t = theta;
+                const value = node.evaluate(scope);
+                if (!Number.isFinite(value) || Math.abs(value - referenceValue) > Math.max(1e-8, Math.abs(referenceValue) * 1e-8)) {
+                    return null;
+                }
+            }
+
+            return referenceValue;
+        } catch {
+            return null;
+        }
+    }
+
+    extractPolarShapeThetaMultiple(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeThetaMultiple(node.content);
+        }
+        if (node.type === 'SymbolNode' && ['theta', 't'].includes(String(node.name).toLowerCase())) {
+            return { coefficient: 1 };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractPolarShapeThetaMultiple(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluatePolarShapeConstant(node.args[0]);
+            const rightTheta = this.extractPolarShapeThetaMultiple(node.args[1]);
+            if (leftConstant !== null && rightTheta) {
+                return { coefficient: leftConstant * rightTheta.coefficient };
+            }
+            const rightConstant = this.evaluatePolarShapeConstant(node.args[1]);
+            const leftTheta = this.extractPolarShapeThetaMultiple(node.args[0]);
+            if (rightConstant !== null && leftTheta) {
+                return { coefficient: rightConstant * leftTheta.coefficient };
+            }
+        }
+
+        return null;
+    }
+
+    extractPolarShapeThetaAffine(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeThetaAffine(node.content);
+        }
+        const thetaMultiple = this.extractPolarShapeThetaMultiple(node);
+        if (thetaMultiple) {
+            return { coefficient: thetaMultiple.coefficient, constant: 0 };
+        }
+        const constant = this.evaluatePolarShapeConstant(node);
+        if (constant !== null) {
+            return { coefficient: 0, constant };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractPolarShapeThetaAffine(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient, constant: -inner.constant } : null;
+        }
+        if (node.type === 'OperatorNode' && ['+', '-'].includes(node.op) && node.args.length === 2) {
+            const left = this.extractPolarShapeThetaAffine(node.args[0]);
+            const right = this.extractPolarShapeThetaAffine(node.args[1]);
+            if (!left || !right) {
+                return null;
+            }
+            const sign = node.op === '-' ? -1 : 1;
+            return {
+                coefficient: left.coefficient + (sign * right.coefficient),
+                constant: left.constant + (sign * right.constant)
+            };
+        }
+
+        return null;
+    }
+
+    extractPolarShapeTrigTerm(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeTrigTerm(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractPolarShapeTrigTerm(node.args[0]);
+            return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluatePolarShapeConstant(node.args[0]);
+            const rightTrig = this.extractPolarShapeTrigTerm(node.args[1]);
+            if (leftConstant !== null && rightTrig) {
+                return { ...rightTrig, coefficient: leftConstant * rightTrig.coefficient };
+            }
+            const rightConstant = this.evaluatePolarShapeConstant(node.args[1]);
+            const leftTrig = this.extractPolarShapeTrigTerm(node.args[0]);
+            if (rightConstant !== null && leftTrig) {
+                return { ...leftTrig, coefficient: rightConstant * leftTrig.coefficient };
+            }
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            if (!['sin', 'cos'].includes(name) || !node.args || node.args.length !== 1) {
+                return null;
+            }
+            const thetaAffine = this.extractPolarShapeThetaAffine(node.args[0]);
+            if (!thetaAffine || !Number.isFinite(thetaAffine.coefficient) || thetaAffine.coefficient <= 0) {
+                return null;
+            }
+            return { kind: 'trig', trig: name, multiplier: thetaAffine.coefficient, coefficient: 1, phase: thetaAffine.constant };
+        }
+
+        return null;
+    }
+
+    extractPolarShapeAdditiveTerms(node) {
+        const terms = [];
+        const collect = (candidate, sign = 1) => {
+            if (!candidate) {
+                return false;
+            }
+            if (candidate.type === 'ParenthesisNode') {
+                return collect(candidate.content, sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '+' && candidate.args.length === 2) {
+                return collect(candidate.args[0], sign) && collect(candidate.args[1], sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 2) {
+                return collect(candidate.args[0], sign) && collect(candidate.args[1], -sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 1) {
+                return collect(candidate.args[0], -sign);
+            }
+
+            const constant = this.evaluatePolarShapeConstant(candidate);
+            if (constant !== null) {
+                terms.push({ kind: 'constant', coefficient: sign * constant });
+                return true;
+            }
+            const trig = this.extractPolarShapeTrigTerm(candidate);
+            if (trig) {
+                terms.push({ ...trig, coefficient: sign * trig.coefficient });
+                return true;
+            }
+            const theta = this.extractPolarShapeThetaMultiple(candidate);
+            if (theta) {
+                terms.push({ kind: 'theta', coefficient: sign * theta.coefficient });
+                return true;
+            }
+            return false;
+        };
+
+        return collect(node) ? terms : null;
+    }
+
+    getCurrentPolarThetaRangeRadians() {
+        const thetaMin = Number(this.polarSettings && this.polarSettings.thetaMin);
+        const thetaMax = Number(this.polarSettings && this.polarSettings.thetaMax);
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax)) {
+            return 0;
+        }
+
+        const range = Math.abs(thetaMax - thetaMin);
+        return this.angleMode === 'degrees' ? range * Math.PI / 180 : range;
     }
 
     classifyImplicitEquationShape(equation, depth = 0) {
