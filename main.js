@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.27';
+const VERSION = '1.2.28';
 
 class Graphiti {
     constructor() {
@@ -29317,24 +29317,31 @@ class Graphiti {
                 }
             });
         } else {
-            // No saved Cartesian functions - add default rational function
+            // No saved Cartesian functions - add default rational functions
             addedDefaultFunctions = true;
-            const id = this.nextFunctionId++;
-            const color = this.functionColors[0];
-            
-            const func = {
-                id: id,
-                expression: 'y=\\frac{x^2+1}{x-1}',
-                points: [],
-                color: color,
-                enabled: true,
-                mode: 'cartesian'
-            };
-            
-            this.cartesianFunctions.push(func);
-            if (this.plotMode === 'cartesian') {
-                this.createFunctionUI(func);
-            }
+            const defaultExpressions = [
+                'y=\\frac{x^2+1}{x-1}',
+                'y=\\frac{x^2-4}{x-2}'
+            ];
+
+            defaultExpressions.forEach(expression => {
+                const id = this.nextFunctionId++;
+                const color = this.functionColors[this.cartesianFunctions.length % this.functionColors.length];
+
+                const func = {
+                    id: id,
+                    expression: expression,
+                    points: [],
+                    color: color,
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+
+                this.cartesianFunctions.push(func);
+                if (this.plotMode === 'cartesian') {
+                    this.createFunctionUI(func);
+                }
+            });
         }
         
         if (savedData.hasSavedPolar) {
