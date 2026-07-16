@@ -16038,7 +16038,7 @@ class Graphiti {
             return null;
         }
 
-        const factorExpressions = depth === 0 ? this.extractZeroProductFactorExpressions(equation) : null;
+        const factorExpressions = depth <= 1 ? this.extractZeroProductFactorExpressions(equation) : null;
         if (Array.isArray(factorExpressions) && factorExpressions.length > 1) {
             const componentLabels = [];
             for (const factorExpression of factorExpressions) {
@@ -16072,7 +16072,18 @@ class Graphiti {
         }
 
         const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
-        return coeffMap ? this.classifyPolynomialCoeffMapShape(coeffMap) : null;
+        if (coeffMap) {
+            return this.classifyPolynomialCoeffMapShape(coeffMap);
+        }
+
+        if (!equation.denominatorClearedFromEquation) {
+            const denominatorClearedEquation = this.buildDenominatorClearedImplicitEquation(equation);
+            if (denominatorClearedEquation) {
+                return this.classifyImplicitEquationShape(denominatorClearedEquation, depth + 1);
+            }
+        }
+
+        return null;
     }
 
     extractImplicitPolynomialCoeffMap(equation, maxTotalDegree = 2) {
