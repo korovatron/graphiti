@@ -114,6 +114,20 @@ module.exports = [
         }
     },
     {
+        name: 'line plus hyperbola reports unique oblique asymptotes',
+        expression: '4*x^3-x*y=50*x+4*x*y^2',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [
+                { m: -1, b: 0 },
+                { m: 1, b: 0 }
+            ],
+            verticalComponents: [0]
+        }
+    },
+    {
         name: 'axis component plus reciprocal square-root branches',
         expression: 'x*(y^2+1)=x*(x+2)*y^2',
         viewport: defaultViewport,

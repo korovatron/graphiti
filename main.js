@@ -8796,6 +8796,7 @@ class Graphiti {
             }
             return formatPolynomialExpression(terms);
         };
+        const cancelledCommonFactorRoots = [];
 
         const simplifyCoefficientExpression = (expression) => {
             const rationalParts = this.extractPolynomialRationalParts(expression);
@@ -8930,6 +8931,40 @@ class Graphiti {
                 cExpression = simplifyCoefficientExpression(coefficientExpressions[0] || '0');
                 bExpression = simplifyCoefficientExpression(coefficientExpressions[1] || '0');
                 aExpression = simplifyCoefficientExpression(coefficientExpressions[2] || '0');
+
+                const coefficientPolynomials = [cExpression, bExpression, aExpression].map(expression => {
+                    try {
+                        return this.extractPolynomialCoeffs(this.cleanMath.parse(expression));
+                    } catch {
+                        return null;
+                    }
+                });
+                if (coefficientPolynomials.every(poly => poly && this.getPolynomialDegree(poly) >= 0)) {
+                    const basePolynomial = coefficientPolynomials.find(poly => this.getPolynomialDegree(poly) >= 1);
+                    const commonRoots = basePolynomial ? this.findPolynomialRealRoots(basePolynomial) : [];
+                    for (const root of commonRoots) {
+                        if (!Number.isFinite(root)) {
+                            continue;
+                        }
+                        const multiplicity = Math.min(...coefficientPolynomials.map(poly =>
+                            this.getPolynomialRootMultiplicity(poly, root, 1e-7, 8)
+                        ));
+                        for (let count = 0; count < multiplicity; count++) {
+                            for (let index = 0; index < coefficientPolynomials.length; index++) {
+                                coefficientPolynomials[index] = this.dividePolynomials(coefficientPolynomials[index], [-root, 1]).quotient;
+                            }
+                            if (!cancelledCommonFactorRoots.some(value => Math.abs(value - root) <= 1e-7)) {
+                                cancelledCommonFactorRoots.push(root);
+                            }
+                        }
+                    }
+
+                    if (cancelledCommonFactorRoots.length > 0) {
+                        cExpression = polynomialCoeffsToExpression(coefficientPolynomials[0]);
+                        bExpression = polynomialCoeffsToExpression(coefficientPolynomials[1]);
+                        aExpression = polynomialCoeffsToExpression(coefficientPolynomials[2]);
+                    }
+                }
             }
         } catch {
             coefficientDomainExclusions = [];
@@ -8950,6 +8985,42 @@ class Graphiti {
                 { coefficient: quadraticCoefficients.F, variable: '' }
             ]);
         }
+
+        if (cancelledCommonFactorRoots.length === 0) {
+            const coefficientPolynomials = [cExpression, bExpression, aExpression].map(expression => {
+                try {
+                    return this.extractPolynomialCoeffs(this.cleanMath.parse(expression));
+                } catch {
+                    return null;
+                }
+            });
+            if (coefficientPolynomials.every(poly => poly && this.getPolynomialDegree(poly) >= 0)) {
+                const basePolynomial = coefficientPolynomials.find(poly => this.getPolynomialDegree(poly) >= 1);
+                const commonRoots = basePolynomial ? this.findPolynomialRealRoots(basePolynomial) : [];
+                for (const root of commonRoots) {
+                    if (!Number.isFinite(root)) {
+                        continue;
+                    }
+                    const multiplicity = Math.min(...coefficientPolynomials.map(poly =>
+                        this.getPolynomialRootMultiplicity(poly, root, 1e-7, 8)
+                    ));
+                    for (let count = 0; count < multiplicity; count++) {
+                        for (let index = 0; index < coefficientPolynomials.length; index++) {
+                            coefficientPolynomials[index] = this.dividePolynomials(coefficientPolynomials[index], [-root, 1]).quotient;
+                        }
+                        if (!cancelledCommonFactorRoots.some(value => Math.abs(value - root) <= 1e-7)) {
+                            cancelledCommonFactorRoots.push(root);
+                        }
+                    }
+                }
+
+                if (cancelledCommonFactorRoots.length > 0) {
+                    cExpression = polynomialCoeffsToExpression(coefficientPolynomials[0]);
+                    bExpression = polynomialCoeffsToExpression(coefficientPolynomials[1]);
+                    aExpression = polynomialCoeffsToExpression(coefficientPolynomials[2]);
+                }
+            }
+        }
         discriminantExpression = simplifyGeneratedExpression('((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))');
 
         const branchExpressions = [
@@ -8966,6 +9037,11 @@ class Graphiti {
             );
         } catch {
             verticalComponents = [];
+        }
+        for (const root of cancelledCommonFactorRoots) {
+            if (Number.isFinite(root) && !verticalComponents.some(value => Math.abs(value - root) <= 1e-7)) {
+                verticalComponents.push(root);
+            }
         }
 
         const domainExclusionsRaw = [
@@ -15732,17 +15808,26 @@ class Graphiti {
                 return null;
             }
 
+            const roundedSlope = Math.round(line.m);
+            const snappedSlope = Math.abs(line.m - roundedSlope) < 1e-5 ? roundedSlope : line.m;
             const snappedIntercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
             return {
-                m: line.m,
+                m: snappedSlope,
                 b: snappedIntercept,
                 direction: Number.isFinite(line.direction) ? line.direction : 0
             };
         };
 
-        const oblique = (obliqueAsymptotes || [])
-            .map(line => normalizeObliqueLine(line))
-            .filter(line => line !== null);
+        const oblique = [];
+        for (const line of (obliqueAsymptotes || []).map(item => normalizeObliqueLine(item)).filter(item => item !== null)) {
+            const duplicate = oblique.some(existing =>
+                Math.abs(existing.m - line.m) <= Math.max(1e-5, Math.abs(existing.m) * 1e-5) &&
+                Math.abs(existing.b - line.b) <= Math.max(1e-5, Math.abs(existing.b) * 1e-5)
+            );
+            if (!duplicate) {
+                oblique.push(line);
+            }
+        }
 
         const formatEquationValue = (value) => {
             const roundedInteger = Math.round(value);
@@ -18269,12 +18354,13 @@ class Graphiti {
         const viewportSettleDelay = hasAsymptoteHeavyExplicitReplot ? 180 : 50;
 
         // Set new timer to recalculate intersections and turning points after user stops pan/zoom
-        this.intersectionDebounceTimer = setTimeout(() => {
+        this.intersectionDebounceTimer = setTimeout(async () => {
             this.isViewportChanging = false;
             this.saveViewportBounds();
             const showViewportWorkIndicator = this.shouldShowViewportWorkIndicator();
             if (showViewportWorkIndicator) {
                 this.showGraphWorkIndicator();
+                await this.waitForGraphBuildOverlayPaint();
             }
             // Don't clear frozen intersection badges yet - wait until all intersection calculations complete
             
@@ -18297,7 +18383,7 @@ class Graphiti {
                 return functionType === 'implicit' || functionType === 'implicit-inequality';
             });
             if (hasImplicitFunctionsToReplot) {
-                this.replotImplicitFunctions(true);
+                explicitReplotPromises.push(this.replotImplicitFunctions(true));
             }
 
             const refreshSignificantPoints = () => {
@@ -28124,7 +28210,7 @@ class Graphiti {
         
         if (implicitFunctions.length === 0) {
             this.draw();
-            return;
+            return Promise.resolve();
         }
         
         // Process implicit functions asynchronously to prevent UI blocking
@@ -28151,12 +28237,16 @@ class Graphiti {
             if (immediate) {
                 await replotNextFunction(index + 1);
             } else {
-                setTimeout(() => replotNextFunction(index + 1), 0);
+                await new Promise(resolve => {
+                    setTimeout(() => {
+                        replotNextFunction(index + 1).then(resolve);
+                    }, 0);
+                });
             }
         };
         
         // Start processing the first function
-        replotNextFunction(0);
+        return replotNextFunction(0);
     }
     
     snapBadgesToImplicitCurves() {
@@ -28617,9 +28707,11 @@ class Graphiti {
             await plotNextImplicit(index + 1);
         };
         
-        // Start plotting implicit functions immediately
+        // Let the title-to-graphing transition paint before heavy implicit plotting begins.
         if (implicitFunctions.length > 0) {
-            plotNextImplicit(0);
+            requestAnimationFrame(() => {
+                plotNextImplicit(0);
+            });
         }
         
         // Initialize intercepts toggle button state
@@ -28669,14 +28761,14 @@ class Graphiti {
             return false;
         }
 
-        const enabledExpressionCount = functions.filter(func =>
-            func &&
-            func.enabled &&
-            func.expression &&
-            func.expression.trim()
-        ).length;
+        return functions.some(func => {
+            if (!func || !func.enabled || !func.expression || !func.expression.trim()) {
+                return false;
+            }
 
-        return enabledExpressionCount >= 2;
+            const functionType = this.detectFunctionType(func.expression);
+            return functionType === 'implicit' || functionType === 'implicit-inequality';
+        });
     }
 
     async showGraphBuildOverlayForFunctions(functions) {
@@ -28703,7 +28795,7 @@ class Graphiti {
             return functionType === 'implicit' || functionType === 'implicit-inequality';
         }).length;
 
-        return enabledImplicitCount >= 2;
+        return enabledImplicitCount >= 1;
     }
 
     showGraphWorkIndicator() {
