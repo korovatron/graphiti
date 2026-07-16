@@ -23932,7 +23932,7 @@ class Graphiti {
                     this.draw();
                     
                     // Debounce the expensive intersection/turning point calculations and implicit function replotting
-                    this.handleViewportChange();
+                    this.handleViewportChange({ skipCoverageRefresh: true });
                 }
             }
             
@@ -24663,7 +24663,7 @@ class Graphiti {
             // Redraw and recalculate integrals
             this.draw();
             this.updateIntegralPairs(); // Recalculate integrals for new viewport
-            this.handleViewportChange(); // Debounced recalculation
+            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
         
         // Reset zoom rectangle state
@@ -31603,7 +31603,7 @@ class Graphiti {
         this.implicitIntersectionsPending = true;
         
         // Calculate immediately or after delay based on flag
-        const delay = immediate ? 0 : this.implicitIntersectionDelay;
+        const delay = immediate ? 0 : (this.isViewportChanging ? 180 : this.implicitIntersectionDelay);
         this.implicitIntersectionTimer = setTimeout(() => {
             this.calculateImplicitIntersections();
         }, delay);
@@ -37784,7 +37784,7 @@ class Graphiti {
         // Functions will be recalculated when panning stops via handleViewportChange debounce
         if (hasPanned) {
             this.updateRangeInputs();
-            this.handleViewportChange(); // Debounced recalculation
+            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
             this.draw(); // Redraw existing points immediately for smooth panning
         }
     }
