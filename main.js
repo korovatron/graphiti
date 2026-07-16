@@ -8274,7 +8274,41 @@ class Graphiti {
         const filteredPoints = this.filterDenominatorClearedPoints(func.points, equation);
         func.points = filteredPoints;
         func.displayPoints = filteredPoints;
+        this.pruneDenominatorClearedHoles(func, equation);
         func.implicitDenominatorCleared = true;
+    }
+
+    pruneDenominatorClearedHoles(func, equation) {
+        const metadata = equation && equation.denominatorClearedFromEquation;
+        if (!func || !metadata || !Array.isArray(func.holes) || func.holes.length === 0) {
+            return;
+        }
+
+        const domainExclusions = Array.isArray(metadata.domainExclusions)
+            ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        if (domainExclusions.length === 0) {
+            return;
+        }
+
+        const finitePoints = Array.isArray(func.points)
+            ? func.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+            : [];
+        const xSpan = Math.max(1e-12, this.viewport.maxX - this.viewport.minX);
+        const nearPointTolerance = Math.max(1e-4, xSpan * 5e-4);
+
+        func.holes = func.holes.filter(hole => {
+            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                return false;
+            }
+
+            const excludedX = domainExclusions.some(exclusionX => Math.abs(hole.x - exclusionX) <= 1e-6);
+            if (!excludedX) {
+                return true;
+            }
+
+            return finitePoints.some(point => Math.abs(point.x - hole.x) <= nearPointTolerance);
+        });
     }
 
     filterDenominatorClearedPoints(points, equation) {
@@ -11599,7 +11633,7 @@ class Graphiti {
         });
         func.points = this.addMonomialXViewportBoundaryContinuations(mappedPoints);
         func.displayPoints = func.points;
-        func.holes = Array.isArray(proxyFunc.holes)
+        let mappedHoles = Array.isArray(proxyFunc.holes)
             ? proxyFunc.holes
                 .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
                 .map(hole => ({ x: hole.y, y: hole.x }))
@@ -11666,6 +11700,13 @@ class Graphiti {
         vertical.sort((a, b) => a - b);
         horizontal.sort((a, b) => a - b);
         oblique.sort((a, b) => a.m - b.m);
+        const isOnRenderedVerticalRun = (hole) => Array.isArray(func.points) && func.points.some(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y) && Math.abs(point.x - hole.x) <= 1e-5
+        );
+        mappedHoles = mappedHoles.filter(hole =>
+            !vertical.some(x => Math.abs(hole.x - x) <= 1e-5) && !isOnRenderedVerticalRun(hole)
+        );
+        func.holes = mappedHoles;
         this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
         func.monomialXExplicitExpressions = Array.isArray(proxyFunc.monomialYExplicitExpressions)
             ? proxyFunc.monomialYExplicitExpressions.slice()
@@ -11804,7 +11845,7 @@ class Graphiti {
             };
         });
         func.displayPoints = func.points;
-        func.holes = Array.isArray(proxyFunc.holes)
+        let mappedHoles = Array.isArray(proxyFunc.holes)
             ? proxyFunc.holes
                 .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
                 .map(hole => ({ x: hole.y, y: hole.x }))
@@ -11860,6 +11901,13 @@ class Graphiti {
         vertical.sort((a, b) => a - b);
         horizontal.sort((a, b) => a - b);
         oblique.sort((a, b) => a.m - b.m);
+        const isOnRenderedVerticalRun = (hole) => Array.isArray(func.points) && func.points.some(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y) && Math.abs(point.x - hole.x) <= 1e-5
+        );
+        mappedHoles = mappedHoles.filter(hole =>
+            !vertical.some(x => Math.abs(hole.x - x) <= 1e-5) && !isOnRenderedVerticalRun(hole)
+        );
+        func.holes = mappedHoles;
         this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
         func.quadraticXExplicitExpressions = quadraticXModel.branchExpressions.slice();
         func.implicitRenderMode = 'quadratic-x-explicit';
@@ -16073,7 +16121,11 @@ class Graphiti {
 
         const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
         if (coeffMap) {
-            return this.classifyPolynomialCoeffMapShape(coeffMap);
+            const denominatorMetadata = equation.denominatorClearedFromEquation;
+            const excludedXRoots = denominatorMetadata && Array.isArray(denominatorMetadata.domainExclusions)
+                ? denominatorMetadata.domainExclusions.filter(value => Number.isFinite(value))
+                : [];
+            return this.classifyPolynomialCoeffMapShape(coeffMap, { excludedXRoots });
         }
 
         if (!equation.denominatorClearedFromEquation) {
@@ -16099,7 +16151,7 @@ class Graphiti {
         }
     }
 
-    classifyPolynomialCoeffMapShape(coeffMap) {
+    classifyPolynomialCoeffMapShape(coeffMap, options = {}) {
         if (!coeffMap) {
             return null;
         }
@@ -16149,9 +16201,12 @@ class Graphiti {
             const xOnly = Math.abs(B) <= tolerance && Math.abs(C) <= tolerance && Math.abs(E) <= tolerance;
             const yOnly = Math.abs(A) <= tolerance && Math.abs(B) <= tolerance && Math.abs(D) <= tolerance;
             if (xOnly || yOnly) {
-                const roots = xOnly
+                let roots = xOnly
                     ? this.findPolynomialRealRoots([F, D, A])
                     : this.findPolynomialRealRoots([F, E, C]);
+                if (xOnly && Array.isArray(options.excludedXRoots) && options.excludedXRoots.length > 0) {
+                    roots = roots.filter(root => !options.excludedXRoots.some(exclusionX => Math.abs(root - exclusionX) <= 1e-6));
+                }
                 if (roots.length === 1) {
                     return { label: 'line', confidence: 'strong' };
                 }

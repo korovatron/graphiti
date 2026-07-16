@@ -157,6 +157,24 @@ module.exports = [
         }
     },
     {
+        name: 'denominator-cleared vertical line drops excluded branch metadata',
+        expression: 'x^2/x=1',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'quadratic-x-explicit',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            holes: [],
+            pointsNear: [
+                { x: 1, y: -6, tolerance: 0.08, label: 'lower vertical line' },
+                { x: 1, y: 0, tolerance: 0.08, label: 'middle vertical line' },
+                { x: 1, y: 6, tolerance: 0.08, label: 'upper vertical line' }
+            ]
+        }
+    },
+    {
         name: 'vertical line plus reciprocal branch keeps components and reciprocal asymptotes',
         expression: '(x-1)*(y-1)*(y-1/x)=0',
         viewport: defaultViewport,

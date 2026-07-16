@@ -355,6 +355,7 @@ async function assertShapeClassification(page) {
         { expression: 'x^2-y^2=1', expected: 'hyperbola' },
         { expression: 'y=1/x', expected: 'hyperbola' },
         { expression: 'x=1/y', expected: 'hyperbola' },
+        { expression: 'x^2/x=1', expected: 'line' },
         { expression: 'y=x^2', expected: 'parabola' },
         { expression: 'y=2*x+1', expected: 'line' },
         { expression: '(x^2+y^2-4)*(y-x)=0', expected: 'circle + line' },
