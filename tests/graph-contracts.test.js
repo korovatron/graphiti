@@ -380,6 +380,12 @@ async function assertEmptyMathLivePlaceholdersAreRestored(page) {
                     `${label}: expected at least ${expected.minBoundaryContinuations} boundary continuations, got ${actual.boundaryContinuationCount}`
                 );
             }
+            if (Number.isFinite(expected.maxFinitePointCount)) {
+                assert(
+                    actual.finitePointCount <= expected.maxFinitePointCount,
+                    `${label}: expected at most ${expected.maxFinitePointCount} finite points, got ${actual.finitePointCount}`
+                );
+            }
             assertApproxSet(actual.asymptoteData.vertical, expected.verticalAsymptotes || [], 0.03, `${label} vertical asymptotes`);
             assertApproxSet(actual.asymptoteData.horizontal, expected.horizontalAsymptotes || [], 0.03, `${label} horizontal asymptotes`);
             assertApproxLines(actual.asymptoteData.oblique, expected.obliqueAsymptotes || [], { m: 0.035, b: 0.08 }, `${label} oblique asymptotes`);

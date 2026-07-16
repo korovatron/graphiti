@@ -7686,6 +7686,64 @@ class Graphiti {
             return false;
         }
 
+        const buildDirectSingleVariableComponents = (factorExpression) => {
+            const expressionText = String(factorExpression || '').replace(/\\([()])/g, '$1');
+            const hasX = /\bx\b/.test(expressionText);
+            const hasY = /\by\b/.test(expressionText);
+            if (hasX === hasY) {
+                return null;
+            }
+
+            let coefficients;
+            try {
+                const polynomialExpression = hasY ? expressionText.replace(/\by\b/g, 'x') : expressionText;
+                coefficients = this.extractPolynomialCoeffs(this.cleanMath.parse(polynomialExpression));
+            } catch {
+                return null;
+            }
+
+            if (!coefficients || this.getPolynomialDegree(coefficients) < 1) {
+                return null;
+            }
+
+            const roots = this.findPolynomialRealRoots(coefficients)
+                .filter(value => Number.isFinite(value))
+                .map(value => Math.abs(value - Math.round(value)) < 1e-10 ? Math.round(value) : value)
+                .filter((value, valueIndex, values) => values.findIndex(other => Math.abs(other - value) <= 1e-7) === valueIndex)
+                .sort((a, b) => a - b);
+            if (roots.length === 0) {
+                return null;
+            }
+
+            const points = [];
+            const xSpan = this.viewport.maxX - this.viewport.minX;
+            const ySpan = this.viewport.maxY - this.viewport.minY;
+            if (hasX) {
+                const yMin = this.viewport.minY - ySpan * 0.5;
+                const yMax = this.viewport.maxY + ySpan * 0.5;
+                for (const x of roots) {
+                    points.push({ x: NaN, y: NaN, connected: false });
+                    points.push({ x, y: yMin, connected: false });
+                    points.push({ x, y: yMax, connected: true });
+                    points.push({ x: NaN, y: NaN, connected: false });
+                }
+                return { points, verticalComponents: roots };
+            }
+
+            const xMin = this.viewport.minX - xSpan * 0.5;
+            const xMax = this.viewport.maxX + xSpan * 0.5;
+            const samples = 96;
+            for (const y of roots) {
+                points.push({ x: NaN, y: NaN, connected: false });
+                for (let i = 0; i <= samples; i++) {
+                    const x = xMin + ((xMax - xMin) * i / samples);
+                    points.push({ x, y, connected: i !== 0 });
+                }
+                points.push({ x: NaN, y: NaN, connected: false });
+            }
+            return { points, verticalComponents: [] };
+        };
+
         const factorResults = [];
         for (let index = 0; index < factorExpressions.length; index++) {
             const factorExpression = factorExpressions[index];
@@ -7698,14 +7756,53 @@ class Graphiti {
                 holes: []
             };
 
-            await this.plotImplicitFunction(factorFunc, highResForIntersections, immediate, {
-                skipProductFactorFastPath: true,
-                suppressDraw: true
-            });
+            const directComponent = buildDirectSingleVariableComponents(factorExpression);
+            if (directComponent) {
+                factorFunc.points = directComponent.points;
+                factorFunc.displayPoints = directComponent.points;
+                factorFunc.productImplicitVerticalComponents = directComponent.verticalComponents.slice();
+                factorFunc.asymptoteData = { vertical: [], horizontal: [], oblique: [] };
+                factorFunc.implicitRenderMode = 'product-direct-components';
+            } else {
+                await this.plotImplicitFunction(factorFunc, highResForIntersections, immediate, {
+                    skipProductFactorFastPath: true,
+                    suppressDraw: true
+                });
+            }
 
-            const finitePointCount = Array.isArray(factorFunc.points)
+            let finitePointCount = Array.isArray(factorFunc.points)
                 ? factorFunc.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
                 : 0;
+            if (finitePointCount === 0) {
+                let verticalLineXs = [];
+                try {
+                    const coefficients = this.extractPolynomialCoeffs(this.cleanMath.parse(factorExpression));
+                    if (coefficients && this.getPolynomialDegree(coefficients) >= 1) {
+                        verticalLineXs = this.findPolynomialRealRoots(coefficients);
+                    }
+                } catch {
+                    verticalLineXs = [];
+                }
+
+                verticalLineXs = verticalLineXs
+                    .filter(value => Number.isFinite(value))
+                    .filter((value, valueIndex, values) => values.findIndex(other => Math.abs(other - value) <= 1e-7) === valueIndex);
+                if (verticalLineXs.length > 0) {
+                    const ySpan = this.viewport.maxY - this.viewport.minY;
+                    const yMin = this.viewport.minY - ySpan * 0.5;
+                    const yMax = this.viewport.maxY + ySpan * 0.5;
+                    factorFunc.points = [];
+                    for (const x of verticalLineXs) {
+                        factorFunc.points.push({ x: NaN, y: NaN, connected: false });
+                        factorFunc.points.push({ x, y: yMin, connected: false });
+                        factorFunc.points.push({ x, y: yMax, connected: true });
+                        factorFunc.points.push({ x: NaN, y: NaN, connected: false });
+                    }
+                    factorFunc.displayPoints = factorFunc.points;
+                    factorFunc.productImplicitVerticalComponents = verticalLineXs.slice();
+                    finitePointCount = factorFunc.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length;
+                }
+            }
             if (finitePointCount === 0) {
                 return false;
             }
@@ -7819,9 +7916,11 @@ class Graphiti {
             return null;
         }
 
+        const expressionForParse = String(productExpression).replace(/\\([()])/g, '$1');
+
         let parsed;
         try {
-            parsed = this.cleanMath.parse(productExpression);
+            parsed = this.cleanMath.parse(expressionForParse);
         } catch {
             return null;
         }
@@ -7876,8 +7975,15 @@ class Graphiti {
         if (unwrapped.type === 'ConstantNode') {
             return true;
         }
+        if (unwrapped.type === 'SymbolNode') {
+            const symbol = String(unwrapped.name || '').toLowerCase();
+            return symbol === 'pi' || symbol === 'e';
+        }
         if (unwrapped.type === 'OperatorNode' && unwrapped.op === '-' && Array.isArray(unwrapped.args) && unwrapped.args.length === 1) {
             return this.isConstantMathNode(unwrapped.args[0]);
+        }
+        if (unwrapped.type === 'OperatorNode' && ['+', '-', '*', '/', '^'].includes(unwrapped.op) && Array.isArray(unwrapped.args)) {
+            return unwrapped.args.length > 0 && unwrapped.args.every(arg => this.isConstantMathNode(arg));
         }
         return false;
     }

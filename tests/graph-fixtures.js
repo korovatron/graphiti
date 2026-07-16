@@ -170,6 +170,126 @@ module.exports = [
         }
     },
     {
+        name: 'integer coefficient zero product uses direct components',
+        expression: '2xy^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'decimal coefficient zero product uses direct components',
+        expression: '0.5xy^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'negative coefficient zero product uses direct components',
+        expression: '-7xy^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'fraction coefficient zero product has components but no asymptotes',
+        expression: '\\frac12xy^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'parenthesised fraction x coefficient zero product has no asymptotes',
+        expression: '\\left(\\frac12x\\right)y^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'parenthesised fraction y coefficient zero product has no asymptotes',
+        expression: 'x\\left(\\frac12y^2\\right)=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'braced fraction coefficient zero product has no asymptotes',
+        expression: '\\frac{1}{17}xy^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
+        name: 'two digit fraction coefficient zero product has no asymptotes',
+        expression: '\\frac23xy^2=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxFinitePointCount: 160,
+            horizontalComponents: [0],
+            verticalComponents: [0]
+        }
+    },
+    {
         name: 'circle union full diagonal line',
         expression: '(x^2+y^2-4)*(y-x)=0',
         viewport: defaultViewport,
