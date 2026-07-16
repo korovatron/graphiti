@@ -216,6 +216,7 @@ class Graphiti {
             '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#E74C3C'
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
+        this.functionSaveTimer = null; // For debouncing localStorage writes during typing
         this.rangeTimer = null; // For debouncing range updates
         
         // Axis intercepts detection
@@ -2761,8 +2762,8 @@ class Graphiti {
                 // Debounced plotting
                 this.debouncePlot(func);
                 
-                // Save functions to localStorage after expression changes
-                this.saveFunctionsToLocalStorage();
+                // Save functions after typing settles so localStorage does not block input.
+                this.debounceSaveFunctionsToLocalStorage();
             } catch (error) {
                 console.warn('Error getting mathfield value:', error);
             }
@@ -3037,13 +3038,31 @@ class Graphiti {
             clearTimeout(this.plotTimers.get(func.id));
         }
         
-        // Set new timer for delayed plotting - replot all functions for consistent badge behavior
+        // Set new timer for delayed plotting. During typing, only replot the edited
+        // function so heavy neighbouring graphs do not block MathLive input.
         const timerId = setTimeout(() => {
-            this.replotAllFunctions(); // Replot all functions to ensure badges are properly updated
+            this.replotEditedFunction(func).catch(error => {
+                console.warn('Could not replot edited function:', error);
+            });
             this.plotTimers.delete(func.id);
         }, 500); // Balanced delay for responsiveness and performance
         
         this.plotTimers.set(func.id, timerId);
+    }
+
+    async replotEditedFunction(func) {
+        if (!func || !func.enabled) {
+            return;
+        }
+
+        await this.plotFunctionWithValidation(func).then(() => {
+            if (!func.points || func.points.length === 0) {
+                this.removeBadgesForFunction(func.id);
+                this.removeIntersectionBadgesForFunction(func.id);
+            }
+        });
+
+        this.draw();
     }
     
     // Expression compilation cache helpers for performance optimization
@@ -3643,6 +3662,11 @@ class Graphiti {
     
     // Save functions to localStorage
     saveFunctionsToLocalStorage() {
+        if (this.functionSaveTimer) {
+            clearTimeout(this.functionSaveTimer);
+            this.functionSaveTimer = null;
+        }
+
         // Don't save if in temporary session mode
         if (this.tempSession) {
             return;
@@ -3670,6 +3694,17 @@ class Graphiti {
             // Silently handle localStorage errors (e.g., quota exceeded, private browsing)
             console.warn('Could not save functions to localStorage:', error);
         }
+    }
+
+    debounceSaveFunctionsToLocalStorage() {
+        if (this.functionSaveTimer) {
+            clearTimeout(this.functionSaveTimer);
+        }
+
+        this.functionSaveTimer = setTimeout(() => {
+            this.functionSaveTimer = null;
+            this.saveFunctionsToLocalStorage();
+        }, 250);
     }
     
     // Load functions from localStorage
