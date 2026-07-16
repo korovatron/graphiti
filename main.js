@@ -234,6 +234,7 @@ class Graphiti {
         this.implicitIntersectionTimer = null;
         this.implicitIntersectionDelay = 50; // ms after pan/zoom stops (reduced for faster response)
         this.implicitIntersectionsPending = false; // Track if implicit calculation is expected
+        this.intersectionGeneration = 0; // Bumps when the function set changes so stale worker results are ignored
         this.lastViewportState = null; // Track viewport changes
         
         // Implicit function viewport caching for smooth pan/zoom performance
@@ -1904,6 +1905,7 @@ class Graphiti {
         this.integralPairs = [];
         this.linkedBadgePairs = [];
         this.selectedBadgeForLinking = null;
+        this.clearIntersectionState({ cancelWorker: true });
         
         // Clear all current functions completely (remove from array and UI)
         const currentFunctions = this.getCurrentFunctions();
@@ -3604,10 +3606,7 @@ class Graphiti {
         this.frozenInterceptBadges = [];
         
         // Clear intersection arrays and frozen badges before recalculating to prevent stale data
-        this.intersections = [];
-        this.explicitIntersections = [];
-        this.implicitIntersections = [];
-        this.frozenIntersectionBadges = [];
+        this.clearIntersectionState({ cancelWorker: true });
         
         // Recalculate intersections and turning points for remaining functions
         this.handleViewportChange();
@@ -18062,9 +18061,11 @@ class Graphiti {
         
         // Create frozen intersection badges for visual continuity during viewport changes
         if (!this.isViewportChanging && this.intersections.length > 0) {
-            this.frozenIntersectionBadges = this.intersections.map(intersection => ({
+            this.frozenIntersectionBadges = this.getCurrentIntersectionMarkers(this.intersections).map(intersection => ({
                 x: intersection.x,
-                y: intersection.y
+                y: intersection.y,
+                func1Id: intersection.func1Id,
+                func2Id: intersection.func2Id
             }));
         }
         
@@ -23467,9 +23468,11 @@ class Graphiti {
         }
         
         if (this.intersections.length > 0) {
-            this.frozenIntersectionBadges = this.intersections.map(intersection => ({
+            this.frozenIntersectionBadges = this.getCurrentIntersectionMarkers(this.intersections).map(intersection => ({
                 x: intersection.x,
-                y: intersection.y
+                y: intersection.y,
+                func1Id: intersection.func1Id,
+                func2Id: intersection.func2Id
             }));
         }
         
@@ -27410,10 +27413,7 @@ class Graphiti {
         this.frozenInterceptBadges = [];
         
         // Clear intersections when switching modes (will be recalculated in new mode)
-        this.intersections = [];
-        this.explicitIntersections = [];
-        this.implicitIntersections = [];
-        this.frozenIntersectionBadges = [];
+        this.clearIntersectionState({ cancelWorker: true });
         
         // Invalidate inequality intersection cache when switching modes
         this.invalidateInequalityIntersectionCache();
@@ -27878,10 +27878,7 @@ class Graphiti {
         this.saveFunctionsToLocalStorage();
         this.updateParameterSliders();
 
-        this.intersections = [];
-        this.explicitIntersections = [];
-        this.implicitIntersections = [];
-        this.frozenIntersectionBadges = [];
+        this.clearIntersectionState({ cancelWorker: true });
         this.frozenInterceptBadges = [];
         this.frozenTurningPointBadges = [];
 
@@ -30275,6 +30272,35 @@ class Graphiti {
         this.implicitIntersections = [];
         this.tangentIntersections = [];
         this.normalIntersections = [];
+        this.frozenIntersectionBadges = [];
+        this.combinedIntersections = [];
+        this.implicitIntersectionsPending = false;
+        this.intersectionGeneration++;
+    }
+
+    clearIntersectionState(options = {}) {
+        const cancelWorker = options.cancelWorker !== false;
+        if (this.implicitIntersectionTimer) {
+            clearTimeout(this.implicitIntersectionTimer);
+            this.implicitIntersectionTimer = null;
+        }
+        if (cancelWorker && this.intersectionWorker && this.isWorkerCalculating) {
+            this.intersectionWorker.postMessage({
+                type: 'CANCEL_CALCULATION',
+                data: { generation: this.intersectionGeneration }
+            });
+        }
+
+        this.intersections = [];
+        this.explicitIntersections = [];
+        this.implicitIntersections = [];
+        this.combinedIntersections = [];
+        this.tangentIntersections = [];
+        this.normalIntersections = [];
+        this.frozenIntersectionBadges = [];
+        this.implicitIntersectionsPending = false;
+        this.isWorkerCalculating = false;
+        this.intersectionGeneration++;
     }
 
     // ================================
@@ -30326,6 +30352,10 @@ class Graphiti {
                 break;
                 
             case 'INTERSECTIONS_COMPLETE':
+                if (data.generation !== undefined && data.generation !== this.intersectionGeneration) {
+                    break;
+                }
+
                 // Track intersection calculation time for performance monitoring
                 if (this.performance.enabled && data.calculationTime) {
                     this.performance.intersectionTime = data.calculationTime;
@@ -30363,6 +30393,10 @@ class Graphiti {
                 break;
                 
             case 'INTERSECTIONS_ERROR':
+                if (data.generation !== undefined && data.generation !== this.intersectionGeneration) {
+                    break;
+                }
+
                 console.error('Worker intersection calculation error:', data.error);
                 this.isWorkerCalculating = false;
                 // Fallback to main thread calculation
@@ -30376,6 +30410,10 @@ class Graphiti {
                 break;
                 
             case 'CALCULATION_CANCELLED':
+                if (data && data.generation !== undefined && data.generation !== this.intersectionGeneration) {
+                    break;
+                }
+
                 this.isWorkerCalculating = false;
                 break;
                 
@@ -30452,7 +30490,8 @@ class Graphiti {
             },
             plotMode: this.plotMode,
             maxResolution: 1000,
-            calculationType: 'explicit' // Flag for explicit intersections
+            calculationType: 'explicit', // Flag for explicit intersections
+            generation: this.intersectionGeneration
         };
 
         // Send calculation request to worker
@@ -30561,7 +30600,8 @@ class Graphiti {
             },
             plotMode: this.plotMode,
             maxResolution: 1000,
-            calculationType: 'implicit' // Flag for implicit intersections
+            calculationType: 'implicit', // Flag for implicit intersections
+            generation: this.intersectionGeneration
         };
 
         this.intersectionWorker.postMessage({
@@ -30586,6 +30626,40 @@ class Graphiti {
         }
     }
 
+    getCurrentIntersectionMarkers(intersections) {
+        const currentFunctionIds = new Set(
+            this.getCurrentFunctions()
+                .filter(func => func && func.enabled)
+                .map(func => func.id)
+        );
+        const markers = [];
+
+        for (const intersection of Array.isArray(intersections) ? intersections : []) {
+            if (!intersection || !Number.isFinite(intersection.x) || !Number.isFinite(intersection.y)) {
+                continue;
+            }
+
+            const func1Id = intersection.func1Id !== undefined ? intersection.func1Id : (intersection.func1 ? intersection.func1.id : undefined);
+            const func2Id = intersection.func2Id !== undefined ? intersection.func2Id : (intersection.func2 ? intersection.func2.id : undefined);
+
+            const func1IsFunctionId = typeof func1Id === 'number' && Number.isFinite(func1Id);
+            const func2IsFunctionId = typeof func2Id === 'number' && Number.isFinite(func2Id);
+
+            if ((func1IsFunctionId && !currentFunctionIds.has(func1Id)) ||
+                (func2IsFunctionId && !currentFunctionIds.has(func2Id))) {
+                continue;
+            }
+
+            markers.push({
+                ...intersection,
+                func1Id,
+                func2Id
+            });
+        }
+
+        return markers;
+    }
+
     updateCombinedIntersections() {
         // Only recalculate tangent and normal intersections if implicit intersections are not pending
         // This prevents recalculating with stale data when explicit intersections finish early
@@ -30595,7 +30669,12 @@ class Graphiti {
         }
         
         // Combine explicit, implicit, tangent, and normal intersections for display
-        this.intersections = [...this.explicitIntersections, ...this.implicitIntersections, ...this.tangentIntersections, ...this.normalIntersections];
+        this.intersections = this.getCurrentIntersectionMarkers([
+            ...this.explicitIntersections,
+            ...this.implicitIntersections,
+            ...this.tangentIntersections,
+            ...this.normalIntersections
+        ]);
         
         // Stamp stable IDs onto each intersection so snapped badges can look up by ID
         for (const pt of this.intersections) {
@@ -36408,7 +36487,7 @@ class Graphiti {
         this.culledInterceptMarkers = [];
         
         // Clear frozen marker arrays to prevent stale screen positions
-        this.frozenIntersectionBadges = [];
+        this.clearIntersectionState({ cancelWorker: true });
         this.frozenTurningPointBadges = [];
         this.frozenInterceptBadges = [];
         this.isViewportChanging = false;
@@ -39022,6 +39101,8 @@ class Graphiti {
     }
     
     drawFrozenIntersectionBadges() {
+        this.frozenIntersectionBadges = this.getCurrentIntersectionMarkers(this.frozenIntersectionBadges);
+
         // Convert to screen coordinates and filter by viewport
         const markersInViewport = [];
         

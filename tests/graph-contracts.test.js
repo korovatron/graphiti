@@ -473,6 +473,74 @@ async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     assert.deepStrictEqual(result, [], `implicit fast-path turning point warnings: ${JSON.stringify(result)}`);
 }
 
+async function assertStaleIntersectionMarkersAreDiscarded(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [
+            { id: 1, expression: 'x=0', points: [{ x: 0, y: 0 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
+            { id: 2, expression: 'y=0', points: [{ x: 0, y: 0 }], enabled: true, mode: 'cartesian', color: '#D0021B' }
+        ];
+        graphiti.polarFunctions = [];
+        graphiti.explicitIntersections = [{ x: 0, y: 0, func1Id: 1, func2Id: 2 }];
+        graphiti.implicitIntersections = [{ x: 1, y: 1, func1Id: 1, func2Id: 2 }];
+        graphiti.intersections = [...graphiti.explicitIntersections, ...graphiti.implicitIntersections];
+        graphiti.frozenIntersectionBadges = [{ x: 0, y: 0, func1Id: 1, func2Id: 2 }];
+
+        graphiti.clearIntersectionState({ cancelWorker: false });
+        const generationAfterClear = graphiti.intersectionGeneration;
+        graphiti.handleWorkerMessage({
+            type: 'INTERSECTIONS_COMPLETE',
+            data: {
+                calculationType: 'implicit',
+                generation: generationAfterClear - 1,
+                intersections: [{ x: 9, y: 9, func1Id: 1, func2Id: 2 }]
+            }
+        });
+
+        const staleWorkerIgnored = graphiti.implicitIntersections.length === 0 && graphiti.intersections.length === 0;
+
+        graphiti.cartesianFunctions = [
+            { id: 2, expression: 'y=0', points: [{ x: 0, y: 0 }], enabled: true, mode: 'cartesian', color: '#D0021B' }
+        ];
+        graphiti.handleWorkerMessage({
+            type: 'INTERSECTIONS_COMPLETE',
+            data: {
+                calculationType: 'implicit',
+                generation: graphiti.intersectionGeneration,
+                intersections: [
+                    { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+                    { x: 2, y: 2, func1Id: 2, func2Id: 2 },
+                    { x: 3, y: 3, func1Id: 'tangent_a', func2Id: 2 }
+                ]
+            }
+        });
+
+        graphiti.frozenIntersectionBadges = [
+            { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+            { x: 2, y: 2, func1Id: 2, func2Id: 2 },
+            { x: 3, y: 3, func1Id: 'tangent_a', func2Id: 2 }
+        ];
+        graphiti.drawFrozenIntersectionBadges();
+
+        return {
+            staleWorkerIgnored,
+            combined: graphiti.intersections.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id })),
+            frozen: graphiti.frozenIntersectionBadges.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id }))
+        };
+    });
+
+    assert.strictEqual(result.staleWorkerIgnored, true, 'stale worker result should not repopulate intersections');
+    assert.deepStrictEqual(result.combined, [
+        { x: 2, y: 2, func1Id: 2, func2Id: 2 },
+        { x: 3, y: 3, func1Id: 'tangent_a', func2Id: 2 }
+    ], `current intersections should be filtered: ${JSON.stringify(result.combined)}`);
+    assert.deepStrictEqual(result.frozen, [
+        { x: 2, y: 2, func1Id: 2, func2Id: 2 },
+        { x: 3, y: 3, func1Id: 'tangent_a', func2Id: 2 }
+    ], `frozen intersections should be filtered: ${JSON.stringify(result.frozen)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -533,6 +601,7 @@ async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     await assertEmptyMathLivePlaceholdersAreRestored(page);
         await assertShapeClassification(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
+    await assertStaleIntersectionMarkersAreDiscarded(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {

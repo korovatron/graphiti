@@ -30,7 +30,7 @@ self.onmessage = function(event) {
             isCancelled = true;
             self.postMessage({
                 type: 'CALCULATION_CANCELLED',
-                data: { timestamp: Date.now() }
+                data: { timestamp: Date.now(), generation: data ? data.generation : undefined }
             });
             break;
             
@@ -41,7 +41,7 @@ self.onmessage = function(event) {
                 const startTime = performance.now();
                 
                 // Extract data from main thread
-                const { functions, viewport, plotMode, maxResolution, calculationType } = data;
+                const { functions, viewport, plotMode, maxResolution, calculationType, generation } = data;
                 
                 // Calculate intersections using the same logic as main thread
                 const intersections = findIntersections(functions, plotMode);
@@ -61,7 +61,8 @@ self.onmessage = function(event) {
                         intersections: intersections,
                         calculationTime: calculationTime,
                         functionCount: functions.length,
-                        calculationType: calculationType || 'mixed'
+                        calculationType: calculationType || 'mixed',
+                        generation: generation
                     }
                 });
                 
@@ -69,7 +70,7 @@ self.onmessage = function(event) {
                 console.error('Worker error:', error);
                 self.postMessage({
                     type: 'INTERSECTIONS_ERROR',
-                    data: { error: error.message }
+                    data: { error: error.message, generation: data ? data.generation : undefined }
                 });
             }
             break;
