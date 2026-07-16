@@ -15928,7 +15928,8 @@ class Graphiti {
         const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
         const shape = this.classifyFunctionShape(func);
         const shapeLabel = shape && shape.label ? shape.label : '';
-        const shapeVisibilityIsCurrent = shapeLabel
+        const displayShapeLabel = shapeLabel === 'line' ? '' : shapeLabel;
+        const shapeVisibilityIsCurrent = displayShapeLabel
             ? shapeContainer && shapeContainer.classList.contains('visible')
             : !shapeContainer || !shapeContainer.classList.contains('visible');
 
@@ -15954,7 +15955,7 @@ class Graphiti {
             : !holesContainer.classList.contains('visible');
         if (equationList.dataset.asymptoteSignature === asymptoteSignature &&
             (!holesList || holesList.dataset.holesSignature === holesSignature) &&
-            (!shapeValue || shapeValue.dataset.shapeSignature === shapeLabel) &&
+            (!shapeValue || shapeValue.dataset.shapeSignature === displayShapeLabel) &&
             asymptoteVisibilityIsCurrent &&
             holesVisibilityIsCurrent &&
             shapeVisibilityIsCurrent) {
@@ -15962,9 +15963,9 @@ class Graphiti {
         }
 
         if (shapeContainer && shapeValue) {
-            shapeValue.dataset.shapeSignature = shapeLabel;
-            shapeValue.textContent = shapeLabel;
-            if (shapeLabel) {
+            shapeValue.dataset.shapeSignature = displayShapeLabel;
+            shapeValue.textContent = displayShapeLabel;
+            if (displayShapeLabel) {
                 shapeContainer.classList.add('visible');
             } else {
                 shapeContainer.classList.remove('visible');

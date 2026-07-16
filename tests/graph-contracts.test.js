@@ -419,6 +419,35 @@ async function assertShapeClassification(page) {
     assert(domResult.shapeIndex >= 0, 'shape row should exist in function item');
     assert(domResult.shapeIndex < domResult.asymptoteIndex, 'shape row should render before asymptote metadata');
     assert(domResult.shapeIndex < domResult.holesIndex, 'shape row should render before hole metadata');
+
+    const lineDomResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('y=2*x+1');
+        const func = graphiti.cartesianFunctions[0];
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+        const shape = graphiti.classifyFunctionShape(func);
+
+        return {
+            classifiedLabel: shape && shape.label ? shape.label : null,
+            renderedLabel: shapeValue ? shapeValue.textContent : null,
+            visible: shapeContainer ? shapeContainer.classList.contains('visible') : false
+        };
+    });
+
+    assert.strictEqual(lineDomResult.classifiedLabel, 'line', 'single line should still classify as line');
+    assert.strictEqual(lineDomResult.renderedLabel, '', 'single line shape label should not render text');
+    assert.strictEqual(lineDomResult.visible, false, 'single line shape row should stay hidden');
 }
 
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {
