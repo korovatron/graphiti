@@ -262,6 +262,7 @@ class Graphiti {
         this.normalIntersections = []; // Store intersections between normal lines and functions
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
+        this.viewportRefreshGeneration = 0; // Invalidates stale post-viewport significant-point refreshes
         
         // Integration system
         this.integralPairs = []; // Store pairs of integral badges for area calculation
@@ -289,6 +290,7 @@ class Graphiti {
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
         this.frozenInterceptBadges = []; // Store intercept badges during viewport changes
+        this.interceptsPendingViewportRefresh = false; // Keep frozen intercepts until new viewport cache is ready
         this.culledInterceptMarkers = []; // Cache culled intercept markers for performance
         
         // Flag for skipping expensive numerical integration recalculations during drag
@@ -18288,6 +18290,8 @@ class Graphiti {
     
     // Debounced intersection updates for smooth pan/zoom performance
     handleViewportChange(options = {}) {
+        const viewportRefreshGeneration = ++this.viewportRefreshGeneration;
+
         // Get IDs of currently enabled functions
         const enabledFunctionIds = new Set(
             this.getCurrentFunctions()
@@ -18306,6 +18310,7 @@ class Graphiti {
                     type: intercept.type,
                     functionColor: '#808080' // Neutral gray color for intercepts
                 }));
+            this.interceptsPendingViewportRefresh = this.frozenInterceptBadges.length > 0;
         }
         
         // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
@@ -18387,6 +18392,10 @@ class Graphiti {
             }
 
             const refreshSignificantPoints = () => {
+                if (viewportRefreshGeneration !== this.viewportRefreshGeneration) {
+                    return;
+                }
+
                 this.frozenTurningPointBadges = []; // Clear frozen turning point badges
 
                 // Skip badge calculations during polar animation or pause
@@ -18404,6 +18413,8 @@ class Graphiti {
                     this.intercepts = this.findAxisIntercepts();
                     this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
+                this.frozenInterceptBadges = [];
+                this.interceptsPendingViewportRefresh = false;
                 
                 // Update integral pairs after replots to refresh numerical calculations
                 this.updateIntegralPairs();
@@ -37167,8 +37178,8 @@ class Graphiti {
 
         // Draw axis intercept markers if enabled and viewport is stable (skip during polar animation or pause)
         if (this.showIntercepts && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
-            if (this.isViewportChanging && this.frozenInterceptBadges && this.frozenInterceptBadges.length > 0) {
-                // During viewport changes, show frozen intercept badges for visual continuity
+            if ((this.isViewportChanging || this.interceptsPendingViewportRefresh) && this.frozenInterceptBadges && this.frozenInterceptBadges.length > 0) {
+                // During viewport changes and the settle refresh, show frozen intercept badges for visual continuity
                 this.drawFrozenInterceptBadges();
             } else if (!this.isViewportChanging && this.intercepts.length > 0) {
                 // When viewport is stable, show actual intercept markers
