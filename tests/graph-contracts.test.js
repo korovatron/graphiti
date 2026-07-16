@@ -365,6 +365,7 @@ async function assertShapeClassification(page) {
         { expression: '(y-1/x)*(y-1)=0', expected: 'hyperbola + line' },
         { expression: 'x*(y^2-x)=0', expected: 'line + parabola' },
         { expression: 'x*y^2-x^2=0', expected: 'line + parabola' },
+        { expression: '\\left(y-\\frac{x}{2}\\right)\\left(x-x^3y\\right)=0', expected: 'line + line + reciprocal-square curve' },
         { expression: 'x*y=0', expected: 'line pair' },
         { expression: 'x^2+y^2+1=0', expected: null }
     ];

@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.29';
+const VERSION = '1.2.30';
 
 class Graphiti {
     constructor() {
@@ -17121,20 +17121,17 @@ class Graphiti {
             const px = term.px - minXPower;
             const py = term.py - minYPower;
             residualDegree = Math.max(residualDegree, px + py);
-            if (px + py > 2) {
-                return null;
-            }
             residualMap[`${px},${py}`] = term.value;
         }
 
         if (residualDegree > 0) {
-            const residualShape = this.classifyPolynomialCoeffMapShape(residualMap);
+            const residualShape = this.classifyPolynomialCoeffMapShape(residualMap) ||
+                this.classifyReciprocalPowerCoeffMapShape(residualMap);
             if (!residualShape || !residualShape.label) {
                 return null;
             }
             labels.push(residualShape.label);
         }
-
         if (labels.length === 0) {
             return null;
         }
@@ -17155,6 +17152,52 @@ class Graphiti {
             label: uniqueLabels.join(' + '),
             confidence: 'strong'
         };
+    }
+
+    classifyReciprocalPowerCoeffMapShape(coeffMap) {
+        if (!coeffMap) {
+            return null;
+        }
+
+        const terms = [];
+        const coefficientScale = Math.max(1, ...Object.values(coeffMap).map(value => Math.abs(value || 0)));
+        const tolerance = coefficientScale * 1e-9;
+        for (const [key, value] of Object.entries(coeffMap)) {
+            if (!Number.isFinite(value) || Math.abs(value) <= tolerance) {
+                continue;
+            }
+
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return null;
+            }
+            terms.push({ px, py, value });
+        }
+
+        if (terms.length !== 2) {
+            return null;
+        }
+
+        const constantTerm = terms.find(term => term.px === 0 && term.py === 0);
+        const variableTerm = terms.find(term => !(term.px === 0 && term.py === 0));
+        if (!constantTerm || !variableTerm) {
+            return null;
+        }
+
+        const hasSingleLinearAxis = (variableTerm.px === 1 && variableTerm.py >= 2) ||
+            (variableTerm.py === 1 && variableTerm.px >= 2);
+        if (!hasSingleLinearAxis) {
+            return null;
+        }
+
+        const power = Math.max(variableTerm.px, variableTerm.py);
+        if (power === 2) {
+            return { label: 'reciprocal-square curve', confidence: 'structural' };
+        }
+
+        return { label: 'reciprocal-power curve', confidence: 'structural' };
     }
 
     extractImplicitPolynomialCoeffMap(equation, maxTotalDegree = 2) {
