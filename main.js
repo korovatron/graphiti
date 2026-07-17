@@ -14499,7 +14499,7 @@ class Graphiti {
             numericHorizontal: Array.isArray(numericHorizontal) ? numericHorizontal.slice() : [],
             vertical: algebraicAsymptotes.vertical.length > 0 ? algebraicAsymptotes.vertical.slice() : numericVertical.slice(),
             horizontal: algebraicAsymptotes.horizontal.slice(),
-            oblique: algebraicAsymptotes.oblique.length > 0 ? algebraicAsymptotes.oblique.map(line => ({ ...line })) : numericOblique.map(line => ({ ...line })),
+            oblique: algebraicAsymptotes.oblique.map(line => ({ ...line })),
             holes: this.detectRemovableDiscontinuities(
                 processedExpression,
                 compiledExpression,

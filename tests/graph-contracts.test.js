@@ -573,6 +573,52 @@ async function assertShapeClassification(page) {
         return !!shapeContainer && shapeContainer.classList.contains('visible') && shapeValue && shapeValue.textContent === 'circle';
     }, manuallyEditedFunctionId, { timeout: 3000 });
 
+    const cancelledRationalFunctionId = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('');
+        const func = graphiti.cartesianFunctions[0];
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const mathField = item ? item.querySelector('.function-main-row math-field') : null;
+        const expression = 'y=\\frac{\\left(x-2\\right)\\left(x+1\\right)}{\\left(x-2\\right)}';
+        if (mathField && typeof mathField.setValue === 'function') {
+            mathField.setValue(expression);
+        } else if (mathField) {
+            mathField.value = expression;
+        }
+        mathField.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+        return func.id;
+    });
+
+    const cancelledRationalDomResult = await page.waitForFunction((functionId) => {
+        const graphiti = window.graphiti;
+        const func = graphiti.cartesianFunctions.find(candidate => candidate.id === functionId);
+        const item = document.querySelector(`[data-function-id="${functionId}"]`);
+        const asymptoteContainer = item ? item.querySelector('.asymptote-info-container') : null;
+        const holesContainer = item ? item.querySelector('.holes-info-container') : null;
+        const holeItems = holesContainer ? Array.from(holesContainer.querySelectorAll('.holes-equation-item, .asymptote-equation-item')) : [];
+        const hasHole = Array.isArray(func && func.holes) && func.holes.some(hole => Math.abs(hole.x - 2) < 1e-6 && Math.abs(hole.y - 3) < 1e-6);
+        if (!func || !hasHole || !holesContainer || !holesContainer.classList.contains('visible')) {
+            return false;
+        }
+        return {
+            obliqueCount: func.asymptoteData && Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique.length : null,
+            asymptotesVisible: asymptoteContainer ? asymptoteContainer.classList.contains('visible') : null,
+            holeCount: holeItems.length
+        };
+    }, cancelledRationalFunctionId, { timeout: 3000 });
+
+    const cancelledRationalMetadata = await cancelledRationalDomResult.jsonValue();
+    assert.strictEqual(cancelledRationalMetadata.obliqueCount, 0, 'cancelled explicit rational should not store oblique asymptotes');
+    assert.strictEqual(cancelledRationalMetadata.asymptotesVisible, false, 'cancelled explicit rational asymptote row should stay hidden');
+    assert(cancelledRationalMetadata.holeCount > 0, 'cancelled explicit rational hole row should render');
+
     const polarDomResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'polar';

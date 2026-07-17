@@ -101,6 +101,39 @@ module.exports = [
         }
     },
     {
+        name: 'cancelled explicit line has removable hole and no asymptotes',
+        expression: 'y=((x-2)*(x+1))/(x-2)',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            holes: [{ x: 2, y: 3 }]
+        }
+    },
+    {
+        name: 'cancelled LaTeX explicit line has removable hole and no asymptotes',
+        expression: 'y=\\frac{\\left(x-2\\right)\\left(x+1\\right)}{\\left(x-2\\right)}',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            holes: [{ x: 2, y: 3 }]
+        }
+    },
+    {
+        name: 'cancelled bare LaTeX explicit line has removable hole and no asymptotes',
+        expression: '\\frac{\\left(x-2\\right)\\left(x+1\\right)}{\\left(x-2\\right)}',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            holes: [{ x: 2, y: 3 }]
+        }
+    },
+    {
         name: 'folium-style cubic has three asymptote directions',
         expression: 'x^3-3*x*y^2=1',
         viewport: defaultViewport,
