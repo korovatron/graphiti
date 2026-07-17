@@ -14604,27 +14604,11 @@ class Graphiti {
     }
 
     detectNumericRemovableDiscontinuities(processedExpression, compiledExpression, hasInverseTrig = false) {
-        const divisionParts = this.extractTopLevelDivisionNodes(processedExpression);
-        if (!divisionParts) {
-            return [];
-        }
-
-        const denominatorCoeffs = this.extractPolynomialCoeffs(divisionParts.denominatorNode);
-        if (!denominatorCoeffs || this.getPolynomialDegree(denominatorCoeffs) < 1) {
-            return [];
-        }
-
-        const denominatorRoots = this.findPolynomialRealRoots(denominatorCoeffs);
-        if (!Array.isArray(denominatorRoots) || denominatorRoots.length === 0) {
-            return [];
-        }
-
-        let numeratorCompiled;
-        let denominatorCompiled;
-        try {
-            numeratorCompiled = this.getCompiledExpression(divisionParts.numeratorNode.toString());
-            denominatorCompiled = this.getCompiledExpression(divisionParts.denominatorNode.toString());
-        } catch {
+        const topLevelDivision = this.extractTopLevelDivisionNodes(processedExpression);
+        const divisionPartsList = topLevelDivision
+            ? [topLevelDivision]
+            : this.extractCandidateDivisionNodes(processedExpression);
+        if (divisionPartsList.length === 0) {
             return [];
         }
 
@@ -14642,76 +14626,138 @@ class Graphiti {
         const rootTolerance = 1e-7;
         const deltas = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7];
 
-        for (const root of denominatorRoots) {
-            if (!Number.isFinite(root)) continue;
-
-            const numeratorAtRoot = evaluateCompiledAt(numeratorCompiled, root);
-            const denominatorAtRoot = evaluateCompiledAt(denominatorCompiled, root);
-            if (numeratorAtRoot === null || denominatorAtRoot === null) {
+        for (const divisionParts of divisionPartsList) {
+            const denominatorCoeffs = this.extractPolynomialCoeffs(divisionParts.denominatorNode);
+            if (!denominatorCoeffs || this.getPolynomialDegree(denominatorCoeffs) < 1) {
                 continue;
             }
 
-            if (Math.abs(numeratorAtRoot) > rootTolerance || Math.abs(denominatorAtRoot) > rootTolerance) {
+            const denominatorRoots = this.findPolynomialRealRoots(denominatorCoeffs);
+            if (!Array.isArray(denominatorRoots) || denominatorRoots.length === 0) {
                 continue;
             }
 
-            const sideValues = [];
-            for (const delta of deltas) {
-                const leftX = root - delta;
-                const rightX = root + delta;
-                try {
-                    const leftScope = this.getEvaluationScope({ x: leftX });
-                    const rightScope = this.getEvaluationScope({ x: rightX });
-                    const leftRaw = compiledExpression.evaluate(leftScope);
-                    const rightRaw = compiledExpression.evaluate(rightScope);
-                    const leftY = hasInverseTrig ? leftRaw * 180 / Math.PI : leftRaw;
-                    const rightY = hasInverseTrig ? rightRaw * 180 / Math.PI : rightRaw;
-
-                    if (Number.isFinite(leftY) && Number.isFinite(rightY)) {
-                        sideValues.push({ leftY, rightY });
-                    }
-                } catch {
-                    // Ignore failed probe points.
-                }
-            }
-
-            if (sideValues.length === 0) {
+            let numeratorCompiled;
+            let denominatorCompiled;
+            try {
+                numeratorCompiled = this.getCompiledExpression(divisionParts.numeratorNode.toString());
+                denominatorCompiled = this.getCompiledExpression(divisionParts.denominatorNode.toString());
+            } catch {
                 continue;
             }
 
-            const nearest = sideValues[sideValues.length - 1];
-            const sideGap = Math.abs(nearest.leftY - nearest.rightY);
-            const sideMean = (nearest.leftY + nearest.rightY) / 2;
-            const sideGapTolerance = Math.max(1e-4, Math.abs(sideMean) * 2e-3);
-            if (sideGap > sideGapTolerance) {
-                continue;
-            }
+            for (const root of denominatorRoots) {
+                if (!Number.isFinite(root)) continue;
 
-            if (sideValues.length >= 2) {
-                const previous = sideValues[sideValues.length - 2];
-                const previousMean = (previous.leftY + previous.rightY) / 2;
-                const stabilityTolerance = Math.max(5e-3, Math.abs(sideMean) * 5e-3);
-                if (Math.abs(sideMean - previousMean) > stabilityTolerance) {
+                const numeratorAtRoot = evaluateCompiledAt(numeratorCompiled, root);
+                const denominatorAtRoot = evaluateCompiledAt(denominatorCompiled, root);
+                if (numeratorAtRoot === null || denominatorAtRoot === null) {
                     continue;
                 }
-            }
 
-            const roundedRoot = Math.abs(root - Math.round(root)) < 1e-10
-                ? Math.round(root)
-                : root;
+                if (Math.abs(numeratorAtRoot) > rootTolerance || Math.abs(denominatorAtRoot) > rootTolerance) {
+                    continue;
+                }
 
-            const duplicate = holes.some(existing => Math.abs(existing.x - roundedRoot) <= 1e-7);
-            if (!duplicate) {
-                holes.push({
-                    x: roundedRoot,
-                    y: sideMean,
-                    source: 'numeric'
-                });
+                const sideValues = [];
+                for (const delta of deltas) {
+                    const leftX = root - delta;
+                    const rightX = root + delta;
+                    try {
+                        const leftScope = this.getEvaluationScope({ x: leftX });
+                        const rightScope = this.getEvaluationScope({ x: rightX });
+                        const leftRaw = compiledExpression.evaluate(leftScope);
+                        const rightRaw = compiledExpression.evaluate(rightScope);
+                        const leftY = hasInverseTrig ? leftRaw * 180 / Math.PI : leftRaw;
+                        const rightY = hasInverseTrig ? rightRaw * 180 / Math.PI : rightRaw;
+
+                        if (Number.isFinite(leftY) && Number.isFinite(rightY)) {
+                            sideValues.push({ leftY, rightY });
+                        }
+                    } catch {
+                        // Ignore failed probe points.
+                    }
+                }
+
+                if (sideValues.length === 0) {
+                    continue;
+                }
+
+                const nearest = sideValues[sideValues.length - 1];
+                const sideGap = Math.abs(nearest.leftY - nearest.rightY);
+                const sideMean = (nearest.leftY + nearest.rightY) / 2;
+                const sideGapTolerance = Math.max(1e-4, Math.abs(sideMean) * 2e-3);
+                if (sideGap > sideGapTolerance) {
+                    continue;
+                }
+
+                if (sideValues.length >= 2) {
+                    const previous = sideValues[sideValues.length - 2];
+                    const previousMean = (previous.leftY + previous.rightY) / 2;
+                    const stabilityTolerance = Math.max(5e-3, Math.abs(sideMean) * 5e-3);
+                    if (Math.abs(sideMean - previousMean) > stabilityTolerance) {
+                        continue;
+                    }
+                }
+
+                const roundedRoot = Math.abs(root - Math.round(root)) < 1e-10
+                    ? Math.round(root)
+                    : root;
+
+                const duplicate = holes.some(existing => Math.abs(existing.x - roundedRoot) <= 1e-7);
+                if (!duplicate) {
+                    holes.push({
+                        x: roundedRoot,
+                        y: sideMean,
+                        source: 'numeric'
+                    });
+                }
             }
         }
 
         holes.sort((a, b) => a.x - b.x);
         return holes;
+    }
+
+    extractCandidateDivisionNodes(expression) {
+        const divisions = [];
+        const addDivision = (node) => {
+            if (!node || node.type !== 'OperatorNode' || node.op !== '/' || !Array.isArray(node.args) || node.args.length !== 2) {
+                return;
+            }
+            divisions.push({
+                numeratorNode: node.args[0],
+                denominatorNode: node.args[1]
+            });
+        };
+
+        const visit = (node) => {
+            if (!node) {
+                return;
+            }
+            if (node.type === 'ParenthesisNode') {
+                visit(node.content);
+                return;
+            }
+            addDivision(node);
+            if (Array.isArray(node.args)) {
+                for (const arg of node.args) {
+                    visit(arg);
+                }
+            }
+        };
+
+        try {
+            let node = this.cleanMath.parse(expression);
+            while (node && node.type === 'ParenthesisNode') {
+                node = node.content;
+            }
+            visit(node);
+        } catch {
+            return [];
+        }
+
+        return divisions;
     }
 
     tryDeriveAlgebraicRationalAsymptotes(processedExpression) {
@@ -17551,12 +17597,25 @@ class Graphiti {
             };
         }
 
+        const denominatorMetadata = equation.denominatorClearedFromEquation;
+        const excludedXRoots = denominatorMetadata && Array.isArray(denominatorMetadata.domainExclusions)
+            ? denominatorMetadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        if (excludedXRoots.length > 0) {
+            const reducibleCoeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2 + excludedXRoots.length);
+            const reducedCoeffMap = reducibleCoeffMap
+                ? this.removeExcludedXFactorsFromCoeffMap(reducibleCoeffMap, excludedXRoots)
+                : null;
+            if (reducedCoeffMap) {
+                const reducedShape = this.classifyPolynomialCoeffMapShape(reducedCoeffMap);
+                if (reducedShape) {
+                    return reducedShape;
+                }
+            }
+        }
+
         const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
         if (coeffMap) {
-            const denominatorMetadata = equation.denominatorClearedFromEquation;
-            const excludedXRoots = denominatorMetadata && Array.isArray(denominatorMetadata.domainExclusions)
-                ? denominatorMetadata.domainExclusions.filter(value => Number.isFinite(value))
-                : [];
             const reducedCoeffMap = excludedXRoots.length > 0
                 ? this.removeExcludedXFactorsFromCoeffMap(coeffMap, excludedXRoots)
                 : null;

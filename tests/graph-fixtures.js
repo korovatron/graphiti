@@ -39,6 +39,17 @@ module.exports = [
         }
     },
     {
+        name: 'shifted sinc has removable hole at its shifted limit',
+        expression: 'y=sin(x)/x+2',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [2],
+            obliqueAsymptotes: [],
+            holes: [{ x: 0, y: 3 }]
+        }
+    },
+    {
         name: 'implicit reciprocal cubic denominator has only horizontal asymptote',
         expression: 'y^2=1/(x^2-y^3)',
         viewport: defaultViewport,
