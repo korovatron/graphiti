@@ -707,6 +707,194 @@ async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     assert.deepStrictEqual(result, [], `implicit fast-path turning point warnings: ${JSON.stringify(result)}`);
 }
 
+async function assertParameterZeroDenominatorDoesNotHang(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = true;
+        graphiti.showTurningPoints = true;
+        graphiti.showIntercepts = true;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('');
+        const func = graphiti.cartesianFunctions[0];
+        func.expression = '\\frac{x^2}{\\alpha^2}+\\frac{y^2}{\\alpha^2\\left(1-\\beta^2\\right)}=1';
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const mathField = item ? item.querySelector('.function-main-row math-field') : null;
+        if (mathField) {
+            mathField.value = func.expression;
+        }
+
+        graphiti.parameters.alpha.value = 1;
+        graphiti.parameters.beta.value = 0.5;
+        await graphiti.replotAllFunctions();
+        const validPointCount = Array.isArray(func.points) ? func.points.length : 0;
+
+        graphiti.parameters.beta.value = 1;
+        const start = performance.now();
+        const replotResult = await graphiti.replotAllFunctions();
+        if (!replotResult || !replotResult.hasValidationErrors) {
+            graphiti.updateBadgesAfterParameterChange();
+            if (graphiti.showIntersections) {
+                graphiti.calculateIntersectionsWithWorker();
+            }
+            if (graphiti.showIntercepts) {
+                graphiti.intercepts = graphiti.findAxisIntercepts();
+                graphiti.cullInterceptMarkers();
+            }
+            if (graphiti.showTurningPoints) {
+                graphiti.turningPoints = graphiti.findTurningPoints();
+            }
+        }
+        graphiti.draw();
+
+        return {
+            elapsed: performance.now() - start,
+            replotHadValidationErrors: !!(replotResult && replotResult.hasValidationErrors),
+            validPointCount,
+            invalidPointCount: Array.isArray(func.points) ? func.points.length : null,
+            validationError: func.validationError || null,
+            validationKind: func.validationKind || null,
+            hasErrorClass: item ? item.classList.contains('function-error') : false,
+            hasWarningClass: item ? item.classList.contains('function-warning') : false,
+            activeImplicitCount: graphiti.activeImplicitCalculations ? graphiti.activeImplicitCalculations.size : null
+        };
+    });
+
+    assert(result.validPointCount > 0, `parameter zero-denominator setup should plot at beta=0.5: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.replotHadValidationErrors, true, 'beta=1 zero-denominator replot should report validation error');
+    assert.strictEqual(result.invalidPointCount, 0, 'beta=1 zero-denominator equation should clear plotted points');
+    assert(result.validationError, 'beta=1 zero-denominator equation should record validation error');
+    assert.strictEqual(result.validationKind, 'domain', 'beta=1 zero-denominator equation should be a domain warning');
+    assert.strictEqual(result.hasErrorClass, false, 'beta=1 zero-denominator equation should not use syntax error styling');
+    assert.strictEqual(result.hasWarningClass, true, 'beta=1 zero-denominator equation should show warning styling');
+    assert.strictEqual(result.activeImplicitCount, 0, 'beta=1 zero-denominator equation should leave no active implicit calculations');
+    assert(result.elapsed < 1000, `beta=1 zero-denominator replot should return promptly, took ${result.elapsed}ms`);
+
+    const staleSliderResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const betaSlider = document.getElementById('beta-slider');
+        if (!betaSlider) {
+            return { skipped: true };
+        }
+
+        const originalReplotAllFunctions = graphiti.replotAllFunctions.bind(graphiti);
+        const originalUpdateBadgesAfterParameterChange = graphiti.updateBadgesAfterParameterChange.bind(graphiti);
+        let replotCalls = 0;
+        let badgeUpdateCalls = 0;
+        let resolveFirstReplot = null;
+
+        graphiti.replotAllFunctions = () => {
+            replotCalls++;
+            if (replotCalls === 1) {
+                return new Promise(resolve => {
+                    resolveFirstReplot = () => resolve({ hasValidationErrors: false });
+                });
+            }
+            return Promise.resolve({ hasValidationErrors: true });
+        };
+        graphiti.updateBadgesAfterParameterChange = () => {
+            badgeUpdateCalls++;
+        };
+
+        try {
+            betaSlider.value = '0.5';
+            betaSlider.dispatchEvent(new Event('input', { bubbles: true }));
+
+            const waitStart = performance.now();
+            while (replotCalls < 1 && performance.now() - waitStart < 500) {
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+
+            betaSlider.value = '1';
+            betaSlider.dispatchEvent(new Event('input', { bubbles: true }));
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            if (resolveFirstReplot) {
+                resolveFirstReplot();
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 80));
+            return { skipped: false, replotCalls, badgeUpdateCalls };
+        } finally {
+            graphiti.replotAllFunctions = originalReplotAllFunctions;
+            graphiti.updateBadgesAfterParameterChange = originalUpdateBadgesAfterParameterChange;
+        }
+    });
+
+    assert.strictEqual(staleSliderResult.skipped, false, 'stale slider regression should find beta slider');
+    assert(staleSliderResult.replotCalls >= 2, `stale slider regression should execute both replots: ${JSON.stringify(staleSliderResult)}`);
+    assert.strictEqual(staleSliderResult.badgeUpdateCalls, 0, 'stale slider replot should not run post-analysis after newer parameter input');
+
+    const viewportResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const func = graphiti.cartesianFunctions[0];
+        graphiti.parameters.alpha.value = 1;
+        graphiti.parameters.beta.value = 1;
+        await graphiti.replotAllFunctions();
+
+        const originalReplotImplicitFunctions = graphiti.replotImplicitFunctions.bind(graphiti);
+        let implicitReplotCalls = 0;
+        graphiti.replotImplicitFunctions = (...args) => {
+            implicitReplotCalls++;
+            return originalReplotImplicitFunctions(...args);
+        };
+
+        try {
+            const start = performance.now();
+            graphiti.handleViewportChange({ skipCoverageRefresh: false });
+            await new Promise(resolve => setTimeout(resolve, 120));
+            return {
+                elapsed: performance.now() - start,
+                implicitReplotCalls,
+                validationError: func.validationError || null,
+                pointCount: Array.isArray(func.points) ? func.points.length : null,
+                activeImplicitCount: graphiti.activeImplicitCalculations ? graphiti.activeImplicitCalculations.size : null
+            };
+        } finally {
+            graphiti.replotImplicitFunctions = originalReplotImplicitFunctions;
+        }
+    });
+
+    assert(viewportResult.validationError, 'viewport regression should keep zero-denominator validation error');
+    assert.strictEqual(viewportResult.pointCount, 0, 'viewport regression should not revive invalid function points');
+    assert.strictEqual(viewportResult.implicitReplotCalls, 0, 'viewport change should not replot invalid implicit functions');
+    assert.strictEqual(viewportResult.activeImplicitCount, 0, 'viewport change should leave no active implicit calculations for invalid functions');
+    assert(viewportResult.elapsed < 500, `viewport change with invalid denominator should return promptly, took ${viewportResult.elapsed}ms`);
+
+    const syntaxErrorResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('');
+        const func = graphiti.cartesianFunctions[0];
+        func.expression = 'y=x+';
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        await graphiti.replotAllFunctions();
+
+        return {
+            validationKind: func.validationKind || null,
+            hasErrorClass: item ? item.classList.contains('function-error') : false,
+            hasWarningClass: item ? item.classList.contains('function-warning') : false
+        };
+    });
+
+    assert.strictEqual(syntaxErrorResult.validationKind, 'syntax', 'malformed expressions should stay syntax errors');
+    assert.strictEqual(syntaxErrorResult.hasErrorClass, true, 'malformed expressions should use red error styling');
+    assert.strictEqual(syntaxErrorResult.hasWarningClass, false, 'malformed expressions should not use warning styling');
+}
+
 async function assertStaleIntersectionMarkersAreDiscarded(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -924,6 +1112,7 @@ async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
         await assertEmptyMathLivePlaceholdersAreRestored(page);
         await assertShapeClassification(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
+        await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
 

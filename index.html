@@ -1403,6 +1403,16 @@
             border: 2px solid #E74C3C !important;
             box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3) !important;
         }
+
+        .function-item.function-warning math-field:not(.asymptote-equation-field) {
+            border: 2px solid #F39C12 !important;
+            border-radius: 4px !important;
+        }
+
+        .function-item.function-warning math-field:not(.asymptote-equation-field):focus-within {
+            border: 2px solid #F39C12 !important;
+            box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.3) !important;
+        }
         
         /* Error styling for range MathLive fields */
         #cartesian-ranges math-field.input-error,

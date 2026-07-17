@@ -75,6 +75,7 @@ class Graphiti {
             gamma: { value: 1, min: -10, max: 10, inUse: false },
             delta: { value: 1, min: -10, max: 10, inUse: false }
         };
+        this.parameterChangeGeneration = 0;
         
         // Canvas and viewport properties - separate for each mode
         this.cartesianViewport = {
@@ -2637,7 +2638,10 @@ class Graphiti {
             
             // Check if parent has error - preserve error styling if present
             const funcDiv = mathField.closest('.function-item');
-            if (funcDiv && funcDiv.classList.contains('function-error')) {
+            if (funcDiv && funcDiv.classList.contains('function-warning')) {
+                mathField.style.setProperty('border', '2px solid #F39C12', 'important');
+                mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(243, 156, 18, 0.3)', 'important');
+            } else if (funcDiv && funcDiv.classList.contains('function-error')) {
                 mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
                 mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
             } else {
@@ -2655,7 +2659,10 @@ class Graphiti {
             this.deferMathFieldBlurStyleReset(mathField, () => {
                 // Check if parent has error - preserve error styling if present
                 const funcDiv = mathField.closest('.function-item');
-                if (funcDiv && funcDiv.classList.contains('function-error')) {
+                if (funcDiv && funcDiv.classList.contains('function-warning')) {
+                    mathField.style.setProperty('border', '2px solid #F39C12', 'important');
+                    mathField.style.setProperty('box-shadow', 'none', 'important');
+                } else if (funcDiv && funcDiv.classList.contains('function-error')) {
                     mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
                     mathField.style.setProperty('box-shadow', 'none', 'important');
                 } else {
@@ -3158,12 +3165,15 @@ class Graphiti {
             // Don't plot empty expressions, but ensure error state is cleared
             if (!func.expression.trim()) {
                 func.points = [];
+                func.validationError = null;
+                func.validationKind = null;
                 this.clearFunctionAsymptoteData(func);
                 
                 // Remove error styling for empty expressions (they're valid)
                 const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
                 if (funcDiv) {
                     funcDiv.classList.remove('function-error');
+                    funcDiv.classList.remove('function-warning');
                     
                     // Restore normal styling to math-field
                     const mathField = funcDiv.querySelector('math-field');
@@ -3318,6 +3328,7 @@ class Graphiti {
                         if (!equation) {
                             throw new Error('Invalid implicit equation/inequality format');
                         }
+                        this.validateParameterOnlyDenominators(`(${equation.leftExpression})-(${equation.rightExpression})`, ['x', 'y']);
                         // Test evaluation at multiple sample points (some may hit asymptotes)
                         const testPoints = [[1, 2], [2, 1], [-1, 2], [2, -1], [0.5, -0.5], [1, 1], [0, 0], [2, 2], [-1, -1], [0.5, 0.5]];
                         let validEvaluation = false;
@@ -3394,6 +3405,7 @@ class Graphiti {
                         if (processedExpression.toLowerCase().startsWith('y=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
+                        this.validateParameterOnlyDenominators(processedExpression, ['x']);
                         
                         try {
                             // Special handling for derivative() - extract and compute symbolically
@@ -3490,11 +3502,17 @@ class Graphiti {
                     }
                 }
             } catch (evalError) {
-                throw new Error('Invalid mathematical expression: ' + evalError.message);
+                const error = new Error('Invalid mathematical expression: ' + evalError.message);
+                if (evalError && evalError.graphitiValidationKind) {
+                    error.graphitiValidationKind = evalError.graphitiValidationKind;
+                }
+                throw error;
             }
             
             // If we get here without throwing, the expression is syntactically valid
             await this.plotFunction(func);
+            func.validationError = null;
+            func.validationKind = null;
             
             // Update intersections after plotting this function
             if (this.showIntersections) {
@@ -3518,6 +3536,7 @@ class Graphiti {
             if (funcDiv) {
                 // Remove error class instead of trying to manipulate styles directly
                 funcDiv.classList.remove('function-error');
+                funcDiv.classList.remove('function-warning');
                 this.updateFunctionAsymptoteInfo(func);
                 
                 // Restore normal styling to math-field
@@ -3544,6 +3563,8 @@ class Graphiti {
         } catch (error) {
             // Expression is invalid, clear points and show visual feedback
             func.points = [];
+            func.validationError = error && error.message ? error.message : 'Invalid mathematical expression';
+            func.validationKind = error && error.graphitiValidationKind ? error.graphitiValidationKind : 'syntax';
             this.clearFunctionAsymptoteData(func);
             
             // Clear badges for this invalid function
@@ -3551,33 +3572,37 @@ class Graphiti {
             // Clear intersection badges that involve this function
             this.removeIntersectionBadgesForFunction(func.id);
             
-            // Don't immediately recalculate intersections here - let the normal debounce handle it
-            // This prevents race conditions with badge cleanup
-            // if (this.showIntersections) {
-            //     this.intersections = this.findIntersections();
-            // }
-            if (this.showTurningPoints) {
-                this.turningPoints = this.findTurningPoints();
+            if (Array.isArray(this.turningPoints)) {
+                this.turningPoints = this.turningPoints.filter(point => !point.func || point.func.id !== func.id);
             }
-            if (this.showIntercepts) {
-                this.intercepts = this.findAxisIntercepts();
+            if (Array.isArray(this.intercepts)) {
+                this.intercepts = this.intercepts.filter(point => point.functionId !== func.id);
+                if (this.showIntercepts) {
+                    this.cullInterceptMarkers();
+                }
             }
             
             // Update UI to show error (subtle visual feedback)
             const funcDiv = document.querySelector(`[data-function-id="${func.id}"]`);
             if (funcDiv) {
-                // Add error class instead of trying to manipulate styles directly
-                funcDiv.classList.add('function-error');
+                const isDomainWarning = func.validationKind === 'domain';
+                funcDiv.classList.toggle('function-warning', isDomainWarning);
+                funcDiv.classList.toggle('function-error', !isDomainWarning);
                 this.updateFunctionAsymptoteInfo(func);
                 
                 // Also apply direct styling to the math-field for immediate visual feedback
                 const mathField = funcDiv.querySelector('math-field');
                 if (mathField) {
-                    mathField.style.setProperty('background', 'rgba(231, 76, 60, 0.1)', 'important');
-                    mathField.style.setProperty('border', '2px solid #E74C3C', 'important');
+                    const computedStyle = getComputedStyle(document.documentElement);
+                    const inputBg = computedStyle.getPropertyValue('--input-bg').trim() || '#3A4F6A';
+                    const background = isDomainWarning ? inputBg : 'rgba(231, 76, 60, 0.1)';
+                    const border = isDomainWarning ? '#F39C12' : '#E74C3C';
+                    const shadow = isDomainWarning ? 'rgba(243, 156, 18, 0.3)' : 'rgba(231, 76, 60, 0.3)';
+                    mathField.style.setProperty('background', background, 'important');
+                    mathField.style.setProperty('border', `2px solid ${border}`, 'important');
                     mathField.style.setProperty('border-radius', '4px', 'important');
                     if (this.isMathFieldActuallyFocused(mathField)) {
-                        mathField.style.setProperty('box-shadow', '0 0 0 2px rgba(231, 76, 60, 0.3)', 'important');
+                        mathField.style.setProperty('box-shadow', `0 0 0 2px ${shadow}`, 'important');
                     } else {
                         mathField.style.setProperty('box-shadow', 'none', 'important');
                     }
@@ -6198,7 +6223,7 @@ class Graphiti {
         };
 
         this.getCurrentFunctions().forEach(func => {
-            if (!func || !func.enabled || !func.expression || func._viewportCoverageRefreshPending) {
+            if (!func || !func.enabled || func.validationError || !func.expression || func._viewportCoverageRefreshPending) {
                 return;
             }
 
@@ -8228,6 +8253,35 @@ class Graphiti {
         }
 
         return denominators;
+    }
+
+    validateParameterOnlyDenominators(expression, variableNames = ['x', 'y']) {
+        const denominators = this.extractDivisionDenominatorExpressions(expression);
+        if (denominators.length === 0) {
+            return;
+        }
+
+        const escapedVariableNames = variableNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const variablePattern = new RegExp(`\\b(?:${escapedVariableNames.join('|')})\\b`, 'i');
+        const scope = this.getEvaluationScope({ x: 1, y: 1, t: 1, theta: 1, pi: Math.PI, e: Math.E });
+        for (const denominator of denominators) {
+            if (!denominator || variablePattern.test(denominator)) {
+                continue;
+            }
+
+            let value;
+            try {
+                value = math.evaluate(denominator, scope);
+            } catch {
+                continue;
+            }
+
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-10) {
+                const error = new Error('Parameter value makes a denominator zero');
+                error.graphitiValidationKind = 'domain';
+                throw error;
+            }
+        }
     }
 
     buildDenominatorClearedImplicitEquation(equation) {
@@ -19231,7 +19285,7 @@ class Graphiti {
         }
         
         const hasAsymptoteHeavyExplicitReplot = this.getCurrentFunctions().some(func => {
-            if (!func || !func.enabled || !func.expression) return false;
+            if (!func || !func.enabled || func.validationError || !func.expression) return false;
             return func._useExplicitCurveRenderCache && this.getEffectiveFunctionType(func) === 'explicit';
         });
         const viewportSettleDelay = hasAsymptoteHeavyExplicitReplot ? 180 : 50;
@@ -19250,7 +19304,7 @@ class Graphiti {
             // Replot explicit functions with updated viewport
             const explicitReplotPromises = [];
             this.getCurrentFunctions().forEach(func => {
-                if (func.expression && func.enabled) {
+                if (func.expression && func.enabled && !func.validationError) {
                     const functionType = this.getEffectiveFunctionType(func);
                     if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant') {
                         explicitReplotPromises.push(this.plotFunction(func));
@@ -19261,7 +19315,7 @@ class Graphiti {
             // Replot implicit functions and inequalities
             // For inequalities, this recalculates grid data at proper resolution
             const hasImplicitFunctionsToReplot = this.getCurrentFunctions().some(func => {
-                if (!func.expression || !func.enabled) return false;
+                if (!func.expression || !func.enabled || func.validationError) return false;
                 const functionType = this.getEffectiveFunctionType(func);
                 return functionType === 'implicit' || functionType === 'implicit-inequality';
             });
@@ -28979,6 +29033,9 @@ class Graphiti {
     
     async replotAllFunctions(onlyExplicit = false) {
         const plotPromises = [];
+        if (!onlyExplicit) {
+            this.cancelAllImplicitCalculations();
+        }
         
         this.getCurrentFunctions().forEach(func => {
             if (func.enabled) {
@@ -29005,11 +29062,19 @@ class Graphiti {
         
         // Wait for all functions to complete before drawing
         await Promise.all(plotPromises);
+
+        const hasValidationErrors = this.getCurrentFunctions().some(func => func.enabled && func.validationError);
+        if (hasValidationErrors) {
+            this.clearIntersectionState({ cancelWorker: true });
+            this.draw();
+            return { hasValidationErrors };
+        }
         
         // Update intersections after replotting (debounced for viewport changes)
         this.handleViewportChange();
         
         this.draw();
+        return { hasValidationErrors: false };
     }
 
     async toggleFunctionVisibility(func, funcDiv) {
@@ -29087,7 +29152,7 @@ class Graphiti {
         
         // Get implicit functions and inequalities to replot
         const implicitFunctions = this.getCurrentFunctions().filter(func => {
-            if (!func.expression || !func.enabled) return false;
+            if (!func.expression || !func.enabled || func.validationError) return false;
             const functionType = this.getEffectiveFunctionType(func);
             // During viewport changes, skip inequalities - they'll use cached grid data
             // After viewport settles, recalculate everything for proper resolution
@@ -29257,6 +29322,7 @@ class Graphiti {
     cancelAllImplicitCalculations() {
         this.implicitCalculationId++;
         this.currentImplicitCalculations.clear();
+        this.activeImplicitCalculations.clear();
         
         // Only clear points if NOT during viewport changes - otherwise keep them visible
         if (!this.isViewportChanging) {
@@ -30224,6 +30290,7 @@ class Graphiti {
                 
                 // Update parameter value and replot
                 const updateParameter = async (value) => {
+                    const parameterGeneration = ++this.parameterChangeGeneration;
                     this.parameters[param].value = value;
                     valueDisplay.textContent = parseFloat(value.toFixed(2)).toString();
                     slider.value = value;
@@ -30242,7 +30309,18 @@ class Graphiti {
                     }
                     
                     plotTimer = setTimeout(async () => {
-                        await this.replotAllFunctions();
+                        if (parameterGeneration !== this.parameterChangeGeneration) {
+                            return;
+                        }
+                        const replotResult = await this.replotAllFunctions();
+                        if (parameterGeneration !== this.parameterChangeGeneration) {
+                            return;
+                        }
+                        if (replotResult && replotResult.hasValidationErrors) {
+                            plotTimer = null;
+                            isFirstInputEvent = true;
+                            return;
+                        }
                         this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
                         this.updateIntegralPairs(); // Recalculate integrals with new parameter values
                         
@@ -30281,12 +30359,13 @@ class Graphiti {
         
         // Arrow button event handlers
         document.querySelectorAll('.arrow-button').forEach(button => {
-            button.addEventListener('click', (e) => {
+            button.addEventListener('click', async (e) => {
                 const param = e.currentTarget.dataset.param;
                 const dir = parseFloat(e.currentTarget.dataset.dir);
                 const slider = document.getElementById(`${param}-slider`);
                 
                 if (slider) {
+                    const parameterGeneration = ++this.parameterChangeGeneration;
                     const currentValue = parseFloat(slider.value);
                     const range = this.parameterRanges[param];
                     const step = range.step;
@@ -30313,7 +30392,13 @@ class Graphiti {
                     this.clearIntercepts();
                     this.clearTurningPoints();
                     
-                    this.replotAllFunctions();
+                    const replotResult = await this.replotAllFunctions();
+                    if (parameterGeneration !== this.parameterChangeGeneration) {
+                        return;
+                    }
+                    if (replotResult && replotResult.hasValidationErrors) {
+                        return;
+                    }
                     this.updateBadgesAfterParameterChange(); // Update badges to new curve positions
                     this.updateIntegralPairs(); // Recalculate integrals with new parameter values
                     
@@ -31595,7 +31680,7 @@ class Graphiti {
         }
 
         // Check if we have implicit functions that will need calculation
-        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && f.points.length > 0);
+        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && !f.validationError && f.points.length > 0);
         const hasImplicitFunctions = allFunctions.some(f => this.isMathematicallyImplicitFunction(f));
         
         // Set pending flag BEFORE calculating explicit intersections
@@ -31624,7 +31709,7 @@ class Graphiti {
 
         // Process explicit functions and theta-constant rays for fast intersection detection
         const explicitFunctions = this.getCurrentFunctions().filter(f => {
-            if (!f.enabled || f.points.length === 0) return false;
+            if (!f.enabled || f.validationError || f.points.length === 0) return false;
             if (this.isMathematicallyImplicitFunction(f)) return false;
             const functionType = this.getEffectiveFunctionType(f);
             return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'polar' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
