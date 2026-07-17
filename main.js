@@ -164,6 +164,7 @@ class Graphiti {
             // Multi-badge persistent tracing system for educational use
             persistentBadges: [], // Array of trace badges: { id, functionId, worldX, worldY, functionColor, screenX, screenY }
             badgeIdCounter: 0, // For generating unique badge IDs
+            holeBadge: null, // Temporary removable-singularity badge for clicked holes
             // Badge interaction timing for tap vs hold behavior
             badgeInteraction: {
                 targetBadge: null, // Badge being interacted with
@@ -24215,6 +24216,10 @@ class Graphiti {
             return 'grab';
         }
 
+        if (this.findHoleAtScreenPoint(canvasX, canvasY, this.getHoleHitTolerance(true))) {
+            return 'pointer';
+        }
+
         if (this.showIntersections && this.findIntersectionAtScreenPoint(canvasX, canvasY, this.getSignificantPointHitTolerance(true))) {
             return 'pointer';
         }
@@ -24274,6 +24279,12 @@ class Graphiti {
                 }
             }
             
+            if (this.handleHoleBadgePointerStart(canvasX, canvasY)) {
+                this.input.mouse.down = false;
+                this.draw();
+                return;
+            }
+
             // Check if user clicked on an existing badge marker
             const targetBadge = this.findBadgeAtScreenPosition(canvasX, canvasY, 25);
             if (targetBadge && targetBadge.isDraggable !== false) {
@@ -38627,6 +38638,8 @@ class Graphiti {
         // Update function graphs if needed
         // Handle real-time function updates, animations, etc.
         
+        this.updateHoleBadge();
+
         // Update badge tooltip fade animation
         this.updateBadgeTooltip();
     }
@@ -38831,6 +38844,8 @@ class Graphiti {
                 }
             }
         });
+
+        this.drawHoleBadge();
 
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
@@ -40189,6 +40204,171 @@ class Graphiti {
             this.ctx.stroke();
         }
 
+        this.ctx.restore();
+    }
+
+    getHoleBadgeKey(func, hole) {
+        if (!func || !hole) {
+            return null;
+        }
+
+        return `${func.id}:${hole.x}:${hole.y}`;
+    }
+
+    getHoleHitTolerance(isHover = false) {
+        const baseRadius = Math.max(this.getLineWidth(5), 5);
+        if (this.input.touch.active) {
+            return baseRadius + (isHover ? 10 : 14);
+        }
+        return baseRadius + (isHover ? 5 : 7);
+    }
+
+    findHoleAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        const tolerance = toleranceOverride ?? this.getHoleHitTolerance(false);
+        let closestHit = null;
+        let closestDistance = Infinity;
+
+        for (const func of this.getCurrentFunctions()) {
+            if (!func || !func.enabled || !Array.isArray(func.holes) || func.holes.length === 0) {
+                continue;
+            }
+
+            for (const hole of func.holes) {
+                if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                    continue;
+                }
+
+                if (hole.x < this.viewport.minX || hole.x > this.viewport.maxX || hole.y < this.viewport.minY || hole.y > this.viewport.maxY) {
+                    continue;
+                }
+
+                const screen = this.worldToScreen(hole.x, hole.y);
+                if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                    continue;
+                }
+
+                const distance = Math.hypot(screenX - screen.x, screenY - screen.y);
+                if (distance <= tolerance && distance < closestDistance) {
+                    closestDistance = distance;
+                    closestHit = { func, hole, screenX: screen.x, screenY: screen.y };
+                }
+            }
+        }
+
+        return closestHit;
+    }
+
+    handleHoleBadgePointerStart(screenX, screenY) {
+        const hit = this.findHoleAtScreenPoint(screenX, screenY);
+        if (!hit) {
+            return false;
+        }
+
+        const key = this.getHoleBadgeKey(hit.func, hit.hole);
+        const now = Date.now();
+        const activeBadge = this.input.holeBadge;
+        if (activeBadge && activeBadge.key === key && now < activeBadge.expiresAt) {
+            return true;
+        }
+
+        this.input.holeBadge = {
+            key,
+            functionId: hit.func.id,
+            worldX: hit.hole.x,
+            worldY: hit.hole.y,
+            color: hit.func.color,
+            label: 'Removable singularity',
+            createdAt: now,
+            expiresAt: now + 5000
+        };
+
+        return true;
+    }
+
+    updateHoleBadge() {
+        const badge = this.input.holeBadge;
+        if (badge && Date.now() >= badge.expiresAt) {
+            this.input.holeBadge = null;
+        }
+    }
+
+    drawHoleBadge() {
+        const badge = this.input.holeBadge;
+        if (!badge) {
+            return;
+        }
+
+        const now = Date.now();
+        if (now >= badge.expiresAt) {
+            this.input.holeBadge = null;
+            return;
+        }
+
+        const duration = badge.expiresAt - badge.createdAt;
+        const remaining = badge.expiresAt - now;
+        const opacity = Math.max(0, Math.min(1, remaining / duration));
+        const screen = this.worldToScreen(badge.worldX, badge.worldY);
+        if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+            return;
+        }
+
+        const text = badge.label;
+        const fontSize = Math.max(12, this.getLineWidth(13));
+        const paddingX = Math.max(9, this.getLineWidth(10));
+        const paddingY = Math.max(6, this.getLineWidth(7));
+        const gap = Math.max(12, this.getLineWidth(12));
+
+        this.ctx.save();
+        this.ctx.setLineDash([]);
+        this.ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+        const textWidth = this.ctx.measureText(text).width;
+        const width = textWidth + paddingX * 2;
+        const height = fontSize + paddingY * 2;
+
+        let x = screen.x - width / 2;
+        let y = screen.y - gap - height;
+        if (x < 8) x = 8;
+        if (x + width > this.viewport.width - 8) x = this.viewport.width - 8 - width;
+        if (y < 8) y = screen.y + gap;
+        if (y + height > this.viewport.height - 8) y = this.viewport.height - 8 - height;
+
+        const pointerX = Math.max(x + 14, Math.min(screen.x, x + width - 14));
+        const pointerDirection = y > screen.y ? -1 : 1;
+        const pointerBaseY = pointerDirection === 1 ? y + height : y;
+        const pointerTipY = pointerBaseY + pointerDirection * 7;
+        const radius = 6;
+
+        this.ctx.globalAlpha = opacity;
+        this.ctx.fillStyle = 'rgba(24, 34, 48, 0.94)';
+        this.ctx.strokeStyle = badge.color || 'rgba(255, 255, 255, 0.85)';
+        this.ctx.lineWidth = Math.max(1, this.getLineWidth(1.5));
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + radius, y);
+        this.ctx.lineTo(x + width - radius, y);
+        this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        this.ctx.lineTo(x + width, y + height - radius);
+        this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        this.ctx.lineTo(x + radius, y + height);
+        this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        this.ctx.lineTo(x, y + radius);
+        this.ctx.quadraticCurveTo(x, y, x + radius, y);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(pointerX - 6, pointerBaseY);
+        this.ctx.lineTo(pointerX + 6, pointerBaseY);
+        this.ctx.lineTo(pointerX, pointerTipY);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        this.ctx.fillStyle = '#f5fbff';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x + paddingX, y + height / 2);
         this.ctx.restore();
     }
 
