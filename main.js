@@ -8027,7 +8027,10 @@ class Graphiti {
         collectFactors(parsed);
 
         const factorExpressions = factors
-            .filter(node => node && !this.isConstantMathNode(node) && this.extractBivariatePolynomialCoefficients(node, 8))
+            .filter(node => node && !this.isConstantMathNode(node) && (
+                this.extractBivariatePolynomialCoefficients(node, 8) ||
+                this.classifyImplicitYExplicitShape({ leftExpression: node.toString(), rightExpression: '0' })
+            ))
             .map(node => node.toString())
             .filter(expression => expression && expression.trim());
 
@@ -16295,7 +16298,423 @@ class Graphiti {
             return null;
         }
 
+        if (functionType === 'explicit') {
+            const explicitShape = this.classifyExplicitEquationShape(equation);
+            if (explicitShape) {
+                return explicitShape;
+            }
+        }
+
         return this.classifyImplicitEquationShape(equation, 0);
+    }
+
+    classifyExplicitEquationShape(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        let explicitExpression = null;
+        if (String(equation.leftExpression).trim().toLowerCase() === 'y') {
+            explicitExpression = equation.rightExpression;
+        } else if (String(equation.rightExpression).trim().toLowerCase() === 'y') {
+            explicitExpression = equation.leftExpression;
+        }
+        if (!explicitExpression) {
+            return null;
+        }
+
+        let node;
+        try {
+            node = this.cleanMath.parse(explicitExpression);
+        } catch {
+            return null;
+        }
+
+        if (this.isCatenaryShapeExpression(node)) {
+            return { label: 'catenary', confidence: 'structural' };
+        }
+
+        return null;
+    }
+
+    classifyImplicitYExplicitShape(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        let node;
+        try {
+            node = this.cleanMath.parse('(' + equation.leftExpression + ')-(' + equation.rightExpression + ')');
+        } catch {
+            return null;
+        }
+
+        const terms = this.extractCatenaryAdditiveTerms(node, true);
+        if (!terms) {
+            return null;
+        }
+
+        const yCoefficient = terms
+            .filter(term => term.kind === 'y')
+            .reduce((sum, term) => sum + term.coefficient, 0);
+        if (Math.abs(yCoefficient) <= 1e-9) {
+            return null;
+        }
+
+        const catenaryTerms = terms
+            .filter(term => term.kind !== 'y')
+            .map(term => term.kind === 'constant'
+                ? term
+                : { ...term, coefficient: -term.coefficient / yCoefficient });
+        if (this.isCatenaryShapeTerms(catenaryTerms)) {
+            return { label: 'catenary', confidence: 'structural' };
+        }
+
+        return null;
+    }
+
+    isCatenaryShapeExpression(node) {
+        const terms = this.extractCatenaryAdditiveTerms(node);
+        if (!terms) {
+            return false;
+        }
+
+        return this.isCatenaryShapeTerms(terms);
+    }
+
+    isCatenaryShapeTerms(terms) {
+        const coshTerms = terms.filter(term => term.kind === 'cosh' && Math.abs(term.coefficient) > 1e-9);
+        const expTerms = terms.filter(term => term.kind === 'exp' && Math.abs(term.coefficient) > 1e-9);
+        const otherTerms = terms.filter(term => !['constant', 'cosh', 'exp'].includes(term.kind));
+        if (otherTerms.length > 0) {
+            return false;
+        }
+
+        if (coshTerms.length > 0 && expTerms.length === 0) {
+            return this.coshTermsShareCatenarySlope(coshTerms);
+        }
+
+        if (coshTerms.length === 0 && expTerms.length >= 2) {
+            return this.expTermsShareCatenarySlope(expTerms);
+        }
+
+        return false;
+    }
+
+    coshTermsShareCatenarySlope(coshTerms) {
+        const firstSlope = this.getPositiveCatenarySlope(coshTerms[0].affine);
+        if (firstSlope === null) {
+            return false;
+        }
+
+        return coshTerms.every(term => {
+            const slope = this.getPositiveCatenarySlope(term.affine);
+            const slopeScale = Math.max(1, firstSlope, slope || 0);
+            return slope !== null && Math.abs(slope - firstSlope) <= slopeScale * 1e-8;
+        });
+    }
+
+    expTermsShareCatenarySlope(expTerms) {
+        let positiveSlope = null;
+        let positiveCoefficientSign = null;
+        let negativeCoefficientSign = null;
+        let hasPositiveSlope = false;
+        let hasNegativeSlope = false;
+
+        for (const term of expTerms) {
+            const slope = term.affine && term.affine.coefficient;
+            if (!Number.isFinite(slope) || Math.abs(slope) <= 1e-9) {
+                return false;
+            }
+
+            const magnitude = Math.abs(slope);
+            if (positiveSlope === null) {
+                positiveSlope = magnitude;
+            }
+            const slopeScale = Math.max(1, positiveSlope, magnitude);
+            if (Math.abs(magnitude - positiveSlope) > slopeScale * 1e-8) {
+                return false;
+            }
+
+            const coefficientSign = Math.sign(term.coefficient);
+            if (coefficientSign === 0) {
+                return false;
+            }
+            if (slope > 0) {
+                hasPositiveSlope = true;
+                positiveCoefficientSign = positiveCoefficientSign || coefficientSign;
+                if (positiveCoefficientSign !== coefficientSign) {
+                    return false;
+                }
+            } else {
+                hasNegativeSlope = true;
+                negativeCoefficientSign = negativeCoefficientSign || coefficientSign;
+                if (negativeCoefficientSign !== coefficientSign) {
+                    return false;
+                }
+            }
+        }
+
+        return hasPositiveSlope && hasNegativeSlope && positiveCoefficientSign === negativeCoefficientSign;
+    }
+
+    getPositiveCatenarySlope(affine) {
+        const slope = affine && affine.coefficient;
+        if (!Number.isFinite(slope) || Math.abs(slope) <= 1e-9) {
+            return null;
+        }
+        return Math.abs(slope);
+    }
+
+    extractCatenaryAdditiveTerms(node, allowYTerm = false) {
+        const terms = [];
+        const collect = (candidate, sign = 1) => {
+            if (!candidate) {
+                return false;
+            }
+            if (candidate.type === 'ParenthesisNode') {
+                return collect(candidate.content, sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '+' && Array.isArray(candidate.args)) {
+                return candidate.args.every(arg => collect(arg, sign));
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && Array.isArray(candidate.args) && candidate.args.length === 1) {
+                return collect(candidate.args[0], -sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && Array.isArray(candidate.args) && candidate.args.length >= 2) {
+                if (!collect(candidate.args[0], sign)) {
+                    return false;
+                }
+                for (let index = 1; index < candidate.args.length; index++) {
+                    if (!collect(candidate.args[index], -sign)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '/' && Array.isArray(candidate.args) && candidate.args.length === 2) {
+                const denominator = this.evaluateShapeConstant(candidate.args[1]);
+                return denominator !== null && Math.abs(denominator) > 1e-12
+                    ? collect(candidate.args[0], sign / denominator)
+                    : false;
+            }
+
+            const constant = this.evaluateShapeConstant(candidate);
+            if (constant !== null) {
+                terms.push({ kind: 'constant', value: sign * constant });
+                return true;
+            }
+
+            if (allowYTerm) {
+                const yMultiple = this.extractShapeYMultiple(candidate);
+                if (yMultiple) {
+                    terms.push({ kind: 'y', coefficient: sign * yMultiple.coefficient });
+                    return true;
+                }
+            }
+
+            const catenaryTerm = this.extractCatenaryFunctionTerm(candidate);
+            if (catenaryTerm) {
+                terms.push({ ...catenaryTerm, coefficient: sign * catenaryTerm.coefficient });
+                return true;
+            }
+
+            return false;
+        };
+
+        return collect(node) ? terms : null;
+    }
+
+    extractCatenaryFunctionTerm(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractCatenaryFunctionTerm(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+            const inner = this.extractCatenaryFunctionTerm(node.args[0]);
+            return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+            const numeratorTerm = this.extractCatenaryFunctionTerm(node.args[0]);
+            const denominator = this.evaluateShapeConstant(node.args[1]);
+            return numeratorTerm && denominator !== null && Math.abs(denominator) > 1e-12
+                ? { ...numeratorTerm, coefficient: numeratorTerm.coefficient / denominator }
+                : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && Array.isArray(node.args)) {
+            let coefficient = 1;
+            let term = null;
+            for (const arg of node.args) {
+                const constant = this.evaluateShapeConstant(arg);
+                if (constant !== null) {
+                    coefficient *= constant;
+                    continue;
+                }
+
+                const nestedTerm = this.extractCatenaryFunctionTerm(arg);
+                if (!nestedTerm || term) {
+                    return null;
+                }
+                term = nestedTerm;
+            }
+            return term ? { ...term, coefficient: coefficient * term.coefficient } : null;
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            const args = node.args || [];
+            if (!['cosh', 'exp'].includes(name) || args.length !== 1) {
+                return null;
+            }
+
+            const affine = this.extractShapeXAffine(args[0]);
+            return affine ? { kind: name, coefficient: 1, affine } : null;
+        }
+
+        return null;
+    }
+
+    extractShapeXAffine(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractShapeXAffine(node.content);
+        }
+        const xMultiple = this.extractShapeXMultiple(node);
+        if (xMultiple) {
+            return { coefficient: xMultiple.coefficient, constant: 0 };
+        }
+        const constant = this.evaluateShapeConstant(node);
+        if (constant !== null) {
+            return { coefficient: 0, constant };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+            const inner = this.extractShapeXAffine(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient, constant: -inner.constant } : null;
+        }
+        if (node.type === 'OperatorNode' && ['+', '-'].includes(node.op) && Array.isArray(node.args) && node.args.length >= 2) {
+            let result = this.extractShapeXAffine(node.args[0]);
+            if (!result) {
+                return null;
+            }
+            for (let index = 1; index < node.args.length; index++) {
+                const next = this.extractShapeXAffine(node.args[index]);
+                if (!next) {
+                    return null;
+                }
+                const sign = node.op === '-' ? -1 : 1;
+                result = {
+                    coefficient: result.coefficient + (sign * next.coefficient),
+                    constant: result.constant + (sign * next.constant)
+                };
+            }
+            return result;
+        }
+
+        return null;
+    }
+
+    extractShapeYMultiple(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractShapeYMultiple(node.content);
+        }
+        if (node.type === 'SymbolNode' && String(node.name).toLowerCase() === 'y') {
+            return { coefficient: 1 };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+            const inner = this.extractShapeYMultiple(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && Array.isArray(node.args)) {
+            let coefficient = 1;
+            let hasYMultiple = false;
+            for (const arg of node.args) {
+                const constant = this.evaluateShapeConstant(arg);
+                if (constant !== null) {
+                    coefficient *= constant;
+                    continue;
+                }
+
+                const yMultiple = this.extractShapeYMultiple(arg);
+                if (!yMultiple || hasYMultiple) {
+                    return null;
+                }
+                coefficient *= yMultiple.coefficient;
+                hasYMultiple = true;
+            }
+            return hasYMultiple ? { coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+            const numerator = this.extractShapeYMultiple(node.args[0]);
+            const denominator = this.evaluateShapeConstant(node.args[1]);
+            return numerator && denominator !== null && Math.abs(denominator) > 1e-12
+                ? { coefficient: numerator.coefficient / denominator }
+                : null;
+        }
+
+        return null;
+    }
+
+    extractShapeXMultiple(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractShapeXMultiple(node.content);
+        }
+        if (node.type === 'SymbolNode' && String(node.name).toLowerCase() === 'x') {
+            return { coefficient: 1 };
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+            const inner = this.extractShapeXMultiple(node.args[0]);
+            return inner ? { coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && Array.isArray(node.args)) {
+            let coefficient = 1;
+            let hasXMultiple = false;
+            for (const arg of node.args) {
+                const constant = this.evaluateShapeConstant(arg);
+                if (constant !== null) {
+                    coefficient *= constant;
+                    continue;
+                }
+
+                const xMultiple = this.extractShapeXMultiple(arg);
+                if (!xMultiple || hasXMultiple) {
+                    return null;
+                }
+                coefficient *= xMultiple.coefficient;
+                hasXMultiple = true;
+            }
+            return hasXMultiple ? { coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+            const numerator = this.extractShapeXMultiple(node.args[0]);
+            const denominator = this.evaluateShapeConstant(node.args[1]);
+            return numerator && denominator !== null && Math.abs(denominator) > 1e-12
+                ? { coefficient: numerator.coefficient / denominator }
+                : null;
+        }
+
+        return null;
+    }
+
+    evaluateShapeConstant(node) {
+        if (!node || /\b(theta|t|x|y|r)\b/i.test(node.toString())) {
+            return null;
+        }
+
+        try {
+            const value = node.evaluate(this.getEvaluationScope({ pi: Math.PI, e: Math.E }));
+            return Number.isFinite(value) ? value : null;
+        } catch {
+            return null;
+        }
     }
 
     classifyParametricFunctionShape(expression) {
@@ -17077,6 +17496,11 @@ class Graphiti {
     classifyImplicitEquationShape(equation, depth = 0) {
         if (!equation || !equation.leftExpression || !equation.rightExpression || depth > 2) {
             return null;
+        }
+
+        const yExplicitShape = this.classifyImplicitYExplicitShape(equation);
+        if (yExplicitShape) {
+            return yExplicitShape;
         }
 
         const factorExpressions = depth <= 1 ? this.extractZeroProductFactorExpressions(equation) : null;
