@@ -14184,6 +14184,11 @@ class Graphiti {
             return [];
         }
 
+        const shiftedSincAsymptote = this.detectShiftedSincHorizontalAsymptote(processedExpression);
+        if (shiftedSincAsymptote !== null) {
+            return [shiftedSincAsymptote];
+        }
+
         const normalizedExpression = (processedExpression || '').toLowerCase().replace(/\s+/g, '');
         const hasGaussianDecayEnvelope =
             /(?:^|[^a-z])e\^(?:\{|\()?-\(?[0-9.*/()]*x\^2[0-9.*/()]*\)?(?:\}|\))?/.test(normalizedExpression) ||
@@ -14375,6 +14380,24 @@ class Graphiti {
                 return 0;
             }
 
+            const roundedOffset = Math.round(intercept);
+            const nearIntegerOffset = Math.abs(intercept - roundedOffset) <= 0.03;
+            if (nearIntegerOffset) {
+                const residualTailMagnitudes = tail
+                    .map(sample => Math.abs((sample.y - roundedOffset) * sample.x))
+                    .filter(value => Number.isFinite(value));
+                const boundedShiftedReciprocalEnvelope =
+                    residualTailMagnitudes.length === tail.length &&
+                    Math.max(...residualTailMagnitudes) <= 3;
+                const nearResidual = Math.abs(tail[0].y - roundedOffset);
+                const farResidual = Math.abs(tail[tail.length - 1].y - roundedOffset);
+                const residualDecaysTowardOffset = farResidual <= Math.max(0.002, nearResidual * 0.5);
+
+                if (boundedShiftedReciprocalEnvelope && residualDecaysTowardOffset) {
+                    return roundedOffset;
+                }
+            }
+
             if (exponentialTailMovesTowardLimit) {
                 const farTailY = tail[tail.length - 1].y;
                 const exponentialSnapTolerance = Math.max(1e-4, Math.abs(intercept) * 1e-4);
@@ -14423,6 +14446,117 @@ class Graphiti {
         }
 
         return asymptotes.sort((a, b) => a - b);
+    }
+
+    detectShiftedSincHorizontalAsymptote(expression) {
+        if (!expression || !String(expression).includes('/')) {
+            return null;
+        }
+
+        const terms = [];
+        const collect = (node, sign = 1) => {
+            if (!node) {
+                return false;
+            }
+            if (node.type === 'ParenthesisNode') {
+                return collect(node.content, sign);
+            }
+            if (node.type === 'OperatorNode' && node.op === '+' && Array.isArray(node.args)) {
+                return node.args.every(arg => collect(arg, sign));
+            }
+            if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+                return collect(node.args[0], -sign);
+            }
+            if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length >= 2) {
+                if (!collect(node.args[0], sign)) {
+                    return false;
+                }
+                for (let index = 1; index < node.args.length; index++) {
+                    if (!collect(node.args[index], -sign)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            const constant = this.evaluateShapeConstant(node);
+            if (constant !== null) {
+                terms.push({ kind: 'constant', value: sign * constant });
+                return true;
+            }
+
+            if (this.isShiftedSincTerm(node)) {
+                terms.push({ kind: 'sinc' });
+                return true;
+            }
+
+            return false;
+        };
+
+        let node;
+        try {
+            node = this.cleanMath.parse(expression);
+        } catch {
+            return null;
+        }
+
+        if (!collect(node)) {
+            return null;
+        }
+
+        if (!terms.some(term => term.kind === 'sinc')) {
+            return null;
+        }
+
+        return terms
+            .filter(term => term.kind === 'constant')
+            .reduce((sum, term) => sum + term.value, 0);
+    }
+
+    isShiftedSincTerm(node) {
+        if (!node) {
+            return false;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.isShiftedSincTerm(node.content);
+        }
+        if (node.type !== 'OperatorNode' || node.op !== '/' || !Array.isArray(node.args) || node.args.length !== 2) {
+            return false;
+        }
+
+        const unwrapParentheses = (candidate) => {
+            let current = candidate;
+            while (current && current.type === 'ParenthesisNode') {
+                current = current.content;
+            }
+            return current;
+        };
+
+        const numerator = unwrapParentheses(node.args[0]);
+        const denominator = node.args[1];
+        if (!numerator || numerator.type !== 'FunctionNode') {
+            return false;
+        }
+
+        const name = String(numerator.fn && numerator.fn.name ? numerator.fn.name : numerator.name || '').toLowerCase();
+        const args = numerator.args || [];
+        if (name !== 'sin' || args.length !== 1) {
+            return false;
+        }
+
+        const argumentText = args[0].toString();
+        const denominatorText = denominator.toString();
+        if (!/\bx\b/i.test(argumentText) || !/\bx\b/i.test(denominatorText)) {
+            return false;
+        }
+
+        try {
+            const difference = this.cleanMath.simplify('(' + argumentText + ')-(' + denominatorText + ')');
+            const value = this.evaluateShapeConstant(difference);
+            return value !== null && Math.abs(value) <= 1e-10;
+        } catch {
+            return false;
+        }
     }
 
     detectRemovableDiscontinuities(processedExpression, compiledExpression, hasInverseTrig = false) {

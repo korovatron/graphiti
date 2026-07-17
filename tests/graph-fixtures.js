@@ -18,6 +18,15 @@ const farZoomViewport = {
     height: 720
 };
 
+const closeShiftedSincViewport = {
+    minX: -1,
+    maxX: 7,
+    minY: -1,
+    maxY: 5,
+    width: 960,
+    height: 720
+};
+
 const tallWideViewport = {
     minX: -30,
     maxX: 240,
@@ -47,6 +56,39 @@ module.exports = [
             horizontalAsymptotes: [2],
             obliqueAsymptotes: [],
             holes: [{ x: 0, y: 3 }]
+        }
+    },
+    {
+        name: 'horizontally shifted sinc has stable shifted horizontal asymptote',
+        expression: 'y=sin(x-pi)/(x-pi)+2',
+        viewport: farZoomViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [2],
+            obliqueAsymptotes: [],
+            holes: [{ x: Math.PI, y: 3 }]
+        }
+    },
+    {
+        name: 'latex shifted sinc keeps horizontal asymptote at ordinary zoom',
+        expression: 'y=\\frac{\\sin\\left(x-\\pi\\right)}{x-\\pi}+2',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [2],
+            obliqueAsymptotes: [],
+            holes: [{ x: Math.PI, y: 3 }]
+        }
+    },
+    {
+        name: 'latex shifted sinc keeps horizontal asymptote when zoomed in',
+        expression: 'y=\\frac{\\sin\\left(x-\\pi\\right)}{x-\\pi}+2',
+        viewport: closeShiftedSincViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [2],
+            obliqueAsymptotes: [],
+            holes: [{ x: Math.PI, y: 3 }]
         }
     },
     {
