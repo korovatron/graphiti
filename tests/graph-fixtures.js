@@ -18,6 +18,15 @@ const farZoomViewport = {
     height: 720
 };
 
+const tallWideViewport = {
+    minX: -30,
+    maxX: 240,
+    minY: -200,
+    maxY: 520,
+    width: 960,
+    height: 720
+};
+
 module.exports = [
     {
         name: 'gaussian damped cosine keeps horizontal asymptote when zoomed far out',
@@ -142,6 +151,20 @@ module.exports = [
             horizontalAsymptotes: [],
             obliqueAsymptotes: [],
             holes: [{ x: 2, y: 3 }]
+        }
+    },
+    {
+        name: 'wide product catenary line parabola uses explicit component renderers',
+        expression: '\\left(\\cosh\\left(x\\right)-y\\right)\\left(x-1\\right)\\left(x^2-y\\right)=0',
+        viewport: tallWideViewport,
+        expected: {
+            renderMode: 'product-factors',
+            productFactorRenderModes: ['affine-explicit', 'product-direct-components', 'affine-explicit'],
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            maxTallVerticalSegments: 1,
+            verticalComponents: [1]
         }
     },
     {

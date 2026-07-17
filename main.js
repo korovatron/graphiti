@@ -7841,7 +7841,8 @@ class Graphiti {
                 expression: `${factorExpression}=0`,
                 points: [],
                 displayPoints: [],
-                holes: []
+                holes: [],
+                productImplicitVerticalComponents: []
             };
 
             const directComponent = buildDirectSingleVariableComponents(factorExpression);
@@ -7917,7 +7918,7 @@ class Graphiti {
 
                 mergedPoints.push({
                     ...point,
-                    connected: factorRunStarted
+                    connected: factorRunStarted && point.connected !== false
                 });
                 factorRunStarted = true;
             }
@@ -7968,7 +7969,7 @@ class Graphiti {
                     holes.push({ ...hole });
                 }
             }
-            for (const x of this.getImplicitVerticalComponents(factorFunc)) {
+            for (const x of Array.isArray(factorFunc.productImplicitVerticalComponents) ? factorFunc.productImplicitVerticalComponents : []) {
                 addUniqueNumber(verticalComponents, x);
             }
         }
@@ -8161,7 +8162,7 @@ class Graphiti {
         }
 
         // If A(x) is effectively zero everywhere, the relation is not an explicit branch in y.
-        const slopeTolerance = Math.max(1e-7, maxMagnitude * 1e-8);
+        const slopeTolerance = Math.max(1e-7, maxSlopeMagnitude * 1e-8);
         if (maxSlopeMagnitude <= slopeTolerance) {
             return null;
         }
@@ -9494,6 +9495,20 @@ class Graphiti {
                 return null;
             }
         };
+
+        const coefficientProbeXs = [-4, -2, -1, 0, 1, 2, 4];
+        const coefficientSamples = coefficientProbeXs
+            .map(x => evaluateAtX(aCompiled, x))
+            .filter(value => value !== null);
+        if (coefficientSamples.length >= 5) {
+            const baseline = coefficientSamples[0];
+            const constantTolerance = Math.max(1e-10, Math.abs(baseline) * 1e-10);
+            const isConstantNonZero = Math.abs(baseline) > 1e-8 &&
+                coefficientSamples.every(value => Math.abs(value - baseline) <= constantTolerance);
+            if (isConstantNonZero) {
+                return [];
+            }
+        }
 
         // Keep affine vertical-component detection stable across zoom levels by
         // scanning a fixed global window instead of viewport-relative bounds.
@@ -40175,25 +40190,59 @@ class Graphiti {
             if (this.isExplicitImplicitFastPath(func)) {
                 offscreenCtx.beginPath();
                 let pathStarted = false;
+                let previousScreen = null;
+
+                const buffer = 100;
+                const clipMinX = -buffer;
+                const clipMaxX = this.viewport.width + buffer;
+                const clipMinY = -buffer;
+                const clipMaxY = this.viewport.height + buffer;
+                const pointInExpandedViewport = (point) =>
+                    point.x >= clipMinX && point.x <= clipMaxX && point.y >= clipMinY && point.y <= clipMaxY;
+                const segmentIntersectsExpandedViewport = (start, end) => {
+                    if (pointInExpandedViewport(start) || pointInExpandedViewport(end)) {
+                        return true;
+                    }
+
+                    const segmentMinX = Math.min(start.x, end.x);
+                    const segmentMaxX = Math.max(start.x, end.x);
+                    const segmentMinY = Math.min(start.y, end.y);
+                    const segmentMaxY = Math.max(start.y, end.y);
+
+                    return !(segmentMaxX < clipMinX || segmentMinX > clipMaxX || segmentMaxY < clipMinY || segmentMinY > clipMaxY);
+                };
 
                 for (const point of pointsToUse) {
                     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                         pathStarted = false;
+                        previousScreen = null;
                         continue;
                     }
 
                     const screen = this.worldToScreen(point.x, point.y);
                     if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
                         pathStarted = false;
+                        previousScreen = null;
                         continue;
                     }
 
-                    if (!pathStarted || point.connected === false) {
-                        offscreenCtx.moveTo(screen.x, screen.y);
-                        pathStarted = true;
-                    } else {
-                        offscreenCtx.lineTo(screen.x, screen.y);
+                    if (point.connected === false || !previousScreen) {
+                        pathStarted = false;
+                        previousScreen = screen;
+                        continue;
                     }
+
+                    if (segmentIntersectsExpandedViewport(previousScreen, screen)) {
+                        if (!pathStarted) {
+                            offscreenCtx.moveTo(previousScreen.x, previousScreen.y);
+                            pathStarted = true;
+                        }
+                        offscreenCtx.lineTo(screen.x, screen.y);
+                    } else {
+                        pathStarted = false;
+                    }
+
+                    previousScreen = screen;
                 }
 
                 offscreenCtx.stroke();

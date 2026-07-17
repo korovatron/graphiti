@@ -202,6 +202,20 @@ async function plotFixture(page, fixture) {
         const finitePoints = (func.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         );
+        let tallVerticalSegmentCount = 0;
+        let previousFinitePoint = null;
+        for (const point of func.points || []) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                previousFinitePoint = null;
+                continue;
+            }
+            if (previousFinitePoint && point.connected !== false &&
+                Math.abs(previousFinitePoint.x - point.x) <= 1e-9 &&
+                Math.abs(point.y - previousFinitePoint.y) > (viewport.maxY - viewport.minY) * 0.75) {
+                tallVerticalSegmentCount++;
+            }
+            previousFinitePoint = point;
+        }
         const xSpan = Math.max(1e-12, viewport.maxX - viewport.minX);
         const ySpan = Math.max(1e-12, viewport.maxY - viewport.minY);
 
@@ -245,6 +259,9 @@ async function plotFixture(page, fixture) {
         return {
             expression: func.expression,
             renderMode: func.implicitRenderMode || null,
+            productFactorRenderModes: Array.isArray(func.productImplicitFactorRenderModes)
+                ? func.productImplicitFactorRenderModes.slice()
+                : [],
             explicitImplicitFastPath: typeof graphiti.isExplicitImplicitFastPath === 'function'
                 ? graphiti.isExplicitImplicitFastPath(func)
                 : false,
@@ -255,6 +272,7 @@ async function plotFixture(page, fixture) {
             verticalComponentStats,
             intercepts: graphiti.intercepts.filter(point => point.functionId === func.id),
             finitePointCount: finitePoints.length,
+            tallVerticalSegmentCount,
             boundaryContinuationCount: finitePoints.filter(point => point.monomialViewportBoundary === true).length,
             finiteSegmentStarts: finitePoints.filter(point => point.connected === false).length,
             pointProbeDistances
@@ -1080,6 +1098,9 @@ async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
             if (expected.renderMode) {
                 assert.strictEqual(actual.renderMode, expected.renderMode, `${label}: render mode`);
             }
+            if (Array.isArray(expected.productFactorRenderModes)) {
+                assert.deepStrictEqual(actual.productFactorRenderModes, expected.productFactorRenderModes, `${label}: product factor render modes`);
+            }
             if (typeof expected.explicitImplicitFastPath === 'boolean') {
                 assert.strictEqual(actual.explicitImplicitFastPath, expected.explicitImplicitFastPath, `${label}: draw-path classification`);
             }
@@ -1101,11 +1122,19 @@ async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
                     `${label}: expected at most ${expected.maxFinitePointCount} finite points, got ${actual.finitePointCount}`
                 );
             }
+            if (Number.isFinite(expected.maxTallVerticalSegments)) {
+                assert(
+                    actual.tallVerticalSegmentCount <= expected.maxTallVerticalSegments,
+                    `${label}: expected at most ${expected.maxTallVerticalSegments} tall vertical segments, got ${actual.tallVerticalSegmentCount}`
+                );
+            }
             assertApproxSet(actual.asymptoteData.vertical, expected.verticalAsymptotes || [], 0.03, `${label} vertical asymptotes`);
             assertApproxSet(actual.asymptoteData.horizontal, expected.horizontalAsymptotes || [], 0.03, `${label} horizontal asymptotes`);
             assertApproxLines(actual.asymptoteData.oblique, expected.obliqueAsymptotes || [], { m: 0.035, b: 0.08 }, `${label} oblique asymptotes`);
             assertHoles(actual.holes, expected.holes || [], { x: 0.04, y: 0.04 }, `${label} holes`);
-            assertApproxSet(actual.verticalComponents, expected.verticalComponents || [], 0.04, `${label} vertical component metadata`);
+            if (!expected.skipVerticalComponents) {
+                assertApproxSet(actual.verticalComponents, expected.verticalComponents || [], 0.04, `${label} vertical component metadata`);
+            }
             assertComponentPresence(actual.horizontalComponentStats, expected.horizontalComponents || [], 'horizontal', label);
             assertPointProbes(actual, expected.pointsNear || [], label);
 
