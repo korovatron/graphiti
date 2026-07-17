@@ -3518,6 +3518,7 @@ class Graphiti {
             if (funcDiv) {
                 // Remove error class instead of trying to manipulate styles directly
                 funcDiv.classList.remove('function-error');
+                this.updateFunctionAsymptoteInfo(func);
                 
                 // Restore normal styling to math-field
                 const mathField = funcDiv.querySelector('math-field');

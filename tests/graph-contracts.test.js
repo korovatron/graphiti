@@ -544,6 +544,35 @@ async function assertShapeClassification(page) {
     assert.strictEqual(lineDomResult.renderedLabel, '', 'single line shape label should not render text');
     assert.strictEqual(lineDomResult.visible, false, 'single line shape row should stay hidden');
 
+    const manuallyEditedFunctionId = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('');
+        const func = graphiti.cartesianFunctions[0];
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const mathField = item ? item.querySelector('.function-main-row math-field') : null;
+        if (mathField && typeof mathField.setValue === 'function') {
+            mathField.setValue('x^2+y^2=1');
+        } else if (mathField) {
+            mathField.value = 'x^2+y^2=1';
+        }
+        mathField.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+        return func.id;
+    });
+
+    await page.waitForFunction((functionId) => {
+        const item = document.querySelector(`[data-function-id="${functionId}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+        return !!shapeContainer && shapeContainer.classList.contains('visible') && shapeValue && shapeValue.textContent === 'circle';
+    }, manuallyEditedFunctionId, { timeout: 3000 });
+
     const polarDomResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'polar';
