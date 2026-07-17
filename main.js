@@ -17118,6 +17118,15 @@ class Graphiti {
             const excludedXRoots = denominatorMetadata && Array.isArray(denominatorMetadata.domainExclusions)
                 ? denominatorMetadata.domainExclusions.filter(value => Number.isFinite(value))
                 : [];
+            const reducedCoeffMap = excludedXRoots.length > 0
+                ? this.removeExcludedXFactorsFromCoeffMap(coeffMap, excludedXRoots)
+                : null;
+            if (reducedCoeffMap) {
+                const reducedShape = this.classifyPolynomialCoeffMapShape(reducedCoeffMap);
+                if (reducedShape) {
+                    return reducedShape;
+                }
+            }
             return this.classifyPolynomialCoeffMapShape(coeffMap, { excludedXRoots });
         }
 
@@ -17134,6 +17143,80 @@ class Graphiti {
         }
 
         return null;
+    }
+
+    removeExcludedXFactorsFromCoeffMap(coeffMap, excludedXRoots = []) {
+        if (!coeffMap || !Array.isArray(excludedXRoots) || excludedXRoots.length === 0) {
+            return null;
+        }
+
+        let currentMap = { ...coeffMap };
+        let removedAny = false;
+        for (const root of excludedXRoots) {
+            const dividedMap = this.divideCoeffMapByXMinusRoot(currentMap, root);
+            if (dividedMap) {
+                currentMap = dividedMap;
+                removedAny = true;
+            }
+        }
+
+        return removedAny ? currentMap : null;
+    }
+
+    divideCoeffMapByXMinusRoot(coeffMap, root) {
+        if (!coeffMap || !Number.isFinite(root)) {
+            return null;
+        }
+
+        const coefficientScale = Math.max(1, ...Object.values(coeffMap).map(value => Math.abs(value || 0)));
+        const tolerance = coefficientScale * 1e-7;
+        const rowsByYPower = new Map();
+        for (const [key, value] of Object.entries(coeffMap)) {
+            if (!Number.isFinite(value) || Math.abs(value) <= tolerance) {
+                continue;
+            }
+
+            const [pxStr, pyStr] = key.split(',');
+            const px = Number(pxStr);
+            const py = Number(pyStr);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return null;
+            }
+            const row = rowsByYPower.get(py) || [];
+            row[px] = (row[px] || 0) + value;
+            rowsByYPower.set(py, row);
+        }
+
+        const result = {};
+        for (const [py, coefficients] of rowsByYPower.entries()) {
+            const degree = this.getPolynomialDegree(coefficients);
+            if (degree < 1) {
+                return null;
+            }
+
+            const quotientDescending = [];
+            let carry = coefficients[degree] || 0;
+            quotientDescending.push(carry);
+            for (let px = degree - 1; px >= 1; px--) {
+                carry = (coefficients[px] || 0) + (carry * root);
+                quotientDescending.push(carry);
+            }
+
+            const remainder = (coefficients[0] || 0) + (carry * root);
+            if (Math.abs(remainder) > tolerance) {
+                return null;
+            }
+
+            for (let index = 0; index < quotientDescending.length; index++) {
+                const quotientPx = quotientDescending.length - 1 - index;
+                const value = quotientDescending[index];
+                if (Number.isFinite(value) && Math.abs(value) > tolerance) {
+                    result[`${quotientPx},${py}`] = (result[`${quotientPx},${py}`] || 0) + value;
+                }
+            }
+        }
+
+        return Object.keys(result).length > 0 ? result : null;
     }
 
     classifyCommonMonomialFactorShape(equation) {

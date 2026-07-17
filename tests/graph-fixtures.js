@@ -123,6 +123,17 @@ module.exports = [
         }
     },
     {
+        name: 'cancelled LaTeX explicit line with bare denominator has removable hole and no asymptotes',
+        expression: 'y=\\frac{\\left(x-1\\right)\\left(x-2\\right)}{x-1}',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            holes: [{ x: 1, y: -1 }]
+        }
+    },
+    {
         name: 'cancelled bare LaTeX explicit line has removable hole and no asymptotes',
         expression: '\\frac{\\left(x-2\\right)\\left(x+1\\right)}{\\left(x-2\\right)}',
         viewport: defaultViewport,
