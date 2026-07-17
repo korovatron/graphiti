@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.33';
+const VERSION = '1.2.34';
 
 class Graphiti {
     constructor() {
@@ -38845,8 +38845,6 @@ class Graphiti {
             }
         });
 
-        this.drawHoleBadge();
-
         // Draw intersection markers if enabled (skip during polar animation or pause)
         if (this.showIntersections && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
             if (this.frozenIntersectionBadges.length > 0) {
@@ -40279,8 +40277,9 @@ class Graphiti {
             color: hit.func.color,
             label: 'Removable singularity',
             createdAt: now,
-            expiresAt: now + 5000
+            expiresAt: now + this.badgeTooltip.displayDuration
         };
+        this.showBadgeTooltip(this.input.holeBadge.label, hit.screenX, hit.screenY);
 
         return true;
     }
@@ -40290,86 +40289,6 @@ class Graphiti {
         if (badge && Date.now() >= badge.expiresAt) {
             this.input.holeBadge = null;
         }
-    }
-
-    drawHoleBadge() {
-        const badge = this.input.holeBadge;
-        if (!badge) {
-            return;
-        }
-
-        const now = Date.now();
-        if (now >= badge.expiresAt) {
-            this.input.holeBadge = null;
-            return;
-        }
-
-        const duration = badge.expiresAt - badge.createdAt;
-        const remaining = badge.expiresAt - now;
-        const opacity = Math.max(0, Math.min(1, remaining / duration));
-        const screen = this.worldToScreen(badge.worldX, badge.worldY);
-        if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
-            return;
-        }
-
-        const text = badge.label;
-        const fontSize = Math.max(12, this.getLineWidth(13));
-        const paddingX = Math.max(9, this.getLineWidth(10));
-        const paddingY = Math.max(6, this.getLineWidth(7));
-        const gap = Math.max(12, this.getLineWidth(12));
-
-        this.ctx.save();
-        this.ctx.setLineDash([]);
-        this.ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
-        const textWidth = this.ctx.measureText(text).width;
-        const width = textWidth + paddingX * 2;
-        const height = fontSize + paddingY * 2;
-
-        let x = screen.x - width / 2;
-        let y = screen.y - gap - height;
-        if (x < 8) x = 8;
-        if (x + width > this.viewport.width - 8) x = this.viewport.width - 8 - width;
-        if (y < 8) y = screen.y + gap;
-        if (y + height > this.viewport.height - 8) y = this.viewport.height - 8 - height;
-
-        const pointerX = Math.max(x + 14, Math.min(screen.x, x + width - 14));
-        const pointerDirection = y > screen.y ? -1 : 1;
-        const pointerBaseY = pointerDirection === 1 ? y + height : y;
-        const pointerTipY = pointerBaseY + pointerDirection * 7;
-        const radius = 6;
-
-        this.ctx.globalAlpha = opacity;
-        this.ctx.fillStyle = 'rgba(24, 34, 48, 0.94)';
-        this.ctx.strokeStyle = badge.color || 'rgba(255, 255, 255, 0.85)';
-        this.ctx.lineWidth = Math.max(1, this.getLineWidth(1.5));
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(x + radius, y);
-        this.ctx.lineTo(x + width - radius, y);
-        this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        this.ctx.lineTo(x + width, y + height - radius);
-        this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        this.ctx.lineTo(x + radius, y + height);
-        this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        this.ctx.lineTo(x, y + radius);
-        this.ctx.quadraticCurveTo(x, y, x + radius, y);
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.stroke();
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(pointerX - 6, pointerBaseY);
-        this.ctx.lineTo(pointerX + 6, pointerBaseY);
-        this.ctx.lineTo(pointerX, pointerTipY);
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.stroke();
-
-        this.ctx.fillStyle = '#f5fbff';
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText(text, x + paddingX, y + height / 2);
-        this.ctx.restore();
     }
 
     drawFunctionAsymptotes(func, context = this.ctx) {
