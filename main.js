@@ -16213,12 +16213,16 @@ class Graphiti {
             return null;
         }
 
+        const convertedExpression = this.convertFromLatex(expression);
         const functionType = this.detectFunctionType(expression);
         if (this.plotMode === 'polar' && functionType === 'polar') {
             return this.classifyPolarFunctionShape(expression);
         }
         if (this.plotMode === 'polar' && functionType === 'theta-constant') {
             return { label: 'polar ray', confidence: 'exact' };
+        }
+        if (this.plotMode === 'polar' && functionType === 'explicit' && !convertedExpression.includes('=')) {
+            return this.classifyPolarFunctionShape(`r=${expression}`);
         }
         if (functionType === 'parametric') {
             return this.classifyParametricFunctionShape(expression);
@@ -16228,7 +16232,10 @@ class Graphiti {
             return null;
         }
 
-        const equation = this.parseImplicitEquation(expression);
+        const classificationExpression = functionType === 'explicit' && !convertedExpression.includes('=')
+            ? `y=${expression}`
+            : expression;
+        const equation = this.parseImplicitEquation(classificationExpression);
         if (!equation) {
             return null;
         }
