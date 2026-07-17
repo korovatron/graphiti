@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.34';
+const VERSION = '1.2.35';
 
 class Graphiti {
     constructor() {
@@ -20963,12 +20963,27 @@ class Graphiti {
                     const lowerLatex = this.formatValueAsLatex(lowerValue);
                     const upperLatex = this.formatValueAsLatex(upperValue);
                     
+                    const shouldUpdateLimitField = (field, latexValue, numericValue) => {
+                        if (field.hasFocus()) {
+                            return false;
+                        }
+
+                        const currentLatex = field.getValue();
+                        if (currentLatex === latexValue) {
+                            return false;
+                        }
+
+                        const currentValue = this.evaluateLatexExpression(currentLatex);
+                        return currentValue === null || !isFinite(currentValue) || Math.abs(currentValue - numericValue) > 0.0001;
+                    };
+
                     // Only update if the field doesn't have focus (to avoid overwriting user input)
-                    // and if the value has changed to avoid cursor jumping
-                    if (!lowerLimitField.hasFocus() && lowerLimitField.getValue() !== lowerLatex) {
+                    // and if the value has changed to avoid cursor jumping. Preserve equivalent
+                    // MathLive input, such as typed fractions, when the marker value is unchanged.
+                    if (shouldUpdateLimitField(lowerLimitField, lowerLatex, lowerValue)) {
                         lowerLimitField.setValue(lowerLatex);
                     }
-                    if (!upperLimitField.hasFocus() && upperLimitField.getValue() !== upperLatex) {
+                    if (shouldUpdateLimitField(upperLimitField, upperLatex, upperValue)) {
                         upperLimitField.setValue(upperLatex);
                     }
                 }
