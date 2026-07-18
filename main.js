@@ -16305,7 +16305,7 @@ class Graphiti {
         const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
         const shape = this.classifyFunctionShape(func);
         const shapeLabel = shape && shape.label ? shape.label : '';
-        const displayShapeLabel = shapeLabel === 'line' ? '' : shapeLabel;
+        const displayShapeLabel = shapeLabel;
         const shapeVisibilityIsCurrent = displayShapeLabel
             ? shapeContainer && shapeContainer.classList.contains('visible')
             : !shapeContainer || !shapeContainer.classList.contains('visible');

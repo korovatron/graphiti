@@ -571,8 +571,8 @@ async function assertShapeClassification(page) {
     });
 
     assert.strictEqual(lineDomResult.classifiedLabel, 'line', 'single line should still classify as line');
-    assert.strictEqual(lineDomResult.renderedLabel, '', 'single line shape label should not render text');
-    assert.strictEqual(lineDomResult.visible, false, 'single line shape row should stay hidden');
+    assert.strictEqual(lineDomResult.renderedLabel, 'line', 'single line shape label should render text');
+    assert.strictEqual(lineDomResult.visible, true, 'single line shape row should be visible');
 
     const manuallyEditedFunctionId = await page.evaluate(() => {
         const graphiti = window.graphiti;
