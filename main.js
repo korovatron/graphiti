@@ -8348,6 +8348,7 @@ class Graphiti {
             }
         }
         domainExclusions.sort((a, b) => a - b);
+        const pointFilterRequired = this.isDenominatorClearedPointFilterRequired(clearedLeft, clearedRight, denominators);
 
         return {
             leftExpression: clearedLeft,
@@ -8356,9 +8357,80 @@ class Graphiti {
                 leftExpression: equation.leftExpression,
                 rightExpression: equation.rightExpression,
                 denominators,
-                domainExclusions
+                domainExclusions,
+                pointFilterRequired
             }
         };
+    }
+
+    isDenominatorClearedPointFilterRequired(clearedLeft, clearedRight, denominators = []) {
+        const yDenominators = denominators.filter(denominator => /\by\b/.test(denominator));
+        if (yDenominators.length === 0 || yDenominators.length !== denominators.length) {
+            return true;
+        }
+
+        for (const denominator of yDenominators) {
+            const isComponent = this.isLinearDenominatorZeroSetClearedComponent(clearedLeft, clearedRight, denominator);
+            if (isComponent !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    isLinearDenominatorZeroSetClearedComponent(clearedLeft, clearedRight, denominator) {
+        const coeffMap = this.extractExpressionCoeffMap(denominator, 1);
+        if (!coeffMap) {
+            return null;
+        }
+
+        const allowedKeys = new Set(['0,0', '1,0', '0,1']);
+        for (const [key, value] of Object.entries(coeffMap)) {
+            if (Math.abs(value || 0) > 1e-12 && !allowedKeys.has(key)) {
+                return null;
+            }
+        }
+
+        const constant = coeffMap['0,0'] || 0;
+        const xCoefficient = coeffMap['1,0'] || 0;
+        const yCoefficient = coeffMap['0,1'] || 0;
+        if (Math.abs(xCoefficient) <= 1e-12 && Math.abs(yCoefficient) <= 1e-12) {
+            return null;
+        }
+
+        let residualCompiled;
+        try {
+            residualCompiled = this.getCompiledExpression(`(${clearedLeft})-(${clearedRight})`);
+        } catch {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        const samples = [-8, -5, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 5, 8];
+        const residuals = [];
+        for (const t of samples) {
+            if (Math.abs(yCoefficient) >= Math.abs(xCoefficient)) {
+                scope.x = t;
+                scope.y = -(xCoefficient * t + constant) / yCoefficient;
+            } else {
+                scope.y = t;
+                scope.x = -(yCoefficient * t + constant) / xCoefficient;
+            }
+
+            try {
+                const value = residualCompiled.evaluate(scope);
+                if (!Number.isFinite(value)) {
+                    return null;
+                }
+                residuals.push(value);
+            } catch {
+                return null;
+            }
+        }
+
+        const scale = Math.max(1, ...residuals.map(value => Math.abs(value)));
+        return residuals.every(value => Math.abs(value) <= scale * 1e-8);
     }
 
     applyDenominatorClearedDomainExclusions(model, equation) {
@@ -8434,6 +8506,9 @@ class Graphiti {
     filterDenominatorClearedPoints(points, equation) {
         const metadata = equation && equation.denominatorClearedFromEquation;
         if (!metadata || !metadata.leftExpression || !metadata.rightExpression || !Array.isArray(points)) {
+            return points;
+        }
+        if (metadata.pointFilterRequired === false) {
             return points;
         }
 

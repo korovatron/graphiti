@@ -281,6 +281,27 @@ module.exports = [
         }
     },
     {
+        name: 'denominator-cleared oblique rational keeps cleared polynomial branches',
+        expression: 'x^2-y^2=1/(x+y)',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'marching-standard',
+            minFinitePointCount: 300,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [
+                { m: -1, b: 0 },
+                { m: 1, b: 0 }
+            ],
+            pointsNear: [
+                { x: 1, y: 0, tolerance: 0.12, label: 'central branch point' },
+                { x: 0, y: -1, tolerance: 0.12, label: 'opposite central branch point' },
+                { x: 1.125, y: 0.875, tolerance: 0.12, label: 'positive diagonal branch' },
+                { x: -0.875, y: -1.125, tolerance: 0.12, label: 'negative diagonal branch' }
+            ]
+        }
+    },
+    {
         name: 'axis component plus reciprocal square-root branches',
         expression: 'x*(y^2+1)=x*(x+2)*y^2',
         viewport: defaultViewport,

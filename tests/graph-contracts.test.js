@@ -1303,6 +1303,12 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
                     `${label}: expected at most ${expected.maxFinitePointCount} finite points, got ${actual.finitePointCount}`
                 );
             }
+            if (Number.isFinite(expected.minFinitePointCount)) {
+                assert(
+                    actual.finitePointCount >= expected.minFinitePointCount,
+                    `${label}: expected at least ${expected.minFinitePointCount} finite points, got ${actual.finitePointCount}`
+                );
+            }
             if (Number.isFinite(expected.maxTallVerticalSegments)) {
                 assert(
                     actual.tallVerticalSegmentCount <= expected.maxTallVerticalSegments,
