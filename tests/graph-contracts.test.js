@@ -106,6 +106,29 @@ function assertApproxLines(actual, expected, tolerance, label) {
     );
 }
 
+function assertApproxPolynomials(actual, expected, tolerance, label) {
+    const actualPolynomials = Array.isArray(actual) ? actual : [];
+    const expectedPolynomials = Array.isArray(expected) ? expected : [];
+
+    for (const expectedPolynomial of expectedPolynomials) {
+        const expectedCoefficients = Array.isArray(expectedPolynomial.coefficients) ? expectedPolynomial.coefficients : [];
+        assert(
+            actualPolynomials.some(actualPolynomial => {
+                const actualCoefficients = Array.isArray(actualPolynomial.coefficients) ? actualPolynomial.coefficients : [];
+                return actualCoefficients.length === expectedCoefficients.length &&
+                    expectedCoefficients.every((expectedCoefficient, index) => approxEqual(actualCoefficients[index], expectedCoefficient, tolerance));
+            }),
+            `${label}: expected ${JSON.stringify(expectedPolynomials)}, got ${JSON.stringify(actualPolynomials)}`
+        );
+    }
+
+    assert.strictEqual(
+        actualPolynomials.length,
+        expectedPolynomials.length,
+        `${label}: expected exactly ${JSON.stringify(expectedPolynomials)}, got ${JSON.stringify(actualPolynomials)}`
+    );
+}
+
 function assertHoles(actual, expected, tolerance, label) {
     const actualHoles = Array.isArray(actual) ? actual : [];
     const expectedHoles = Array.isArray(expected) ? expected : [];
@@ -1318,6 +1341,7 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
             assertApproxSet(actual.asymptoteData.vertical, expected.verticalAsymptotes || [], 0.03, `${label} vertical asymptotes`);
             assertApproxSet(actual.asymptoteData.horizontal, expected.horizontalAsymptotes || [], 0.03, `${label} horizontal asymptotes`);
             assertApproxLines(actual.asymptoteData.oblique, expected.obliqueAsymptotes || [], { m: 0.035, b: 0.08 }, `${label} oblique asymptotes`);
+            assertApproxPolynomials(actual.asymptoteData.curved, expected.curvedAsymptotes || [], 1e-8, `${label} curved asymptotes`);
             assertHoles(actual.holes, expected.holes || [], { x: 0.04, y: 0.04 }, `${label} holes`);
             if (!expected.skipVerticalComponents) {
                 assertApproxSet(actual.verticalComponents, expected.verticalComponents || [], 0.04, `${label} vertical component metadata`);

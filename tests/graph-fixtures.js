@@ -153,6 +153,17 @@ module.exports = [
         }
     },
     {
+        name: 'rational quartic reports polynomial curved asymptote',
+        expression: 'y=(x^4+1)/(x^2+1)',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            curvedAsymptotes: [{ coefficients: [-1, 0, 1] }]
+        }
+    },
+    {
         name: 'rotated hyperbola reports golden-ratio oblique asymptotes',
         expression: 'x^2-y^2+x*y=1',
         viewport: defaultViewport,

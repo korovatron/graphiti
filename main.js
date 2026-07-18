@@ -4300,6 +4300,13 @@ class Graphiti {
                 : knownMonomialProxyStructure && Array.isArray(knownMonomialProxyStructure.oblique)
                     ? knownMonomialProxyStructure.oblique.map(line => ({ ...line }))
                 : [];
+            const curvedAsymptotes = cachedRationalStructure && Array.isArray(cachedRationalStructure.curved)
+                ? cachedRationalStructure.curved.map(curve => ({ ...curve, coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : [] }))
+                : algebraicAsymptotes && Array.isArray(algebraicAsymptotes.curved)
+                    ? algebraicAsymptotes.curved.map(curve => ({ ...curve, coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : [] }))
+                : knownMonomialProxyStructure && Array.isArray(knownMonomialProxyStructure.curved)
+                    ? knownMonomialProxyStructure.curved.map(curve => ({ ...curve, coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : [] }))
+                : [];
             const selectedObliqueAsymptotes = knownMonomialProxyStructure
                 ? obliqueAsymptotes
                 : algebraicAsymptotes && algebraicAsymptotes.oblique.length > 0
@@ -4342,7 +4349,8 @@ class Graphiti {
                 horizontalAsymptotes,
                 selectedObliqueAsymptotes,
                 obliqueDebug,
-                asymptoteSources
+                asymptoteSources,
+                curvedAsymptotes
             );
             const hasExplicitVerticalAsymptotes = explicitVerticalAsymptotes && explicitVerticalAsymptotes.length > 0;
 
@@ -8682,6 +8690,10 @@ class Graphiti {
             vertical: Array.isArray(value.vertical) ? value.vertical.slice() : undefined,
             horizontal: Array.isArray(value.horizontal) ? value.horizontal.slice() : undefined,
             oblique: Array.isArray(value.oblique) ? value.oblique.map(line => ({ ...line })) : undefined,
+            curved: Array.isArray(value.curved) ? value.curved.map(curve => ({
+                ...curve,
+                coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : []
+            })) : undefined,
             holes: Array.isArray(value.holes) ? value.holes.map(hole => ({ ...hole })) : undefined,
             squareTurningPoints: Array.isArray(value.squareTurningPoints) ? value.squareTurningPoints.map(point => ({ ...point })) : undefined,
             cubicTurningPoints: Array.isArray(value.cubicTurningPoints) ? value.cubicTurningPoints.map(point => ({ ...point })) : undefined,
@@ -14776,13 +14788,21 @@ class Graphiti {
             algebraicAsymptotes: {
                 vertical: Array.isArray(algebraicAsymptotes.vertical) ? algebraicAsymptotes.vertical.slice() : [],
                 horizontal: Array.isArray(algebraicAsymptotes.horizontal) ? algebraicAsymptotes.horizontal.slice() : [],
-                oblique: Array.isArray(algebraicAsymptotes.oblique) ? algebraicAsymptotes.oblique.map(line => ({ ...line })) : []
+                oblique: Array.isArray(algebraicAsymptotes.oblique) ? algebraicAsymptotes.oblique.map(line => ({ ...line })) : [],
+                curved: Array.isArray(algebraicAsymptotes.curved) ? algebraicAsymptotes.curved.map(curve => ({
+                    ...curve,
+                    coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : []
+                })) : []
             },
             numericVertical: Array.isArray(numericVertical) ? numericVertical.slice() : [],
             numericHorizontal: Array.isArray(numericHorizontal) ? numericHorizontal.slice() : [],
             vertical: algebraicAsymptotes.vertical.length > 0 ? algebraicAsymptotes.vertical.slice() : numericVertical.slice(),
             horizontal: algebraicAsymptotes.horizontal.slice(),
             oblique: algebraicAsymptotes.oblique.map(line => ({ ...line })),
+            curved: Array.isArray(algebraicAsymptotes.curved) ? algebraicAsymptotes.curved.map(curve => ({
+                ...curve,
+                coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : []
+            })) : [],
             holes: this.detectRemovableDiscontinuities(
                 processedExpression,
                 compiledExpression,
@@ -15029,6 +15049,7 @@ class Graphiti {
 
         let horizontal = [];
         let oblique = [];
+        let curved = [];
 
         if (numDegree < denDegree) {
             horizontal = [0];
@@ -15045,12 +15066,24 @@ class Graphiti {
                     confidence: 'algebraic'
                 }];
             }
+        } else if (numDegree > denDegree + 1 && !exactReduction) {
+            const quotient = this.normalizePolynomial(division.quotient);
+            const quotientDegree = this.getPolynomialDegree(quotient);
+            if (quotientDegree > 1) {
+                curved = [{
+                    coefficients: quotient,
+                    expression: this.polynomialToExpression(quotient),
+                    direction: 0,
+                    confidence: 'algebraic'
+                }];
+            }
         }
 
         return {
             vertical,
             horizontal,
             oblique,
+            curved,
             source: 'algebraic'
         };
     }
@@ -15328,6 +15361,57 @@ class Graphiti {
             sum = sum * x + (poly[i] || 0);
         }
         return sum;
+    }
+
+    polynomialToExpression(coeffs) {
+        const poly = this.normalizePolynomial(coeffs || [0]);
+        const terms = [];
+
+        const formatNumber = (value) => {
+            if (!Number.isFinite(value)) {
+                return null;
+            }
+            const roundedInteger = Math.round(value);
+            if (Math.abs(value - roundedInteger) <= 1e-12) {
+                return String(roundedInteger);
+            }
+            return Number(value.toPrecision(14)).toString();
+        };
+
+        for (let power = poly.length - 1; power >= 0; power--) {
+            const coefficient = poly[power] || 0;
+            if (Math.abs(coefficient) <= 1e-12) {
+                continue;
+            }
+
+            const sign = coefficient < 0 ? '-' : '+';
+            const magnitude = Math.abs(coefficient);
+            const coefficientText = formatNumber(magnitude);
+            if (!coefficientText) {
+                continue;
+            }
+
+            let body;
+            if (power === 0) {
+                body = coefficientText;
+            } else {
+                const variable = power === 1 ? 'x' : 'x^' + power;
+                body = Math.abs(magnitude - 1) <= 1e-12 ? variable : coefficientText + '*' + variable;
+            }
+
+            terms.push({ sign, body });
+        }
+
+        if (terms.length === 0) {
+            return '0';
+        }
+
+        return terms.map((term, index) => {
+            if (index === 0) {
+                return term.sign === '-' ? '-' + term.body : term.body;
+            }
+            return term.sign + term.body;
+        }).join('');
     }
 
     getPolynomialRootMultiplicity(coeffs, root, tolerance = 1e-7, maxMultiplicity = 8) {
@@ -16147,7 +16231,7 @@ class Graphiti {
         return { lines, debug };
     }
 
-    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null, asymptoteSources = null) {
+    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null, asymptoteSources = null, curvedAsymptotes = []) {
         if (!func) {
             return;
         }
@@ -16193,6 +16277,35 @@ class Graphiti {
             );
             if (!duplicate) {
                 oblique.push(line);
+            }
+        }
+
+        const normalizeCurvedAsymptote = (curve) => {
+            if (!curve || !Array.isArray(curve.coefficients)) {
+                return null;
+            }
+
+            const coefficients = this.normalizePolynomial(curve.coefficients)
+                .map(value => Math.abs(value) < 1e-12 ? 0 : value);
+            if (this.getPolynomialDegree(coefficients) <= 1) {
+                return null;
+            }
+
+            return {
+                coefficients,
+                expression: curve.expression || this.polynomialToExpression(coefficients),
+                direction: Number.isFinite(curve.direction) ? curve.direction : 0
+            };
+        };
+
+        const curved = [];
+        for (const curve of (curvedAsymptotes || []).map(item => normalizeCurvedAsymptote(item)).filter(item => item !== null)) {
+            const duplicate = curved.some(existing =>
+                existing.coefficients.length === curve.coefficients.length &&
+                existing.coefficients.every((value, index) => Math.abs(value - curve.coefficients[index]) <= Math.max(1e-8, Math.abs(value) * 1e-6))
+            );
+            if (!duplicate) {
+                curved.push(curve);
             }
         }
 
@@ -16279,24 +16392,33 @@ class Graphiti {
             source: sourceForOblique(line)
         }));
 
+        const curvedEquationDetails = curved.map(curve => ({
+            equation: 'y=' + (curve.expression || this.polynomialToExpression(curve.coefficients)),
+            source: 'algebraic'
+        }));
+
         func.horizontalAsymptotes = horizontal;
         func.obliqueAsymptotes = oblique;
+        func.curvedAsymptotes = curved;
         func.asymptoteData = {
             vertical,
             horizontal,
             oblique,
+            curved,
             debug: {
                 oblique: obliqueDebug
             },
             equations: {
                 vertical: verticalEquationDetails.map(item => item.equation),
                 horizontal: horizontalEquationDetails.map(item => item.equation),
-                oblique: obliqueEquationDetails.map(item => item.equation)
+                oblique: obliqueEquationDetails.map(item => item.equation),
+                curved: curvedEquationDetails.map(item => item.equation)
             },
             equationsDetailed: {
                 vertical: verticalEquationDetails,
                 horizontal: horizontalEquationDetails,
-                oblique: obliqueEquationDetails
+                oblique: obliqueEquationDetails,
+                curved: curvedEquationDetails
             }
         };
 
@@ -16311,6 +16433,7 @@ class Graphiti {
         delete func.explicitVerticalAsymptotes;
         delete func.horizontalAsymptotes;
         delete func.obliqueAsymptotes;
+        delete func.curvedAsymptotes;
         delete func.asymptoteData;
         delete func.holes;
         delete func.affineExplicitExpression;
@@ -16486,6 +16609,7 @@ class Graphiti {
         const verticalValues = Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical.slice().sort((a, b) => a - b) : [];
         const horizontalValues = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal.slice().sort((a, b) => a - b) : [];
         const obliqueLines = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+        const curvedAsymptotes = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
 
         const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
         const hasReciprocalPeriodicTrigVerticals = /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expression);
@@ -16531,6 +16655,13 @@ class Graphiti {
             } else {
                 equations.push(interceptDisplaysAsZero ? `y = ${slopeTimesXLatex}` : `y = ${slopeTimesXLatex} ${sign} ${interceptLatex}`);
             }
+        }
+
+        for (const curve of curvedAsymptotes) {
+            if (!curve || !Array.isArray(curve.coefficients) || this.getPolynomialDegree(curve.coefficients) <= 1) {
+                continue;
+            }
+            equations.push(`y = ${this.polynomialToExpression(curve.coefficients).replace(/\*/g, '')}`);
         }
 
         return equations;
@@ -40713,7 +40844,8 @@ class Graphiti {
         const vertical = Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [];
         const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
         const oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
-        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0) {
+        const curved = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
+        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0 && curved.length === 0) {
             return;
         }
 
@@ -40772,6 +40904,42 @@ class Graphiti {
                 const right = this.worldToScreen(this.viewport.maxX, yRight);
                 context.moveTo(left.x, left.y);
                 context.lineTo(right.x, right.y);
+            }
+            context.stroke();
+        }
+
+        if (curved.length > 0) {
+            const sampleCount = Math.max(80, Math.min(1200, Math.ceil(this.viewport.width * 1.25)));
+            const xSpan = this.viewport.maxX - this.viewport.minX;
+            const expandedMinY = this.viewport.minY - ((this.viewport.maxY - this.viewport.minY) * 0.25);
+            const expandedMaxY = this.viewport.maxY + ((this.viewport.maxY - this.viewport.minY) * 0.25);
+
+            context.beginPath();
+            for (const curve of curved) {
+                if (!curve || !Array.isArray(curve.coefficients) || this.getPolynomialDegree(curve.coefficients) <= 1) continue;
+
+                let pathStarted = false;
+                for (let i = 0; i <= sampleCount; i++) {
+                    const x = this.viewport.minX + (xSpan * i / sampleCount);
+                    const y = this.evaluatePolynomial(curve.coefficients, x);
+                    if (!Number.isFinite(y) || y < expandedMinY || y > expandedMaxY) {
+                        pathStarted = false;
+                        continue;
+                    }
+
+                    const screen = this.worldToScreen(x, y);
+                    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                        pathStarted = false;
+                        continue;
+                    }
+
+                    if (!pathStarted) {
+                        context.moveTo(screen.x, screen.y);
+                        pathStarted = true;
+                    } else {
+                        context.lineTo(screen.x, screen.y);
+                    }
+                }
             }
             context.stroke();
         }
