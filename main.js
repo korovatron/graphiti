@@ -20293,7 +20293,14 @@ class Graphiti {
                 if (func.expression && func.enabled && !func.validationError) {
                     const functionType = this.getEffectiveFunctionType(func);
                     if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant') {
-                        explicitReplotPromises.push(this.plotFunction(func));
+                        if (this.isExplicitImplicitFastPath(func)) {
+                            func._preserveFastPathMetadataDuringViewportRefresh = true;
+                        }
+                        explicitReplotPromises.push(
+                            this.plotFunction(func).finally(() => {
+                                delete func._preserveFastPathMetadataDuringViewportRefresh;
+                            })
+                        );
                     }
                 }
             });

@@ -1159,6 +1159,107 @@ async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
     );
 }
 
+async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: '((x^2-y^2)*(x+y)-1)*(y+1-2*x)*(y^2-2*x)=0',
+            points: [],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func);
+        await graphiti.plotFunction(func);
+
+        const before = {
+            renderMode: func.implicitRenderMode || null,
+            obliqueCount: func.asymptoteData && Array.isArray(func.asymptoteData.oblique)
+                ? func.asymptoteData.oblique.length
+                : 0
+        };
+
+        const originalProductPlot = graphiti.plotImplicitProductFactorsAsComponents.bind(graphiti);
+        const originalSaveViewportBounds = graphiti.saveViewportBounds.bind(graphiti);
+        const originalShouldShowViewportWorkIndicator = graphiti.shouldShowViewportWorkIndicator.bind(graphiti);
+        let observedAtProductReplot = null;
+
+        graphiti.saveViewportBounds = () => {};
+        graphiti.shouldShowViewportWorkIndicator = () => false;
+        graphiti.plotImplicitProductFactorsAsComponents = async (...args) => {
+            const targetFunc = args[0];
+            if (targetFunc && targetFunc.id === func.id && observedAtProductReplot === null) {
+                observedAtProductReplot = {
+                    hasAsymptoteData: !!targetFunc.asymptoteData,
+                    obliqueCount: targetFunc.asymptoteData && Array.isArray(targetFunc.asymptoteData.oblique)
+                        ? targetFunc.asymptoteData.oblique.length
+                        : 0,
+                    preserveFlag: !!targetFunc._preserveFastPathMetadataDuringViewportRefresh
+                };
+            }
+            return originalProductPlot(...args);
+        };
+
+        try {
+            graphiti.cartesianViewport.minX = -9;
+            graphiti.cartesianViewport.maxX = 7;
+            graphiti.handleViewportChange({ skipCoverageRefresh: true });
+
+            const start = performance.now();
+            while (observedAtProductReplot === null && performance.now() - start < 1000) {
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 80));
+            return {
+                before,
+                observedAtProductReplot,
+                after: {
+                    obliqueCount: func.asymptoteData && Array.isArray(func.asymptoteData.oblique)
+                        ? func.asymptoteData.oblique.length
+                        : 0
+                }
+            };
+        } finally {
+            graphiti.plotImplicitProductFactorsAsComponents = originalProductPlot;
+            graphiti.saveViewportBounds = originalSaveViewportBounds;
+            graphiti.shouldShowViewportWorkIndicator = originalShouldShowViewportWorkIndicator;
+        }
+    });
+
+    assert.strictEqual(result.before.renderMode, 'product-factors', 'regression setup should use product-factor rendering');
+    assert(result.before.obliqueCount > 0, `regression setup should start with product asymptotes: ${JSON.stringify(result)}`);
+    assert(result.observedAtProductReplot, `viewport settle should replot product factors: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.observedAtProductReplot.preserveFlag, true, 'viewport settle product replot should preserve fast-path metadata');
+    assert.strictEqual(result.observedAtProductReplot.hasAsymptoteData, true, 'product asymptotes should stay present while factor replot starts');
+    assert(result.observedAtProductReplot.obliqueCount > 0, `product oblique asymptotes should not disappear during replot: ${JSON.stringify(result)}`);
+    assert(result.after.obliqueCount > 0, `product oblique asymptotes should still exist after replot: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -1233,6 +1334,7 @@ async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
+        await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {
