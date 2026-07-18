@@ -235,6 +235,25 @@ module.exports = [
         }
     },
     {
+        name: 'product sine line parabola uses explicit component renderers',
+        expression: '\\left(y-\\sin\\left(x\\right)\\right)\\left(y+1-2x\\right)\\left(y^2-2x\\right)=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            explicitImplicitFastPath: true,
+            productFactorRenderModes: ['affine-explicit', 'affine-explicit', 'monomial-explicit'],
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            pointsNear: [
+                { x: Math.PI / 2, y: 1, tolerance: 0.08, label: 'sine component peak' },
+                { x: 2, y: 3, tolerance: 0.08, label: 'line component' },
+                { x: 2, y: 2, tolerance: 0.08, label: 'upper parabola branch' },
+                { x: 2, y: -2, tolerance: 0.08, label: 'lower parabola branch' }
+            ]
+        }
+    },
+    {
         name: 'folium-style cubic has three asymptote directions',
         expression: 'x^3-3*x*y^2=1',
         viewport: defaultViewport,

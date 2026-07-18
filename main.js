@@ -8031,7 +8031,8 @@ class Graphiti {
         const factorExpressions = factors
             .filter(node => node && !this.isConstantMathNode(node) && (
                 this.extractBivariatePolynomialCoefficients(node, 8) ||
-                this.classifyImplicitYExplicitShape({ leftExpression: node.toString(), rightExpression: '0' })
+                this.classifyImplicitYExplicitShape({ leftExpression: node.toString(), rightExpression: '0' }) ||
+                (!node.toString().includes('/') && this.tryBuildAffineImplicitModel({ leftExpression: node.toString(), rightExpression: '0' }))
             ))
             .map(node => node.toString())
             .filter(expression => expression && expression.trim());
