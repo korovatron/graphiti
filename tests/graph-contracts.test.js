@@ -574,6 +574,49 @@ async function assertShapeClassification(page) {
     assert.strictEqual(lineDomResult.renderedLabel, 'line', 'single line shape label should render text');
     assert.strictEqual(lineDomResult.visible, true, 'single line shape row should be visible');
 
+    const deferredPanelResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.deferInitialFunctionPanelOpen = true;
+        graphiti.changeState(graphiti.states.GRAPHING);
+
+        const functionPanel = document.getElementById('function-panel');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const duringBuild = {
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+
+        graphiti.deferInitialFunctionPanelOpen = false;
+        graphiti.openFunctionPanelForGraphing({ deferSlide: true });
+        const afterUnhide = {
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        return {
+            duringBuild,
+            afterUnhide,
+            afterBuild: {
+                panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+                panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+                hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+            }
+        };
+    });
+
+    assert.strictEqual(deferredPanelResult.duringBuild.panelHidden, true, 'startup build should keep function panel hidden');
+    assert.strictEqual(deferredPanelResult.duringBuild.panelOpen, false, 'startup build should not start panel slide-in');
+    assert.strictEqual(deferredPanelResult.duringBuild.hamburgerPanelOpen, false, 'startup build should not mark hamburger as panel-open');
+    assert.strictEqual(deferredPanelResult.afterUnhide.panelHidden, false, 'startup build completion should unhide function panel before opening it');
+    assert.strictEqual(deferredPanelResult.afterUnhide.panelOpen, false, 'startup build completion should leave an offscreen frame before slide-in');
+    assert.strictEqual(deferredPanelResult.afterUnhide.hamburgerPanelOpen, false, 'startup build completion should not mark hamburger as panel-open before slide-in');
+    assert.strictEqual(deferredPanelResult.afterBuild.panelHidden, false, 'startup build completion should show function panel');
+    assert.strictEqual(deferredPanelResult.afterBuild.panelOpen, true, 'startup build completion should start panel slide-in');
+    assert.strictEqual(deferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'startup build completion should mark hamburger as panel-open');
+
     const manuallyEditedFunctionId = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';

@@ -30362,11 +30362,6 @@ class Graphiti {
             return;
         }
         
-        // Mark as initialized to prevent duplicate function loading
-        this.hasInitialized = true;
-        
-        this.changeState(this.states.GRAPHING);
-        
         // Try to load saved functions from localStorage first to check if any exist
         const savedData = this.loadFunctionsFromLocalStorage();
         
@@ -30448,6 +30443,13 @@ class Graphiti {
         const savedFunctionsForCurrentMode = this.plotMode === 'polar'
             ? savedData.polar || []
             : savedData.cartesian || [];
+        const shouldShowStartupBuildOverlay = this.shouldShowGraphBuildOverlayForFunctions(savedFunctionsForCurrentMode);
+
+        // Mark as initialized to prevent duplicate function loading
+        this.hasInitialized = true;
+
+        this.deferInitialFunctionPanelOpen = shouldShowStartupBuildOverlay;
+        this.changeState(this.states.GRAPHING);
         const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(savedFunctionsForCurrentMode);
         
         // savedData was already loaded above to check for saved functions
@@ -30657,6 +30659,10 @@ class Graphiti {
             if (showBuildOverlay) {
                 this.hideGraphBuildOverlay();
             }
+            if (this.deferInitialFunctionPanelOpen) {
+                this.deferInitialFunctionPanelOpen = false;
+                this.openFunctionPanelForGraphing({ deferSlide: true });
+            }
         };
 
         // If there are no implicit functions, finish after explicit plotting completes.
@@ -30699,8 +30705,7 @@ class Graphiti {
         // Initialize turning points toggle button state
         this.updateTurningPointsToggleButton();
         
-        // Panel opens automatically via changeState() - no need to call openMobileMenu()
-        // It adds mobile-open class which triggers the CSS slide-in animation
+        // Panel opens automatically via changeState(), or after the startup build overlay is hidden.
         
         // Show keyboard shortcuts hint after a short delay (only on non-touch devices)
         this.showKeyboardHint();
@@ -30928,20 +30933,23 @@ class Graphiti {
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
-                if (functionPanel) {
-                    functionPanel.classList.remove('hidden');
-                    // Force a reflow to ensure the element is visible before starting transition
-                    functionPanel.offsetHeight;
-                    functionPanel.classList.add('mobile-open');
-                }
                 // Always show hamburger in GRAPHING state (mobile and desktop)
                 if (hamburgerMenu) {
                     hamburgerMenu.style.display = 'flex';
-                    // Set hamburger to show red close cross when panel opens
-                    hamburgerMenu.classList.add('active');
-                    hamburgerMenu.classList.add('panel-open');
                     // Fade in hamburger menu
                     hamburgerMenu.classList.add('loaded');
+                }
+                if (this.deferInitialFunctionPanelOpen) {
+                    if (functionPanel) {
+                        functionPanel.classList.add('hidden');
+                        functionPanel.classList.remove('mobile-open');
+                    }
+                    if (hamburgerMenu) {
+                        hamburgerMenu.classList.remove('active');
+                        hamburgerMenu.classList.remove('panel-open');
+                    }
+                } else {
+                    this.openFunctionPanelForGraphing();
                 }
                 // Fade in canvas
                 const canvas = document.getElementById('canvas');
@@ -30949,6 +30957,40 @@ class Graphiti {
                     canvas.classList.add('loaded');
                 }
                 break;
+        }
+    }
+
+    openFunctionPanelForGraphing(options = {}) {
+        const functionPanel = document.getElementById('function-panel');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const deferSlide = !!(options && options.deferSlide);
+
+        const markPanelOpen = () => {
+            if (functionPanel) {
+                functionPanel.classList.add('mobile-open');
+            }
+            if (hamburgerMenu) {
+                hamburgerMenu.classList.add('active');
+                hamburgerMenu.classList.add('panel-open');
+            }
+        };
+
+        if (functionPanel) {
+            functionPanel.classList.remove('hidden');
+            // Force a reflow to ensure the element is visible before starting transition
+            functionPanel.offsetHeight;
+        }
+        if (hamburgerMenu) {
+            hamburgerMenu.style.display = 'flex';
+            hamburgerMenu.classList.add('loaded');
+        }
+
+        if (deferSlide && functionPanel && typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+                markPanelOpen();
+            });
+        } else {
+            markPanelOpen();
         }
     }
     
