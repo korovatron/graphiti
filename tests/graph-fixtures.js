@@ -1,4 +1,5 @@
 const sqrt3Over3 = Math.sqrt(3) / 3;
+const goldenRatio = (1 + Math.sqrt(5)) / 2;
 
 const defaultViewport = {
     minX: -8,
@@ -149,6 +150,19 @@ module.exports = [
             verticalAsymptotes: [],
             horizontalAsymptotes: [0],
             obliqueAsymptotes: [{ m: 1, b: 0 }]
+        }
+    },
+    {
+        name: 'rotated hyperbola reports golden-ratio oblique asymptotes',
+        expression: 'x^2-y^2+x*y=1',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [
+                { m: -1 / goldenRatio, b: 0 },
+                { m: goldenRatio, b: 0 }
+            ]
         }
     },
     {

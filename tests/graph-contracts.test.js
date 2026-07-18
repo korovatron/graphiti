@@ -377,6 +377,7 @@ async function assertShapeClassification(page) {
         { expression: 'y=\\frac{\\left(x-1\\right)\\left(x-2\\right)}{x-1}', expected: 'line' },
         { expression: 'x=1/y', expected: 'hyperbola' },
         { expression: 'x^2/x=1', expected: 'line' },
+        { expression: '\\frac{x^2-y^2}{x-y}=1', expected: 'line' },
         { expression: '(x-2)^2=0', expected: 'degenerate conic' },
         { expression: '\\left(x-2\\right)^2=0', expected: 'degenerate conic' },
         { expression: 'x^2-4=0', expected: 'line pair' },
@@ -394,6 +395,7 @@ async function assertShapeClassification(page) {
         { expression: '(y-1/x)*(y-1)=0', expected: 'hyperbola + line' },
         { expression: 'x*(y^2-x)=0', expected: 'line + parabola' },
         { expression: 'x*y^2-x^2=0', expected: 'line + parabola' },
+        { expression: '((x^2-y^2)*(x+y)-1)*(y+1-2*x)*(y^2-2*x)=0', expected: 'line + parabola + implicit curve' },
         { expression: '\\left(y-\\frac{x}{2}\\right)\\left(x-x^3y\\right)=0', expected: 'line + line + reciprocal-square curve' },
         { expression: 'x*y=0', expected: 'line pair' },
         { expression: 'x^2+y^2+1=0', expected: null }
@@ -646,6 +648,40 @@ async function assertShapeClassification(page) {
     assert.strictEqual(cancelledRationalMetadata.obliqueCount, 0, 'cancelled explicit rational should not store oblique asymptotes');
     assert.strictEqual(cancelledRationalMetadata.asymptotesVisible, false, 'cancelled explicit rational asymptote row should stay hidden');
     assert(cancelledRationalMetadata.holeCount > 0, 'cancelled explicit rational hole row should render');
+
+    const goldenRatioAsymptoteDomResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('x^2-y^2+x*y=1');
+        const func = graphiti.cartesianFunctions[0];
+        await graphiti.plotFunction(func);
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const fields = item ? Array.from(item.querySelectorAll('.asymptote-equation-item')) : [];
+        return {
+            equations: typeof graphiti.buildAsymptoteDisplayLatex === 'function'
+                ? graphiti.buildAsymptoteDisplayLatex(func)
+                : [],
+            renderedText: fields.map(field => field.textContent || ''),
+            fieldValues: fields.map(field => field.value || '')
+        };
+    });
+
+    assert(
+        goldenRatioAsymptoteDomResult.equations.some(equation => /\\varphi\s+x/.test(equation)),
+        `golden ratio asymptote LaTeX should separate coefficient and x: ${JSON.stringify(goldenRatioAsymptoteDomResult)}`
+    );
+    assert(
+        !goldenRatioAsymptoteDomResult.fieldValues.some(value => value.includes('\\varphix')),
+        `golden ratio asymptote should not emit unknown \\varphix command: ${JSON.stringify(goldenRatioAsymptoteDomResult)}`
+    );
 
     const polarDomResult = await page.evaluate(() => {
         const graphiti = window.graphiti;

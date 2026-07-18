@@ -16440,7 +16440,8 @@ class Graphiti {
             const unitSlopeTolerance = 0.015;
             const zeroSlopeTolerance = 1e-9;
             const slopeLatex = this.formatAsymptoteCoefficientLatex(slope);
-            const slopeTimesXLatex = `${slopeLatex}x`;
+            const slopeNeedsSeparator = /\\[a-zA-Z]+$/.test(slopeLatex);
+            const slopeTimesXLatex = `${slopeLatex}${slopeNeedsSeparator ? ' ' : ''}x`;
             const interceptLatex = this.formatAsymptoteCoefficientLatex(Math.abs(intercept));
             const interceptDisplaysAsZero = intercept === 0 || interceptLatex === '0' || interceptLatex === '-0';
             const sign = intercept >= 0 ? '+' : '-';
@@ -17699,21 +17700,45 @@ class Graphiti {
             return yExplicitShape;
         }
 
-        const factorExpressions = depth <= 1 ? this.extractZeroProductFactorExpressions(equation) : null;
+        const denominatorMetadata = equation.denominatorClearedFromEquation;
+        const denominatorFactorMaps = denominatorMetadata && Array.isArray(denominatorMetadata.denominators)
+            ? denominatorMetadata.denominators
+                .map(denominator => this.extractExpressionCoeffMap(denominator, 8))
+                .filter(Boolean)
+            : [];
+        const rawFactorExpressions = depth <= 1 ? this.extractZeroProductFactorExpressions(equation) : null;
+        const factorExpressions = Array.isArray(rawFactorExpressions) && denominatorFactorMaps.length > 0
+            ? rawFactorExpressions.filter(factorExpression => {
+                const factorMap = this.extractExpressionCoeffMap(factorExpression, 8);
+                return !factorMap || !denominatorFactorMaps.some(denominatorMap => this.areCoeffMapsProportional(factorMap, denominatorMap));
+            })
+            : rawFactorExpressions;
+        if (Array.isArray(factorExpressions) && factorExpressions.length === 1 && Array.isArray(rawFactorExpressions) && rawFactorExpressions.length > 1) {
+            return this.classifyImplicitEquationShape({
+                leftExpression: factorExpressions[0],
+                rightExpression: '0'
+            }, depth + 1);
+        }
         if (Array.isArray(factorExpressions) && factorExpressions.length > 1) {
             const componentLabels = [];
+            let unclassifiedComponentCount = 0;
             for (const factorExpression of factorExpressions) {
                 const component = this.classifyImplicitEquationShape({
                     leftExpression: factorExpression,
                     rightExpression: '0'
                 }, depth + 1);
                 if (!component || !component.label) {
-                    return null;
+                    unclassifiedComponentCount++;
+                    continue;
                 }
                 componentLabels.push(component.label);
             }
 
-            if (componentLabels.every(label => label === 'line')) {
+            if (componentLabels.length === 0) {
+                return null;
+            }
+
+            if (unclassifiedComponentCount === 0 && componentLabels.every(label => label === 'line')) {
                 return {
                     label: componentLabels.length === 2 ? 'line pair' : 'line components',
                     confidence: 'strong'
@@ -17726,13 +17751,15 @@ class Graphiti {
                     uniqueLabels.push(label);
                 }
             }
+            if (unclassifiedComponentCount > 0 && !uniqueLabels.includes('implicit curve')) {
+                uniqueLabels.push('implicit curve');
+            }
             return {
                 label: uniqueLabels.join(' + '),
-                confidence: 'strong'
+                confidence: unclassifiedComponentCount > 0 ? 'partial' : 'strong'
             };
         }
 
-        const denominatorMetadata = equation.denominatorClearedFromEquation;
         const excludedXRoots = denominatorMetadata && Array.isArray(denominatorMetadata.domainExclusions)
             ? denominatorMetadata.domainExclusions.filter(value => Number.isFinite(value))
             : [];
@@ -17751,6 +17778,15 @@ class Graphiti {
 
         const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
         if (coeffMap) {
+            const denominatorReducedCoeffMap = denominatorFactorMaps.length > 0
+                ? this.removeDenominatorFactorsFromCoeffMap(coeffMap, denominatorFactorMaps)
+                : null;
+            if (denominatorReducedCoeffMap) {
+                const denominatorReducedShape = this.classifyPolynomialCoeffMapShape(denominatorReducedCoeffMap);
+                if (denominatorReducedShape) {
+                    return denominatorReducedShape;
+                }
+            }
             const reducedCoeffMap = excludedXRoots.length > 0
                 ? this.removeExcludedXFactorsFromCoeffMap(coeffMap, excludedXRoots)
                 : null;
@@ -17776,6 +17812,239 @@ class Graphiti {
         }
 
         return null;
+    }
+
+    extractExpressionCoeffMap(expression, maxTotalDegree = 8) {
+        if (!expression) {
+            return null;
+        }
+
+        try {
+            return this.extractBivariatePolynomialCoefficients(this.cleanMath.parse(String(expression).replace(/\\([()])/g, '$1')), maxTotalDegree);
+        } catch {
+            return null;
+        }
+    }
+
+    areCoeffMapsProportional(firstMap, secondMap) {
+        if (!firstMap || !secondMap) {
+            return false;
+        }
+
+        const keys = Array.from(new Set([...Object.keys(firstMap), ...Object.keys(secondMap)]));
+        const scale = Math.max(
+            1,
+            ...keys.map(key => Math.abs(firstMap[key] || 0)),
+            ...keys.map(key => Math.abs(secondMap[key] || 0))
+        );
+        const tolerance = scale * 1e-8;
+        let ratio = null;
+
+        for (const key of keys) {
+            const firstValue = Math.abs(firstMap[key] || 0) <= tolerance ? 0 : firstMap[key] || 0;
+            const secondValue = Math.abs(secondMap[key] || 0) <= tolerance ? 0 : secondMap[key] || 0;
+            if (firstValue === 0 && secondValue === 0) {
+                continue;
+            }
+            if (firstValue === 0 || secondValue === 0) {
+                return false;
+            }
+
+            const currentRatio = firstValue / secondValue;
+            if (!Number.isFinite(currentRatio)) {
+                return false;
+            }
+            if (ratio === null) {
+                ratio = currentRatio;
+            } else if (Math.abs(currentRatio - ratio) > Math.max(tolerance, Math.abs(ratio) * 1e-7)) {
+                return false;
+            }
+        }
+
+        return ratio !== null;
+    }
+
+    removeDenominatorFactorsFromCoeffMap(coeffMap, denominatorFactorMaps = []) {
+        if (!coeffMap || !Array.isArray(denominatorFactorMaps) || denominatorFactorMaps.length === 0) {
+            return null;
+        }
+
+        let currentMap = { ...coeffMap };
+        let removedAny = false;
+        for (const denominatorMap of denominatorFactorMaps) {
+            const dividedMap = this.divideCoeffMapByLinearFactor(currentMap, denominatorMap);
+            if (dividedMap) {
+                currentMap = dividedMap;
+                removedAny = true;
+            }
+        }
+
+        return removedAny ? currentMap : null;
+    }
+
+    divideCoeffMapByLinearFactor(coeffMap, factorMap) {
+        if (!coeffMap || !factorMap) {
+            return null;
+        }
+
+        const getFactorCoeff = (px, py) => factorMap[`${px},${py}`] || 0;
+        const c = getFactorCoeff(0, 0);
+        const a = getFactorCoeff(1, 0);
+        const b = getFactorCoeff(0, 1);
+        const factorHasOnlyLinearTerms = Object.entries(factorMap).every(([key, value]) => {
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-12) {
+                return true;
+            }
+            return key === '0,0' || key === '1,0' || key === '0,1';
+        });
+        if (!factorHasOnlyLinearTerms || (Math.abs(a) <= 1e-12 && Math.abs(b) <= 1e-12)) {
+            return null;
+        }
+
+        const degree = this.getCoeffMapTotalDegree(coeffMap);
+        if (degree < 1) {
+            return null;
+        }
+
+        const quotientKeys = [];
+        for (let totalDegree = 0; totalDegree <= degree - 1; totalDegree++) {
+            for (let px = 0; px <= totalDegree; px++) {
+                quotientKeys.push(`${px},${totalDegree - px}`);
+            }
+        }
+
+        const equationRows = [];
+        for (let totalDegree = 0; totalDegree <= degree; totalDegree++) {
+            for (let px = 0; px <= totalDegree; px++) {
+                const py = totalDegree - px;
+                const row = quotientKeys.map(key => {
+                    const [qx, qy] = key.split(',').map(Number);
+                    let value = 0;
+                    if (qx === px && qy === py) value += c;
+                    if (qx + 1 === px && qy === py) value += a;
+                    if (qx === px && qy + 1 === py) value += b;
+                    return value;
+                });
+                equationRows.push({ row, rhs: coeffMap[`${px},${py}`] || 0 });
+            }
+        }
+
+        const scale = Math.max(
+            1,
+            ...Object.values(coeffMap).map(value => Math.abs(value || 0)),
+            ...Object.values(factorMap).map(value => Math.abs(value || 0))
+        );
+        const tolerance = scale * 1e-8;
+        const solution = this.solveLinearSystemRows(equationRows, quotientKeys.length, tolerance);
+        if (!solution) {
+            return null;
+        }
+
+        const quotientMap = {};
+        for (let index = 0; index < quotientKeys.length; index++) {
+            const value = solution[index];
+            if (Number.isFinite(value) && Math.abs(value) > tolerance) {
+                quotientMap[quotientKeys[index]] = value;
+            }
+        }
+
+        if (Object.keys(quotientMap).length === 0) {
+            return null;
+        }
+
+        const productMap = this.multiplyCoeffMaps(quotientMap, factorMap);
+        return this.areCoeffMapsEqual(productMap, coeffMap, tolerance * 10) ? quotientMap : null;
+    }
+
+    solveLinearSystemRows(equationRows, variableCount, tolerance) {
+        const matrix = equationRows.map(({ row, rhs }) => row.slice(0, variableCount).concat(rhs));
+        let pivotRow = 0;
+        const pivotColumns = [];
+
+        for (let column = 0; column < variableCount && pivotRow < matrix.length; column++) {
+            let bestRow = pivotRow;
+            for (let row = pivotRow + 1; row < matrix.length; row++) {
+                if (Math.abs(matrix[row][column]) > Math.abs(matrix[bestRow][column])) {
+                    bestRow = row;
+                }
+            }
+            if (Math.abs(matrix[bestRow][column]) <= tolerance) {
+                continue;
+            }
+
+            [matrix[pivotRow], matrix[bestRow]] = [matrix[bestRow], matrix[pivotRow]];
+            const pivot = matrix[pivotRow][column];
+            for (let col = column; col <= variableCount; col++) {
+                matrix[pivotRow][col] /= pivot;
+            }
+            for (let row = 0; row < matrix.length; row++) {
+                if (row === pivotRow) {
+                    continue;
+                }
+                const factor = matrix[row][column];
+                if (Math.abs(factor) <= tolerance) {
+                    continue;
+                }
+                for (let col = column; col <= variableCount; col++) {
+                    matrix[row][col] -= factor * matrix[pivotRow][col];
+                }
+            }
+
+            pivotColumns[pivotRow] = column;
+            pivotRow++;
+        }
+
+        for (const row of matrix) {
+            const allZero = row.slice(0, variableCount).every(value => Math.abs(value) <= tolerance);
+            if (allZero && Math.abs(row[variableCount]) > tolerance) {
+                return null;
+            }
+        }
+
+        const solution = new Array(variableCount).fill(0);
+        for (let row = 0; row < pivotRow; row++) {
+            solution[pivotColumns[row]] = matrix[row][variableCount];
+        }
+        return solution;
+    }
+
+    getCoeffMapTotalDegree(coeffMap) {
+        let degree = -1;
+        for (const [key, value] of Object.entries(coeffMap || {})) {
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-12) {
+                continue;
+            }
+            const [px, py] = key.split(',').map(Number);
+            if (!Number.isInteger(px) || !Number.isInteger(py) || px < 0 || py < 0) {
+                return -1;
+            }
+            degree = Math.max(degree, px + py);
+        }
+        return degree;
+    }
+
+    multiplyCoeffMaps(firstMap, secondMap) {
+        const productMap = {};
+        for (const [firstKey, firstValue] of Object.entries(firstMap || {})) {
+            if (!Number.isFinite(firstValue) || Math.abs(firstValue) <= 1e-12) {
+                continue;
+            }
+            const [firstX, firstY] = firstKey.split(',').map(Number);
+            for (const [secondKey, secondValue] of Object.entries(secondMap || {})) {
+                if (!Number.isFinite(secondValue) || Math.abs(secondValue) <= 1e-12) {
+                    continue;
+                }
+                const [secondX, secondY] = secondKey.split(',').map(Number);
+                const key = `${firstX + secondX},${firstY + secondY}`;
+                productMap[key] = (productMap[key] || 0) + (firstValue * secondValue);
+            }
+        }
+        return productMap;
+    }
+
+    areCoeffMapsEqual(firstMap, secondMap, tolerance) {
+        const keys = Array.from(new Set([...Object.keys(firstMap || {}), ...Object.keys(secondMap || {})]));
+        return keys.every(key => Math.abs((firstMap[key] || 0) - (secondMap[key] || 0)) <= tolerance);
     }
 
     removeExcludedXFactorsFromCoeffMap(coeffMap, excludedXRoots = []) {
