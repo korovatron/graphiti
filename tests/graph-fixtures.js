@@ -65,7 +65,42 @@ module.exports = [
             verticalAsymptotes: [],
             horizontalAsymptotes: [0],
             obliqueAsymptotes: [],
+            envelope: { baseline: 0, amplitude: 1, decayRate: 1 },
             noFiniteSegmentBreaksNear: [{ x: -2 * Math.PI, tolerance: 0.08 }]
+        }
+    },
+    {
+        name: 'shifted scaled damped cosine reports envelopes',
+        expression: 'y=2+3*e^(-0.4*x)*cos(5*x+1)',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [2],
+            obliqueAsymptotes: [],
+            envelope: { baseline: 2, amplitude: 3, decayRate: 0.4 }
+        }
+    },
+    {
+        name: 'growing exponential sine reports envelopes',
+        expression: 'y=e^(0.1*x)*sin(x)',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: [],
+            envelope: { baseline: 0, amplitude: 1, decayRate: -0.1 }
+        }
+    },
+    {
+        name: 'parameter damped sine cosine sum reports combined envelopes',
+        expression: 'y=\gamma+e^{-\alpha x}(3\sin(2x)+4\cos(2x))',
+        viewport: defaultViewport,
+        parameters: { alpha: 0.5, gamma: 2 },
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [2],
+            obliqueAsymptotes: [],
+            envelope: { baseline: 2, amplitude: 5, decayRate: 0.5 }
         }
     },
     {

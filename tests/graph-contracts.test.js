@@ -129,6 +129,21 @@ function assertApproxPolynomials(actual, expected, tolerance, label) {
     );
 }
 
+function assertEnvelope(actual, expected, tolerance, label) {
+    if (!expected) {
+        assert.strictEqual(actual || null, null, `${label}: expected no envelope, got ${JSON.stringify(actual)}`);
+        return;
+    }
+
+    assert(actual, `${label}: expected envelope ${JSON.stringify(expected)}, got none`);
+    for (const key of ['baseline', 'amplitude', 'decayRate']) {
+        assert(
+            approxEqual(actual[key], expected[key], tolerance),
+            `${label}: expected envelope ${key}=${expected[key]}, got ${actual[key]}`
+        );
+    }
+}
+
 function assertHoles(actual, expected, tolerance, label) {
     const actualHoles = Array.isArray(actual) ? actual : [];
     const expectedHoles = Array.isArray(expected) ? expected : [];
@@ -182,7 +197,7 @@ async function plotFixture(page, fixture) {
         ? fixture.expected.pointsNear
         : [];
 
-    return page.evaluate(async ({ expression, viewport, pointProbes }) => {
+    return page.evaluate(async ({ expression, viewport, pointProbes, parameters }) => {
         const graphiti = window.graphiti;
         if (!graphiti) {
             throw new Error('Graphiti did not initialise');
@@ -197,6 +212,11 @@ async function plotFixture(page, fixture) {
         graphiti.showIntercepts = true;
         graphiti.input.persistentBadges = [];
         graphiti.intercepts = [];
+        for (const name of ['alpha', 'beta', 'gamma', 'delta']) {
+            if (graphiti.parameters && graphiti.parameters[name]) {
+                graphiti.parameters[name].value = parameters && Number.isFinite(parameters[name]) ? parameters[name] : 1;
+            }
+        }
 
         graphiti.canvas.width = viewport.width;
         graphiti.canvas.height = viewport.height;
@@ -289,6 +309,7 @@ async function plotFixture(page, fixture) {
                 ? graphiti.isExplicitImplicitFastPath(func)
                 : false,
             asymptoteData: func.asymptoteData || { vertical: [], horizontal: [], oblique: [] },
+            envelopeData: func.envelopeData || null,
             holes: Array.isArray(func.holes) ? func.holes : [],
             verticalComponents: metadataVerticalComponents,
             horizontalComponentStats,
@@ -303,7 +324,7 @@ async function plotFixture(page, fixture) {
                 .map(point => point.x),
             pointProbeDistances
         };
-    }, { expression: fixture.expression, viewport: fixture.viewport, pointProbes });
+    }, { expression: fixture.expression, viewport: fixture.viewport, pointProbes, parameters: fixture.parameters || null });
 }
 
 async function assertIncompleteExpressionsDoNotPlot(page) {
@@ -1354,6 +1375,7 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
             assertApproxSet(actual.asymptoteData.horizontal, expected.horizontalAsymptotes || [], 0.03, `${label} horizontal asymptotes`);
             assertApproxLines(actual.asymptoteData.oblique, expected.obliqueAsymptotes || [], { m: 0.035, b: 0.08 }, `${label} oblique asymptotes`);
             assertApproxPolynomials(actual.asymptoteData.curved, expected.curvedAsymptotes || [], 1e-8, `${label} curved asymptotes`);
+            assertEnvelope(actual.envelopeData, expected.envelope || null, 1e-8, `${label} envelope`);
             assertHoles(actual.holes, expected.holes || [], { x: 0.04, y: 0.04 }, `${label} holes`);
             if (!expected.skipVerticalComponents) {
                 assertApproxSet(actual.verticalComponents, expected.verticalComponents || [], 0.04, `${label} vertical component metadata`);

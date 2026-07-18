@@ -1116,7 +1116,8 @@
         }
 
         .shape-info-container,
-        .asymptote-info-container {
+        .asymptote-info-container,
+        .envelope-info-container {
             display: none;
             flex-direction: column;
             gap: 4px;
@@ -1126,11 +1127,13 @@
 
         .shape-info-container.visible,
         .asymptote-info-container.visible,
+        .envelope-info-container.visible,
         .holes-info-container.visible {
             display: flex;
         }
 
-        .holes-info-container {
+        .holes-info-container,
+        .envelope-info-container {
             display: none;
             flex-direction: column;
             gap: 4px;
@@ -1140,6 +1143,7 @@
 
         .shape-info-title,
         .asymptote-info-title,
+        .envelope-info-title,
         .holes-info-title {
             display: inline-flex;
             align-self: flex-start;
@@ -1169,6 +1173,7 @@
         }
 
         .asymptote-equation-list,
+        .envelope-equation-list,
         .holes-equation-list {
             display: flex;
             flex-direction: column;

@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.38';
+const VERSION = '1.2.39';
 
 class Graphiti {
     constructor() {
@@ -2381,6 +2381,10 @@ class Graphiti {
                 <div class="asymptote-info-title">Asymptotes</div>
                 <div class="asymptote-equation-list"></div>
             </div>
+            <div class="envelope-info-container" data-function-id="${func.id}">
+                <div class="envelope-info-title">Envelopes</div>
+                <div class="envelope-equation-list"></div>
+            </div>
             <div class="holes-info-container" data-function-id="${func.id}">
                 <div class="holes-info-title">Holes</div>
                 <div class="holes-equation-list"></div>
@@ -4206,6 +4210,7 @@ class Graphiti {
                     processedExpression = this.convertTrigToDegreeMode(processedExpression);
                 }
             }
+            const envelopeData = this.detectDampedOscillationEnvelope(processedExpression);
             
             // Compile expression ONCE
             const compiledExpression = this.getCompiledExpression(processedExpression);
@@ -4284,13 +4289,16 @@ class Graphiti {
                 : shouldSkipNumericHorizontalAsymptotes
                 ? []
                 : this.detectHorizontalAsymptotes(compiledExpression, hasInverseTrig, processedExpression);
-            const horizontalAsymptotes = knownMonomialProxyStructure
+            let horizontalAsymptotes = knownMonomialProxyStructure
                 ? numericHorizontalAsymptotes
                 : cachedRationalStructure
                 ? cachedRationalStructure.horizontal.slice()
                 : algebraicAsymptotes
                 ? algebraicAsymptotes.horizontal
                 : numericHorizontalAsymptotes;
+            if (envelopeData && Number.isFinite(envelopeData.baseline) && !horizontalAsymptotes.some(value => Math.abs(value - envelopeData.baseline) <= Math.max(1e-8, Math.abs(value) * 1e-6))) {
+                horizontalAsymptotes = horizontalAsymptotes.concat(envelopeData.baseline);
+            }
 
             const obliqueDetection = knownMonomialProxyStructure || cachedRationalStructure ? null : this.detectObliqueAsymptotes(compiledExpression, processedExpression, hasInverseTrig);
             const obliqueAsymptotes = obliqueDetection && Array.isArray(obliqueDetection.lines)
@@ -4343,6 +4351,7 @@ class Graphiti {
                 }))
             };
 
+            func.envelopeData = envelopeData;
             this.updateFunctionAsymptoteData(
                 func,
                 explicitVerticalAsymptotes,
@@ -16587,6 +16596,7 @@ class Graphiti {
         delete func.obliqueAsymptotes;
         delete func.curvedAsymptotes;
         delete func.asymptoteData;
+        delete func.envelopeData;
         delete func.holes;
         delete func.affineExplicitExpression;
         delete func.affineVerticalComponents;
@@ -16623,6 +16633,10 @@ class Graphiti {
                 if (hiddenHolesContainer) {
                     hiddenHolesContainer.classList.remove('visible');
                 }
+                const hiddenEnvelopeContainer = hiddenFuncItem.querySelector('.envelope-info-container');
+                if (hiddenEnvelopeContainer) {
+                    hiddenEnvelopeContainer.classList.remove('visible');
+                }
             }
             return;
         }
@@ -16646,6 +16660,10 @@ class Graphiti {
             if (errorHolesContainer) {
                 errorHolesContainer.classList.remove('visible');
             }
+            const errorEnvelopeContainer = funcItem.querySelector('.envelope-info-container');
+            if (errorEnvelopeContainer) {
+                errorEnvelopeContainer.classList.remove('visible');
+            }
             return;
         }
 
@@ -16668,23 +16686,32 @@ class Graphiti {
 
         const holesContainer = funcItem.querySelector('.holes-info-container');
         const holesList = holesContainer ? holesContainer.querySelector('.holes-equation-list') : null;
+        const envelopeContainer = funcItem.querySelector('.envelope-info-container');
+        const envelopeList = envelopeContainer ? envelopeContainer.querySelector('.envelope-equation-list') : null;
 
         const equations = this.buildAsymptoteDisplayLatex(func);
         const holeEquations = this.buildHoleDisplayLatex(func);
+        const envelopeEquations = this.buildEnvelopeDisplayLatex(func);
 
         const asymptoteSignature = JSON.stringify(equations);
         const holesSignature = JSON.stringify(holeEquations);
+        const envelopeSignature = JSON.stringify(envelopeEquations);
         const asymptoteVisibilityIsCurrent = equations.length > 0
             ? infoContainer.classList.contains('visible')
             : !infoContainer.classList.contains('visible');
         const holesVisibilityIsCurrent = !holesContainer || holeEquations.length > 0
             ? !holesContainer || holesContainer.classList.contains('visible')
             : !holesContainer.classList.contains('visible');
+        const envelopeVisibilityIsCurrent = !envelopeContainer || envelopeEquations.length > 0
+            ? !envelopeContainer || envelopeContainer.classList.contains('visible')
+            : !envelopeContainer.classList.contains('visible');
         if (equationList.dataset.asymptoteSignature === asymptoteSignature &&
             (!holesList || holesList.dataset.holesSignature === holesSignature) &&
+            (!envelopeList || envelopeList.dataset.envelopeSignature === envelopeSignature) &&
             (!shapeValue || shapeValue.dataset.shapeSignature === displayShapeLabel) &&
             asymptoteVisibilityIsCurrent &&
             holesVisibilityIsCurrent &&
+            envelopeVisibilityIsCurrent &&
             shapeVisibilityIsCurrent) {
             return;
         }
@@ -16702,6 +16729,9 @@ class Graphiti {
         equationList.dataset.asymptoteSignature = asymptoteSignature;
         if (holesList) {
             holesList.dataset.holesSignature = holesSignature;
+        }
+        if (envelopeList) {
+            envelopeList.dataset.envelopeSignature = envelopeSignature;
         }
 
         equationList.innerHTML = '';
@@ -16721,6 +16751,28 @@ class Graphiti {
                 item.style.setProperty('--mathlive-font-size', '14px');
                 item.value = equation;
                 equationList.appendChild(item);
+            }
+        }
+
+        if (envelopeContainer && envelopeList) {
+            envelopeList.innerHTML = '';
+            if (envelopeEquations.length === 0) {
+                envelopeContainer.classList.remove('visible');
+            } else {
+                envelopeContainer.classList.add('visible');
+                for (const envelopeEquation of envelopeEquations) {
+                    const envelopeItem = document.createElement('math-field');
+                    envelopeItem.className = 'asymptote-equation-item asymptote-equation-field';
+                    envelopeItem.setAttribute('read-only', 'true');
+                    envelopeItem.setAttribute('default-mode', 'math');
+                    envelopeItem.setAttribute('virtual-keyboard-mode', 'off');
+                    envelopeItem.setAttribute('tabindex', '-1');
+                    envelopeItem.setAttribute('color-scheme', 'dark');
+                    envelopeItem.style.setProperty('font-size', '14px', 'important');
+                    envelopeItem.style.setProperty('--mathlive-font-size', '14px');
+                    envelopeItem.value = envelopeEquation;
+                    envelopeList.appendChild(envelopeItem);
+                }
             }
         }
 
@@ -16817,6 +16869,311 @@ class Graphiti {
         }
 
         return equations;
+    }
+
+    detectDampedOscillationEnvelope(processedExpression) {
+        if (!processedExpression || !/\b(sin|cos)\s*\(/i.test(processedExpression) || !/(\bexp\s*\(|\be\s*\^)/i.test(processedExpression)) {
+            return null;
+        }
+
+        let node;
+        try {
+            node = this.cleanMath.parse(processedExpression);
+        } catch {
+            return null;
+        }
+
+        const terms = [];
+        const collectAdditiveTerms = (candidate, sign = 1) => {
+            if (!candidate) return false;
+            if (candidate.type === 'ParenthesisNode') return collectAdditiveTerms(candidate.content, sign);
+            if (candidate.type === 'OperatorNode' && candidate.op === '+' && Array.isArray(candidate.args)) {
+                return candidate.args.every(arg => collectAdditiveTerms(arg, sign));
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && Array.isArray(candidate.args) && candidate.args.length === 1) {
+                return collectAdditiveTerms(candidate.args[0], -sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '-' && Array.isArray(candidate.args) && candidate.args.length >= 2) {
+                if (!collectAdditiveTerms(candidate.args[0], sign)) return false;
+                for (let index = 1; index < candidate.args.length; index++) {
+                    if (!collectAdditiveTerms(candidate.args[index], -sign)) return false;
+                }
+                return true;
+            }
+            terms.push({ node: candidate, sign });
+            return true;
+        };
+
+        if (!collectAdditiveTerms(node)) {
+            return null;
+        }
+
+        let baseline = 0;
+        const components = [];
+
+        for (const term of terms) {
+            const constant = this.evaluateShapeConstant(term.node);
+            if (constant !== null) {
+                baseline += term.sign * constant;
+                continue;
+            }
+
+            const extractedComponents = this.extractDampedOscillationComponents(term.node, term.sign);
+            if (!extractedComponents || extractedComponents.length === 0) {
+                return null;
+            }
+            components.push(...extractedComponents);
+        }
+
+        if (components.length === 0) {
+            return null;
+        }
+
+        const first = components[0];
+        if (!Number.isFinite(first.decayRate) || Math.abs(first.decayRate) <= 1e-12 || !first.argumentKey) {
+            return null;
+        }
+
+        for (const component of components) {
+            if (!Number.isFinite(component.coefficient) || Math.abs(component.coefficient) <= 1e-12) {
+                return null;
+            }
+            if (Math.abs(component.decayRate - first.decayRate) > Math.max(1e-8, Math.abs(first.decayRate) * 1e-6)) {
+                return null;
+            }
+            if (component.argumentKey !== first.argumentKey) {
+                return null;
+            }
+        }
+
+        const sinCoefficient = components
+            .filter(component => component.kind === 'sin')
+            .reduce((sum, component) => sum + component.coefficient, 0);
+        const cosCoefficient = components
+            .filter(component => component.kind === 'cos')
+            .reduce((sum, component) => sum + component.coefficient, 0);
+        const amplitude = Math.hypot(sinCoefficient, cosCoefficient);
+        if (!Number.isFinite(amplitude) || amplitude <= 1e-12) {
+            return null;
+        }
+
+        return {
+            baseline,
+            amplitude,
+            decayRate: first.decayRate,
+            argument: first.argumentKey,
+            components: components.map(component => ({ ...component }))
+        };
+    }
+
+    extractDampedOscillationComponents(node, sign = 1) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractDampedOscillationComponents(node.content, sign);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+            return this.extractDampedOscillationComponents(node.args[0], -sign);
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+            const denominator = this.evaluateShapeConstant(node.args[1]);
+            return denominator !== null && Math.abs(denominator) > 1e-12
+                ? this.extractDampedOscillationComponents(node.args[0], sign / denominator)
+                : null;
+        }
+
+        const factors = [];
+        const collectFactors = (candidate) => {
+            if (!candidate) return false;
+            if (candidate.type === 'ParenthesisNode') return collectFactors(candidate.content);
+            if (candidate.type === 'OperatorNode' && candidate.op === '*' && Array.isArray(candidate.args)) {
+                return candidate.args.every(arg => collectFactors(arg));
+            }
+            factors.push(candidate);
+            return true;
+        };
+
+        if (!collectFactors(node)) {
+            return null;
+        }
+
+        let coefficient = sign;
+        let decayRate = null;
+        let trigComponents = null;
+
+        for (const factor of factors) {
+            const constant = this.evaluateShapeConstant(factor);
+            if (constant !== null) {
+                coefficient *= constant;
+                continue;
+            }
+
+            const decay = this.extractExponentialDecayRate(factor);
+            if (decay !== null) {
+                if (decayRate !== null) return null;
+                decayRate = decay;
+                continue;
+            }
+
+            const trig = this.extractDampedTrigFactorComponents(factor);
+            if (trig) {
+                if (trigComponents !== null) return null;
+                trigComponents = trig;
+                continue;
+            }
+
+            return null;
+        }
+
+        if (decayRate === null || !trigComponents) {
+            return null;
+        }
+
+        return trigComponents.map(component => ({
+            ...component,
+            coefficient: coefficient * component.coefficient,
+            decayRate
+        }));
+    }
+
+    extractDampedTrigFactorComponents(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractDampedTrigFactorComponents(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && Array.isArray(node.args) && node.args.length === 1) {
+            const components = this.extractDampedTrigFactorComponents(node.args[0]);
+            return components ? components.map(component => ({ ...component, coefficient: -component.coefficient })) : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && Array.isArray(node.args) && node.args.length === 2) {
+            const components = this.extractDampedTrigFactorComponents(node.args[0]);
+            const denominator = this.evaluateShapeConstant(node.args[1]);
+            return components && denominator !== null && Math.abs(denominator) > 1e-12
+                ? components.map(component => ({ ...component, coefficient: component.coefficient / denominator }))
+                : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && Array.isArray(node.args)) {
+            let coefficient = 1;
+            let trig = null;
+            for (const arg of node.args) {
+                const constant = this.evaluateShapeConstant(arg);
+                if (constant !== null) {
+                    coefficient *= constant;
+                    continue;
+                }
+                const nested = this.extractDampedTrigFactorComponents(arg);
+                if (!nested || trig !== null) {
+                    return null;
+                }
+                trig = nested;
+            }
+            return trig ? trig.map(component => ({ ...component, coefficient: coefficient * component.coefficient })) : null;
+        }
+        if (node.type === 'OperatorNode' && ['+', '-'].includes(node.op) && Array.isArray(node.args) && node.args.length >= 2) {
+            const components = [];
+            const collect = (candidate, sign = 1) => {
+                const termComponents = this.extractDampedTrigFactorComponents(candidate);
+                if (!termComponents || termComponents.length !== 1) return false;
+                components.push({ ...termComponents[0], coefficient: sign * termComponents[0].coefficient });
+                return true;
+            };
+            if (!collect(node.args[0], 1)) return null;
+            for (let index = 1; index < node.args.length; index++) {
+                if (!collect(node.args[index], node.op === '-' ? -1 : 1)) return null;
+            }
+            return components;
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            const args = node.args || [];
+            if (!['sin', 'cos'].includes(name) || args.length !== 1) {
+                return null;
+            }
+            return [{
+                kind: name,
+                coefficient: 1,
+                argumentKey: args[0].toString()
+            }];
+        }
+
+        return null;
+    }
+
+    extractExponentialDecayRate(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractExponentialDecayRate(node.content);
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            const args = node.args || [];
+            if (name !== 'exp' || args.length !== 1) {
+                return null;
+            }
+            const affine = this.extractShapeXAffine(args[0]);
+            return affine && Math.abs(affine.constant) <= 1e-10 ? -affine.coefficient : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '^' && Array.isArray(node.args) && node.args.length === 2) {
+            const base = node.args[0];
+            const baseIsE = base && base.type === 'SymbolNode' && String(base.name || '').toLowerCase() === 'e';
+            if (!baseIsE) {
+                return null;
+            }
+            const affine = this.extractShapeXAffine(node.args[1]);
+            return affine && Math.abs(affine.constant) <= 1e-10 ? -affine.coefficient : null;
+        }
+
+        return null;
+    }
+
+    buildEnvelopeDisplayLatex(func) {
+        const envelope = func && func.envelopeData;
+        if (!envelope || !Number.isFinite(envelope.baseline) || !Number.isFinite(envelope.amplitude) || !Number.isFinite(envelope.decayRate)) {
+            return [];
+        }
+
+        const baselineLatex = this.formatAsymptoteCoefficientLatex(envelope.baseline);
+        const amplitudeLatex = this.formatEnvelopeMagnitudeLatex(envelope.amplitude);
+        const decayLatex = this.formatEnvelopeExponentialLatex(envelope.decayRate);
+        const prefix = Math.abs(envelope.baseline) <= 1e-12
+            ? 'y = '
+            : `y = ${baselineLatex} \\pm `;
+        const amplitudePart = amplitudeLatex === '1' ? '' : amplitudeLatex;
+        const decayPart = `e^{${decayLatex}}`;
+
+        return [Math.abs(envelope.baseline) <= 1e-12
+            ? `y = \\pm ${amplitudePart}${decayPart}`
+            : `${prefix}${amplitudePart}${decayPart}`];
+    }
+
+    formatEnvelopeExponentialLatex(decayRate) {
+        const exponentCoefficient = -decayRate;
+        if (Math.abs(exponentCoefficient - 1) <= 1e-10) {
+            return 'x';
+        }
+        if (Math.abs(exponentCoefficient + 1) <= 1e-10) {
+            return '-x';
+        }
+
+        const magnitudeLatex = this.formatEnvelopeMagnitudeLatex(Math.abs(exponentCoefficient));
+        const sign = exponentCoefficient < 0 ? '-' : '';
+        return `${sign}${magnitudeLatex}x`;
+    }
+
+    formatEnvelopeMagnitudeLatex(value) {
+        if (!Number.isFinite(value)) {
+            return '';
+        }
+        const roundedInteger = Math.round(value);
+        if (Math.abs(value - roundedInteger) <= 1e-10) {
+            return String(roundedInteger);
+        }
+        return this.formatAsymptoteCoefficientLatex(value);
     }
 
     classifyFunctionShape(funcOrExpression) {
@@ -40640,6 +40997,10 @@ class Graphiti {
             this.ctx.setLineDash([]); // Ensure solid line for equations
             this.ctx.lineWidth = this.getLineWidth(3); // Default for equations without inequalities
         }
+
+        if (!isInequality) {
+            this.drawFunctionEnvelopes(func);
+        }
         
         let pathStarted = false;
         let previousScreenPos = null;
@@ -40805,6 +41166,63 @@ class Graphiti {
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
+    }
+
+    drawFunctionEnvelopes(func, context = this.ctx) {
+        const envelope = func && func.envelopeData;
+        if (!envelope || this.plotMode !== 'cartesian' || !context) {
+            return;
+        }
+        if (!Number.isFinite(envelope.baseline) || !Number.isFinite(envelope.amplitude) || !Number.isFinite(envelope.decayRate)) {
+            return;
+        }
+
+        const sampleCount = Math.max(100, Math.min(1400, Math.ceil(this.viewport.width * 1.25)));
+        const xSpan = this.viewport.maxX - this.viewport.minX;
+        if (!Number.isFinite(xSpan) || xSpan <= 0) {
+            return;
+        }
+
+        const ySpan = this.viewport.maxY - this.viewport.minY;
+        const expandedMinY = this.viewport.minY - (ySpan * 0.2);
+        const expandedMaxY = this.viewport.maxY + (ySpan * 0.2);
+        const drawEnvelopeBranch = (sign) => {
+            let pathStarted = false;
+            context.beginPath();
+
+            for (let i = 0; i <= sampleCount; i++) {
+                const x = this.viewport.minX + (xSpan * i / sampleCount);
+                const y = envelope.baseline + (sign * envelope.amplitude * Math.exp(-envelope.decayRate * x));
+                if (!Number.isFinite(y) || y < expandedMinY || y > expandedMaxY) {
+                    pathStarted = false;
+                    continue;
+                }
+
+                const screen = this.worldToScreen(x, y);
+                if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                    pathStarted = false;
+                    continue;
+                }
+
+                if (!pathStarted) {
+                    context.moveTo(screen.x, screen.y);
+                    pathStarted = true;
+                } else {
+                    context.lineTo(screen.x, screen.y);
+                }
+            }
+
+            context.stroke();
+        };
+
+        context.save();
+        context.strokeStyle = func.color;
+        context.lineWidth = this.getLineWidth(2.5);
+        context.globalAlpha = 0.62;
+        context.setLineDash([this.getLineWidth(10), this.getLineWidth(5), this.getLineWidth(2), this.getLineWidth(5)]);
+        drawEnvelopeBranch(1);
+        drawEnvelopeBranch(-1);
+        context.restore();
     }
 
     drawExplicitImplicitVerticalComponents(func, context = this.ctx) {
