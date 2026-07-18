@@ -23734,6 +23734,7 @@ class Graphiti {
             // Skip title screen and load shared state
             this.tempSession = true;
             this.hasInitialized = true;
+            this.deferInitialFunctionPanelOpen = this.shouldShowGraphBuildOverlayForFunctions(sharedState.functions || []);
             this.changeState(this.states.GRAPHING);
             const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(sharedState.functions || []);
             try {
@@ -23743,6 +23744,10 @@ class Graphiti {
             } finally {
                 if (showBuildOverlay) {
                     this.hideGraphBuildOverlay();
+                }
+                if (this.deferInitialFunctionPanelOpen) {
+                    this.deferInitialFunctionPanelOpen = false;
+                    this.openFunctionPanelForGraphing({ deferSlide: true });
                 }
             }
         } else {

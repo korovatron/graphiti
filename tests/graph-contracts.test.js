@@ -722,6 +722,67 @@ async function assertShapeClassification(page) {
     assert.strictEqual(deferredPanelResult.afterBuild.panelOpen, true, 'startup build completion should start panel slide-in');
     assert.strictEqual(deferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'startup build completion should mark hamburger as panel-open');
 
+    const sharedLinkDeferredPanelResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const functionPanel = document.getElementById('function-panel');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const sharedFunctions = [{ expression: 'x^2+y^2=1', enabled: true }];
+
+        if (functionPanel) {
+            functionPanel.classList.add('hidden');
+            functionPanel.classList.remove('mobile-open');
+        }
+        if (hamburgerMenu) {
+            hamburgerMenu.classList.remove('active');
+            hamburgerMenu.classList.remove('panel-open');
+        }
+
+        graphiti.deferInitialFunctionPanelOpen = graphiti.shouldShowGraphBuildOverlayForFunctions(sharedFunctions);
+        graphiti.changeState(graphiti.states.GRAPHING);
+        const duringBuild = {
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+
+        const showBuildOverlay = await graphiti.showGraphBuildOverlayForFunctions(sharedFunctions);
+        if (showBuildOverlay) {
+            graphiti.hideGraphBuildOverlay();
+        }
+        if (graphiti.deferInitialFunctionPanelOpen) {
+            graphiti.deferInitialFunctionPanelOpen = false;
+            graphiti.openFunctionPanelForGraphing({ deferSlide: true });
+        }
+        const afterUnhide = {
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        return {
+            showBuildOverlay,
+            duringBuild,
+            afterUnhide,
+            afterBuild: {
+                panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+                panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+                hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+            }
+        };
+    });
+
+    assert.strictEqual(sharedLinkDeferredPanelResult.showBuildOverlay, true, 'shared-link implicit graph should show startup build overlay');
+    assert.strictEqual(sharedLinkDeferredPanelResult.duringBuild.panelHidden, true, 'shared-link build should keep function panel hidden');
+    assert.strictEqual(sharedLinkDeferredPanelResult.duringBuild.panelOpen, false, 'shared-link build should not start panel slide-in');
+    assert.strictEqual(sharedLinkDeferredPanelResult.duringBuild.hamburgerPanelOpen, false, 'shared-link build should not mark hamburger as panel-open');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterUnhide.panelHidden, false, 'shared-link build completion should unhide function panel before opening it');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterUnhide.panelOpen, false, 'shared-link build completion should leave an offscreen frame before slide-in');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterUnhide.hamburgerPanelOpen, false, 'shared-link build completion should not mark hamburger as panel-open before slide-in');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelHidden, false, 'shared-link build completion should show function panel');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelOpen, true, 'shared-link build completion should start panel slide-in');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'shared-link build completion should mark hamburger as panel-open');
+
     const manuallyEditedFunctionId = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
