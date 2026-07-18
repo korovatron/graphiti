@@ -16808,8 +16808,8 @@ class Graphiti {
                 item.setAttribute('virtual-keyboard-mode', 'off');
                 item.setAttribute('tabindex', '-1');
                 item.setAttribute('color-scheme', 'dark');
-                item.style.setProperty('font-size', '14px', 'important');
-                item.style.setProperty('--mathlive-font-size', '14px');
+                item.style.setProperty('font-size', '18px', 'important');
+                item.style.setProperty('--mathlive-font-size', '18px');
                 item.value = equation;
                 equationList.appendChild(item);
             }
@@ -16829,8 +16829,8 @@ class Graphiti {
                     envelopeItem.setAttribute('virtual-keyboard-mode', 'off');
                     envelopeItem.setAttribute('tabindex', '-1');
                     envelopeItem.setAttribute('color-scheme', 'dark');
-                    envelopeItem.style.setProperty('font-size', '14px', 'important');
-                    envelopeItem.style.setProperty('--mathlive-font-size', '14px');
+                    envelopeItem.style.setProperty('font-size', '18px', 'important');
+                    envelopeItem.style.setProperty('--mathlive-font-size', '18px');
                     envelopeItem.value = envelopeEquation;
                     envelopeList.appendChild(envelopeItem);
                 }
@@ -16856,8 +16856,8 @@ class Graphiti {
             holeItem.setAttribute('virtual-keyboard-mode', 'off');
             holeItem.setAttribute('tabindex', '-1');
             holeItem.setAttribute('color-scheme', 'dark');
-            holeItem.style.setProperty('font-size', '14px', 'important');
-            holeItem.style.setProperty('--mathlive-font-size', '14px');
+            holeItem.style.setProperty('font-size', '18px', 'important');
+            holeItem.style.setProperty('--mathlive-font-size', '18px');
             holeItem.value = holeEquation;
             holesList.appendChild(holeItem);
         }
@@ -19124,6 +19124,10 @@ class Graphiti {
                 return { label: 'circle', confidence: 'exact' };
             }
             return { label: 'ellipse', confidence: 'exact' };
+        }
+
+        if (Math.abs(A + C) <= Math.max(tolerance, coefficientScale * 1e-9)) {
+            return { label: 'rectangular hyperbola', confidence: 'exact' };
         }
 
         return { label: 'hyperbola', confidence: 'exact' };
