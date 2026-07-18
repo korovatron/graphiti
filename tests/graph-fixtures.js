@@ -37,6 +37,15 @@ const tallWideViewport = {
     height: 720
 };
 
+const exponentialSineViewport = {
+    minX: -25.93,
+    maxX: 22.12,
+    minY: -41.41,
+    maxY: 43.34,
+    width: 960,
+    height: 720
+};
+
 module.exports = [
     {
         name: 'gaussian damped cosine keeps horizontal asymptote when zoomed far out',
@@ -46,6 +55,17 @@ module.exports = [
             verticalAsymptotes: [],
             horizontalAsymptotes: [0],
             obliqueAsymptotes: []
+        }
+    },
+    {
+        name: 'exponential sine keeps steep finite zero crossing connected',
+        expression: 'y=e^(-x)*sin(x)',
+        viewport: exponentialSineViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: [],
+            noFiniteSegmentBreaksNear: [{ x: -2 * Math.PI, tolerance: 0.08 }]
         }
     },
     {
@@ -161,6 +181,30 @@ module.exports = [
             horizontalAsymptotes: [],
             obliqueAsymptotes: [],
             curvedAsymptotes: [{ coefficients: [-1, 0, 1] }]
+        }
+    },
+    {
+        name: 'polynomial plus reciprocal reports curved asymptote',
+        expression: 'y=x^2+1/x',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [0],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            curvedAsymptotes: [{ coefficients: [0, 0, 1] }]
+        }
+    },
+    {
+        name: 'affine implicit cubic over x reports curved asymptote',
+        expression: 'x*y=x^3+1',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'affine-explicit',
+            explicitImplicitFastPath: true,
+            verticalAsymptotes: [0],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            curvedAsymptotes: [{ coefficients: [0, 0, 1] }]
         }
     },
     {

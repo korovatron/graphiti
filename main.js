@@ -4776,6 +4776,39 @@ class Graphiti {
                 let rightOutside = null;
                 const nearZeroThreshold = Math.max(0.12, viewportHeight * 0.004);
 
+                const hasFiniteZeroCrossing = () => {
+                    if (yStart * yEnd >= 0) {
+                        return false;
+                    }
+
+                    let leftX = xStart;
+                    let rightX = xEnd;
+                    let leftY = yStart;
+                    let rightY = yEnd;
+
+                    for (let iter = 0; iter < 32; iter++) {
+                        const midX = (leftX + rightX) * 0.5;
+                        const midY = evaluateAtX(midX);
+                        if (midY === null) {
+                            return false;
+                        }
+
+                        if (Math.abs(midY) <= nearZeroThreshold) {
+                            return true;
+                        }
+
+                        if (leftY * midY <= 0) {
+                            rightX = midX;
+                            rightY = midY;
+                        } else {
+                            leftX = midX;
+                            leftY = midY;
+                        }
+                    }
+
+                    return Math.min(Math.abs(leftY), Math.abs(rightY)) <= nearZeroThreshold;
+                };
+
                 for (let s = 1; s < segmentSampleCount; s++) {
                     const t = s / segmentSampleCount;
                     const sampleX = xStart + dx * t;
@@ -4817,14 +4850,15 @@ class Graphiti {
                 const endpointLarge = Math.abs(yStart) > suspiciousJumpThreshold && Math.abs(yEnd) > suspiciousJumpThreshold;
                 const interiorSpike = maxInteriorMagnitude > Math.max(viewportMagnitude * 6, Math.max(Math.abs(yStart), Math.abs(yEnd), 1) * 5);
                 const hasNearZero = minAbsY <= nearZeroThreshold;
-                const signFlipWithoutZero = endpointSignFlip && !hasNearZero;
-                const mixedSignsWithoutZero = hasPositiveInterior && hasNegativeInterior && !hasNearZero;
+                const finiteZeroCrossing = hasNearZero || hasFiniteZeroCrossing();
+                const signFlipWithoutZero = endpointSignFlip && !finiteZeroCrossing;
+                const mixedSignsWithoutZero = hasPositiveInterior && hasNegativeInterior && !finiteZeroCrossing;
 
                 const hasDiscontinuity =
                     hasNonFiniteInterior ||
-                    straddlesTopAndBottom ||
-                    interiorSpike ||
-                    (endpointSignFlip && endpointLarge) ||
+                    (straddlesTopAndBottom && !finiteZeroCrossing) ||
+                    (interiorSpike && !finiteZeroCrossing) ||
+                    (endpointSignFlip && endpointLarge && !finiteZeroCrossing) ||
                     signFlipWithoutZero ||
                     mixedSignsWithoutZero;
 
@@ -9842,11 +9876,15 @@ class Graphiti {
             ? affineModel.domainExclusions.filter(value => Number.isFinite(value) && !isAtVerticalComponent(value))
             : [];
 
-        const asymptoteData = proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] };
+        const asymptoteData = proxyFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [], curved: [] };
         let filteredVertical = (Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [])
             .filter(value => !isAtVerticalComponent(value));
         const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
         let oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+        const curved = Array.isArray(asymptoteData.curved) ? asymptoteData.curved.map(curve => ({
+            ...curve,
+            coefficients: Array.isArray(curve.coefficients) ? curve.coefficients.slice() : []
+        })) : [];
 
         const pointsWithExclusionBreaks = [];
         const sourcePoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
@@ -10097,7 +10135,7 @@ class Graphiti {
             }
         }
 
-        this.updateFunctionAsymptoteData(func, filteredVertical, horizontal, oblique, null);
+        this.updateFunctionAsymptoteData(func, filteredVertical, horizontal, oblique, null, null, curved);
         func.holes = filteredHoles;
         func.affineExplicitExpression = affineModel.explicitExpression;
         func.affineVerticalComponents = verticalComponents.slice();
@@ -15096,7 +15134,15 @@ class Graphiti {
             }
 
             if (!node || node.type !== 'OperatorNode' || node.op !== '/' || !node.args || node.args.length !== 2) {
-                return null;
+                const rational = this.extractPolynomialRationalCoeffs(node);
+                if (!rational || this.getPolynomialDegree(rational.denominator) < 1) {
+                    return null;
+                }
+
+                return {
+                    numerator: this.normalizePolynomial(rational.numerator),
+                    denominator: this.normalizePolynomial(rational.denominator)
+                };
             }
 
             const numerator = this.extractPolynomialCoeffs(node.args[0]);
@@ -15117,6 +15163,112 @@ class Graphiti {
         } catch {
             return null;
         }
+    }
+
+    extractPolynomialRationalCoeffs(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolynomialRationalCoeffs(node.content);
+        }
+
+        const fromPolynomial = (coeffs) => coeffs ? {
+            numerator: this.normalizePolynomial(coeffs),
+            denominator: [1]
+        } : null;
+
+        const polynomial = this.extractPolynomialCoeffs(node);
+        if (polynomial) {
+            return fromPolynomial(polynomial);
+        }
+
+        if (node.type !== 'OperatorNode') {
+            return null;
+        }
+
+        const args = node.args || [];
+        const op = node.op;
+
+        const addRational = (left, right, sign = 1) => {
+            if (!left || !right) return null;
+            const leftNumerator = this.multiplyPolynomials(left.numerator, right.denominator);
+            const rightNumerator = this.multiplyPolynomials(right.numerator, left.denominator);
+            return {
+                numerator: this.addPolynomials(leftNumerator, this.scalePolynomial(rightNumerator, sign)),
+                denominator: this.multiplyPolynomials(left.denominator, right.denominator)
+            };
+        };
+
+        const multiplyRational = (left, right) => {
+            if (!left || !right) return null;
+            return {
+                numerator: this.multiplyPolynomials(left.numerator, right.numerator),
+                denominator: this.multiplyPolynomials(left.denominator, right.denominator)
+            };
+        };
+
+        const divideRational = (left, right) => {
+            if (!left || !right || this.getPolynomialDegree(right.numerator) < 0) return null;
+            return {
+                numerator: this.multiplyPolynomials(left.numerator, right.denominator),
+                denominator: this.multiplyPolynomials(left.denominator, right.numerator)
+            };
+        };
+
+        if (op === '+' && args.length === 2) {
+            return addRational(
+                this.extractPolynomialRationalCoeffs(args[0]),
+                this.extractPolynomialRationalCoeffs(args[1])
+            );
+        }
+
+        if (op === '-' && args.length === 2) {
+            return addRational(
+                this.extractPolynomialRationalCoeffs(args[0]),
+                this.extractPolynomialRationalCoeffs(args[1]),
+                -1
+            );
+        }
+
+        if (op === '-' && args.length === 1) {
+            const value = this.extractPolynomialRationalCoeffs(args[0]);
+            return value ? {
+                numerator: this.scalePolynomial(value.numerator, -1),
+                denominator: value.denominator
+            } : null;
+        }
+
+        if (op === '*' && args.length === 2) {
+            return multiplyRational(
+                this.extractPolynomialRationalCoeffs(args[0]),
+                this.extractPolynomialRationalCoeffs(args[1])
+            );
+        }
+
+        if (op === '/' && args.length === 2) {
+            return divideRational(
+                this.extractPolynomialRationalCoeffs(args[0]),
+                this.extractPolynomialRationalCoeffs(args[1])
+            );
+        }
+
+        if (op === '^' && args.length === 2) {
+            const base = this.extractPolynomialRationalCoeffs(args[0]);
+            const exponentNode = args[1];
+            if (!base || !exponentNode || exponentNode.type !== 'ConstantNode') return null;
+            const exponent = Number(exponentNode.value);
+            if (!Number.isInteger(exponent) || exponent < 0 || exponent > 8) return null;
+
+            let result = { numerator: [1], denominator: [1] };
+            for (let i = 0; i < exponent; i++) {
+                result = multiplyRational(result, base);
+            }
+            return result;
+        }
+
+        return null;
     }
 
     findNestedPolynomialDenominatorRoots(expression) {

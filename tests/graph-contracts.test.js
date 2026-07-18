@@ -298,6 +298,9 @@ async function plotFixture(page, fixture) {
             tallVerticalSegmentCount,
             boundaryContinuationCount: finitePoints.filter(point => point.monomialViewportBoundary === true).length,
             finiteSegmentStarts: finitePoints.filter(point => point.connected === false).length,
+            finiteSegmentStartXs: finitePoints
+                .filter(point => point.connected === false)
+                .map(point => point.x),
             pointProbeDistances
         };
     }, { expression: fixture.expression, viewport: fixture.viewport, pointProbes });
@@ -1336,6 +1339,15 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
                 assert(
                     actual.tallVerticalSegmentCount <= expected.maxTallVerticalSegments,
                     `${label}: expected at most ${expected.maxTallVerticalSegments} tall vertical segments, got ${actual.tallVerticalSegmentCount}`
+                );
+            }
+            for (const breakProbe of expected.noFiniteSegmentBreaksNear || []) {
+                const tolerance = Number.isFinite(breakProbe.tolerance) ? breakProbe.tolerance : 0.1;
+                const nearbyBreaks = (actual.finiteSegmentStartXs || []).filter(x => Math.abs(x - breakProbe.x) <= tolerance);
+                assert.strictEqual(
+                    nearbyBreaks.length,
+                    0,
+                    `${label}: expected no finite segment break near x=${breakProbe.x}, got ${JSON.stringify(nearbyBreaks)}`
                 );
             }
             assertApproxSet(actual.asymptoteData.vertical, expected.verticalAsymptotes || [], 0.03, `${label} vertical asymptotes`);
