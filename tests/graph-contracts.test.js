@@ -592,6 +592,62 @@ async function assertShapeClassification(page) {
     assert(domResult.shapeIndex < domResult.asymptoteIndex, 'shape row should render before asymptote metadata');
     assert(domResult.shapeIndex < domResult.holesIndex, 'shape row should render before hole metadata');
 
+    const metadataToggleResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('y=e^(-x)*sin(x)');
+        const func = graphiti.cartesianFunctions[0];
+        await graphiti.plotFunction(func);
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const asymptoteContainer = item ? item.querySelector('.asymptote-info-container') : null;
+        const envelopeContainer = item ? item.querySelector('.envelope-info-container') : null;
+        const asymptoteToggle = asymptoteContainer ? asymptoteContainer.querySelector('.asymptote-visibility-toggle') : null;
+        const envelopeToggle = envelopeContainer ? envelopeContainer.querySelector('.envelope-visibility-toggle') : null;
+
+        const before = {
+            asymptoteVisible: func.showAsymptotes !== false,
+            envelopeVisible: func.showEnvelopes !== false,
+            asymptoteToggleHidden: asymptoteToggle ? asymptoteToggle.classList.contains('is-hidden') : null,
+            envelopeToggleHidden: envelopeToggle ? envelopeToggle.classList.contains('is-hidden') : null,
+            asymptoteContainerVisible: asymptoteContainer ? asymptoteContainer.classList.contains('visible') : false,
+            envelopeContainerVisible: envelopeContainer ? envelopeContainer.classList.contains('visible') : false
+        };
+
+        asymptoteToggle.click();
+        envelopeToggle.click();
+
+        const after = {
+            asymptoteVisible: func.showAsymptotes !== false,
+            envelopeVisible: func.showEnvelopes !== false,
+            asymptoteToggleHidden: asymptoteToggle ? asymptoteToggle.classList.contains('is-hidden') : null,
+            envelopeToggleHidden: envelopeToggle ? envelopeToggle.classList.contains('is-hidden') : null,
+            asymptoteContainerVisible: asymptoteContainer ? asymptoteContainer.classList.contains('visible') : false,
+            envelopeContainerVisible: envelopeContainer ? envelopeContainer.classList.contains('visible') : false,
+            savedFunctionKeys: Object.keys(JSON.parse(JSON.stringify(func))).filter(key => key === 'showAsymptotes' || key === 'showEnvelopes')
+        };
+
+        return { before, after };
+    });
+
+    assert.strictEqual(metadataToggleResult.before.asymptoteVisible, true, 'asymptote overlay should default to visible');
+    assert.strictEqual(metadataToggleResult.before.envelopeVisible, true, 'envelope overlay should default to visible');
+    assert.strictEqual(metadataToggleResult.before.asymptoteToggleHidden, false, 'asymptote toggle should default to filled');
+    assert.strictEqual(metadataToggleResult.before.envelopeToggleHidden, false, 'envelope toggle should default to filled');
+    assert.strictEqual(metadataToggleResult.after.asymptoteVisible, false, 'asymptote toggle should hide asymptote overlays');
+    assert.strictEqual(metadataToggleResult.after.envelopeVisible, false, 'envelope toggle should hide envelope overlays');
+    assert.strictEqual(metadataToggleResult.after.asymptoteToggleHidden, true, 'asymptote toggle should become hollow when hidden');
+    assert.strictEqual(metadataToggleResult.after.envelopeToggleHidden, true, 'envelope toggle should become hollow when hidden');
+    assert.strictEqual(metadataToggleResult.after.asymptoteContainerVisible, true, 'asymptote metadata should remain visible when overlay hidden');
+    assert.strictEqual(metadataToggleResult.after.envelopeContainerVisible, true, 'envelope metadata should remain visible when overlay hidden');
+
     const lineDomResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';

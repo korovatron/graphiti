@@ -46,6 +46,15 @@ const exponentialSineViewport = {
     height: 720
 };
 
+const dampedCosineViewport = {
+    minX: -13.63,
+    maxX: 13.25,
+    minY: -6.263,
+    maxY: 6.944,
+    width: 960,
+    height: 720
+};
+
 module.exports = [
     {
         name: 'gaussian damped cosine keeps horizontal asymptote when zoomed far out',
@@ -78,6 +87,17 @@ module.exports = [
             horizontalAsymptotes: [2],
             obliqueAsymptotes: [],
             envelope: { baseline: 2, amplitude: 3, decayRate: 0.4 }
+        }
+    },
+    {
+        name: 'damped cosine reports only structural centreline asymptote',
+        expression: 'y=e^(-0.1*x)*cos(2*x)',
+        viewport: dampedCosineViewport,
+        expected: {
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: [],
+            envelope: { baseline: 0, amplitude: 1, decayRate: 0.1 }
         }
     },
     {

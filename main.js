@@ -2374,19 +2374,31 @@ class Graphiti {
                 </div>
             </div>
             <div class="shape-info-container" data-function-id="${func.id}">
-                <div class="shape-info-title">Shape</div>
+                <div class="metadata-title-row">
+                    <span class="metadata-visibility-placeholder" aria-hidden="true"></span>
+                    <div class="shape-info-title">Shape</div>
+                </div>
                 <div class="shape-info-value"></div>
             </div>
             <div class="asymptote-info-container" data-function-id="${func.id}">
-                <div class="asymptote-info-title">Asymptotes</div>
+                <div class="metadata-title-row">
+                    <button class="metadata-visibility-toggle asymptote-visibility-toggle" type="button" aria-label="Hide asymptotes for this function" title="Hide asymptotes"></button>
+                    <div class="asymptote-info-title">Asymptotes</div>
+                </div>
                 <div class="asymptote-equation-list"></div>
             </div>
             <div class="envelope-info-container" data-function-id="${func.id}">
-                <div class="envelope-info-title">Envelopes</div>
+                <div class="metadata-title-row">
+                    <button class="metadata-visibility-toggle envelope-visibility-toggle" type="button" aria-label="Hide envelopes for this function" title="Hide envelopes"></button>
+                    <div class="envelope-info-title">Envelopes</div>
+                </div>
                 <div class="envelope-equation-list"></div>
             </div>
             <div class="holes-info-container" data-function-id="${func.id}">
-                <div class="holes-info-title">Holes</div>
+                <div class="metadata-title-row">
+                    <span class="metadata-visibility-placeholder" aria-hidden="true"></span>
+                    <div class="holes-info-title">Holes</div>
+                </div>
                 <div class="holes-equation-list"></div>
             </div>
         `;
@@ -2511,6 +2523,8 @@ class Graphiti {
         // Add event listeners
         const colorIndicator = funcDiv.querySelector('.color-indicator');
         const removeBtn = funcDiv.querySelector('.remove-btn');
+        const asymptoteVisibilityToggle = funcDiv.querySelector('.asymptote-visibility-toggle');
+        const envelopeVisibilityToggle = funcDiv.querySelector('.envelope-visibility-toggle');
         const markKeyboardReopenAllowed = () => {
             this.keyboardDismissedByCanvas = false;
             this.suppressMathFieldFocusUntil = 0;
@@ -2971,6 +2985,26 @@ class Graphiti {
         colorIndicator.addEventListener('click', async () => {
             await this.toggleFunctionVisibility(func, funcDiv);
         });
+
+        if (asymptoteVisibilityToggle) {
+            asymptoteVisibilityToggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                func.showAsymptotes = func.showAsymptotes === false;
+                this.updateFunctionAsymptoteInfo(func);
+                this.draw();
+            });
+        }
+
+        if (envelopeVisibilityToggle) {
+            envelopeVisibilityToggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                func.showEnvelopes = func.showEnvelopes === false;
+                this.updateFunctionAsymptoteInfo(func);
+                this.draw();
+            });
+        }
         
         removeBtn.addEventListener('click', () => {
             // Clear badges for this function when removing
@@ -4282,7 +4316,9 @@ class Graphiti {
             const hasDensePeriodicAsymptotes = isPeriodicVerticalAsymptoteFamily && asymptotePixelSpacing < 8;
             // Periodic trig families with vertical poles do not have horizontal asymptotes.
             // Skip numeric fitting to avoid zoom-dependent false positives (for example tan(x) -> y=+-2/15).
-            const numericHorizontalAsymptotes = knownMonomialProxyStructure
+            const numericHorizontalAsymptotes = envelopeData && Number.isFinite(envelopeData.baseline)
+                ? [envelopeData.baseline]
+                : knownMonomialProxyStructure
                 ? (Array.isArray(knownMonomialProxyStructure.horizontal) ? knownMonomialProxyStructure.horizontal.slice() : [])
                 : cachedRationalStructure
                 ? cachedRationalStructure.numericHorizontal.slice()
@@ -16688,6 +16724,8 @@ class Graphiti {
         const holesList = holesContainer ? holesContainer.querySelector('.holes-equation-list') : null;
         const envelopeContainer = funcItem.querySelector('.envelope-info-container');
         const envelopeList = envelopeContainer ? envelopeContainer.querySelector('.envelope-equation-list') : null;
+        const asymptoteToggle = infoContainer.querySelector('.asymptote-visibility-toggle');
+        const envelopeToggle = envelopeContainer ? envelopeContainer.querySelector('.envelope-visibility-toggle') : null;
 
         const equations = this.buildAsymptoteDisplayLatex(func);
         const holeEquations = this.buildHoleDisplayLatex(func);
@@ -16705,6 +16743,14 @@ class Graphiti {
         const envelopeVisibilityIsCurrent = !envelopeContainer || envelopeEquations.length > 0
             ? !envelopeContainer || envelopeContainer.classList.contains('visible')
             : !envelopeContainer.classList.contains('visible');
+        const asymptotePlotVisible = func.showAsymptotes !== false;
+        const envelopePlotVisible = func.showEnvelopes !== false;
+        const asymptoteToggleIsCurrent = !asymptoteToggle ||
+            (asymptoteToggle.classList.contains('is-hidden') === !asymptotePlotVisible &&
+                asymptoteToggle.getAttribute('aria-pressed') === String(asymptotePlotVisible));
+        const envelopeToggleIsCurrent = !envelopeToggle ||
+            (envelopeToggle.classList.contains('is-hidden') === !envelopePlotVisible &&
+                envelopeToggle.getAttribute('aria-pressed') === String(envelopePlotVisible));
         if (equationList.dataset.asymptoteSignature === asymptoteSignature &&
             (!holesList || holesList.dataset.holesSignature === holesSignature) &&
             (!envelopeList || envelopeList.dataset.envelopeSignature === envelopeSignature) &&
@@ -16712,6 +16758,8 @@ class Graphiti {
             asymptoteVisibilityIsCurrent &&
             holesVisibilityIsCurrent &&
             envelopeVisibilityIsCurrent &&
+            asymptoteToggleIsCurrent &&
+            envelopeToggleIsCurrent &&
             shapeVisibilityIsCurrent) {
             return;
         }
@@ -16733,6 +16781,19 @@ class Graphiti {
         if (envelopeList) {
             envelopeList.dataset.envelopeSignature = envelopeSignature;
         }
+
+        const updateVisibilityToggle = (toggle, isVisible, label) => {
+            if (!toggle) {
+                return;
+            }
+            toggle.classList.toggle('is-hidden', !isVisible);
+            toggle.setAttribute('aria-pressed', String(isVisible));
+            toggle.setAttribute('aria-label', `${isVisible ? 'Hide' : 'Show'} ${label} for this function`);
+            toggle.title = `${isVisible ? 'Hide' : 'Show'} ${label}`;
+        };
+
+        updateVisibilityToggle(asymptoteToggle, asymptotePlotVisible, 'asymptotes');
+        updateVisibilityToggle(envelopeToggle, envelopePlotVisible, 'envelopes');
 
         equationList.innerHTML = '';
         if (equations.length === 0) {
@@ -41173,6 +41234,9 @@ class Graphiti {
         if (!envelope || this.plotMode !== 'cartesian' || !context) {
             return;
         }
+        if (func.showEnvelopes === false) {
+            return;
+        }
         if (!Number.isFinite(envelope.baseline) || !Number.isFinite(envelope.amplitude) || !Number.isFinite(envelope.decayRate)) {
             return;
         }
@@ -41403,6 +41467,9 @@ class Graphiti {
 
     drawFunctionAsymptotes(func, context = this.ctx) {
         if (!func || this.plotMode !== 'cartesian' || !context) {
+            return;
+        }
+        if (func.showAsymptotes === false) {
             return;
         }
 
