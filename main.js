@@ -7547,7 +7547,28 @@ class Graphiti {
                 return;
             }
 
-            if (functionType === 'implicit' && !skipProductFactorFastPath) {
+            const isImplicitInequality = functionType === 'implicit-inequality';
+            const prepareFastPathInequalityGrid = async () => {
+                if (!isImplicitInequality) {
+                    return true;
+                }
+
+                const gridResult = highResForIntersections
+                    ? await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId)
+                    : await this.marchingSquaresAdaptiveAsync(equation, immediate, func.id, calculationId);
+                if (!gridResult) {
+                    console.warn('Fast-path implicit inequality grid generation returned undefined');
+                    return false;
+                }
+                if (gridResult.gridData) {
+                    func.gridData = gridResult.gridData;
+                    this.invalidateInequalityIntersectionCache();
+                    this.implicitShadingCache.delete(func.id);
+                }
+                return true;
+            };
+
+            if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !skipProductFactorFastPath) {
                 const productHandled = await this.plotImplicitProductFactorsAsComponents(
                     func,
                     equation,
@@ -7555,6 +7576,10 @@ class Graphiti {
                     immediate
                 );
                 if (productHandled) {
+                    if (!await prepareFastPathInequalityGrid()) {
+                        this.activeImplicitCalculations.delete(func.id);
+                        return;
+                    }
                     if (!suppressDraw) {
                         this.draw();
                     }
@@ -7572,7 +7597,7 @@ class Graphiti {
             // explicit equivalent y = -B(x)/A(x), which enables the mature explicit
             // asymptote/hole pipeline and avoids marching-squares artefacts.
             let denominatorClearedEquation = null;
-            if (functionType === 'implicit') {
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                 denominatorClearedEquation = this.buildDenominatorClearedImplicitEquation(equation);
                 const fastPathEquations = denominatorClearedEquation
                     ? [equation, denominatorClearedEquation]
@@ -7587,6 +7612,10 @@ class Graphiti {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             // Keep implicit cache flow consistent with other implicit render modes.
                             this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!await prepareFastPathInequalityGrid()) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
                             if (!suppressDraw) {
                                 this.draw();
                             }
@@ -7608,6 +7637,10 @@ class Graphiti {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             // Keep implicit cache flow consistent with other implicit render modes.
                             this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!await prepareFastPathInequalityGrid()) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
                             if (!suppressDraw) {
                                 this.draw();
                             }
@@ -7629,6 +7662,10 @@ class Graphiti {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             // Keep implicit cache flow consistent with other implicit render modes.
                             this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!await prepareFastPathInequalityGrid()) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
                             if (!suppressDraw) {
                                 this.draw();
                             }
@@ -7650,6 +7687,10 @@ class Graphiti {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             // Keep implicit cache flow consistent with other implicit render modes.
                             this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!await prepareFastPathInequalityGrid()) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
                             if (!suppressDraw) {
                                 this.draw();
                             }
@@ -7671,6 +7712,10 @@ class Graphiti {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             // Keep implicit cache flow consistent with other implicit render modes.
                             this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!await prepareFastPathInequalityGrid()) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
                             if (!suppressDraw) {
                                 this.draw();
                             }
@@ -16709,6 +16754,11 @@ class Graphiti {
 
         const shapeContainer = funcItem.querySelector('.shape-info-container');
         const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+        const shapeTitle = shapeContainer ? shapeContainer.querySelector('.shape-info-title') : null;
+        const functionType = this.detectFunctionType(func.expression || '');
+        const shapeTitleLabel = functionType === 'explicit-inequality' || functionType === 'implicit-inequality' || functionType === 'polar-inequality'
+            ? 'Boundary'
+            : 'Shape';
         const shape = this.classifyFunctionShape(func);
         const shapeLabel = shape && shape.label ? shape.label : '';
         const displayShapeLabel = shapeLabel;
@@ -16757,6 +16807,7 @@ class Graphiti {
             (!holesList || holesList.dataset.holesSignature === holesSignature) &&
             (!envelopeList || envelopeList.dataset.envelopeSignature === envelopeSignature) &&
             (!shapeValue || shapeValue.dataset.shapeSignature === displayShapeLabel) &&
+            (!shapeTitle || shapeTitle.textContent === shapeTitleLabel) &&
             asymptoteVisibilityIsCurrent &&
             holesVisibilityIsCurrent &&
             envelopeVisibilityIsCurrent &&
@@ -16764,6 +16815,10 @@ class Graphiti {
             envelopeToggleIsCurrent &&
             shapeVisibilityIsCurrent) {
             return;
+        }
+
+        if (shapeTitle) {
+            shapeTitle.textContent = shapeTitleLabel;
         }
 
         if (shapeContainer && shapeValue) {
@@ -17262,19 +17317,36 @@ class Graphiti {
             return this.classifyParametricFunctionShape(expression);
         }
 
-        if (!['explicit', 'implicit'].includes(functionType)) {
+        if (!['explicit', 'implicit', 'explicit-inequality', 'implicit-inequality'].includes(functionType)) {
             return null;
         }
 
-        const classificationExpression = functionType === 'explicit' && !convertedExpression.includes('=')
-            ? `y=${expression}`
-            : expression;
-        const equation = this.parseImplicitEquation(classificationExpression);
+        let classificationType = functionType;
+        let classificationExpression = expression;
+        let equation = null;
+
+        if (functionType === 'explicit-inequality') {
+            const inequality = this.parseInequality(expression);
+            if (!inequality) {
+                return null;
+            }
+            classificationType = inequality.leftSide.toLowerCase() === 'y' ? 'explicit' : 'implicit';
+            classificationExpression = `${inequality.leftSide}=${inequality.rightSide}`;
+        } else if (functionType === 'implicit-inequality') {
+            classificationType = 'implicit';
+            equation = this.parseImplicitInequality(expression);
+        } else if (functionType === 'explicit' && !convertedExpression.includes('=')) {
+            classificationExpression = `y=${expression}`;
+        }
+
+        if (!equation) {
+            equation = this.parseImplicitEquation(classificationExpression);
+        }
         if (!equation) {
             return null;
         }
 
-        if (functionType === 'explicit') {
+        if (classificationType === 'explicit') {
             const explicitShape = this.classifyExplicitEquationShape(equation);
             if (explicitShape) {
                 return explicitShape;
@@ -41008,7 +41080,7 @@ class Graphiti {
         
         // Check if this is an inequality
         const functionType = this.detectFunctionType(func.expression);
-        const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality';
+        const isInequality = functionType === 'explicit-inequality' || functionType === 'polar-inequality' || functionType === 'implicit-inequality';
         
         // Count inequalities to determine if we should use compositing or individual shading
         const inequalityCount = this.countEnabledInequalities();
@@ -41030,6 +41102,15 @@ class Graphiti {
                     }
                     
                     // Store inequality type for later rendering
+                    func._inequalityIsStrict = (inequality.operator === '>' || inequality.operator === '<');
+                }
+            } else if (functionType === 'implicit-inequality') {
+                const inequality = this.parseInequality(func.expression);
+                if (inequality) {
+                    if (inequalityCount === 1 && func.gridData) {
+                        this.drawImplicitInequality(func);
+                    }
+
                     func._inequalityIsStrict = (inequality.operator === '>' || inequality.operator === '<');
                 }
             } else {

@@ -308,6 +308,7 @@ async function plotFixture(page, fixture) {
             explicitImplicitFastPath: typeof graphiti.isExplicitImplicitFastPath === 'function'
                 ? graphiti.isExplicitImplicitFastPath(func)
                 : false,
+            hasGridData: !!func.gridData,
             asymptoteData: func.asymptoteData || { vertical: [], horizontal: [], oblique: [] },
             envelopeData: func.envelopeData || null,
             holes: Array.isArray(func.holes) ? func.holes : [],
@@ -416,6 +417,7 @@ async function assertShapeClassification(page) {
         { expression: 'x^2+y^2=1', expected: 'circle' },
         { expression: '2*x^2+2*y^2=2', expected: 'circle' },
         { expression: 'x^2=1-y^2', expected: 'circle' },
+        { expression: 'x^2+y^2<16', expected: 'circle' },
         { expression: 'x^2/9+y^2/4=1', expected: 'ellipse' },
         { expression: 'x^2-y^2=1', expected: 'rectangular hyperbola' },
         { expression: 'y=1/x', expected: 'rectangular hyperbola' },
@@ -439,6 +441,7 @@ async function assertShapeClassification(page) {
         { expression: 'y=exp(x)', expected: null },
         { expression: 'y=x^2', expected: 'parabola' },
         { expression: 'y=2*x+1', expected: 'line' },
+        { expression: 'y>=x-3', expected: 'line' },
         { expression: '(x^2+y^2-4)*(y-x)=0', expected: 'circle + line' },
         { expression: '(cosh(x)-y)*(x-1)=0', expected: 'catenary + line' },
         { expression: '(y-1/x)*(y-1)=0', expected: 'rectangular hyperbola + line' },
@@ -576,6 +579,7 @@ async function assertShapeClassification(page) {
         const childClasses = item ? Array.from(item.children).map(child => child.className) : [];
 
         return {
+            title: shapeContainer ? shapeContainer.querySelector('.shape-info-title').textContent : null,
             label: shapeContainer ? shapeContainer.querySelector('.shape-info-value').textContent : null,
             visible: shapeContainer ? shapeContainer.classList.contains('visible') : false,
             shapeIndex: childClasses.indexOf('shape-info-container visible'),
@@ -586,6 +590,7 @@ async function assertShapeClassification(page) {
         };
     });
 
+    assert.strictEqual(domResult.title, 'Shape', 'equation shape metadata title should remain Shape');
     assert.strictEqual(domResult.label, 'circle', 'shape label should render in function panel');
     assert.strictEqual(domResult.visible, true, 'shape label should be visible');
     assert(domResult.hasAsymptoteContainer, 'shape DOM check should find asymptote container');
@@ -678,6 +683,35 @@ async function assertShapeClassification(page) {
     assert.strictEqual(lineDomResult.classifiedLabel, 'line', 'single line should still classify as line');
     assert.strictEqual(lineDomResult.renderedLabel, 'line', 'single line shape label should render text');
     assert.strictEqual(lineDomResult.visible, true, 'single line shape row should be visible');
+
+    const inequalityBoundaryDomResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('x^2+y^2<16');
+        const func = graphiti.cartesianFunctions[0];
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeTitle = shapeContainer ? shapeContainer.querySelector('.shape-info-title') : null;
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+
+        return {
+            title: shapeTitle ? shapeTitle.textContent : null,
+            renderedLabel: shapeValue ? shapeValue.textContent : null,
+            visible: shapeContainer ? shapeContainer.classList.contains('visible') : false
+        };
+    });
+
+    assert.strictEqual(inequalityBoundaryDomResult.title, 'Boundary', 'inequality shape metadata title should render as Boundary');
+    assert.strictEqual(inequalityBoundaryDomResult.renderedLabel, 'circle', 'inequality boundary label should render text');
+    assert.strictEqual(inequalityBoundaryDomResult.visible, true, 'inequality boundary row should be visible');
 
     const deferredPanelResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -1450,6 +1484,9 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
             }
             if (typeof expected.explicitImplicitFastPath === 'boolean') {
                 assert.strictEqual(actual.explicitImplicitFastPath, expected.explicitImplicitFastPath, `${label}: draw-path classification`);
+            }
+            if (typeof expected.hasGridData === 'boolean') {
+                assert.strictEqual(actual.hasGridData, expected.hasGridData, `${label}: inequality grid data`);
             }
             if (Number.isFinite(expected.maxFiniteSegmentStarts)) {
                 assert(

@@ -178,6 +178,19 @@ module.exports = [
         }
     },
     {
+        name: 'implicit reciprocal cubic denominator inequality uses fast boundary with grid shading data',
+        expression: 'y^2<1/(x^2-y^3)',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'monomial-x-explicit',
+            explicitImplicitFastPath: true,
+            hasGridData: true,
+            verticalAsymptotes: [],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: []
+        }
+    },
+    {
         name: 'implicit cubic reciprocal renders horizontal and diagonal branches',
         expression: 'y^2=1/(x^3-y^3)',
         viewport: defaultViewport,
