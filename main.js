@@ -18755,6 +18755,10 @@ class Graphiti {
         if (semiCubicalParabolaShape) {
             return semiCubicalParabolaShape;
         }
+        const foliumOfDescartesShape = this.classifyFoliumOfDescartesCoeffMap(cubicCoeffMap);
+        if (foliumOfDescartesShape) {
+            return foliumOfDescartesShape;
+        }
 
         const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
         if (coeffMap) {
@@ -19154,6 +19158,7 @@ class Graphiti {
         if (residualDegree > 0) {
             const residualShape = this.classifyPolynomialCoeffMapShape(residualMap) ||
                 this.classifySemiCubicalParabolaCoeffMap(residualMap) ||
+                this.classifyFoliumOfDescartesCoeffMap(residualMap) ||
                 this.classifyReciprocalPowerCoeffMapShape(residualMap);
             if (!residualShape || !residualShape.label) {
                 return null;
@@ -19384,6 +19389,68 @@ class Graphiti {
 
         if (matchesOrientation('y', 'x') || matchesOrientation('x', 'y')) {
             return { label: 'semi-cubical parabola', confidence: 'exact' };
+        }
+
+        return null;
+    }
+
+    classifyFoliumOfDescartesCoeffMap(coeffMap) {
+        if (!coeffMap) {
+            return null;
+        }
+
+        const coefficientScale = Math.max(1, ...Object.values(coeffMap).map(value => Math.abs(value || 0)));
+        const tolerance = coefficientScale * 1e-8;
+        const getCoeff = (px, py) => {
+            const value = coeffMap[`${px},${py}`] || 0;
+            return Math.abs(value) <= tolerance ? 0 : value;
+        };
+
+        const hasOnlyFoliumTerms = Object.entries(coeffMap).every(([key, value]) => {
+            if (!Number.isFinite(value) || Math.abs(value) <= tolerance) {
+                return true;
+            }
+            const [px, py] = key.split(',').map(Number);
+            return Number.isInteger(px) && Number.isInteger(py) && px >= 0 && py >= 0 && px + py <= 3;
+        });
+        if (!hasOnlyFoliumTerms || Math.abs(getCoeff(2, 1)) > tolerance || Math.abs(getCoeff(1, 2)) > tolerance) {
+            return null;
+        }
+
+        const cubicX = getCoeff(3, 0);
+        const cubicY = getCoeff(0, 3);
+        const mixedXY = getCoeff(1, 1);
+        if (Math.abs(cubicX) <= tolerance || Math.abs(cubicY) <= tolerance || Math.abs(mixedXY) <= tolerance) {
+            return null;
+        }
+        if (Math.sign(cubicX) !== Math.sign(cubicY)) {
+            return null;
+        }
+
+        const translatedX = -getCoeff(2, 0) / (3 * cubicX);
+        const translatedY = -getCoeff(0, 2) / (3 * cubicY);
+        const foliumScale = -mixedXY;
+        const expectedLinearX = (3 * cubicX * translatedX * translatedX) + (foliumScale * translatedY);
+        const expectedLinearY = (3 * cubicY * translatedY * translatedY) + (foliumScale * translatedX);
+        const expectedConstant = (-cubicX * translatedX * translatedX * translatedX) -
+            (cubicY * translatedY * translatedY * translatedY) -
+            (foliumScale * translatedX * translatedY);
+
+        const linearX = getCoeff(1, 0);
+        const linearY = getCoeff(0, 1);
+        const constant = getCoeff(0, 0);
+        const linearXScale = Math.max(1, Math.abs(linearX), Math.abs(expectedLinearX), coefficientScale);
+        const linearYScale = Math.max(1, Math.abs(linearY), Math.abs(expectedLinearY), coefficientScale);
+        const constantScale = Math.max(1, Math.abs(constant), Math.abs(expectedConstant), coefficientScale);
+
+        if (Math.abs(linearX - expectedLinearX) <= linearXScale * 1e-8 &&
+            Math.abs(linearY - expectedLinearY) <= linearYScale * 1e-8 &&
+            Math.abs(constant - expectedConstant) <= constantScale * 1e-8) {
+            const cubicScale = Math.max(1, Math.abs(cubicX), Math.abs(cubicY));
+            const label = Math.abs(cubicX - cubicY) <= cubicScale * 1e-8
+                ? 'folium of Descartes'
+                : 'scaled folium of Descartes';
+            return { label, confidence: 'exact' };
         }
 
         return null;
