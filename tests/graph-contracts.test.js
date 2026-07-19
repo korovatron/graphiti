@@ -483,6 +483,7 @@ async function assertShapeClassification(page) {
             { expression: 'theta=pi/2', expected: 'polar ray' },
             { expression: 'r=2*cos(theta)', expected: 'circle' },
             { expression: 'r=1+cos(theta)', expected: 'cardioid' },
+            { expression: 'r<1+cos(theta)', expected: 'cardioid' },
             { expression: '1+cos(theta)', expected: 'cardioid' },
             { expression: 'r=1+alpha*cos(theta+1)', expected: 'cardioid' },
             { expression: 'r=1+2*cos(theta)', expected: 'limacon - inner loop' },
@@ -944,16 +945,51 @@ async function assertShapeClassification(page) {
 
         const item = document.querySelector(`[data-function-id="${func.id}"]`);
         const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeTitle = shapeContainer ? shapeContainer.querySelector('.shape-info-title') : null;
         const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
 
         return {
+            title: shapeTitle ? shapeTitle.textContent : null,
             renderedLabel: shapeValue ? shapeValue.textContent : null,
             visible: shapeContainer ? shapeContainer.classList.contains('visible') : false
         };
     });
 
+    assert.strictEqual(polarDomResult.title, 'Shape', 'polar equation metadata title should remain Shape');
     assert.strictEqual(polarDomResult.renderedLabel, 'cardioid', 'polar shape label should render in function panel');
     assert.strictEqual(polarDomResult.visible, true, 'polar shape row should be visible');
+
+    const polarInequalityDomResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('r<1+cos(theta)');
+        const func = graphiti.polarFunctions[0];
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeTitle = shapeContainer ? shapeContainer.querySelector('.shape-info-title') : null;
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+
+        return {
+            title: shapeTitle ? shapeTitle.textContent : null,
+            renderedLabel: shapeValue ? shapeValue.textContent : null,
+            visible: shapeContainer ? shapeContainer.classList.contains('visible') : false
+        };
+    });
+
+    assert.strictEqual(polarInequalityDomResult.title, 'Boundary', 'polar inequality metadata title should render as Boundary');
+    assert.strictEqual(polarInequalityDomResult.renderedLabel, 'cardioid', 'polar inequality boundary label should render text');
+    assert.strictEqual(polarInequalityDomResult.visible, true, 'polar inequality boundary row should be visible');
 }
 
 async function assertStrictImplicitInequalityVerticalComponentsAreDashed(page) {

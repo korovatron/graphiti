@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.44';
+const VERSION = '1.2.45';
 
 class Graphiti {
     constructor() {
@@ -17389,6 +17389,13 @@ class Graphiti {
         const functionType = this.detectFunctionType(expression);
         if (this.plotMode === 'polar' && functionType === 'polar') {
             return this.classifyPolarFunctionShape(expression);
+        }
+        if (this.plotMode === 'polar' && functionType === 'polar-inequality') {
+            const inequality = this.parsePolarInequality(expression);
+            if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                return null;
+            }
+            return this.classifyPolarFunctionShape(`r=${inequality.rightSide}`);
         }
         if (this.plotMode === 'polar' && functionType === 'theta-constant') {
             return { label: 'polar ray', confidence: 'exact' };
