@@ -214,8 +214,8 @@ class Graphiti {
         this.polarFunctionsCleared = false;
         this.functionColors = [
             '#B91C1C', '#00C853', '#0057FF',
-            '#F39C12', '#1ABC9C', '#00E5FF', '#A855F7',
-            '#FF6B6B', '#4A90E2', '#FFD400', '#84CC16', '#C026D3'
+            '#C026D3', '#1ABC9C', '#00E5FF', '#A855F7',
+            '#FF6B6B', '#4A90E2', '#FFD400', '#84CC16', '#F39C12'
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.functionSaveTimer = null; // For debouncing localStorage writes during typing
