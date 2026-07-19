@@ -6247,7 +6247,8 @@ class Graphiti {
             func.implicitRenderMode === 'monomial-x-explicit' ||
             func.implicitRenderMode === 'quadratic-explicit' ||
             func.implicitRenderMode === 'quadratic-x-explicit' ||
-            func.implicitRenderMode === 'product-factors'
+            func.implicitRenderMode === 'product-factors' ||
+            func.implicitRenderMode === 'single-variable-boundary'
         );
     }
 
@@ -7568,6 +7569,23 @@ class Graphiti {
                 return true;
             };
 
+            if (this.plotImplicitSingleVariableBoundary(func, equation)) {
+                if (!await prepareFastPathInequalityGrid()) {
+                    this.activeImplicitCalculations.delete(func.id);
+                    return;
+                }
+                if (!suppressDraw) {
+                    this.draw();
+                }
+                this.activeImplicitCalculations.delete(func.id);
+
+                if (this.performance.enabled) {
+                    const elapsed = performance.now() - startTime;
+                    this.performance.plotTimes.set(func.id, elapsed);
+                }
+                return;
+            }
+
             if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !skipProductFactorFastPath) {
                 const productHandled = await this.plotImplicitProductFactorsAsComponents(
                     func,
@@ -7901,6 +7919,69 @@ class Graphiti {
             // Don't clear existing points on error - keep them visible
             this.activeImplicitCalculations.delete(func.id);
         }
+    }
+
+    plotImplicitSingleVariableBoundary(func, equation) {
+        if (!func || !equation || !equation.leftExpression || !equation.rightExpression) {
+            return false;
+        }
+
+        const combinedExpression = `((${equation.leftExpression})-(${equation.rightExpression}))`;
+        const expressionText = combinedExpression.replace(/\\([()])/g, '$1');
+        const hasX = /\bx\b/.test(expressionText);
+        const hasY = /\by\b/.test(expressionText);
+        if (hasX === hasY) {
+            return false;
+        }
+
+        let coefficients;
+        try {
+            const polynomialExpression = hasY ? expressionText.replace(/\by\b/g, 'x') : expressionText;
+            coefficients = this.extractPolynomialCoeffs(this.cleanMath.parse(polynomialExpression));
+        } catch {
+            return false;
+        }
+
+        if (!coefficients || this.getPolynomialDegree(coefficients) < 1) {
+            return false;
+        }
+
+        const roots = this.findPolynomialRealRoots(coefficients)
+            .filter(value => Number.isFinite(value))
+            .map(value => Math.abs(value - Math.round(value)) < 1e-10 ? Math.round(value) : value)
+            .filter((value, valueIndex, values) => values.findIndex(other => Math.abs(other - value) <= 1e-7) === valueIndex)
+            .sort((a, b) => a - b);
+        if (roots.length === 0) {
+            return false;
+        }
+
+        const points = [];
+        const xSpan = this.viewport.maxX - this.viewport.minX;
+        const ySpan = this.viewport.maxY - this.viewport.minY;
+        const xMin = this.viewport.minX - xSpan * 0.5;
+        const xMax = this.viewport.maxX + xSpan * 0.5;
+        const yMin = this.viewport.minY - ySpan * 0.5;
+        const yMax = this.viewport.maxY + ySpan * 0.5;
+
+        for (const root of roots) {
+            points.push({ x: NaN, y: NaN, connected: false });
+            if (hasX) {
+                points.push({ x: root, y: yMin, connected: false });
+                points.push({ x: root, y: yMax, connected: true });
+            } else {
+                points.push({ x: xMin, y: root, connected: false });
+                points.push({ x: xMax, y: root, connected: true });
+            }
+            points.push({ x: NaN, y: NaN, connected: false });
+        }
+
+        func.points = points;
+        func.displayPoints = points;
+        func.singleVariableImplicitVerticalComponents = hasX ? roots.slice() : [];
+        func.singleVariableImplicitHorizontalComponents = hasY ? roots.slice() : [];
+        func.implicitRenderMode = 'single-variable-boundary';
+        this.updateFunctionAsymptoteData(func, [], [], [], null, null, []);
+        return true;
     }
 
     async plotImplicitProductFactorsAsComponents(func, equation, highResForIntersections = false, immediate = false) {
@@ -16692,6 +16773,8 @@ class Graphiti {
         delete func.productImplicitFactorExpressions;
         delete func.productImplicitFactorRenderModes;
         delete func.productImplicitVerticalComponents;
+        delete func.singleVariableImplicitVerticalComponents;
+        delete func.singleVariableImplicitHorizontalComponents;
 
         this.updateFunctionAsymptoteInfo(func);
     }
@@ -35242,7 +35325,8 @@ class Graphiti {
             ...(Array.isArray(func.affineVerticalComponents) ? func.affineVerticalComponents : []),
             ...(Array.isArray(func.monomialYVerticalComponents) ? func.monomialYVerticalComponents : []),
             ...(Array.isArray(func.quadraticYVerticalComponents) ? func.quadraticYVerticalComponents : []),
-            ...(Array.isArray(func.productImplicitVerticalComponents) ? func.productImplicitVerticalComponents : [])
+            ...(Array.isArray(func.productImplicitVerticalComponents) ? func.productImplicitVerticalComponents : []),
+            ...(Array.isArray(func.singleVariableImplicitVerticalComponents) ? func.singleVariableImplicitVerticalComponents : [])
         ];
         const verticalComponents = [];
         for (const x of componentSources) {
@@ -41311,7 +41395,9 @@ class Graphiti {
             this.ctx.stroke();
         }
 
-        this.drawExplicitImplicitVerticalComponents(func);
+        if (func.implicitRenderMode !== 'single-variable-boundary') {
+            this.drawExplicitImplicitVerticalComponents(func);
+        }
 
         // Draw asymptotes after the curve so dashed obliques remain visible.
         this.drawFunctionAsymptotes(func);
@@ -41395,7 +41481,14 @@ class Graphiti {
         context.save();
         context.strokeStyle = func.color;
         context.lineWidth = this.getLineWidth(3);
-        context.setLineDash([]);
+        const functionType = this.detectFunctionType(func.expression || '');
+        const inequality = functionType === 'implicit-inequality'
+            ? this.parseInequality(func.expression)
+            : null;
+        const isStrictInequality = !!inequality && (inequality.operator === '>' || inequality.operator === '<');
+        context.setLineDash(isStrictInequality
+            ? [this.getLineWidth(8), this.getLineWidth(4)]
+            : []);
 
         for (const x of verticalComponents) {
             if (x < this.viewport.minX || x > this.viewport.maxX) {

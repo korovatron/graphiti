@@ -956,6 +956,101 @@ async function assertShapeClassification(page) {
     assert.strictEqual(polarDomResult.visible, true, 'polar shape row should be visible');
 }
 
+async function assertStrictImplicitInequalityVerticalComponentsAreDashed(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        Object.assign(graphiti.viewport, {
+            minX: -2,
+            maxX: 2,
+            minY: -2,
+            maxY: 2,
+            width: 400,
+            height: 400
+        });
+
+        const createRecordingContext = () => ({
+            dashHistory: [],
+            save() {},
+            restore() {},
+            beginPath() {},
+            moveTo() {},
+            lineTo() {},
+            stroke() {},
+            setLineDash(value) {
+                this.dashHistory.push(Array.isArray(value) ? value.slice() : value);
+            }
+        });
+
+        const strictContext = createRecordingContext();
+        graphiti.drawExplicitImplicitVerticalComponents({
+            expression: 'x<1',
+            color: '#0057FF',
+            affineVerticalComponents: [1]
+        }, strictContext);
+
+        const nonStrictContext = createRecordingContext();
+        graphiti.drawExplicitImplicitVerticalComponents({
+            expression: 'x<=1',
+            color: '#0057FF',
+            affineVerticalComponents: [1]
+        }, nonStrictContext);
+
+        const originalCanvas = graphiti.canvas;
+        const originalCtx = graphiti.ctx;
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d', { alpha: true });
+        graphiti.canvas = canvas;
+        graphiti.ctx = ctx;
+
+        let verticalOverlayCallCount = 0;
+        const originalDrawVerticalComponents = graphiti.drawExplicitImplicitVerticalComponents;
+        graphiti.drawExplicitImplicitVerticalComponents = function(...args) {
+            verticalOverlayCallCount++;
+            return originalDrawVerticalComponents.apply(this, args);
+        };
+
+        graphiti.drawFunction({
+            id: 9001,
+            expression: 'x>1',
+            color: '#00C853',
+            enabled: true,
+            mode: 'cartesian',
+            points: [
+                { x: NaN, y: NaN, connected: false },
+                { x: 1, y: -4, connected: false },
+                { x: 1, y: 4, connected: true },
+                { x: NaN, y: NaN, connected: false }
+            ],
+            displayPoints: [
+                { x: NaN, y: NaN, connected: false },
+                { x: 1, y: -4, connected: false },
+                { x: 1, y: 4, connected: true },
+                { x: NaN, y: NaN, connected: false }
+            ],
+            implicitRenderMode: 'single-variable-boundary',
+            singleVariableImplicitVerticalComponents: [1]
+        });
+
+        graphiti.drawExplicitImplicitVerticalComponents = originalDrawVerticalComponents;
+
+        graphiti.canvas = originalCanvas;
+        graphiti.ctx = originalCtx;
+
+        return {
+            strictDash: strictContext.dashHistory[strictContext.dashHistory.length - 1],
+            nonStrictDash: nonStrictContext.dashHistory[nonStrictContext.dashHistory.length - 1],
+            verticalOverlayCallCount
+        };
+    });
+
+    assert(Array.isArray(result.strictDash) && result.strictDash.length > 0, 'strict implicit inequality vertical component should be dashed');
+    assert.deepStrictEqual(result.nonStrictDash, [], 'non-strict implicit inequality vertical component should remain solid');
+    assert.strictEqual(result.verticalOverlayCallCount, 0, 'single-variable implicit inequality boundary should not be double-stroked by the vertical component overlay');
+}
+
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     const cases = [
         '\\frac13y^2x=0',
@@ -1550,6 +1645,7 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
         await assertIncompleteExpressionsDoNotPlot(page);
         await assertEmptyMathLivePlaceholdersAreRestored(page);
         await assertShapeClassification(page);
+        await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
