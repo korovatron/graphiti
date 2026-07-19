@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.43';
+const VERSION = '1.2.44';
 
 class Graphiti {
     constructor() {
@@ -3061,7 +3061,9 @@ class Graphiti {
         const badgeBackground = (func && typeof func.color === 'string' && func.color.trim())
             ? func.color
             : '#ffd400';
-        const badgeText = this.getContrastingTextColor(badgeBackground);
+        const badgeText = badgeBackground.toUpperCase() === '#00C853'
+            ? '#000000'
+            : this.getContrastingTextColor(badgeBackground);
 
         funcDiv.style.setProperty('--function-badge-bg', badgeBackground);
         funcDiv.style.setProperty('--function-badge-fg', badgeText);
