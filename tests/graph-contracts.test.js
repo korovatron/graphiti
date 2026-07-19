@@ -557,6 +557,10 @@ async function assertShapeClassification(page) {
             { expression: '(2*t^2+1,3*t^3-4)', expected: 'semi-cubical parabola' },
             { expression: '(3*t^3-4,2*t^2+1)', expected: 'semi-cubical parabola' },
             { expression: '((t-2)^2+1,3*(t-2)^3-4)', expected: 'semi-cubical parabola' },
+            { expression: '(3*t/(1+t^3),3*t^2/(1+t^3))', expected: 'folium of Descartes' },
+            { expression: '(2*t/(1+t^3),3*t^2/(1+t^3))', expected: 'scaled folium of Descartes' },
+            { expression: '(6*t/(2+2*t^3),6*t^2/(2+2*t^3))', expected: 'folium of Descartes' },
+            { expression: '(3*t^2/(1+t^3),3*t/(1+t^3))', expected: 'folium of Descartes' },
             { expression: '(1+2*t,-1+3/t)', expected: 'hyperbola' },
             { expression: '(sin(t),sin(t))', expected: 'line' },
             { expression: '(sin(2*t),sin(3*t))', expected: null }

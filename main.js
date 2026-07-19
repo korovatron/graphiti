@@ -17883,6 +17883,11 @@ class Graphiti {
             return { label: 'semi-cubical parabola', confidence: 'exact' };
         }
 
+        const parametricFoliumShape = this.classifyParametricFoliumOfDescartesShape(xNode, yNode);
+        if (parametricFoliumShape) {
+            return parametricFoliumShape;
+        }
+
         const xReciprocal = this.extractParametricShapeReciprocalCoordinate(xNode);
         const yReciprocal = this.extractParametricShapeReciprocalCoordinate(yNode);
         if ((this.isParametricShapeLinearPolynomial(xPolynomial) && yReciprocal) ||
@@ -18142,6 +18147,139 @@ class Graphiti {
         const actualCubicLinear = cubic[1] || 0;
         const linearScale = Math.max(1, Math.abs(actualCubicLinear), Math.abs(expectedCubicLinear));
         return Math.abs(actualCubicLinear - expectedCubicLinear) <= linearScale * 1e-8;
+    }
+
+    classifyParametricFoliumOfDescartesShape(xNode, yNode) {
+        const xCoordinate = this.extractParametricFoliumCoordinate(xNode);
+        const yCoordinate = this.extractParametricFoliumCoordinate(yNode);
+        if (!xCoordinate || !yCoordinate || xCoordinate.power === yCoordinate.power) {
+            return null;
+        }
+        if (![xCoordinate.power, yCoordinate.power].includes(1) || ![xCoordinate.power, yCoordinate.power].includes(2)) {
+            return null;
+        }
+        if (!this.areParametricFoliumDenominatorsEquivalent(xCoordinate.denominator, yCoordinate.denominator)) {
+            return null;
+        }
+
+        const denominatorScale = this.getParametricFoliumDenominatorScale(xCoordinate.denominator);
+        if (denominatorScale === null) {
+            return null;
+        }
+
+        const linearCoordinate = xCoordinate.power === 1 ? xCoordinate : yCoordinate;
+        const quadraticCoordinate = xCoordinate.power === 2 ? xCoordinate : yCoordinate;
+        const linearScale = linearCoordinate.coefficient / denominatorScale;
+        const quadraticScale = quadraticCoordinate.coefficient / denominatorScale;
+        if (Math.abs(linearScale) <= 1e-9 || Math.abs(quadraticScale) <= 1e-9 || Math.sign(linearScale) !== Math.sign(quadraticScale)) {
+            return null;
+        }
+
+        const scale = Math.max(1, Math.abs(linearScale), Math.abs(quadraticScale));
+        const label = Math.abs(linearScale - quadraticScale) <= scale * 1e-8
+            ? 'folium of Descartes'
+            : 'scaled folium of Descartes';
+        return { label, confidence: 'exact' };
+    }
+
+    extractParametricFoliumCoordinate(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'ParenthesisNode') {
+            return this.extractParametricFoliumCoordinate(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractParametricFoliumCoordinate(node.args[0]);
+            return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+        }
+        if (node.type !== 'OperatorNode' || node.op !== '/' || node.args.length !== 2) {
+            return null;
+        }
+
+        const numerator = this.extractParametricShapePolynomialCoefficients(node.args[0], 2);
+        const denominator = this.extractParametricShapePolynomialCoefficients(node.args[1], 3);
+        const numeratorTerm = this.extractSingleParametricMonomial(numerator);
+        if (!numeratorTerm || ![1, 2].includes(numeratorTerm.power) || !this.isParametricFoliumDenominator(denominator)) {
+            return null;
+        }
+
+        return {
+            power: numeratorTerm.power,
+            coefficient: numeratorTerm.coefficient,
+            denominator: this.normalizePolynomial(denominator).slice(0, 4)
+        };
+    }
+
+    extractSingleParametricMonomial(polynomial) {
+        const normalized = polynomial ? this.normalizePolynomial(polynomial) : null;
+        if (!normalized) {
+            return null;
+        }
+
+        let power = null;
+        let coefficient = 0;
+        const scale = Math.max(1, ...normalized.map(value => Math.abs(value || 0)));
+        const tolerance = scale * 1e-9;
+        for (let index = 0; index < normalized.length; index++) {
+            const value = normalized[index] || 0;
+            if (Math.abs(value) <= tolerance) {
+                continue;
+            }
+            if (power !== null) {
+                return null;
+            }
+            power = index;
+            coefficient = value;
+        }
+
+        return power !== null ? { power, coefficient } : null;
+    }
+
+    isParametricFoliumDenominator(polynomial) {
+        const normalized = polynomial ? this.normalizePolynomial(polynomial).slice(0, 4) : null;
+        if (!normalized || normalized.length !== 4) {
+            return false;
+        }
+
+        const scale = Math.max(1, ...normalized.map(value => Math.abs(value || 0)));
+        const tolerance = scale * 1e-9;
+        return Math.abs(normalized[0] || 0) > tolerance &&
+            Math.abs(normalized[3] || 0) > tolerance &&
+            Math.abs(normalized[1] || 0) <= tolerance &&
+            Math.abs(normalized[2] || 0) <= tolerance &&
+            Math.sign(normalized[0]) === Math.sign(normalized[3]);
+    }
+
+    getParametricFoliumDenominatorScale(denominator) {
+        if (!this.isParametricFoliumDenominator(denominator)) {
+            return null;
+        }
+        const constant = denominator[0] || 0;
+        const cubic = denominator[3] || 0;
+        return Math.abs(constant - cubic) <= Math.max(1, Math.abs(constant), Math.abs(cubic)) * 1e-8 ? constant : null;
+    }
+
+    areParametricFoliumDenominatorsEquivalent(first, second) {
+        if (!this.isParametricFoliumDenominator(first) || !this.isParametricFoliumDenominator(second)) {
+            return false;
+        }
+
+        const firstScale = this.getParametricFoliumDenominatorScale(first);
+        const secondScale = this.getParametricFoliumDenominatorScale(second);
+        if (firstScale === null || secondScale === null || Math.abs(secondScale) <= 1e-12) {
+            return false;
+        }
+
+        const ratio = firstScale / secondScale;
+        const scale = Math.max(1, ...first.map(value => Math.abs(value || 0)), ...second.map(value => Math.abs(value || 0)));
+        const tolerance = scale * 1e-8;
+        for (let index = 0; index < 4; index++) {
+            if (Math.abs((first[index] || 0) - (ratio * (second[index] || 0))) > tolerance) {
+                return false;
+            }
+        }
+        return true;
     }
 
     extractParametricShapeReciprocalCoordinate(node) {
