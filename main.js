@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.47';
+const VERSION = '1.2.48';
 
 class Graphiti {
     constructor() {
@@ -213,7 +213,7 @@ class Graphiti {
         this.cartesianFunctionsCleared = false;
         this.polarFunctionsCleared = false;
         this.functionColors = [
-            '#0057FF', '#00C853', '#B91C1C', 
+            '#B91C1C', '#00C853', '#0057FF',
             '#F39C12', '#1ABC9C', '#00E5FF', '#A855F7',
             '#FF6B6B', '#4A90E2', '#FFD400', '#84CC16', '#C026D3'
         ];
@@ -31741,11 +31741,12 @@ class Graphiti {
                 }
             });
         } else {
-            // No saved Cartesian functions - add default rational functions
+            // No saved Cartesian functions - add default functions
             addedDefaultFunctions = true;
             const defaultExpressions = [
                 'y=\\frac{x^2+1}{x-1}',
-                'y=\\frac{x^2-4}{x-2}'
+                'y^2=x^3',
+                'y=\\frac{x^2-1}{x+1}'
             ];
 
             defaultExpressions.forEach(expression => {
