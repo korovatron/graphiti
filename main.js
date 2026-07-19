@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.42';
+const VERSION = '1.2.43';
 
 class Graphiti {
     constructor() {
@@ -213,9 +213,9 @@ class Graphiti {
         this.cartesianFunctionsCleared = false;
         this.polarFunctionsCleared = false;
         this.functionColors = [
-            '#4A90E2', '#27AE60', '#F39C12', 
-            '#E91E63', '#1ABC9C', '#E67E22', '#34495E',
-            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#E74C3C'
+            '#0057FF', '#00C853', '#B91C1C', 
+            '#F39C12', '#1ABC9C', '#00E5FF', '#A855F7',
+            '#FF6B6B', '#4A90E2', '#FFD400', '#84CC16', '#C026D3'
         ];
         this.plotTimers = new Map(); // For debouncing auto-plot
         this.functionSaveTimer = null; // For debouncing localStorage writes during typing
@@ -42951,7 +42951,7 @@ class Graphiti {
     
     addIntersectionBadge(worldX, worldY, func1, func2) {
         // Use a unique color for intersection badges that's not used by any function
-        // Function colors: #4A90E2, #E74C3C, #27AE60, #F39C12, #9B59B6, #1ABC9C, #E67E22, #34495E, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4
+        // Function colors: #0057FF, #00C853, #B91C1C, #F39C12, #1ABC9C, #00E5FF, #A855F7, #FF6B6B, #4A90E2, #FFD400, #84CC16, #C026D3
         const intersectionColor = '#D63384'; // Pink/magenta color not in function palette
         
         // Snap coordinates to zero if they're very close (matches display formatting)
