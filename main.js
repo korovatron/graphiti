@@ -24782,28 +24782,7 @@ class Graphiti {
                     this.resetPolarRange();
                 }
                 
-                // Use smart reset based on current functions
-                const smartViewport = this.getSmartResetViewport();
-                
-                // Set scale only if provided (cartesian mode), polar mode will calculate it
-                if (smartViewport.scale !== undefined) {
-                    this.viewport.scale = smartViewport.scale;
-                }
-                this.viewport.minX = smartViewport.minX;
-                this.viewport.maxX = smartViewport.maxX;
-                this.viewport.minY = smartViewport.minY;
-                this.viewport.maxY = smartViewport.maxY;
-
-                // Enforce 1:1 aspect ratio for both modes to keep circles circular
-                // BUT skip this for regular trig functions which need different X and Y scales
-                const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
-                if (!hasRegularTrig) {
-                    // enforceSquareAspectRatio calculates the correct scale itself
-                    this.enforceSquareAspectRatio();
-                } else {
-                    // Only update scale separately if we're not enforcing square aspect ratio
-                    this.updateViewportScale();
-                }
+                this.applySmartResetViewport();
                 
                 // Update viewport to ensure bounds are correctly adjusted, then redraw
                 // This matches what happens during resize/orientation change
@@ -31855,12 +31834,7 @@ class Graphiti {
         
         // Reset viewport if no saved bounds OR if we added default functions
         if (!hasSavedBounds || addedDefaultFunctions) {
-            const smartViewport = this.getSmartResetViewport();
-            this.viewport.minX = smartViewport.minX;
-            this.viewport.maxX = smartViewport.maxX;
-            this.viewport.minY = smartViewport.minY;
-            this.viewport.maxY = smartViewport.maxY;
-            this.viewport.scale = smartViewport.scale;
+            this.applySmartResetViewport();
         }
         
         // Initial setup is complete - now allow viewport bounds to be saved
@@ -47198,6 +47172,25 @@ class Graphiti {
             return this.getPolarResetViewport();
         } else {
             return this.getCartesianResetViewport();
+        }
+    }
+    
+    applySmartResetViewport() {
+        const smartViewport = this.getSmartResetViewport();
+        
+        if (smartViewport.scale !== undefined) {
+            this.viewport.scale = smartViewport.scale;
+        }
+        this.viewport.minX = smartViewport.minX;
+        this.viewport.maxX = smartViewport.maxX;
+        this.viewport.minY = smartViewport.minY;
+        this.viewport.maxY = smartViewport.maxY;
+
+        const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
+        if (!hasRegularTrig) {
+            this.enforceSquareAspectRatio();
+        } else {
+            this.updateViewportScale();
         }
     }
     
