@@ -757,6 +757,23 @@ async function assertShapeClassification(page) {
     assert.strictEqual(deferredPanelResult.afterBuild.panelOpen, true, 'startup build completion should start panel slide-in');
     assert.strictEqual(deferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'startup build completion should mark hamburger as panel-open');
 
+    const hamburgerHoverCssResult = await page.evaluate(() => {
+        const cssText = Array.from(document.styleSheets)
+            .flatMap(sheet => Array.from(sheet.cssRules || []))
+            .map(rule => rule.cssText)
+            .join('\n');
+
+        return {
+            finePointerHoverRule: /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^}]*#hamburger-menu:hover/.test(cssText),
+            finePointerPanelHoverRule: /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^}]*#hamburger-menu\.panel-open:hover/.test(cssText),
+            ungatedHoverRule: /(?:^|})\s*#hamburger-menu(?:\.panel-open)?:hover\s*\{/.test(cssText)
+        };
+    });
+
+    assert.strictEqual(hamburgerHoverCssResult.finePointerHoverRule, true, 'hamburger hover colour should only apply to fine hover pointers');
+    assert.strictEqual(hamburgerHoverCssResult.finePointerPanelHoverRule, true, 'hamburger panel-open hover colour should only apply to fine hover pointers');
+    assert.strictEqual(hamburgerHoverCssResult.ungatedHoverRule, false, 'hamburger hover colour should not be ungated on touch devices');
+
     const sharedLinkDeferredPanelResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;
         const functionPanel = document.getElementById('function-panel');

@@ -1666,8 +1666,10 @@
             opacity: 1;
         }
         
-        #hamburger-menu:hover {
-            background: rgba(74, 144, 226, 0.9); /* Same blue hover as other elements */
+        @media (hover: hover) and (pointer: fine) {
+            #hamburger-menu:hover {
+                background: rgba(74, 144, 226, 0.9); /* Same blue hover as other elements */
+            }
         }
         
         .hamburger-line {
@@ -1752,8 +1754,10 @@
             background: rgba(231, 76, 60, 0.9) !important; /* Red to indicate close action */
         }
 
-        #hamburger-menu.panel-open:hover {
-            background: rgba(192, 57, 43, 0.95) !important; /* Darker red on hover */
+        @media (hover: hover) and (pointer: fine) {
+            #hamburger-menu.panel-open:hover {
+                background: rgba(192, 57, 43, 0.95) !important; /* Darker red on hover */
+            }
         }
         
         /* Mobile Styles - Use more specific targeting */
