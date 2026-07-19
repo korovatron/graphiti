@@ -17878,6 +17878,10 @@ class Graphiti {
         if (this.isParametricShapeLinearPolynomial(xPolynomial) && this.isParametricShapeQuadraticPolynomial(yPolynomial)) {
             return { label: 'parabola', confidence: 'exact' };
         }
+        if (this.isParametricSemiCubicalParabolaPolynomialPair(xPolynomial, yPolynomial) ||
+            this.isParametricSemiCubicalParabolaPolynomialPair(yPolynomial, xPolynomial)) {
+            return { label: 'semi-cubical parabola', confidence: 'exact' };
+        }
 
         const xReciprocal = this.extractParametricShapeReciprocalCoordinate(xNode);
         const yReciprocal = this.extractParametricShapeReciprocalCoordinate(yNode);
@@ -18001,8 +18005,8 @@ class Graphiti {
     }
 
     extractParametricShapePolynomialCoordinate(node) {
-        const polynomial = this.extractParametricShapePolynomialCoefficients(node, 2);
-        return polynomial ? this.normalizePolynomial(polynomial).slice(0, 3) : null;
+        const polynomial = this.extractParametricShapePolynomialCoefficients(node, 3);
+        return polynomial ? this.normalizePolynomial(polynomial).slice(0, 4) : null;
     }
 
     extractParametricShapePolynomialCoefficients(node, maxDegree = 2) {
@@ -18109,6 +18113,35 @@ class Graphiti {
     isParametricShapeQuadraticPolynomial(polynomial) {
         const normalized = polynomial ? this.normalizePolynomial(polynomial) : null;
         return !!normalized && normalized.length === 3 && Math.abs(normalized[2]) > 1e-9;
+    }
+
+    isParametricShapeCubicPolynomial(polynomial) {
+        const normalized = polynomial ? this.normalizePolynomial(polynomial) : null;
+        return !!normalized && normalized.length === 4 && Math.abs(normalized[3]) > 1e-9;
+    }
+
+    isParametricSemiCubicalParabolaPolynomialPair(quadraticPolynomial, cubicPolynomial) {
+        const quadratic = quadraticPolynomial ? this.normalizePolynomial(quadraticPolynomial) : null;
+        const cubic = cubicPolynomial ? this.normalizePolynomial(cubicPolynomial) : null;
+        if (!this.isParametricShapeQuadraticPolynomial(quadratic) || !this.isParametricShapeCubicPolynomial(cubic)) {
+            return false;
+        }
+
+        const quadraticA = quadratic[2] || 0;
+        const quadraticB = quadratic[1] || 0;
+        const cubicA = cubic[3] || 0;
+        const cubicB = cubic[2] || 0;
+        const quadraticOffset = -quadraticB / (2 * quadraticA);
+        const cubicOffset = -cubicB / (3 * cubicA);
+        const offsetScale = Math.max(1, Math.abs(quadraticOffset), Math.abs(cubicOffset));
+        if (Math.abs(quadraticOffset - cubicOffset) > offsetScale * 1e-8) {
+            return false;
+        }
+
+        const expectedCubicLinear = 3 * cubicA * cubicOffset * cubicOffset;
+        const actualCubicLinear = cubic[1] || 0;
+        const linearScale = Math.max(1, Math.abs(actualCubicLinear), Math.abs(expectedCubicLinear));
+        return Math.abs(actualCubicLinear - expectedCubicLinear) <= linearScale * 1e-8;
     }
 
     extractParametricShapeReciprocalCoordinate(node) {
@@ -18717,6 +18750,12 @@ class Graphiti {
             }
         }
 
+        const cubicCoeffMap = this.extractImplicitPolynomialCoeffMap(equation, 3);
+        const semiCubicalParabolaShape = this.classifySemiCubicalParabolaCoeffMap(cubicCoeffMap);
+        if (semiCubicalParabolaShape) {
+            return semiCubicalParabolaShape;
+        }
+
         const coeffMap = this.extractImplicitPolynomialCoeffMap(equation, 2);
         if (coeffMap) {
             const denominatorReducedCoeffMap = denominatorFactorMaps.length > 0
@@ -19114,6 +19153,7 @@ class Graphiti {
 
         if (residualDegree > 0) {
             const residualShape = this.classifyPolynomialCoeffMapShape(residualMap) ||
+                this.classifySemiCubicalParabolaCoeffMap(residualMap) ||
                 this.classifyReciprocalPowerCoeffMapShape(residualMap);
             if (!residualShape || !residualShape.label) {
                 return null;
@@ -19295,6 +19335,58 @@ class Graphiti {
         }
 
         return { label: 'hyperbola', confidence: 'exact' };
+    }
+
+    classifySemiCubicalParabolaCoeffMap(coeffMap) {
+        if (!coeffMap) {
+            return null;
+        }
+
+        const coefficientScale = Math.max(1, ...Object.values(coeffMap).map(value => Math.abs(value || 0)));
+        const tolerance = coefficientScale * 1e-8;
+        const getCoeff = (px, py) => {
+            const value = coeffMap[`${px},${py}`] || 0;
+            return Math.abs(value) <= tolerance ? 0 : value;
+        };
+        const hasOnlyAxisTerms = Object.entries(coeffMap).every(([key, value]) => {
+            if (!Number.isFinite(value) || Math.abs(value) <= tolerance) {
+                return true;
+            }
+            const [px, py] = key.split(',').map(Number);
+            return Number.isInteger(px) && Number.isInteger(py) && px >= 0 && py >= 0 && (px === 0 || py === 0);
+        });
+        if (!hasOnlyAxisTerms) {
+            return null;
+        }
+
+        const matchesOrientation = (quadraticAxis, cubicAxis) => {
+            const quadratic2 = quadraticAxis === 'y' ? getCoeff(0, 2) : getCoeff(2, 0);
+            const quadratic1 = quadraticAxis === 'y' ? getCoeff(0, 1) : getCoeff(1, 0);
+            const cubic3 = cubicAxis === 'x' ? getCoeff(3, 0) : getCoeff(0, 3);
+            const cubic2 = cubicAxis === 'x' ? getCoeff(2, 0) : getCoeff(0, 2);
+            const cubic1 = cubicAxis === 'x' ? getCoeff(1, 0) : getCoeff(0, 1);
+            const constant = getCoeff(0, 0);
+
+            if (Math.abs(quadratic2) <= tolerance || Math.abs(cubic3) <= tolerance) {
+                return false;
+            }
+
+            const offsetQuadratic = -quadratic1 / (2 * quadratic2);
+            const offsetCubic = -cubic2 / (3 * cubic3);
+            const expectedCubic1 = 3 * cubic3 * offsetCubic * offsetCubic;
+            const expectedConstant = (quadratic2 * offsetQuadratic * offsetQuadratic) - (cubic3 * offsetCubic * offsetCubic * offsetCubic);
+            const cubicScale = Math.max(1, Math.abs(cubic1), Math.abs(expectedCubic1), coefficientScale);
+            const constantScale = Math.max(1, Math.abs(constant), Math.abs(expectedConstant), coefficientScale);
+
+            return Math.abs(cubic1 - expectedCubic1) <= cubicScale * 1e-8 &&
+                Math.abs(constant - expectedConstant) <= constantScale * 1e-8;
+        };
+
+        if (matchesOrientation('y', 'x') || matchesOrientation('x', 'y')) {
+            return { label: 'semi-cubical parabola', confidence: 'exact' };
+        }
+
+        return null;
     }
 
     isDegenerateConicLinePair(A, B, C, D, E, F, tolerance = 1e-9) {
