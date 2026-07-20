@@ -681,6 +681,19 @@
         .title-screen .title-button:active {
             filter: brightness(1.1);
         }
+
+        .title-screen .title-guide-link {
+            display: inline-block;
+            margin-top: 4px;
+            font-size: 0.95em;
+            color: #8EC5FF;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
+        .title-screen .title-guide-link:hover {
+            color: #B7DCFF;
+        }
         
         .title-screen .button-container {
             display: flex;
@@ -2704,6 +2717,7 @@
                 </svg>
                 
                 <button id="title-start-button" class="title-button">Set the Controls ...</button>
+                <a class="title-guide-link" href="guide.html">Graphiti guide and FAQ</a>
                 
                 <p class="copyright">
                     © 2026 Neil Kendall

@@ -777,6 +777,47 @@ async function assertShapeClassification(page) {
     assert.strictEqual(deferredPanelResult.afterBuild.panelOpen, true, 'startup build completion should start panel slide-in');
     assert.strictEqual(deferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'startup build completion should mark hamburger as panel-open');
 
+    const cancelledDeferredPanelResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const functionPanel = document.getElementById('function-panel');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+
+        graphiti.deferInitialFunctionPanelOpen = true;
+        graphiti.changeState(graphiti.states.GRAPHING);
+        graphiti.changeState(graphiti.states.TITLE);
+
+        const afterTitle = {
+            deferredOpen: graphiti.deferInitialFunctionPanelOpen,
+            state: graphiti.currentState,
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+
+        graphiti.openFunctionPanelForGraphing({ deferSlide: true });
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        return {
+            afterTitle,
+            afterStaleOpen: {
+                state: graphiti.currentState,
+                panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+                panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+                hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+            }
+        };
+    });
+
+    assert.strictEqual(cancelledDeferredPanelResult.afterTitle.deferredOpen, false, 'returning to title should cancel deferred startup panel open');
+    assert.strictEqual(cancelledDeferredPanelResult.afterTitle.state, 'title', 'cancelled startup should be on title screen');
+    assert.strictEqual(cancelledDeferredPanelResult.afterTitle.panelHidden, true, 'cancelled startup should keep function panel hidden');
+    assert.strictEqual(cancelledDeferredPanelResult.afterTitle.panelOpen, false, 'cancelled startup should close function panel');
+    assert.strictEqual(cancelledDeferredPanelResult.afterTitle.hamburgerPanelOpen, false, 'cancelled startup should clear hamburger panel-open state');
+    assert.strictEqual(cancelledDeferredPanelResult.afterStaleOpen.state, 'title', 'stale deferred panel open should not leave title screen');
+    assert.strictEqual(cancelledDeferredPanelResult.afterStaleOpen.panelHidden, true, 'stale deferred panel open should not unhide function panel on title screen');
+    assert.strictEqual(cancelledDeferredPanelResult.afterStaleOpen.panelOpen, false, 'stale deferred panel open should not slide panel in on title screen');
+    assert.strictEqual(cancelledDeferredPanelResult.afterStaleOpen.hamburgerPanelOpen, false, 'stale deferred panel open should not mark hamburger as panel-open on title screen');
+
     const hamburgerHoverCssResult = await page.evaluate(() => {
         const cssText = Array.from(document.styleSheets)
             .flatMap(sheet => Array.from(sheet.cssRules || []))

@@ -24432,6 +24432,13 @@ class Graphiti {
                 this.startGraphing();
             });
         }
+
+        const guideLink = document.querySelector('.title-guide-link');
+        if (guideLink) {
+            guideLink.addEventListener('click', () => {
+                this.trackGoatCounterEvent('Graphiti - Guide opened');
+            });
+        }
         
         const helpButton = document.getElementById('title-help-button');
         if (helpButton) {
@@ -32215,10 +32222,22 @@ class Graphiti {
         
         switch(newState) {
             case this.states.TITLE:
+                this.deferInitialFunctionPanelOpen = false;
                 if (titleScreen) titleScreen.classList.remove('hidden');
-                if (functionPanel) functionPanel.classList.add('hidden');
-                if (hamburgerMenu) hamburgerMenu.style.display = 'none';
-                this.closeMobileMenu();
+                if (functionPanel) {
+                    functionPanel.classList.add('hidden');
+                    functionPanel.classList.remove('mobile-open');
+                }
+                if (hamburgerMenu) {
+                    hamburgerMenu.style.display = 'none';
+                    hamburgerMenu.classList.remove('active');
+                    hamburgerMenu.classList.remove('panel-open');
+                }
+                this.hideGraphBuildOverlay();
+                this.clearMathLiveFocusState();
+                if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) {
+                    window.mathVirtualKeyboard.hide();
+                }
                 // Reset animation timer when entering title screen
                 this.titleAnimationTimer = 0;
                 // Restart both sine wave and heartbeat animations when returning to title screen
@@ -32254,11 +32273,19 @@ class Graphiti {
     }
 
     openFunctionPanelForGraphing(options = {}) {
+        if (this.currentState !== this.states.GRAPHING) {
+            return;
+        }
+
         const functionPanel = document.getElementById('function-panel');
         const hamburgerMenu = document.getElementById('hamburger-menu');
         const deferSlide = !!(options && options.deferSlide);
 
         const markPanelOpen = () => {
+            if (this.currentState !== this.states.GRAPHING) {
+                return;
+            }
+
             if (functionPanel) {
                 functionPanel.classList.add('mobile-open');
             }
@@ -32280,6 +32307,10 @@ class Graphiti {
 
         if (deferSlide && functionPanel && typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(() => {
+                if (this.currentState !== this.states.GRAPHING) {
+                    return;
+                }
+
                 markPanelOpen();
             });
         } else {
