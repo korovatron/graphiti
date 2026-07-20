@@ -3658,6 +3658,8 @@ class Graphiti {
             clearTimeout(this.plotTimers.get(id));
             this.plotTimers.delete(id);
         }
+
+        const removedFunction = this.findFunctionById(id);
         
         // Clear expression cache when functions are removed
         this.clearExpressionCache();
@@ -3670,6 +3672,11 @@ class Graphiti {
         
         // Invalidate curve cache for this function
         this.implicitCurveCache.delete(id);
+
+        this.invalidateCacheForFunction(id);
+        this.lastFunctionStates.delete(id);
+        this.functionChangeFlags.delete(id);
+        this.turningPointsCache.delete(id);
         
         // Remove from the appropriate function array
         this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
@@ -3689,19 +3696,29 @@ class Graphiti {
             funcDiv.remove();
         }
         
-        // Clear intercepts and frozen badges immediately to prevent displaying stale data
-        this.intercepts = [];
+        this.removeBadgesForFunction(id);
+        this.removeIntersectionBadgesForFunction(id);
+
+        // Clear frozen badges immediately to prevent displaying stale data
         this.frozenInterceptBadges = [];
+        this.frozenTurningPointBadges = [];
+        this.frozenIntersectionBadges = [];
+        this.interceptsPendingViewportRefresh = false;
         
-        // Clear intersection arrays and frozen badges before recalculating to prevent stale data
+        // Clear intersection arrays before recalculating from remaining function point data.
         this.clearIntersectionState({ cancelWorker: true });
         
-        // Recalculate intersections and turning points for remaining functions
-        this.handleViewportChange();
+        if (removedFunction) {
+            this.refreshSignificantPointsAfterVisibilityChange(removedFunction, true, false);
+        } else if (this.showIntersections) {
+            this.calculateIntersectionsWithWorker();
+        }
         
         // Update parameter sliders when function is removed
         this.updateParameterSliders();
         this.updateParametricRangeVisibility();
+        this.updateIntegralPairs();
+        this.updateIntegralLimitFields();
         
         // Redraw to update the display immediately
         this.draw();
