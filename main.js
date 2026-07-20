@@ -40315,8 +40315,14 @@ class Graphiti {
     }
     
     updateTitleScreen(deltaTime) {
-        // Title animations are started when the title screen is first shown.
-        // Do not rebuild them on a timer; the DOM reset looks like a page reload.
+        // Accumulate time spent on title screen
+        this.titleAnimationTimer += deltaTime;
+
+        // Restart animations every 30 seconds while the title screen is active
+        if (this.titleAnimationTimer >= this.titleAnimationLoopInterval) {
+            this.titleAnimationTimer = 0;
+            this.restartTitleAnimations();
+        }
     }
     
     updateGraphingScreen(deltaTime) {

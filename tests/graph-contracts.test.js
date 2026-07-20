@@ -831,18 +831,28 @@ async function assertShapeClassification(page) {
             graphiti.currentState = graphiti.states.TITLE;
             graphiti.titleAnimationTimer = 0;
             graphiti.updateTitleScreen(graphiti.titleAnimationLoopInterval + 1000);
-            graphiti.updateTitleScreen(graphiti.titleAnimationLoopInterval + 1000);
-            return {
+            const afterTitleRestart = {
                 restartCount,
                 titleAnimationTimer: graphiti.titleAnimationTimer
+            };
+
+            graphiti.currentState = graphiti.states.GRAPHING;
+            graphiti.update(1000);
+            return {
+                afterTitleRestart,
+                afterGraphingUpdate: {
+                    restartCount,
+                    titleAnimationTimer: graphiti.titleAnimationTimer
+                }
             };
         } finally {
             graphiti.restartTitleAnimations = originalRestartTitleAnimations;
         }
     });
 
-    assert.strictEqual(titleAnimationRestartResult.restartCount, 0, 'idle title screen should not restart animations on a timer');
-    assert.strictEqual(titleAnimationRestartResult.titleAnimationTimer, 0, 'idle title screen should not accumulate restart timer state');
+    assert.strictEqual(titleAnimationRestartResult.afterTitleRestart.restartCount, 1, 'idle title screen should restart animations on the title timer');
+    assert.strictEqual(titleAnimationRestartResult.afterTitleRestart.titleAnimationTimer, 0, 'title animation timer should reset after restarting animations');
+    assert.strictEqual(titleAnimationRestartResult.afterGraphingUpdate.restartCount, 1, 'graphing updates should not restart title animations');
 
     const repeatedEscapeResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
