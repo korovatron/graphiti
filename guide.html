@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0B1118">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Graphiti Guide and FAQ - Online Graphing Calculator and Function Plotter</title>
-    <meta name="description" content="A guide to Graphiti, a free online graphing calculator and graph plotter for functions, implicit equations, inequalities, polar graphs, calculus and curve sketching.">
+    <title>Graphiti Guide - Online Graphing Calculator and Function Plotter</title>
+    <meta name="description" content="Graphiti is a free online graphing calculator and function plotter that does more than draw curves, automatically detecting asymptotes, graph features and curve types.">
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
     <link rel="icon" href="logoTrans.png">
     <link rel="apple-touch-icon" sizes="180x180" href="logo.png">
@@ -16,60 +16,10 @@
     <link rel="canonical" href="https://www.korovatron.co.uk/graphiti/guide.html">
 
     <meta property="og:type" content="article">
-    <meta property="og:title" content="Graphiti Guide and FAQ">
-            <meta property="og:description" content="Learn what Graphiti can plot and analyse, from functions and inequalities to implicit curves, polar animation, curve classification, tangents, integrals and SVG export.">
+        <meta property="og:title" content="Graphiti Guide">
+        <meta property="og:description" content="Learn what Graphiti can plot and analyse, from functions and inequalities to implicit curves, automatic asymptote detection, curve classification, tangents, integrals and SVG export.">
     <meta property="og:url" content="https://www.korovatron.co.uk/graphiti/guide.html">
     <meta property="og:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiShareImage.png">
-
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "mainEntity": [
-            {
-                "@type": "Question",
-                "name": "What is Graphiti?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Graphiti is a free online graphing calculator and graph plotter for exploring functions, implicit equations, inequalities, polar graphs, parametric curves and calculus visually."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Can Graphiti plot implicit equations?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Yes. Graphiti can plot implicit equations such as circles, ellipses, curves with singularities and relations involving both x and y."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Can Graphiti plot inequalities?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Yes. Graphiti supports explicit and implicit inequalities, including shaded regions and intersections between inequality regions."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Does Graphiti support polar and parametric graphs?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Yes. Graphiti can plot polar functions, polar rays and parametric curves, with controls for polar ranges and visual exploration."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Can Graphiti export graphs?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Graphiti can export graphs as PNG or SVG files. SVG export is useful for worksheets, slides and documents because the output remains editable."
-                }
-            }
-        ]
-    }
-    </script>
-
     <style>
         :root {
             --page-bg: #101820;
@@ -171,6 +121,10 @@
             filter: brightness(1.1);
         }
 
+        .launch-link-short {
+            display: none;
+        }
+
         header {
             display: grid;
             grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
@@ -192,13 +146,6 @@
             font-size: 1.08rem;
         }
 
-        .hero-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin-top: 22px;
-        }
-
         .button {
             display: inline-flex;
             align-items: center;
@@ -216,11 +163,6 @@
         }
 
         .button.primary {
-            background: var(--panel-bg);
-            color: var(--text-primary);
-        }
-
-        .button.secondary {
             background: var(--panel-bg);
             color: var(--text-primary);
         }
@@ -248,64 +190,6 @@
             display: block;
             width: 100%;
             height: auto;
-        }
-
-        .quick-points {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-            margin: 28px 0;
-        }
-
-        .quick-point {
-            padding: 16px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: rgba(26, 47, 66, 0.72);
-        }
-
-        .quick-point strong {
-            display: block;
-            margin-bottom: 4px;
-            color: #FFFFFF;
-        }
-
-        .quick-point span {
-            display: block;
-            color: var(--text-secondary);
-            font-size: 0.95rem;
-        }
-
-        main {
-            display: grid;
-            grid-template-columns: 260px minmax(0, 1fr);
-            gap: 24px;
-            align-items: start;
-        }
-
-        .toc {
-            position: sticky;
-            top: 20px;
-            padding: 16px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: rgba(26, 47, 66, 0.76);
-        }
-
-        .toc h2 {
-            margin: 0 0 10px;
-            font-size: 1rem;
-        }
-
-        .toc a {
-            display: block;
-            padding: 5px 0;
-            color: var(--text-secondary);
-            text-decoration: none;
-        }
-
-        .toc a:hover {
-            color: var(--accent-bright);
         }
 
         .content-section {
@@ -376,19 +260,41 @@
         }
 
         @media (max-width: 820px) {
-            header,
-            main,
-            .quick-points {
+            header {
                 grid-template-columns: 1fr;
             }
 
-            .toc {
-                position: static;
+            .top-nav {
+                gap: 10px;
             }
 
-            .top-nav {
-                align-items: flex-start;
-                flex-direction: column;
+            .brand-link img {
+                width: 220px;
+                max-width: 52vw;
+            }
+
+            .launch-link {
+                min-width: 0;
+                padding: 10px 16px;
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .brand-link img {
+                max-width: 50vw;
+            }
+
+            .launch-link {
+                padding-inline: 14px;
+            }
+
+            .launch-link-long {
+                display: none;
+            }
+
+            .launch-link-short {
+                display: inline;
             }
         }
     </style>
@@ -399,104 +305,49 @@
             <a class="brand-link" href="./" aria-label="Return to Graphiti">
                 <img src="images/graphitiTitle.png" alt="Graphiti">
             </a>
-            <a class="launch-link" href="./">Launch Graphiti graphing calculator</a>
+            <a class="launch-link" href="./" aria-label="Launch Graphiti graphing calculator"><span class="launch-link-long">Launch Graphiti</span><span class="launch-link-short">Launch</span></a>
         </nav>
 
         <header>
             <div class="hero-copy">
-                <h1>Graphiti guide and FAQ</h1>
-                <p>Graphiti is a free online graphing calculator and graph plotter for exploring functions, implicit equations, inequalities, polar graphs, parametric curves and calculus visually.</p>
-                <p>This guide explains what Graphiti can do, where it is useful, and how it differs from a standard function plotter.</p>
-                <div class="hero-actions">
-                    <a class="button primary" href="./">Launch Graphiti</a>
-                    <a class="button secondary" href="#faq">Read the FAQ</a>
-                </div>
+                <h1>Graphiti guide</h1>
+                <p>Graphiti is a free online graphing calculator and function plotter that does more than draw curves. It helps reveal the structure and behaviour of mathematical graphs.</p>
+                <p>Plot functions, implicit equations, inequalities, polar graphs and parametric curves, then let Graphiti automatically detect features such as asymptotes, intersections, turning points, curve types, tangents, normals and integral regions.</p>
             </div>
             <figure class="hero-image">
                 <img src="images/graphitiShareImage.png" alt="Graphiti showing multiple plotted graphs and analysis features">
             </figure>
         </header>
 
-        <section class="quick-points" aria-label="Graphiti feature summary">
-            <div class="quick-point">
-                <strong>Plot</strong>
-                <span>Functions, implicit curves, inequalities, polar graphs and parametric curves.</span>
-            </div>
-            <div class="quick-point">
-                <strong>Analyse</strong>
-                <span>Intersections, intercepts, turning points, asymptotes, holes, envelopes and named curve types.</span>
-            </div>
-            <div class="quick-point">
-                <strong>Explore</strong>
-                <span>Trace points, tangents, normals, integrals and adjustable parameters.</span>
-            </div>
-            <div class="quick-point">
-                <strong>Share</strong>
-                <span>Export SVG or PNG graphs and share complete graph setups by URL.</span>
-            </div>
-        </section>
-
         <main>
-            <aside class="toc" aria-label="Contents">
-                <h2>Contents</h2>
-                <a href="#overview">Overview</a>
-                <a href="#plotting">Plotting tools</a>
-                <a href="#analysis">Graph analysis</a>
-                <a href="#classroom">Classroom use</a>
-                <a href="#faq">FAQ</a>
-            </aside>
-
-            <div>
-                <section class="content-section" id="overview">
-                    <h2>Overview</h2>
-                    <details open>
-                        <summary>What is Graphiti?</summary>
-                        <div class="answer">
-                            <p>Graphiti is an online graphing calculator, graph plotter and curve exploration tool. It is designed for students, teachers and anyone who wants to understand the behaviour of mathematical graphs rather than only draw them.</p>
-                            <p>It runs in the browser, works on desktop and mobile, and can be installed as a Progressive Web App for offline use.</p>
-                        </div>
-                    </details>
-                    <details>
-                        <summary>What makes Graphiti different from a basic function plotter?</summary>
-                        <div class="answer">
-                            <p>A basic function plotter draws curves. Graphiti also tries to explain what is happening on the graph by detecting and displaying mathematical features such as turning points, intersections, intercepts, asymptotes, holes, envelopes and recognisable curve types.</p>
-                            <p>Graphiti also includes interactive tracing, tangent and normal lines, integral regions, polar plotting and editable SVG export for worksheets and slides.</p>
-                        </div>
-                    </details>
-                </section>
-
                 <section class="content-section" id="plotting">
                     <h2>Plotting tools</h2>
                     <details>
-                        <summary>What types of graphs can Graphiti plot?</summary>
+                        <summary>Explicit functions</summary>
                         <div class="answer">
-                            <p>Graphiti can plot several types of mathematical graphs:</p>
-                            <ul class="feature-list">
-                                <li>Explicit functions such as y = x<sup>2</sup>, y = sin(x) and y = 1 / x.</li>
-                                <li>Implicit equations such as x<sup>2</sup> + y<sup>2</sup> = 25.</li>
-                                <li>Explicit and implicit inequalities with shaded regions.</li>
-                                <li>Polar functions such as r = 1 + cos(θ).</li>
-                                <li>Parametric curves such as (cos(t), sin(t)).</li>
-                            </ul>
+                            <p>Graphiti can plot familiar explicit functions such as y = x<sup>2</sup>, y = sin(x) and y = 1 / x, using standard mathematical notation.</p>
+                            <p>It is useful for quickly comparing curves, zooming into local behaviour and building examples where students can see how changing an expression changes the graph.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can Graphiti plot implicit equations?</summary>
+                        <summary>Implicit equations</summary>
                         <div class="answer">
-                            <p>Yes. Graphiti can act as an implicit equation plotter for relations involving both x and y. This is useful for circles, ellipses, curves with vertical parts, relations that are not functions of x alone, and equations where solving explicitly for y would be awkward.</p>
+                            <p>Graphiti can act as an implicit equation plotter for equations involving both x and y. This is useful for circles, ellipses, curves with vertical parts, and equations where solving explicitly for y would be awkward.</p>
+                            <p>Examples include equations such as x<sup>2</sup> + y<sup>2</sup> = 25 and more unusual relations with singularities or multiple branches.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can Graphiti plot inequalities?</summary>
+                        <summary>Inequality graphing</summary>
                         <div class="answer">
-                            <p>Yes. Graphiti supports inequality graphing, including shaded regions, strict and non-strict boundaries, and intersections between multiple inequalities.</p>
+                            <p>Graphiti supports explicit and implicit inequalities, including shaded regions, strict and non-strict boundaries, and intersections between multiple inequalities.</p>
+                            <p>This makes it useful for visualising feasible regions, comparing inequality constraints and showing how boundary curves relate to shaded solution sets.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can Graphiti plot polar and parametric graphs?</summary>
+                        <summary>Polar and parametric curves</summary>
                         <div class="answer">
-                            <p>Yes. Graphiti can plot polar functions, polar rays and parametric curves. Polar mode includes controls for θ ranges, optional negative r plotting, and animation controls for stepping through how a polar curve is drawn.</p>
-                            <p>This makes polar graphs easier to demonstrate in class, because students can see the curve build up as θ changes rather than only seeing the finished shape.</p>
+                            <p>Graphiti can plot polar functions, polar rays and parametric curves. Polar mode includes controls for theta ranges, optional negative r plotting, and animation controls for stepping through how a polar curve is drawn.</p>
+                            <p>This makes polar graphs easier to demonstrate in class, because students can see the curve build up as theta changes rather than only seeing the finished shape.</p>
                         </div>
                     </details>
                 </section>
@@ -504,21 +355,21 @@
                 <section class="content-section" id="analysis">
                     <h2>Graph analysis</h2>
                     <details>
-                        <summary>What graph features can Graphiti detect automatically?</summary>
+                        <summary>Automatic asymptote and curve detection</summary>
                         <div class="answer">
-                            <p>Graphiti can automatically identify several important graph features, including intersections, intercepts, turning points, asymptotes, removable singularities and envelopes for suitable functions.</p>
-                            <p>It can also classify many recognised curve types, including lemniscates, semi-cubical parabolas, hyperbolas and other named curves when their equations match supported forms.</p>
+                            <p>Graphiti can automatically identify several important graph features, including vertical, horizontal, oblique and curvilinear asymptotes, intersections, intercepts, turning points, removable singularities and envelopes for suitable functions.</p>
+                            <p>It can also classify many recognised curve types and shapes, including lemniscates, semi-cubical parabolas, hyperbolas and other named curves when their equations match supported forms.</p>
                             <p>These features are designed to support curve sketching, visual explanation and classroom demonstration.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can Graphiti show tangents and normals?</summary>
+                        <summary>Tangents and normals</summary>
                         <div class="answer">
-                            <p>Yes. You can place trace markers on curves and cycle them through tangent, normal and integral modes. Tangent and normal lines are useful when exploring gradients, differentiation and local behaviour.</p>
+                            <p>You can place trace markers on curves and cycle them through tangent, normal and integral modes. Tangent and normal lines are useful when exploring gradients, differentiation and local behaviour.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can Graphiti show area and integration?</summary>
+                        <summary>Area and integration</summary>
                         <div class="answer">
                             <p>Graphiti can shade and calculate definite integral regions and area between curves. It also includes visual numerical integration methods such as the trapezium rule, Simpson's rule and the mid-ordinate rule.</p>
                         </div>
@@ -526,52 +377,32 @@
                 </section>
 
                 <section class="content-section" id="classroom">
-                    <h2>Classroom use</h2>
+                    <h2>Teaching and practical use</h2>
                     <details>
-                        <summary>Is Graphiti useful for GCSE and A-Level maths?</summary>
+                        <summary>GCSE and A-Level maths</summary>
                         <div class="answer">
                             <p>Graphiti is designed with GCSE, A-Level and classroom explanation in mind. It can support topics such as curve sketching, transformations, differentiation, integration, inequalities, numerical methods, parametric equations and polar graphs.</p>
                             <p>It can also help students see why features such as asymptotes, stationary points, holes and intersections matter.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can I share graphs with students?</summary>
+                        <summary>Access, devices and offline use</summary>
                         <div class="answer">
-                            <p>Yes. Graphiti can create shareable URLs that restore a complete graph setup, including functions, viewport and analysis markers. This makes it easier to prepare lesson examples, demonstrations and revision tasks.</p>
+                            <p>Graphiti is free to use in the browser on desktop, tablet and mobile devices. It includes touch controls for panning, zooming and interacting with curves.</p>
+                            <p>On supported devices, Graphiti can also be installed as a Progressive Web App so it is easier to open again and can continue to work offline after it has loaded.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can I export graphs for worksheets or slides?</summary>
+                        <summary>Sharing lesson examples and exports</summary>
                         <div class="answer">
-                            <p>Yes. Graphiti can export graphs as PNG or SVG. SVG export is especially useful for worksheets, slides and documents because the graph remains crisp and editable in many design and office tools.</p>
-                        </div>
-                    </details>
-                </section>
-
-                <section class="content-section" id="faq">
-                    <h2>FAQ</h2>
-                    <details>
-                        <summary>Is Graphiti free?</summary>
-                        <div class="answer">
-                            <p>Yes. Graphiti is free to use in the browser.</p>
+                            <p>You can share complete graph setups by URL, including functions, viewport and analysis markers. This is useful for sending examples to students, preparing revision tasks or returning to a saved exploration later.</p>
+                            <p>Graphs can also be exported as PNG or SVG for worksheets, slides and documents. SVG output remains crisp and editable in many design and office tools.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Does Graphiti work on phones and tablets?</summary>
-                        <div class="answer">
-                            <p>Yes. Graphiti works on desktop, tablet and mobile browsers. It includes touch controls for panning and zooming, and it can be installed as a Progressive Web App on supported devices.</p>
-                        </div>
-                    </details>
-                    <details>
-                        <summary>Does Graphiti replace Desmos or GeoGebra?</summary>
+                        <summary>How Graphiti differs from other graphing tools</summary>
                         <div class="answer">
                             <p>Desmos and GeoGebra are excellent graphing tools. Graphiti has a different emphasis: visual curve exploration, automatic graph analysis, calculus annotations, SVG export and shareable classroom setups.</p>
-                        </div>
-                    </details>
-                    <details>
-                        <summary>What specialist graphing tasks is Graphiti designed for?</summary>
-                        <div class="answer">
-                            <p>Graphiti is designed for tasks that go beyond basic function plotting, including implicit equation plotting, polar graphs, inequality graphing, tangents and normals, area between curves, and A-Level curve sketching.</p>
                             <p>It is especially useful when you want a graphing calculator that can show structure as well as shape.</p>
                         </div>
                     </details>
@@ -580,7 +411,6 @@
                         <p><a class="button primary" href="./">Launch Graphiti graphing calculator</a></p>
                     </div>
                 </section>
-            </div>
         </main>
 
         <footer>
