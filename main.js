@@ -40055,67 +40055,90 @@ class Graphiti {
     }
 
     async handleAppResume() {
+        if (this.appResumeInProgress) {
+            return this.appResumeInProgress;
+        }
+
+        this.appResumeInProgress = this.runAppResumeWithOverlay();
+        try {
+            await this.appResumeInProgress;
+        } finally {
+            this.appResumeInProgress = null;
+        }
+    }
+
+    async runAppResumeWithOverlay() {
+        const showBuildOverlay = this.currentState === this.states.GRAPHING
+            ? await this.showGraphBuildOverlayForFunctions(this.getCurrentFunctions())
+            : false;
+
         // Consolidated resume handler for PWA and visibility changes
         // CRITICAL: Reset frame timing to prevent huge deltaTime spike on next frame
         // The animation loop may still be running but heavily throttled with stale lastFrameTime
-        this.lastFrameTime = 0;
-        this.performance.lastFpsUpdate = 0;
-        this.performance.frameCount = 0;
-        
-        // Clear any stale cached rendering data that may have accumulated
-        this.invalidateInequalityIntersectionCache();
-        this.culledInterceptMarkers = [];
-        
-        // Clear frozen marker arrays to prevent stale screen positions
-        this.clearIntersectionState({ cancelWorker: true });
-        this.frozenTurningPointBadges = [];
-        this.frozenInterceptBadges = [];
-        this.isViewportChanging = false;
-        
-        // Clear expression cache to prevent stale compiled functions
-        this.clearExpressionCache();
-        
-        // Enable performance mode temporarily to reduce render load
-        this._performanceMode = true;
-        this._performanceModeFrames = 0;
-        
-        // Force canvas context reset (fixes PWA canvas degradation)
-        if (this.ctx && this.canvas) {
-            const width = this.canvas.width;
-            const height = this.canvas.height;
-            // Force context reset by changing canvas size
-            this.canvas.width = width + 1;
-            this.canvas.height = height + 1;
-            this.canvas.width = width;
-            this.canvas.height = height;
-            // Reacquire context
-            this.ctx = this.canvas.getContext('2d');
-        }
-        
-        // In PWA mode, force replot all functions to ensure they're fresh
-        if (this.isStandalonePWA()) {
-            console.log('PWA mode - forcing complete function replot');
-            await this.replotAllFunctions().catch(err => console.error('Replot error:', err));
-        }
-        
-        // Recalculate integral pairs after functions are replotted
-        this.updateIntegralPairs();
-        
-        // Ensure animation loop is running (critical for responsiveness)
-        this.ensureAnimationLoopRunning();
-        
-        const hasPlottedFunctions = this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0);
+        try {
+            this.lastFrameTime = 0;
+            this.performance.lastFpsUpdate = 0;
+            this.performance.frameCount = 0;
+            
+            // Clear any stale cached rendering data that may have accumulated
+            this.invalidateInequalityIntersectionCache();
+            this.culledInterceptMarkers = [];
+            
+            // Clear frozen marker arrays to prevent stale screen positions
+            this.clearIntersectionState({ cancelWorker: true });
+            this.frozenTurningPointBadges = [];
+            this.frozenInterceptBadges = [];
+            this.isViewportChanging = false;
+            
+            // Clear expression cache to prevent stale compiled functions
+            this.clearExpressionCache();
+            
+            // Enable performance mode temporarily to reduce render load
+            this._performanceMode = true;
+            this._performanceModeFrames = 0;
+            
+            // Force canvas context reset (fixes PWA canvas degradation)
+            if (this.ctx && this.canvas) {
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                // Force context reset by changing canvas size
+                this.canvas.width = width + 1;
+                this.canvas.height = height + 1;
+                this.canvas.width = width;
+                this.canvas.height = height;
+                // Reacquire context
+                this.ctx = this.canvas.getContext('2d');
+            }
+            
+            // In PWA mode, force replot all functions to ensure they're fresh
+            if (this.isStandalonePWA()) {
+                console.log('PWA mode - forcing complete function replot');
+                await this.replotAllFunctions().catch(err => console.error('Replot error:', err));
+            }
+            
+            // Recalculate integral pairs after functions are replotted
+            this.updateIntegralPairs();
+            
+            // Ensure animation loop is running (critical for responsiveness)
+            this.ensureAnimationLoopRunning();
+            
+            const hasPlottedFunctions = this.getCurrentFunctions().some(f => f.enabled && f.points.length > 0);
 
-        // Recalculate significant points so markers are rebuilt after resume
-        if (hasPlottedFunctions && this.showIntersections) {
-            this.calculateIntersectionsWithWorker(true);
-        }
-        if (hasPlottedFunctions && this.showTurningPoints) {
-            this.turningPoints = this.findTurningPoints();
-        }
-        if (hasPlottedFunctions && this.showIntercepts) {
-            this.intercepts = this.findAxisIntercepts();
-            this.cullInterceptMarkers();
+            // Recalculate significant points so markers are rebuilt after resume
+            if (hasPlottedFunctions && this.showIntersections) {
+                this.calculateIntersectionsWithWorker(true);
+            }
+            if (hasPlottedFunctions && this.showTurningPoints) {
+                this.turningPoints = this.findTurningPoints();
+            }
+            if (hasPlottedFunctions && this.showIntercepts) {
+                this.intercepts = this.findAxisIntercepts();
+                this.cullInterceptMarkers();
+            }
+        } finally {
+            if (showBuildOverlay) {
+                this.hideGraphBuildOverlay();
+            }
         }
     }
 
