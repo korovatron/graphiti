@@ -1240,6 +1240,10 @@
             -webkit-user-select: none;
         }
 
+        .asymptote-equation-item-wide {
+            grid-column: 1 / -1;
+        }
+
         .asymptote-equation-item {
             display: block;
             font-size: 18px;
@@ -1273,7 +1277,12 @@
             -webkit-user-select: none !important;
             outline: none !important;
             box-shadow: none !important;
-            overflow: visible !important;
+            overflow: hidden !important;
+        }
+
+        .asymptote-equation-item-wide.asymptote-equation-field {
+            font-size: 16px !important;
+            --mathlive-font-size: 16px;
         }
 
         .asymptote-equation-field:focus,
@@ -1293,20 +1302,24 @@
             padding: 0 !important;
             white-space: normal;
             line-height: 1.35;
-            overflow: visible !important;
+            overflow: hidden !important;
             user-select: none !important;
             -webkit-user-select: none !important;
         }
 
         .asymptote-equation-field::part(container) {
-            overflow: visible !important;
+            overflow: hidden !important;
         }
 
         /* Must be more specific than .function-item math-field::part(content) below */
         .function-item .asymptote-equation-field::part(content) {
             font-size: 18px !important;
             line-height: 1.35 !important;
-            overflow: visible !important;
+            overflow: hidden !important;
+        }
+
+        .function-item .asymptote-equation-item-wide.asymptote-equation-field::part(content) {
+            font-size: 16px !important;
         }
 
         .integral-limit-row {

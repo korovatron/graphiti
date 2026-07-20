@@ -16958,6 +16958,11 @@ class Graphiti {
         updateVisibilityToggle(asymptoteToggle, asymptotePlotVisible, 'asymptotes');
         updateVisibilityToggle(envelopeToggle, envelopePlotVisible, 'envelopes');
 
+        const isWideMetadataEquation = (equation) => {
+            const compactEquation = String(equation || '').replace(/\s+/g, '');
+            return compactEquation.length > 12 || /\^|\\frac|\\sqrt|\\left|\\right/.test(compactEquation);
+        };
+
         equationList.innerHTML = '';
         if (equations.length === 0) {
             infoContainer.classList.remove('visible');
@@ -16973,6 +16978,9 @@ class Graphiti {
                 item.setAttribute('color-scheme', 'dark');
                 item.style.setProperty('font-size', '18px', 'important');
                 item.style.setProperty('--mathlive-font-size', '18px');
+                if (isWideMetadataEquation(equation)) {
+                    item.classList.add('asymptote-equation-item-wide');
+                }
                 item.value = equation;
                 equationList.appendChild(item);
             }
@@ -16994,6 +17002,9 @@ class Graphiti {
                     envelopeItem.setAttribute('color-scheme', 'dark');
                     envelopeItem.style.setProperty('font-size', '18px', 'important');
                     envelopeItem.style.setProperty('--mathlive-font-size', '18px');
+                    if (isWideMetadataEquation(envelopeEquation)) {
+                        envelopeItem.classList.add('asymptote-equation-item-wide');
+                    }
                     envelopeItem.value = envelopeEquation;
                     envelopeList.appendChild(envelopeItem);
                 }
@@ -17021,6 +17032,9 @@ class Graphiti {
             holeItem.setAttribute('color-scheme', 'dark');
             holeItem.style.setProperty('font-size', '18px', 'important');
             holeItem.style.setProperty('--mathlive-font-size', '18px');
+            if (isWideMetadataEquation(holeEquation)) {
+                holeItem.classList.add('asymptote-equation-item-wide');
+            }
             holeItem.value = holeEquation;
             holesList.appendChild(holeItem);
         }
