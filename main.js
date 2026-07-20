@@ -3674,9 +3674,15 @@ class Graphiti {
         this.implicitCurveCache.delete(id);
 
         this.invalidateCacheForFunction(id);
-        this.lastFunctionStates.delete(id);
-        this.functionChangeFlags.delete(id);
-        this.turningPointsCache.delete(id);
+        if (this.lastFunctionStates && typeof this.lastFunctionStates.delete === 'function') {
+            this.lastFunctionStates.delete(id);
+        }
+        if (this.functionChangeFlags && typeof this.functionChangeFlags.delete === 'function') {
+            this.functionChangeFlags.delete(id);
+        }
+        if (this.turningPointsCache && typeof this.turningPointsCache.delete === 'function') {
+            this.turningPointsCache.delete(id);
+        }
         
         // Remove from the appropriate function array
         this.cartesianFunctions = this.cartesianFunctions.filter(f => f.id !== id);
@@ -34311,6 +34317,10 @@ class Graphiti {
     }
 
     invalidateCacheForFunction(functionId) {
+        if (!this.cachedIntersections || typeof this.cachedIntersections[Symbol.iterator] !== 'function') {
+            return;
+        }
+
         // Remove all cached intersections involving this function
         const keysToDelete = [];
         for (const [key] of this.cachedIntersections) {
