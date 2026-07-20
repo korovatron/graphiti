@@ -31320,7 +31320,7 @@ class Graphiti {
     }
 
     
-    async replotAllFunctions(onlyExplicit = false) {
+    async replotAllFunctions(onlyExplicit = false, options = {}) {
         const plotPromises = [];
         if (!onlyExplicit) {
             this.cancelAllImplicitCalculations();
@@ -31360,7 +31360,9 @@ class Graphiti {
         }
         
         // Update intersections after replotting (debounced for viewport changes)
-        this.handleViewportChange();
+        if (!options.skipViewportRefresh) {
+            this.handleViewportChange();
+        }
         
         this.draw();
         return { hasValidationErrors: false };
@@ -40136,7 +40138,7 @@ class Graphiti {
             // In PWA mode, force replot all functions to ensure they're fresh
             if (this.isStandalonePWA()) {
                 console.log('PWA mode - forcing complete function replot');
-                await this.replotAllFunctions().catch(err => console.error('Replot error:', err));
+                await this.replotAllFunctions(false, { skipViewportRefresh: true }).catch(err => console.error('Replot error:', err));
             }
             
             // Recalculate integral pairs after functions are replotted
