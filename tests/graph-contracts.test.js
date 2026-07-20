@@ -818,6 +818,54 @@ async function assertShapeClassification(page) {
     assert.strictEqual(cancelledDeferredPanelResult.afterStaleOpen.panelOpen, false, 'stale deferred panel open should not slide panel in on title screen');
     assert.strictEqual(cancelledDeferredPanelResult.afterStaleOpen.hamburgerPanelOpen, false, 'stale deferred panel open should not mark hamburger as panel-open on title screen');
 
+    const titleAnimationRestartResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        const originalRestartTitleAnimations = graphiti.restartTitleAnimations;
+        let restartCount = 0;
+
+        graphiti.restartTitleAnimations = () => {
+            restartCount++;
+        };
+
+        try {
+            graphiti.currentState = graphiti.states.TITLE;
+            graphiti.titleAnimationTimer = 0;
+            graphiti.updateTitleScreen(graphiti.titleAnimationLoopInterval + 1000);
+            graphiti.updateTitleScreen(graphiti.titleAnimationLoopInterval + 1000);
+            return {
+                restartCount,
+                titleAnimationTimer: graphiti.titleAnimationTimer
+            };
+        } finally {
+            graphiti.restartTitleAnimations = originalRestartTitleAnimations;
+        }
+    });
+
+    assert.strictEqual(titleAnimationRestartResult.restartCount, 0, 'idle title screen should not restart animations on a timer');
+    assert.strictEqual(titleAnimationRestartResult.titleAnimationTimer, 0, 'idle title screen should not accumulate restart timer state');
+
+    const repeatedEscapeResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        let prevented = false;
+
+        graphiti.changeState(graphiti.states.GRAPHING);
+        graphiti.handleKeyboard({
+            key: 'Escape',
+            repeat: true,
+            preventDefault: () => {
+                prevented = true;
+            }
+        });
+
+        return {
+            state: graphiti.currentState,
+            prevented
+        };
+    });
+
+    assert.strictEqual(repeatedEscapeResult.state, 'graphing', 'repeated Escape keydown should not return to title screen');
+    assert.strictEqual(repeatedEscapeResult.prevented, false, 'repeated Escape keydown should be ignored before consuming the event');
+
     const hamburgerHoverCssResult = await page.evaluate(() => {
         const cssText = Array.from(document.styleSheets)
             .flatMap(sheet => Array.from(sheet.cssRules || []))

@@ -27340,6 +27340,12 @@ class Graphiti {
         
         switch(e.key.toLowerCase()) {
             case 'escape':
+                if (e.repeat) {
+                    break;
+                }
+
+                e.preventDefault();
+
                 // Close export overlay first, then shortcuts overlay, otherwise go to title screen
                 const exportOverlay = document.getElementById('export-overlay');
                 if (exportOverlay && exportOverlay.classList.contains('show')) {
@@ -27350,7 +27356,7 @@ class Graphiti {
                 const shortcutsOverlay = document.getElementById('shortcuts-overlay');
                 if (shortcutsOverlay && shortcutsOverlay.classList.contains('show')) {
                     this.toggleShortcutsOverlay();
-                } else {
+                } else if (this.currentState === this.states.GRAPHING) {
                     this.changeState(this.states.TITLE);
                 }
                 break;
@@ -32241,7 +32247,9 @@ class Graphiti {
                 // Reset animation timer when entering title screen
                 this.titleAnimationTimer = 0;
                 // Restart both sine wave and heartbeat animations when returning to title screen
-                this.restartTitleAnimations();
+                if (this.previousState !== this.states.TITLE) {
+                    this.restartTitleAnimations();
+                }
                 break;
             case this.states.GRAPHING:
                 if (titleScreen) titleScreen.classList.add('hidden');
@@ -40307,14 +40315,8 @@ class Graphiti {
     }
     
     updateTitleScreen(deltaTime) {
-        // Accumulate time spent on title screen
-        this.titleAnimationTimer += deltaTime;
-        
-        // Restart animations every 30 seconds
-        if (this.titleAnimationTimer >= this.titleAnimationLoopInterval) {
-            this.titleAnimationTimer = 0; // Reset timer
-            this.restartTitleAnimations();
-        }
+        // Title animations are started when the title screen is first shown.
+        // Do not rebuild them on a timer; the DOM reset looks like a page reload.
     }
     
     updateGraphingScreen(deltaTime) {
