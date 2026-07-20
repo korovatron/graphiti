@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.50';
+const VERSION = '1.2.51';
 
 class Graphiti {
     constructor() {
@@ -45335,6 +45335,10 @@ class Graphiti {
     }
     
     getContrastingColor(hex) {
+        if (hex && hex.toUpperCase() === '#B91C1C') {
+            return 'rgb(0, 112, 128)';
+        }
+
         // Convert hex to RGB
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
