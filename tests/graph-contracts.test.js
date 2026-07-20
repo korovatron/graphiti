@@ -871,6 +871,58 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.panelOpen, false, 'shared-link first canvas tap should close function panel even after stale touch movement state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.hamburgerPanelOpen, false, 'shared-link first canvas tap should restore hamburger closed state');
 
+    const sharedHashReplacementResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const makeSharedState = (expression, id) => ({
+            v: 1,
+            functions: [{ id, expression, color: '#B91C1C', enabled: true }],
+            viewport: { minX: -5, maxX: 5, minY: -5, maxY: 5, scale: 80 },
+            mode: 'cartesian',
+            settings: {
+                theme: 'dark',
+                angleMode: 'radians',
+                showIntersections: false,
+                showIntercepts: false,
+                showTurningPoints: false
+            },
+            parameters: { alpha: 1, beta: 1, gamma: 1, delta: 1 }
+        });
+
+        await graphiti.applySharedStateFromUrl(makeSharedState('y=x', 21));
+        graphiti.input.persistentBadges = [{ id: 99, functionId: 21, worldX: 0, worldY: 0 }];
+        graphiti.input.badgeIdCounter = 100;
+        graphiti.integralPairs = [{ badge1Id: 99, badge2Id: 100 }];
+        graphiti.linkedBadgePairs = [{ pair1: { badge1Id: 99, badge2Id: 100 }, pair2: { badge1Id: 101, badge2Id: 102 } }];
+
+        const nextState = makeSharedState('y=x^2', 22);
+        window.location.hash = `#v=${LZString.compressToEncodedURIComponent(JSON.stringify(nextState))}`;
+
+        for (let attempt = 0; attempt < 30; attempt++) {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            if (graphiti.getCurrentFunctions().some(func => func.expression === 'y=x^2')) {
+                break;
+            }
+        }
+
+        return {
+            expressions: graphiti.getCurrentFunctions().map(func => func.expression),
+            badgeCount: graphiti.input.persistentBadges.length,
+            badgeIdCounter: graphiti.input.badgeIdCounter,
+            integralPairCount: graphiti.integralPairs.length,
+            linkedBadgePairCount: graphiti.linkedBadgePairs.length,
+            tempSession: graphiti.tempSession,
+            state: graphiti.currentState
+        };
+    });
+
+    assert.deepStrictEqual(sharedHashReplacementResult.expressions, ['y=x^2', ''], 'same-tab shared URL replacement should apply the new hash state');
+    assert.strictEqual(sharedHashReplacementResult.badgeCount, 0, 'same-tab shared URL replacement should clear badges omitted by the new state');
+    assert.strictEqual(sharedHashReplacementResult.badgeIdCounter, 0, 'same-tab shared URL replacement should reset badge IDs when the new state has no badges');
+    assert.strictEqual(sharedHashReplacementResult.integralPairCount, 0, 'same-tab shared URL replacement should clear integral pairs omitted by the new state');
+    assert.strictEqual(sharedHashReplacementResult.linkedBadgePairCount, 0, 'same-tab shared URL replacement should clear linked badge pairs omitted by the new state');
+    assert.strictEqual(sharedHashReplacementResult.tempSession, true, 'same-tab shared URL replacement should remain in temporary shared-link mode');
+    assert.strictEqual(sharedHashReplacementResult.state, 'graphing', 'same-tab shared URL replacement should stay in graphing state');
+
     const manuallyEditedFunctionId = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';

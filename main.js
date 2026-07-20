@@ -24188,29 +24188,12 @@ class Graphiti {
         this.updateDemoSetVisibility(); // Initialize demo set visibility based on initial mode
         this.handleMobileLayout(true); // Force initial layout
         this.startAnimationLoop();
+        this.setupSharedStateHashListener();
         
         // Check for shared state in URL hash
         const sharedState = this.checkForSharedState();
         if (sharedState) {
-            // Skip title screen and load shared state
-            this.tempSession = true;
-            this.hasInitialized = true;
-            this.deferInitialFunctionPanelOpen = this.shouldShowGraphBuildOverlayForFunctions(sharedState.functions || []);
-            this.changeState(this.states.GRAPHING);
-            const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(sharedState.functions || []);
-            try {
-                await this.applySharedState(sharedState);
-                // Show temporary session banner
-                this.showTempSessionBanner();
-            } finally {
-                if (showBuildOverlay) {
-                    this.hideGraphBuildOverlay();
-                }
-                if (this.deferInitialFunctionPanelOpen) {
-                    this.deferInitialFunctionPanelOpen = false;
-                    this.openFunctionPanelForGraphing({ deferSlide: true });
-                }
-            }
+            await this.applySharedStateFromUrl(sharedState);
         } else {
             // Normal startup - show title screen
             this.tempSession = false;
@@ -30047,6 +30030,39 @@ class Graphiti {
         }
         return null;
     }
+
+    setupSharedStateHashListener() {
+        window.addEventListener('hashchange', async () => {
+            const sharedState = this.checkForSharedState();
+            if (!sharedState) {
+                return;
+            }
+
+            await this.applySharedStateFromUrl(sharedState);
+        });
+    }
+
+    async applySharedStateFromUrl(state) {
+        // Skip title screen and load shared state
+        this.tempSession = true;
+        this.hasInitialized = true;
+        this.deferInitialFunctionPanelOpen = this.shouldShowGraphBuildOverlayForFunctions(state.functions || []);
+        this.changeState(this.states.GRAPHING);
+        const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(state.functions || []);
+        try {
+            await this.applySharedState(state);
+            // Show temporary session banner
+            this.showTempSessionBanner();
+        } finally {
+            if (showBuildOverlay) {
+                this.hideGraphBuildOverlay();
+            }
+            if (this.deferInitialFunctionPanelOpen) {
+                this.deferInitialFunctionPanelOpen = false;
+                this.openFunctionPanelForGraphing({ deferSlide: true });
+            }
+        }
+    }
     
     async applySharedState(state) {
         try {
@@ -30100,6 +30116,10 @@ class Graphiti {
             // Clear existing functions
             this.getCurrentFunctions().length = 0;
             this.clearFunctionPanel();
+            this.input.persistentBadges = [];
+            this.input.badgeIdCounter = 0;
+            this.integralPairs = [];
+            this.linkedBadgePairs = [];
             
             // Add functions from shared state
             state.functions.forEach(funcData => {
@@ -30311,12 +30331,12 @@ class Graphiti {
         banner.style.display = 'block';
         
         // Set up click handler to exit temp mode and reload
-        banner.addEventListener('click', () => {
+        banner.onclick = () => {
             // Clear URL hash
             window.location.hash = '';
             // Reload page to exit temp mode and load saved functions
             window.location.reload();
-        });
+        };
     }
     
     updatePlotModeUI() {
