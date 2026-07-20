@@ -213,7 +213,7 @@ class Graphiti {
         this.cartesianFunctionsCleared = false;
         this.polarFunctionsCleared = false;
         this.functionColors = [
-            '#B91C1C', '#00C853', '#0057FF',
+            '#B91C1C', '#0057FF', '#00C853',
             '#C026D3', '#1ABC9C', '#00E5FF', '#A855F7',
             '#FF6B6B', '#4A90E2', '#FFD400', '#84CC16', '#F39C12'
         ];
