@@ -832,12 +832,26 @@ async function assertShapeClassification(page) {
         };
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
+        const afterBuild = {
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+
+        graphiti.input.maxMoveDistance = 42;
+        const canvas = document.getElementById('canvas');
+        const canvasRect = canvas.getBoundingClientRect();
+        const tapX = canvasRect.left + Math.min(canvasRect.width - 20, 360);
+        const tapY = canvasRect.top + 120;
+        graphiti.handleTouchStart({ touches: [{ clientX: tapX, clientY: tapY }] });
+        graphiti.handleTouchEnd({ touches: [] });
+
         return {
             showBuildOverlay,
             duringBuild,
             afterUnhide,
-            afterBuild: {
-                panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            afterBuild,
+            afterFirstCanvasTap: {
                 panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
                 hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
             }
@@ -854,6 +868,8 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelHidden, false, 'shared-link build completion should show function panel');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelOpen, true, 'shared-link build completion should start panel slide-in');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'shared-link build completion should mark hamburger as panel-open');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.panelOpen, false, 'shared-link first canvas tap should close function panel even after stale touch movement state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.hamburgerPanelOpen, false, 'shared-link first canvas tap should restore hamburger closed state');
 
     const manuallyEditedFunctionId = await page.evaluate(() => {
         const graphiti = window.graphiti;

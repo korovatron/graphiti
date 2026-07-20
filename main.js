@@ -27086,6 +27086,7 @@ class Graphiti {
             this.input.startX = touch.clientX;
             this.input.startY = touch.clientY;
             this.input.startTime = Date.now();
+            this.input.maxMoveDistance = 0;
         } else if (e.touches.length === 2) {
             // Two touches - start pinch gesture
             this.input.pinch.active = true;
