@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#0B1118">
+    <meta name="theme-color" content="#1A2F42">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Graphiti Guide - Online Graphing Calculator and Function Plotter</title>
     <meta name="description" content="Graphiti is a free online graphing calculator and function plotter that does more than draw curves, automatically detecting asymptotes, graph features and curve types.">
@@ -22,7 +22,7 @@
     <meta property="og:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiShareImage.png">
     <style>
         :root {
-            --page-bg: #101820;
+            --page-bg: #1A2F42;
             --panel-bg: #1A2F42;
             --panel-strong: #213B55;
             --text-primary: #E8F4FD;
@@ -38,16 +38,14 @@
         }
 
         html {
-            background: #0B1118;
+            background: var(--page-bg);
         }
 
         body {
             margin: 0;
             min-height: 100vh;
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background:
-                radial-gradient(circle at top left, rgba(74, 144, 226, 0.2), transparent 34rem),
-                linear-gradient(180deg, #0B1118 0%, var(--page-bg) 45%, #071018 100%) #0B1118;
+            background: var(--page-bg);
             color: var(--text-primary);
             line-height: 1.6;
         }
