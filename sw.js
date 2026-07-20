@@ -1,7 +1,8 @@
-const CACHE_NAME = 'graphiti-v1.2.62';
+const CACHE_NAME = 'graphiti-v1.2.63';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
+    './guide.html',
     './main.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
@@ -13,6 +14,7 @@ const ASSETS_TO_CACHE = [
     './logo.png',
     './logoTrans.png',
     './images/graphitiTitle.png',
+    './images/graphitiShareImage.png',
     './images/yt_icon_white_digital.png'
 ];
 
