@@ -292,6 +292,8 @@ class Graphiti {
         this.showTurningPointsCartesian = true; // User's preference for Cartesian mode
         this.frozenTurningPointBadges = []; // Store turning point badges during viewport changes
         this.frozenIntersectionBadges = []; // Store intersection badges during viewport changes
+        this.lastIntersectionMarkerSnapshot = []; // Last complete marker set for continuity through viewport recalculations
+        this.intersectionMarkersPendingViewportRefresh = false; // Keep cached markers while viewport refresh/replot is unfinished
         this.frozenInterceptBadges = []; // Store intercept badges during viewport changes
         this.interceptsPendingViewportRefresh = false; // Keep frozen intercepts until new viewport cache is ready
         this.culledInterceptMarkers = []; // Cache culled intercept markers for performance
@@ -21487,6 +21489,7 @@ class Graphiti {
     // Debounced intersection updates for smooth pan/zoom performance
     handleViewportChange(options = {}) {
         const viewportRefreshGeneration = ++this.viewportRefreshGeneration;
+        this.intersectionMarkersPendingViewportRefresh = true;
 
         // Get IDs of currently enabled functions
         const enabledFunctionIds = new Set(
@@ -21522,15 +21525,7 @@ class Graphiti {
                 }));
         }
         
-        // Create frozen intersection badges for visual continuity during viewport changes
-        if (!this.isViewportChanging && this.intersections.length > 0) {
-            this.frozenIntersectionBadges = this.getCurrentIntersectionMarkers(this.intersections).map(intersection => ({
-                x: intersection.x,
-                y: intersection.y,
-                func1Id: intersection.func1Id,
-                func2Id: intersection.func2Id
-            }));
-        }
+        this.freezeCurrentIntersectionMarkersForViewportChange();
         
         this.isViewportChanging = true;
         if (!options.skipCoverageRefresh) {
@@ -26343,6 +26338,7 @@ class Graphiti {
                     // During panning, just redraw existing points without recalculating
                     // This dramatically improves performance (75fps instead of <20fps with 5 functions)
                     // Functions will be recalculated when panning stops via handleViewportChange()
+                    this.freezeCurrentIntersectionMarkersForViewportChange();
                     
                     // Redraw the entire canvas to ensure proper clearing and avoid ghost artifacts
                     this.draw();
@@ -26943,14 +26939,7 @@ class Graphiti {
             }));
         }
         
-        if (this.intersections.length > 0) {
-            this.frozenIntersectionBadges = this.getCurrentIntersectionMarkers(this.intersections).map(intersection => ({
-                x: intersection.x,
-                y: intersection.y,
-                func1Id: intersection.func1Id,
-                func2Id: intersection.func2Id
-            }));
-        }
+        this.freezeCurrentIntersectionMarkersForViewportChange();
         
         // Set viewport changing flag to use cached paths during drag
         this.isViewportChanging = true;
@@ -27092,7 +27081,6 @@ class Graphiti {
         this.isViewportChanging = false;
         this.frozenInterceptBadges = [];
         this.frozenTurningPointBadges = [];
-        this.frozenIntersectionBadges = [];
         this.input.zoomRect.endY = 0;
         
         this.draw(); // Redraw to remove rectangle
@@ -27221,6 +27209,7 @@ class Graphiti {
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
+                    this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.draw();
                     this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
@@ -27247,6 +27236,7 @@ class Graphiti {
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
+                    this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.draw();
                     this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
@@ -27280,6 +27270,7 @@ class Graphiti {
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
+                    this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.draw();
                     this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
@@ -30575,6 +30566,7 @@ class Graphiti {
             
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
+            this.freezeCurrentIntersectionMarkersForViewportChange();
             this.draw();
             this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
@@ -30605,6 +30597,7 @@ class Graphiti {
             
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
+            this.freezeCurrentIntersectionMarkersForViewportChange();
             this.draw();
             this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
@@ -33922,6 +33915,8 @@ class Graphiti {
         this.tangentIntersections = [];
         this.normalIntersections = [];
         this.frozenIntersectionBadges = [];
+        this.lastIntersectionMarkerSnapshot = [];
+        this.intersectionMarkersPendingViewportRefresh = false;
         this.combinedIntersections = [];
         this.implicitIntersectionsPending = false;
         this.intersectionGeneration++;
@@ -33947,6 +33942,8 @@ class Graphiti {
         this.tangentIntersections = [];
         this.normalIntersections = [];
         this.frozenIntersectionBadges = [];
+        this.lastIntersectionMarkerSnapshot = [];
+        this.intersectionMarkersPendingViewportRefresh = false;
         this.implicitIntersectionsPending = false;
         this.isWorkerCalculating = false;
         this.intersectionGeneration++;
@@ -34189,7 +34186,7 @@ class Graphiti {
         // During viewport changes, use cached points; otherwise use current points
         const allFunctions = this.getCurrentFunctions().filter(f => {
             if (!f.enabled) return false;
-            const points = this.isViewportChanging ? (f.cachedPoints || []) : (f.points || []);
+            const points = this.isViewportChanging ? (f.cachedPoints || f.points || []) : (f.points || []);
             return points.length > 0;
         });
         
@@ -34309,6 +34306,99 @@ class Graphiti {
         return markers;
     }
 
+    getIntersectionMarkerKey(intersection) {
+        if (!intersection) {
+            return '';
+        }
+
+        const func1Id = intersection.func1Id !== undefined ? intersection.func1Id : (intersection.func1 ? intersection.func1.id : undefined);
+        const func2Id = intersection.func2Id !== undefined ? intersection.func2Id : (intersection.func2 ? intersection.func2.id : undefined);
+        const pairKey = [String(func1Id ?? ''), String(func2Id ?? '')].sort().join('|');
+        const qx = Math.round(intersection.x * 10000) / 10000;
+        const qy = Math.round(intersection.y * 10000) / 10000;
+        return `${pairKey}|${qx}|${qy}`;
+    }
+
+    getCurrentIntersectionMarkerSnapshot(additionalMarkers = []) {
+        const markerSources = [
+            additionalMarkers,
+            this.intersections,
+            this.explicitIntersections,
+            this.implicitIntersections,
+            this.tangentIntersections,
+            this.normalIntersections
+        ];
+        const markers = [];
+        const seen = new Set();
+
+        for (const source of markerSources) {
+            for (const marker of this.getCurrentIntersectionMarkers(source)) {
+                const key = this.getIntersectionMarkerKey(marker);
+                if (!key || seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                markers.push(marker);
+            }
+        }
+
+        return markers;
+    }
+
+    freezeCurrentIntersectionMarkersForViewportChange() {
+        if (!this.showIntersections) {
+            return;
+        }
+
+        const shouldPreserveFrozenMarkers = this.isViewportChanging || this.implicitIntersectionsPending || this.intersectionMarkersPendingViewportRefresh;
+        const preservedMarkers = shouldPreserveFrozenMarkers
+            ? [...this.frozenIntersectionBadges, ...this.lastIntersectionMarkerSnapshot]
+            : [];
+        const currentIntersectionMarkers = this.getCurrentIntersectionMarkerSnapshot(
+            preservedMarkers
+        );
+        if (currentIntersectionMarkers.length === 0) {
+            return;
+        }
+
+        this.frozenIntersectionBadges = currentIntersectionMarkers.map(intersection => ({
+            x: intersection.x,
+            y: intersection.y,
+            func1Id: intersection.func1Id,
+            func2Id: intersection.func2Id
+        }));
+    }
+
+    intersectionMarkersMatch(a, b) {
+        if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) {
+            return false;
+        }
+
+        const aPair = [String(a.func1Id ?? ''), String(a.func2Id ?? '')].sort().join('|');
+        const bPair = [String(b.func1Id ?? ''), String(b.func2Id ?? '')].sort().join('|');
+        const hasPair = aPair !== '|' || bPair !== '|';
+        if (hasPair && aPair !== bPair) {
+            return false;
+        }
+
+        const xSpan = Math.max(1e-12, this.viewport.maxX - this.viewport.minX);
+        const ySpan = Math.max(1e-12, this.viewport.maxY - this.viewport.minY);
+        const tolerance = Math.max(1e-4, Math.max(xSpan, ySpan) * 1e-6);
+        return Math.abs(a.x - b.x) <= tolerance && Math.abs(a.y - b.y) <= tolerance;
+    }
+
+    hasFreshIntersectionMarkersForFrozenBadges() {
+        const frozenMarkers = this.getCurrentIntersectionMarkers(this.frozenIntersectionBadges);
+        if (frozenMarkers.length === 0) {
+            return true;
+        }
+
+        const currentMarkers = this.getCurrentIntersectionMarkerSnapshot();
+        return frozenMarkers.every(frozenMarker =>
+            currentMarkers.some(currentMarker => this.intersectionMarkersMatch(frozenMarker, currentMarker))
+        );
+    }
+
     updateCombinedIntersections() {
         // Only recalculate tangent and normal intersections if implicit intersections are not pending
         // This prevents recalculating with stale data when explicit intersections finish early
@@ -34332,6 +34422,15 @@ class Graphiti {
                 const f2 = pt.func2Id !== undefined ? pt.func2Id : (pt.func2 ? pt.func2.id : null);
                 pt.id = this.generateSignificantPointId('intersection', f1, f2, pt.x, pt.y);
             }
+        }
+        if (!this.implicitIntersectionsPending) {
+            this.lastIntersectionMarkerSnapshot = this.getCurrentIntersectionMarkers(this.intersections).map(intersection => ({
+                x: intersection.x,
+                y: intersection.y,
+                func1Id: intersection.func1Id,
+                func2Id: intersection.func2Id
+            }));
+            this.intersectionMarkersPendingViewportRefresh = false;
         }
         
         // Rebind any significant-point badges (especially intersections) to recalculated points.
@@ -40555,7 +40654,7 @@ class Graphiti {
             if (this.frozenIntersectionBadges.length > 0) {
                 // Check if new intersections are ready - if so, clear frozen and draw new ones
                 // Also wait for implicit intersections to complete to avoid showing incomplete intersection set
-                if (!this.isViewportChanging && this.intersections.length > 0 && !this.implicitIntersectionsPending) {
+                if (!this.isViewportChanging && this.intersections.length > 0 && !this.implicitIntersectionsPending && !this.intersectionMarkersPendingViewportRefresh && this.hasFreshIntersectionMarkersForFrozenBadges()) {
                     this.frozenIntersectionBadges = [];
                     this.drawIntersectionMarkers();
                 } else {

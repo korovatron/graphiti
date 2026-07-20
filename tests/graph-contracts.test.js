@@ -1605,6 +1605,289 @@ async function assertStaleIntersectionMarkersAreDiscarded(page) {
     ], `frozen intersections should be filtered: ${JSON.stringify(result.frozen)}`);
 }
 
+async function assertMixedIntersectionFreezeWaitsForImplicitRefresh(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [
+            { id: 1, expression: 'x=1', points: [{ x: 1, y: -1 }, { x: 1, y: 2 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
+            { id: 2, expression: 'y=1', points: [{ x: -1, y: 1 }, { x: 3, y: 1 }], enabled: true, mode: 'cartesian', color: '#D0021B' },
+            { id: 3, expression: 'y=(x^2-1)/(x+1)', points: [{ x: 0, y: -1 }, { x: 2, y: 1 }], enabled: true, mode: 'cartesian', color: '#7ED321' }
+        ];
+        graphiti.polarFunctions = [];
+        graphiti.explicitIntersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.implicitIntersections = [
+            { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+            { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+        ];
+        graphiti.intersections = graphiti.explicitIntersections.slice();
+
+        const snapshot = graphiti.getCurrentIntersectionMarkerSnapshot()
+            .map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id }));
+
+        graphiti.frozenIntersectionBadges = snapshot.slice();
+        graphiti.implicitIntersections = [];
+        graphiti.intersections = graphiti.explicitIntersections.slice();
+        graphiti.implicitIntersectionsPending = false;
+        const readyWithExplicitOnly = graphiti.hasFreshIntersectionMarkersForFrozenBadges();
+
+        graphiti.implicitIntersections = [
+            { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+            { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+        ];
+        graphiti.updateCombinedIntersections();
+        const readyWithImplicitRefresh = graphiti.hasFreshIntersectionMarkersForFrozenBadges();
+
+        return { snapshot, readyWithExplicitOnly, readyWithImplicitRefresh };
+    });
+
+    assert.deepStrictEqual(result.snapshot, [
+        { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+        { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+        { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+    ], `mixed intersection freeze should snapshot all buckets: ${JSON.stringify(result.snapshot)}`);
+    assert.strictEqual(result.readyWithExplicitOnly, false, 'frozen mixed intersections should not be released after explicit-only refresh');
+    assert.strictEqual(result.readyWithImplicitRefresh, true, 'frozen mixed intersections should release once implicit intersections are refreshed');
+}
+
+async function assertSecondPanPreservesFrozenImplicitMarkers(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [
+            { id: 1, expression: 'x=1', points: [{ x: 1, y: -1 }, { x: 1, y: 2 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
+            { id: 2, expression: 'y=1', points: [{ x: -1, y: 1 }, { x: 3, y: 1 }], enabled: true, mode: 'cartesian', color: '#D0021B' },
+            { id: 3, expression: 'y=(x^2-1)/(x+1)', points: [{ x: 0, y: -1 }, { x: 2, y: 1 }], enabled: true, mode: 'cartesian', color: '#7ED321' }
+        ];
+        graphiti.polarFunctions = [];
+        graphiti.intersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.explicitIntersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.implicitIntersections = [];
+        graphiti.frozenIntersectionBadges = [
+            { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+            { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+            { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+        ];
+        graphiti.isViewportChanging = false;
+        graphiti.implicitIntersectionsPending = true;
+
+        const originalRefreshExplicitCoverageForViewport = graphiti.refreshExplicitCoverageForViewport.bind(graphiti);
+        const originalScheduleImplicitIntersectionCalculation = graphiti.scheduleImplicitIntersectionCalculation.bind(graphiti);
+        const originalCancelAllImplicitCalculations = graphiti.cancelAllImplicitCalculations.bind(graphiti);
+        const originalSaveViewportBounds = graphiti.saveViewportBounds.bind(graphiti);
+        const originalShouldShowViewportWorkIndicator = graphiti.shouldShowViewportWorkIndicator.bind(graphiti);
+        graphiti.refreshExplicitCoverageForViewport = () => {};
+        graphiti.scheduleImplicitIntersectionCalculation = () => { graphiti.implicitIntersectionsPending = true; };
+        graphiti.cancelAllImplicitCalculations = () => {};
+        graphiti.saveViewportBounds = () => {};
+        graphiti.shouldShowViewportWorkIndicator = () => false;
+
+        try {
+            graphiti.handleViewportChange({ skipCoverageRefresh: true });
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+            return graphiti.frozenIntersectionBadges.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id }));
+        } finally {
+            graphiti.refreshExplicitCoverageForViewport = originalRefreshExplicitCoverageForViewport;
+            graphiti.scheduleImplicitIntersectionCalculation = originalScheduleImplicitIntersectionCalculation;
+            graphiti.cancelAllImplicitCalculations = originalCancelAllImplicitCalculations;
+            graphiti.saveViewportBounds = originalSaveViewportBounds;
+            graphiti.shouldShowViewportWorkIndicator = originalShouldShowViewportWorkIndicator;
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+            graphiti.isViewportChanging = false;
+            graphiti.implicitIntersectionsPending = false;
+            graphiti.frozenIntersectionBadges = [];
+        }
+    });
+
+    assert.deepStrictEqual(result, [
+        { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+        { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+        { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+    ], `second pan during pending implicit refresh should preserve frozen markers: ${JSON.stringify(result)}`);
+}
+
+async function assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [
+            { id: 1, expression: 'x=1', points: [{ x: 1, y: -1 }, { x: 1, y: 2 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
+            { id: 2, expression: 'y=1', points: [{ x: -1, y: 1 }, { x: 3, y: 1 }], enabled: true, mode: 'cartesian', color: '#D0021B' },
+            { id: 3, expression: 'y=(x^2-1)/(x+1)', points: [{ x: 0, y: -1 }, { x: 2, y: 1 }], enabled: true, mode: 'cartesian', color: '#7ED321' }
+        ];
+        graphiti.polarFunctions = [];
+        graphiti.intersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.explicitIntersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.implicitIntersections = [];
+        graphiti.frozenIntersectionBadges = [
+            { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+            { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+            { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+        ];
+        graphiti.isViewportChanging = false;
+        graphiti.implicitIntersectionsPending = true;
+
+        const drawCalls = [];
+        const originalDrawFrozenIntersectionBadges = graphiti.drawFrozenIntersectionBadges.bind(graphiti);
+        graphiti.drawFrozenIntersectionBadges = () => {
+            drawCalls.push(graphiti.frozenIntersectionBadges.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id })));
+            return originalDrawFrozenIntersectionBadges();
+        };
+
+        try {
+            graphiti.viewport.minX += 0.25;
+            graphiti.viewport.maxX += 0.25;
+            graphiti.freezeCurrentIntersectionMarkersForViewportChange();
+            graphiti.draw();
+            return {
+                frozenAfterDraw: graphiti.frozenIntersectionBadges.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id })),
+                drawnFrozen: drawCalls[0] || []
+            };
+        } finally {
+            graphiti.drawFrozenIntersectionBadges = originalDrawFrozenIntersectionBadges;
+            graphiti.isViewportChanging = false;
+            graphiti.implicitIntersectionsPending = false;
+            graphiti.frozenIntersectionBadges = [];
+        }
+    });
+
+    const expectedMarkers = [
+        { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+        { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+        { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+    ];
+    assert.deepStrictEqual(result.frozenAfterDraw, expectedMarkers, `pan redraw should keep complete frozen marker cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.drawnFrozen, expectedMarkers, `pan redraw should draw complete frozen marker cache: ${JSON.stringify(result)}`);
+}
+
+async function assertPanDuringRefreshRestoresLastIntersectionSnapshot(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [
+            { id: 1, expression: 'x=1', points: [{ x: 1, y: -1 }, { x: 1, y: 2 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
+            { id: 2, expression: 'y=1', points: [{ x: -1, y: 1 }, { x: 3, y: 1 }], enabled: true, mode: 'cartesian', color: '#D0021B' },
+            { id: 3, expression: 'y=(x^2-1)/(x+1)', points: [{ x: 0, y: -1 }, { x: 2, y: 1 }], enabled: true, mode: 'cartesian', color: '#7ED321' }
+        ];
+        graphiti.polarFunctions = [];
+        graphiti.intersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.explicitIntersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
+        graphiti.implicitIntersections = [];
+        graphiti.frozenIntersectionBadges = [];
+        graphiti.lastIntersectionMarkerSnapshot = [
+            { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+            { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+            { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+        ];
+        graphiti.isViewportChanging = false;
+        graphiti.implicitIntersectionsPending = false;
+        graphiti.intersectionMarkersPendingViewportRefresh = true;
+
+        try {
+            graphiti.freezeCurrentIntersectionMarkersForViewportChange();
+            return graphiti.frozenIntersectionBadges.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id }));
+        } finally {
+            graphiti.isViewportChanging = false;
+            graphiti.implicitIntersectionsPending = false;
+            graphiti.intersectionMarkersPendingViewportRefresh = false;
+            graphiti.frozenIntersectionBadges = [];
+            graphiti.lastIntersectionMarkerSnapshot = [];
+        }
+    });
+
+    assert.deepStrictEqual(result, [
+        { x: 2, y: 1, func1Id: 2, func2Id: 3 },
+        { x: 1, y: 1, func1Id: 1, func2Id: 2 },
+        { x: 1, y: 0, func1Id: 1, func2Id: 3 }
+    ], `pan during pending viewport refresh should restore last complete marker snapshot: ${JSON.stringify(result)}`);
+}
+
+async function assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = true;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        Object.assign(graphiti.cartesianViewport, {
+            minX: 0,
+            maxX: 10,
+            minY: 0,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 90
+        });
+
+        const addFunction = async (expression, color) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color,
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+            return func;
+        };
+
+        const vertical = await addFunction('x=6', '#4A90E2');
+        await addFunction('y=3', '#D0021B');
+        await addFunction('y=(x^2-1)/(x+1)', '#7ED321');
+        delete vertical.cachedPoints;
+        graphiti.isViewportChanging = true;
+        graphiti.implicitIntersectionsPending = true;
+
+        try {
+            await graphiti.calculateImplicitIntersections();
+
+            const startTime = Date.now();
+            while ((graphiti.implicitIntersectionsPending || graphiti.isWorkerCalculating) && Date.now() - startTime < 3000) {
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+
+            return graphiti.implicitIntersections.map(point => ({
+                x: point.x,
+                y: point.y,
+                func1Id: point.func1Id,
+                func2Id: point.func2Id
+            }));
+        } finally {
+            graphiti.isViewportChanging = false;
+            graphiti.implicitIntersectionsPending = false;
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+        }
+    });
+
+    assert(
+        result.some(point => approxEqual(point.x, 6, 0.04) && approxEqual(point.y, 3, 0.04)),
+        `viewport-changing implicit intersections should keep vertical/horizontal point (6, 3), got ${JSON.stringify(result)}`
+    );
+    assert(
+        result.some(point => approxEqual(point.x, 6, 0.04) && approxEqual(point.y, 5, 0.04)),
+        `viewport-changing implicit intersections should keep vertical/rational point (6, 5), got ${JSON.stringify(result)}`
+    );
+}
+
 async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
     const results = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -1889,6 +2172,11 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
+        await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
+        await assertSecondPanPreservesFrozenImplicitMarkers(page);
+        await assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page);
+        await assertPanDuringRefreshRestoresLastIntersectionSnapshot(page);
+        await assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page);
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
         await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
 
