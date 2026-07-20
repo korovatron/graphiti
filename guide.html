@@ -116,6 +116,12 @@
             padding: 28px 0 56px;
         }
 
+        @media (display-mode: standalone), (display-mode: fullscreen) {
+            .page-shell {
+                padding-top: calc(28px + env(safe-area-inset-top, 0px));
+            }
+        }
+
         .top-nav {
             display: flex;
             align-items: center;
