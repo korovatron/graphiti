@@ -32013,13 +32013,23 @@ class Graphiti {
             return false;
         }
 
+        let enabledExplicitCount = 0;
+
         return functions.some(func => {
             if (!func || !func.enabled || !func.expression || !func.expression.trim()) {
                 return false;
             }
 
             const functionType = this.detectFunctionType(func.expression);
-            return functionType === 'implicit' || functionType === 'implicit-inequality';
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                return true;
+            }
+
+            if (functionType === 'explicit' || functionType === 'explicit-inequality') {
+                enabledExplicitCount++;
+            }
+
+            return enabledExplicitCount >= 2;
         });
     }
 
@@ -32038,16 +32048,23 @@ class Graphiti {
             return false;
         }
 
-        const enabledImplicitCount = this.getCurrentFunctions().filter(func => {
+        let enabledImplicitCount = 0;
+        let enabledExplicitCount = 0;
+
+        this.getCurrentFunctions().forEach(func => {
             if (!func || !func.enabled || !func.expression || !func.expression.trim()) {
-                return false;
+                return;
             }
 
             const functionType = this.detectFunctionType(func.expression);
-            return functionType === 'implicit' || functionType === 'implicit-inequality';
-        }).length;
+            if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                enabledImplicitCount++;
+            } else if (functionType === 'explicit' || functionType === 'explicit-inequality') {
+                enabledExplicitCount++;
+            }
+        });
 
-        return enabledImplicitCount >= 1;
+        return enabledImplicitCount >= 1 || enabledExplicitCount >= 2;
     }
 
     showGraphWorkIndicator() {
