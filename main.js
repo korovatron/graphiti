@@ -30069,6 +30069,7 @@ class Graphiti {
         // Skip title screen and load shared state
         this.tempSession = true;
         this.hasInitialized = true;
+        this.suppressAppResumeUntil = performance.now() + 4000;
         this.deferInitialFunctionPanelOpen = this.shouldShowGraphBuildOverlayForFunctions(state.functions || []);
         this.changeState(this.states.GRAPHING);
         const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(state.functions || []);
@@ -30084,6 +30085,7 @@ class Graphiti {
                 this.deferInitialFunctionPanelOpen = false;
                 this.openFunctionPanelForGraphing({ deferSlide: true });
             }
+            this.suppressAppResumeUntil = performance.now() + 1500;
         }
     }
     
@@ -40055,6 +40057,10 @@ class Graphiti {
     }
 
     async handleAppResume() {
+        if (performance.now() < (this.suppressAppResumeUntil || 0)) {
+            return;
+        }
+
         if (this.appResumeInProgress) {
             return this.appResumeInProgress;
         }
