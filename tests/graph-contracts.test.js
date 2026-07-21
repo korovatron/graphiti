@@ -1433,6 +1433,103 @@ async function assertInverseCubeRootImplicitPlotsAsCubic(page) {
     }
 }
 
+async function assertPolarStationaryPointsAreNamedRadialExtrema(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+
+        const runCase = async (plotNegativeR) => {
+            graphiti.plotMode = 'polar';
+            graphiti.angleMode = 'radians';
+            graphiti.polarSettings.thetaMin = 0;
+            graphiti.polarSettings.thetaMax = 2 * Math.PI;
+            graphiti.polarSettings.plotNegativeR = plotNegativeR;
+            graphiti.cartesianFunctions = [];
+            graphiti.polarFunctions = [];
+            graphiti.nextFunctionId = 1;
+            graphiti.showTurningPoints = true;
+            graphiti.input.persistentBadges = [];
+
+            Object.assign(graphiti.viewport, {
+                minX: -4,
+                maxX: 4,
+                minY: -4,
+                maxY: 4,
+                width: 960,
+                height: 720
+            });
+            Object.assign(graphiti.polarViewport, graphiti.viewport);
+
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression: 'r=2*cos(3*theta)',
+                points: [],
+                color: '#0057FF',
+                enabled: true,
+                mode: 'polar'
+            };
+            graphiti.polarFunctions.push(func);
+            await graphiti.plotFunction(func);
+            graphiti.turningPoints = graphiti.findTurningPoints();
+
+            const radialMaximum = graphiti.turningPoints.find(point =>
+                point.type === 'radialMaximum' && Math.abs(point.x - 2) < 0.05 && Math.abs(point.y) < 0.05
+            );
+
+            const labels = [];
+            const originalFillText = graphiti.ctx.fillText.bind(graphiti.ctx);
+            graphiti.ctx.fillText = (text, ...args) => {
+                labels.push(String(text));
+                return originalFillText(text, ...args);
+            };
+            try {
+                if (radialMaximum) {
+                    graphiti.drawTracingBadge(
+                        200,
+                        200,
+                        '#FFD700',
+                        radialMaximum.x,
+                        radialMaximum.y,
+                        false,
+                        false,
+                        null,
+                        radialMaximum.type,
+                        false,
+                        false,
+                        false,
+                        false,
+                        null,
+                        null,
+                        func
+                    );
+                }
+            } finally {
+                graphiti.ctx.fillText = originalFillText;
+            }
+
+            return {
+                plotNegativeR,
+                types: graphiti.turningPoints.map(point => point.type),
+                radialMaximum,
+                radialMinimumCount: graphiti.turningPoints.filter(point => point.type === 'radialMinimum').length,
+                radialMaximumLabel: labels.find(label => label.startsWith('Radial Maximum:')) || null
+            };
+        };
+
+        return {
+            negativeRPlotted: await runCase(true),
+            negativeRHidden: await runCase(false)
+        };
+    });
+
+    for (const caseResult of [result.negativeRPlotted, result.negativeRHidden]) {
+        assert(caseResult.radialMaximum, `polar dr/dtheta=0 should classify visible petal tip as radial maximum: ${JSON.stringify(caseResult)}`);
+        assert.strictEqual(caseResult.radialMinimumCount, 0, `visible duplicate polar extrema should prefer radial maxima: ${JSON.stringify(caseResult)}`);
+        assert(caseResult.types.length >= 3, `polar rose should expose the three visible radial extrema: ${JSON.stringify(caseResult)}`);
+        assert(caseResult.types.every(type => type === 'radialMaximum'), `visible polar rose petal tips should all be radial maxima: ${JSON.stringify(caseResult)}`);
+        assert(caseResult.radialMaximumLabel, `polar radial maximum badge should be named: ${JSON.stringify(caseResult)}`);
+    }
+}
+
 async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -2971,6 +3068,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertInverseCubeRootImplicitPlotsAsCubic(page);
+        await assertPolarStationaryPointsAreNamedRadialExtrema(page);
         await assertImplicitVerticalTangentsAreNotTurningMarkers(page);
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);

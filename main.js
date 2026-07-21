@@ -28257,6 +28257,15 @@ class Graphiti {
                     case 'minimum':
                         labelText = `Local Minimum: ${coords}`;
                         break;
+                    case 'radialMaximum':
+                        labelText = `Radial Maximum: ${coords}`;
+                        break;
+                    case 'radialMinimum':
+                        labelText = `Radial Minimum: ${coords}`;
+                        break;
+                    case 'polarStationary':
+                        labelText = `Polar Stationary Point: ${coords}`;
+                        break;
                     case 'inflection':
                         labelText = `Point of Inflection: ${coords}`;
                         break;
@@ -39084,6 +39093,72 @@ class Graphiti {
         
         // Use numerical method to find roots of dr/dtheta = 0
         const roots = this.findPolarRootsInRange(derivativeStr, thetaMin, thetaMax);
+
+        const evaluatePolarDerivativeAt = (thetaValue) => {
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            const compiledDerivative = this.getCompiledExpression(String(derivativeStr).toLowerCase());
+            return compiledDerivative.evaluate(this.getEvaluationScope({
+                theta: thetaForEval,
+                t: thetaForEval,
+                pi: Math.PI,
+                e: Math.E
+            }));
+        };
+
+        const classifyPolarStationaryPoint = (thetaValue) => {
+            const range = Math.max(Math.abs(thetaMax - thetaMin), 1);
+            const offset = Math.max(range * 0.0005, this.angleMode === 'degrees' ? 0.01 : 1e-4);
+            const sideSign = (direction) => {
+                for (const multiplier of [0.5, 1, 2, 4]) {
+                    try {
+                        const value = evaluatePolarDerivativeAt(thetaValue + direction * offset * multiplier);
+                        if (Number.isFinite(value) && Math.abs(value) > 1e-8) {
+                            return Math.sign(value);
+                        }
+                    } catch {
+                        // Try a sample farther from the stationary point.
+                    }
+                }
+                return 0;
+            };
+
+            const leftSign = sideSign(-1);
+            const rightSign = sideSign(1);
+            if (leftSign > 0 && rightSign < 0) {
+                return 'radialMaximum';
+            }
+            if (leftSign < 0 && rightSign > 0) {
+                return 'radialMinimum';
+            }
+            return 'polarStationary';
+        };
+
+        const polarStationaryPriority = (point) => {
+            if (!point) return 0;
+            if (point.type === 'radialMaximum') return 3;
+            if (point.type === 'polarStationary') return 2;
+            if (point.type === 'radialMinimum') return 1;
+            return 0;
+        };
+
+        const collapseVisibleDuplicateStationaryPoints = (points) => {
+            const collapsed = [];
+            const tolerance = 1e-5;
+            for (const point of points) {
+                const existingIndex = collapsed.findIndex(existing =>
+                    Math.hypot(existing.x - point.x, existing.y - point.y) <= tolerance
+                );
+                if (existingIndex === -1) {
+                    collapsed.push(point);
+                    continue;
+                }
+
+                if (polarStationaryPriority(point) > polarStationaryPriority(collapsed[existingIndex])) {
+                    collapsed[existingIndex] = point;
+                }
+            }
+            return collapsed;
+        };
         
         for (const theta of roots) {
             try {
@@ -39179,7 +39254,7 @@ class Graphiti {
                         x: x,
                         y: y,
                         func: func,
-                        type: 'critical', // Don't classify as min/max in polar mode
+                        type: classifyPolarStationaryPoint(theta),
                         theta: theta, // Store original theta
                         r: r,
                         derivative: derivativeStr
@@ -39191,7 +39266,7 @@ class Graphiti {
             }
         }
         
-        return turningPoints;
+        return collapseVisibleDuplicateStationaryPoints(turningPoints);
     }
     
     findRootsInRange(expression, xMin, xMax, steps = 200) {
@@ -39495,7 +39570,7 @@ class Graphiti {
         
         // Remove all turning point badges (those with badgeType indicating turning points)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
-            !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum' && badge.badgeType !== 'inflection')
+            !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum' && badge.badgeType !== 'inflection' && badge.badgeType !== 'radialMaximum' && badge.badgeType !== 'radialMinimum' && badge.badgeType !== 'polarStationary')
         );
     }
     
@@ -44235,6 +44310,15 @@ class Graphiti {
             case 'minimum':
                 badgeColor = '#8A2BE2'; // Blue violet for minimum (matches marker)
                 break;
+            case 'radialMaximum':
+                badgeColor = '#FFD700';
+                break;
+            case 'radialMinimum':
+                badgeColor = '#8A2BE2';
+                break;
+            case 'polarStationary':
+                badgeColor = '#00E5FF';
+                break;
             case 'inflection':
                 badgeColor = '#00E5FF'; // Bright cyan for inflection points
                 break;
@@ -46581,6 +46665,15 @@ class Graphiti {
                     break;
                 case 'minimum':
                     labelText = `Local Minimum: ${coords}`;
+                    break;
+                case 'radialMaximum':
+                    labelText = `Radial Maximum: ${coords}`;
+                    break;
+                case 'radialMinimum':
+                    labelText = `Radial Minimum: ${coords}`;
+                    break;
+                case 'polarStationary':
+                    labelText = `Polar Stationary Point: ${coords}`;
                     break;
                 case 'inflection':
                     labelText = `Point of Inflection: ${coords}`;
