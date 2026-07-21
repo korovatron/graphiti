@@ -7652,6 +7652,30 @@ class Graphiti {
                     : [equation];
 
                 for (const candidateEquation of fastPathEquations) {
+                    const inverseCubeRootModel = this.tryBuildInverseCubeRootImplicitModel(candidateEquation);
+                    if (inverseCubeRootModel) {
+                        this.applyDenominatorClearedDomainExclusions(inverseCubeRootModel, candidateEquation);
+                        const handled = await this.plotImplicitAffineAsExplicit(func, inverseCubeRootModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!await prepareFastPathInequalityGrid()) {
+                                this.activeImplicitCalculations.delete(func.id);
+                                return;
+                            }
+                            if (!suppressDraw) {
+                                this.draw();
+                            }
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
+                        }
+                    }
+
                     const affineModel = this.tryBuildAffineImplicitModel(candidateEquation);
                     if (affineModel) {
                         this.applyDenominatorClearedDomainExclusions(affineModel, candidateEquation);
@@ -12141,6 +12165,228 @@ class Graphiti {
                 { vertical: [], horizontal: [], oblique: [] },
             monomialXImplicitModel: true
         };
+    }
+
+    tryBuildInverseCubeRootImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const stripOuterParentheses = (expression) => {
+            let value = String(expression || '').trim();
+            let changed = true;
+            while (changed && value.startsWith('(') && value.endsWith(')')) {
+                changed = false;
+                let depth = 0;
+                let wrapsWholeExpression = true;
+                for (let index = 0; index < value.length; index++) {
+                    const char = value[index];
+                    if (char === '(') depth++;
+                    if (char === ')') depth--;
+                    if (depth === 0 && index < value.length - 1) {
+                        wrapsWholeExpression = false;
+                        break;
+                    }
+                    if (depth < 0) {
+                        wrapsWholeExpression = false;
+                        break;
+                    }
+                }
+                if (wrapsWholeExpression) {
+                    value = value.slice(1, -1).trim();
+                    changed = true;
+                }
+            }
+            return value;
+        };
+
+        const normaliseExpression = (expression) => stripOuterParentheses(expression).replace(/\s+/g, '').toLowerCase();
+        const isBareVariable = (expression, variable) => normaliseExpression(expression) === variable;
+        const referencesOtherCartesianVariable = (expression, variable) => {
+            const otherVariable = variable === 'x' ? 'y' : 'x';
+            return new RegExp('\\b' + otherVariable + '\\b').test(String(expression || '').toLowerCase());
+        };
+        const numberForExpression = (value) => {
+            if (Math.abs(value) < 1e-12) {
+                return '0';
+            }
+            const rounded = Math.round(value);
+            if (Math.abs(value - rounded) <= 1e-12) {
+                return String(rounded);
+            }
+            return String(Number(value.toPrecision(14)));
+        };
+        const buildLinearThroughOriginCoefficient = (expression, variable) => {
+            if (referencesOtherCartesianVariable(expression, variable)) {
+                return null;
+            }
+
+            let compiled;
+            try {
+                compiled = this.getCompiledExpression(expression);
+            } catch {
+                return null;
+            }
+
+            const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+            const coefficients = [];
+            let scale = 1;
+            for (const sample of [-3, -1, 0, 1, 4]) {
+                scope[variable] = sample;
+                let value;
+                try {
+                    value = compiled.evaluate(scope);
+                } catch {
+                    return null;
+                }
+                if (!Number.isFinite(value)) {
+                    return null;
+                }
+                scale = Math.max(scale, Math.abs(value), Math.abs(sample));
+                if (Math.abs(sample) <= 1e-12) {
+                    if (Math.abs(value) > 1e-9) {
+                        return null;
+                    }
+                    continue;
+                }
+                coefficients.push(value / sample);
+            }
+
+            if (!coefficients.length) {
+                return null;
+            }
+
+            const coefficient = coefficients.reduce((sum, value) => sum + value, 0) / coefficients.length;
+            if (!Number.isFinite(coefficient) || Math.abs(coefficient) < 1e-12) {
+                return null;
+            }
+
+            const tolerance = Math.max(1e-9, scale * 1e-9);
+            for (const sample of [-3, -1, 0, 1, 4]) {
+                scope[variable] = sample;
+                let value;
+                try {
+                    value = compiled.evaluate(scope);
+                } catch {
+                    return null;
+                }
+                if (Math.abs(value - coefficient * sample) > tolerance) {
+                    return null;
+                }
+            }
+
+            return coefficient;
+        };
+        const buildInverseCubicExplicitExpression = (expression, variable, xCoefficient = 1) => {
+            if (referencesOtherCartesianVariable(expression, variable)) {
+                return null;
+            }
+
+            let compiled;
+            try {
+                compiled = this.getCompiledExpression(expression);
+            } catch {
+                return null;
+            }
+
+            const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+            const samples = [];
+            for (const sample of [0, 0.125, 1, 8, 27]) {
+                scope[variable] = sample;
+                try {
+                    const value = compiled.evaluate(scope);
+                    if (!Number.isFinite(value)) {
+                        continue;
+                    }
+                    samples.push({ input: sample, cubedValue: value * value * value });
+                } catch {
+                    continue;
+                }
+            }
+
+            if (samples.length < 3) {
+                return null;
+            }
+
+            const first = samples[0];
+            const last = samples[samples.length - 1];
+            if (Math.abs(last.input - first.input) < 1e-12) {
+                return null;
+            }
+
+            const slope = (last.cubedValue - first.cubedValue) / (last.input - first.input);
+            const intercept = first.cubedValue - slope * first.input;
+            if (!Number.isFinite(slope) || !Number.isFinite(intercept) || Math.abs(slope) < 1e-12) {
+                return null;
+            }
+
+            const tolerance = Math.max(1e-7, Math.max(Math.abs(slope), Math.abs(intercept), 1) * 1e-9);
+            for (const sample of samples) {
+                const expected = slope * sample.input + intercept;
+                if (Math.abs(sample.cubedValue - expected) > tolerance) {
+                    return null;
+                }
+            }
+
+            const cubedXExpression = Math.abs(xCoefficient - 1) <= 1e-12 ? 'x^3' : `((${numberForExpression(xCoefficient)}*x)^3)`;
+            let explicitExpression = `((${cubedXExpression})-(${numberForExpression(intercept)}))/(${numberForExpression(slope)})`;
+            try {
+                explicitExpression = this.cleanMath.simplify(explicitExpression).toString();
+            } catch {
+                // Keep the generated expression if simplification fails.
+            }
+            return explicitExpression;
+        };
+
+        if (isBareVariable(equation.leftExpression, 'x')) {
+            const explicitExpression = buildInverseCubicExplicitExpression(equation.rightExpression, 'y');
+            if (!explicitExpression) {
+                return null;
+            }
+            return {
+                explicitExpression,
+                verticalComponents: [],
+                domainExclusions: []
+            };
+        }
+
+        if (isBareVariable(equation.rightExpression, 'x')) {
+            const explicitExpression = buildInverseCubicExplicitExpression(equation.leftExpression, 'y');
+            if (!explicitExpression) {
+                return null;
+            }
+            return {
+                explicitExpression,
+                verticalComponents: [],
+                domainExclusions: []
+            };
+        }
+
+        const leftXCoefficient = buildLinearThroughOriginCoefficient(equation.leftExpression, 'x');
+        if (leftXCoefficient !== null) {
+            const explicitExpression = buildInverseCubicExplicitExpression(equation.rightExpression, 'y', leftXCoefficient);
+            if (explicitExpression) {
+                return {
+                    explicitExpression,
+                    verticalComponents: [],
+                    domainExclusions: []
+                };
+            }
+        }
+
+        const rightXCoefficient = buildLinearThroughOriginCoefficient(equation.rightExpression, 'x');
+        if (rightXCoefficient !== null) {
+            const explicitExpression = buildInverseCubicExplicitExpression(equation.leftExpression, 'y', rightXCoefficient);
+            if (explicitExpression) {
+                return {
+                    explicitExpression,
+                    verticalComponents: [],
+                    domainExclusions: []
+                };
+            }
+        }
+
+        return null;
     }
 
     async plotImplicitMonomialXAsExplicit(func, monomialXModel) {

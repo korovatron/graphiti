@@ -1358,6 +1358,81 @@ async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     assert.deepStrictEqual(result, [], `implicit fast-path turning point warnings: ${JSON.stringify(result)}`);
 }
 
+async function assertInverseCubeRootImplicitPlotsAsCubic(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+
+        Object.assign(graphiti.viewport, {
+            minX: -4,
+            maxX: 4,
+            minY: -4,
+            maxY: 4,
+            width: 960,
+            height: 720
+        });
+        Object.assign(graphiti.cartesianViewport, graphiti.viewport);
+
+        const cases = [
+            { expression: 'x=y^(1/3)', expectedYAtOne: 1 },
+            { expression: 'x=(2y)^(1/3)', expectedYAtOne: 0.5 },
+            { expression: 'x=2y^(1/3)', expectedYAtOne: 0.125 },
+            { expression: 'x=(y/2)^(1/3)', expectedYAtOne: 2 },
+            { expression: '2x=y^(1/3)', expectedYAtOne: 8 },
+            { expression: '3x=(2y)^(1/3)', expectedYAtOne: 13.5 },
+            { expression: '(1/2)x=2y^(1/3)', expectedYAtOne: 1 / 512 },
+            { expression: 'pi*x=(y/2)^(1/3)', expectedYAtOne: 2 * Math.PI * Math.PI * Math.PI }
+        ];
+
+        const results = [];
+        for (const testCase of cases) {
+            graphiti.cartesianFunctions = [];
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression: testCase.expression,
+                points: [],
+                color: '#00C853',
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+
+            const finitePoints = func.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+            const nearestTo = (targetX) => finitePoints.reduce((best, point) => {
+                if (!best || Math.abs(point.x - targetX) < Math.abs(best.x - targetX)) {
+                    return point;
+                }
+                return best;
+            }, null);
+
+            results.push({
+                expression: testCase.expression,
+                expectedYAtOne: testCase.expectedYAtOne,
+                renderMode: func.implicitRenderMode || null,
+                pointCount: finitePoints.length,
+                negativeBranch: nearestTo(-1),
+                positiveBranch: nearestTo(1)
+            });
+        }
+
+        return results;
+    });
+
+    for (const caseResult of result) {
+        assert.strictEqual(caseResult.renderMode, 'affine-explicit', `inverse cube-root implicit should use explicit-equivalent rendering: ${JSON.stringify(caseResult)}`);
+        assert(caseResult.pointCount > 100, `inverse cube-root implicit should produce a smooth explicit curve: ${JSON.stringify(caseResult)}`);
+        assert(caseResult.negativeBranch && approxEqual(caseResult.negativeBranch.y, -caseResult.expectedYAtOne, 0.08), `inverse cube-root implicit should include the negative cubic branch: ${JSON.stringify(caseResult)}`);
+        assert(caseResult.positiveBranch && approxEqual(caseResult.positiveBranch.y, caseResult.expectedYAtOne, 0.08), `inverse cube-root implicit should include the positive cubic branch: ${JSON.stringify(caseResult)}`);
+    }
+}
+
 async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -2895,6 +2970,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertShapeClassification(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
+        await assertInverseCubeRootImplicitPlotsAsCubic(page);
         await assertImplicitVerticalTangentsAreNotTurningMarkers(page);
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
