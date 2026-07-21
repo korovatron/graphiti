@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.78';
+const VERSION = '1.2.79';
 
 class Graphiti {
     constructor() {
@@ -213,7 +213,7 @@ class Graphiti {
         this.cartesianFunctionsCleared = false;
         this.polarFunctionsCleared = false;
         this.functionColors = [
-            '#B91C1C', '#0057FF', '#00C853',
+            '#0057FF', '#00C853', '#B91C1C',
             '#C026D3', '#1ABC9C', '#00E5FF', '#A855F7',
             '#FF6B6B', '#4A90E2', '#FFD400', '#84CC16', '#F39C12'
         ];
