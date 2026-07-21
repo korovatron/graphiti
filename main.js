@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.71';
+const VERSION = '1.2.72';
 
 class Graphiti {
     constructor() {
@@ -438,6 +438,8 @@ class Graphiti {
                                 'log(': '\\log(#0)',
                                 'ln': '\\ln',
                                 'ln(': '\\ln(#0)',
+                                // Constants
+                                'phi': '\\phi',
                                 // Derivative function - insert d/dx notation (variable inferred from dx)
                                 'derivative': '\\frac{d}{dx}\\left(#?\\right)',
                                 'ddx': '\\frac{d}{dx}\\left(#?\\right)',
@@ -2425,6 +2427,7 @@ class Graphiti {
                         'gamma': '\\gamma',
                         'delta': '\\delta',
                         'epsilon': '\\epsilon',
+                        'phi': '\\phi',
                         'theta': '\\theta',
                         'lambda': '\\lambda',
                         'mu': '\\mu',
@@ -48491,6 +48494,7 @@ class Graphiti {
         
         // Constants
         expression = expression.replace(/\\pi/g, 'pi');
+        expression = expression.replace(/\\phi/g, 'phi');
         expression = expression.replace(/\\mathrm\{e\}/g, 'e');
         expression = expression.replace(/\\exponentialE/g, 'e');
         // Convert theta to 't' for evaluation (math.js doesn't treat 't' as a unit in this context)
