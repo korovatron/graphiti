@@ -25839,6 +25839,7 @@ class Graphiti {
                     tangentSlope: targetBadge.tangentSlope,
                     tangentExpression: targetBadge.tangentExpression,
                     neonTangent: targetBadge.neonTangent || false,
+                    badgeType: targetBadge.badgeType || null,
                     significantPointType: targetBadge.significantPointType || null,
                     func1Id: targetBadge.func1Id || null,
                     func2Id: targetBadge.func2Id || null,
@@ -25945,27 +25946,27 @@ class Graphiti {
                 return; // Exit early - don't process other input logic
             }
             
-            // Third, check for intersection marker tap (only if no badge/label was clicked)
-            const tappedIntersection = this.findIntersectionAtScreenPoint(canvasX, canvasY);
+            // Third, check for turning point marker tap. Turning points and inflections take priority over other significant points at the same location.
+            const tappedTurningPoint = this.showTurningPoints ? this.findTurningPointAtScreenPoint(canvasX, canvasY) : null;
+            if (tappedTurningPoint) {
+                // Handle turning point tap and exit early
+                this.handleTurningPointTap(tappedTurningPoint, x, y);
+                return; // Don't process any other input logic
+            }
+            
+            // Fourth, check for intersection marker tap.
+            const tappedIntersection = this.showIntersections ? this.findIntersectionAtScreenPoint(canvasX, canvasY) : null;
             if (tappedIntersection) {
                 // Handle intersection tap and exit early
                 this.handleIntersectionTap(tappedIntersection, x, y);
                 return; // Don't process any other input logic
             }
             
-            // Fourth, check for intercept marker tap (only if no intersection was clicked)
-            const tappedIntercept = this.findInterceptAtScreenPoint(canvasX, canvasY);
+            // Fifth, check for intercept marker tap.
+            const tappedIntercept = this.showIntercepts ? this.findInterceptAtScreenPoint(canvasX, canvasY) : null;
             if (tappedIntercept) {
                 // Handle intercept tap and exit early
                 this.handleInterceptTap(tappedIntercept, x, y);
-                return; // Don't process any other input logic
-            }
-            
-            // Fifth, check for turning point marker tap (only if no intersection/intercept was clicked)
-            const tappedTurningPoint = this.findTurningPointAtScreenPoint(canvasX, canvasY);
-            if (tappedTurningPoint) {
-                // Handle turning point tap and exit early
-                this.handleTurningPointTap(tappedTurningPoint, x, y);
                 return; // Don't process any other input logic
             }
             
@@ -26133,7 +26134,7 @@ class Graphiti {
                                             const dist = Math.sqrt(dx * dx + dy * dy);
                                             if (dist < nearestDistance) {
                                                 nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: tp.x, worldY: tp.y, type: 'turning', id: tp.id };
+                                                nearestSignificantPoint = { worldX: tp.x, worldY: tp.y, type: 'turning', turningType: tp.type, id: tp.id };
                                             }
                                         }
                                     }
@@ -26193,6 +26194,7 @@ class Graphiti {
                                                     worldY: tp.y, 
                                                     theta: theta,
                                                     type: 'turning',
+                                                    turningType: tp.type,
                                                     id: tp.id
                                                 };
                                             }
@@ -26376,7 +26378,7 @@ class Graphiti {
         const significantPoints = [];
         
         // Add intersections
-        if (this.intersections) {
+        if (this.showIntersections && this.intersections) {
             this.intersections.forEach(intersection => {
                 significantPoints.push({
                     x: intersection.x,
@@ -26387,7 +26389,7 @@ class Graphiti {
         }
         
         // Add intercepts
-        if (this.intercepts) {
+        if (this.showIntercepts && this.intercepts) {
             this.intercepts.forEach(intercept => {
                 significantPoints.push({
                     x: intercept.x,
@@ -26398,7 +26400,7 @@ class Graphiti {
         }
         
         // Add turning points for this specific function
-        if (this.turningPoints) {
+        if (this.showTurningPoints && this.turningPoints) {
             this.turningPoints.forEach(tp => {
                 // Only snap to turning points on the same function being traced
                 // turningPoints use 'func' property which is the function object
@@ -26406,7 +26408,8 @@ class Graphiti {
                     significantPoints.push({
                         x: tp.x,
                         y: tp.y,
-                        type: 'turningPoint'
+                        type: 'turningPoint',
+                        turningType: tp.type
                     });
                 }
             });
@@ -26583,6 +26586,7 @@ class Graphiti {
                     if (wasQuickTap && prevState) {
                         // Badge didn't move - restore the link it had before
                         newBadge.significantPointType = prevState.significantPointType || null;
+                        newBadge.badgeType = prevState.badgeType || null;
                         newBadge.func1Id = prevState.func1Id || null;
                         newBadge.func2Id = prevState.func2Id || null;
                         newBadge.snapRefX = prevState.snapRefX;
@@ -26591,6 +26595,7 @@ class Graphiti {
                         // Dropped while snapped - link to the significant point
                         const snapType = snapState.snappedPoint.type;
                         newBadge.significantPointType = snapType === 'turning' ? 'turningPoint' : snapType;
+                        newBadge.badgeType = snapType === 'turning' ? (snapState.snappedPoint.turningType || null) : newBadge.badgeType;
                         newBadge.func1Id = snapState.snappedPoint.func1Id || null;
                         newBadge.func2Id = snapState.snappedPoint.func2Id || null;
                         // Store the snap position as the reference - updated each time the point is re-found
@@ -26599,6 +26604,7 @@ class Graphiti {
                     } else if (!wasQuickTap) {
                         // Dropped without a snap - clear any previous link
                         newBadge.significantPointType = null;
+                        newBadge.badgeType = null;
                         newBadge.func1Id = null;
                         newBadge.func2Id = null;
                         newBadge.snapRefX = undefined;
@@ -28029,6 +28035,9 @@ class Graphiti {
                         break;
                     case 'minimum':
                         labelText = `Local Minimum: ${coords}`;
+                        break;
+                    case 'inflection':
+                        labelText = `Point of Inflection: ${coords}`;
                         break;
                     case 'intersection':
                         labelText = coords;
@@ -37227,6 +37236,82 @@ class Graphiti {
             return compiledDerivative.evaluate(this.getEvaluationScope({x: xValue}));
         };
 
+        const evaluateSecondDerivativeAt = (xValue) => {
+            let processedSecondDerivativeExpr = secondDerivativeStr;
+            if (this.angleMode === 'degrees') {
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedSecondDerivativeExpr);
+                if (hasRegularTrigWithX) {
+                    processedSecondDerivativeExpr = this.convertTrigToDegreeMode(processedSecondDerivativeExpr);
+                }
+            }
+
+            const compiledSecondDerivative = this.getCompiledExpression(processedSecondDerivativeExpr);
+            return compiledSecondDerivative.evaluate(this.getEvaluationScope({x: xValue}));
+        };
+
+        const evaluateFunctionYAt = (xValue) => {
+            if (processedExpression) {
+                let processedExprForEval = processedExpression;
+                if (this.angleMode === 'degrees') {
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExprForEval);
+                    if (hasRegularTrigWithX) {
+                        processedExprForEval = this.convertTrigToDegreeMode(processedExprForEval);
+                    }
+                }
+                const compiledExpr = this.getCompiledExpression(processedExprForEval);
+                return compiledExpr.evaluate(this.getEvaluationScope({x: xValue}));
+            }
+
+            return this.evaluateFunction(func.expression, xValue);
+        };
+
+        const rootProbeOffset = () => {
+            const range = Math.max(Math.abs(xMax - xMin), 1);
+            return Math.max(range * 0.0005, 1e-4);
+        };
+
+        const getSideDerivativeSign = (evaluateAt, xValue, direction) => {
+            const offset = rootProbeOffset();
+            for (const multiplier of [0.5, 1, 2, 4]) {
+                try {
+                    const value = evaluateAt(xValue + direction * offset * multiplier);
+                    if (Number.isFinite(value) && Math.abs(value) > 1e-8) {
+                        return Math.sign(value);
+                    }
+                } catch {
+                    // Try the next sample farther from the candidate.
+                }
+            }
+            return 0;
+        };
+
+        const classifyStationaryRoot = (xValue, secondDerivValue) => {
+            if (Number.isFinite(secondDerivValue) && Math.abs(secondDerivValue) > 1e-10) {
+                return secondDerivValue > 0 ? 'minimum' : 'maximum';
+            }
+
+            const leftFirstSign = getSideDerivativeSign(evaluateDerivativeAt, xValue, -1);
+            const rightFirstSign = getSideDerivativeSign(evaluateDerivativeAt, xValue, 1);
+            if (leftFirstSign < 0 && rightFirstSign > 0) {
+                return 'minimum';
+            }
+            if (leftFirstSign > 0 && rightFirstSign < 0) {
+                return 'maximum';
+            }
+
+            const leftSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, xValue, -1);
+            const rightSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, xValue, 1);
+            if (leftSecondSign !== 0 && rightSecondSign !== 0 && leftSecondSign !== rightSecondSign) {
+                return 'inflection';
+            }
+
+            return null;
+        };
+
+        const hasInflectionNear = (xValue) => turningPoints.some(point =>
+            point.type === 'inflection' && Math.abs(point.x - xValue) <= Math.max(rootProbeOffset(), 1e-5)
+        );
+
         const isLocallyFlatDerivativeRoot = (xValue) => {
             const range = Math.max(Math.abs(xMax - xMin), 1);
             const offset = Math.max(range * 0.002, 1e-3);
@@ -37277,85 +37362,11 @@ class Graphiti {
         
         for (const x of roots) {
             try {
-                // Calculate y value at this x
-                // If processedExpression is provided (e.g., for derivative functions), use it
-                // Otherwise use the original func.expression
-                let y;
-                if (processedExpression) {
-                    // Evaluate the processed expression with proper degree mode handling
-                    let processedExprForEval = processedExpression;
-                    if (this.angleMode === 'degrees') {
-                        // Apply same preprocessing as evaluateFunction for degree mode
-                        const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExprForEval);
-                        
-                        if (hasRegularTrigWithX) {
-                            processedExprForEval = this.convertTrigToDegreeMode(processedExprForEval);
-                        }
-                    }
-                    const compiledExpr = this.getCompiledExpression(processedExprForEval);
-                    y = compiledExpr.evaluate(this.getEvaluationScope({x: x}));
-                } else {
-                    // Use same approach as evaluateFunction
-                    y = this.evaluateFunction(func.expression, x);
-                }
-                
-                // Classify using second derivative test (also needs degree handling)
-                let secondDerivValue;
-                if (this.angleMode === 'degrees') {
-                    // Apply same preprocessing as evaluateFunction for degree mode
-                    // Don't lowercase to avoid converting NaN → nan (which math.js can't parse)
-                    let processedSecondDerivExpr = secondDerivativeStr;
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedSecondDerivExpr);
-                    
-                    if (hasRegularTrigWithX) {
-                        processedSecondDerivExpr = this.convertTrigToDegreeMode(processedSecondDerivExpr);
-                    }
-                    
-                    const compiledSecondDeriv = this.getCompiledExpression(processedSecondDerivExpr);
-                    secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: x}));
-                } else {
-                    const compiledSecondDeriv = this.getCompiledExpression(secondDerivativeStr);
-                    secondDerivValue = compiledSecondDeriv.evaluate(this.getEvaluationScope({x: x}));
-                }
-                
-                let type = 'inflection'; // fallback
-                
-                // If second derivative is finite and non-zero, use it
-                if (isFinite(secondDerivValue) && Math.abs(secondDerivValue) > 1e-10) {
-                    type = secondDerivValue > 0 ? 'minimum' : 'maximum';
-                } else if (!isFinite(secondDerivValue)) {
-                    // Fallback: check sign of first derivative on either side of the root
-                    const epsilon = 0.0001; // Small step for testing
-                    
-                    try {
-                        let leftDerivValue, rightDerivValue;
-                        
-                        if (this.angleMode === 'degrees') {
-                            let processedDerivExpr = derivativeStr;
-                            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedDerivExpr);
-                            if (hasRegularTrigWithX) {
-                                processedDerivExpr = this.convertTrigToDegreeMode(processedDerivExpr);
-                            }
-                            const compiledDeriv = this.getCompiledExpression(processedDerivExpr);
-                            leftDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x - epsilon}));
-                            rightDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x + epsilon}));
-                        } else {
-                            const compiledDeriv = this.getCompiledExpression(derivativeStr);
-                            leftDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x - epsilon}));
-                            rightDerivValue = compiledDeriv.evaluate(this.getEvaluationScope({x: x + epsilon}));
-                        }
-                        
-                        // Determine type based on sign change
-                        if (leftDerivValue < 0 && rightDerivValue > 0) {
-                            type = 'minimum'; // derivative changes from - to +
-                        } else if (leftDerivValue > 0 && rightDerivValue < 0) {
-                            type = 'maximum'; // derivative changes from + to -
-                        } else {
-                            type = 'inflection'; // no clear sign change or both same sign
-                        }
-                    } catch (error) {
-                        type = 'inflection'; // fallback on error
-                    }
+                const y = evaluateFunctionYAt(x);
+                const secondDerivValue = evaluateSecondDerivativeAt(x);
+                const type = classifyStationaryRoot(x, secondDerivValue);
+                if (!type) {
+                    continue;
                 }
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
@@ -37382,6 +37393,42 @@ class Graphiti {
                 }
             } catch (error) {
                 // Skip this root if evaluation fails
+                continue;
+            }
+        }
+
+        const inflectionRoots = this.findRootsInRange(secondDerivativeStr, xMin, xMax);
+        for (const x of inflectionRoots) {
+            try {
+                if (hasInflectionNear(x)) {
+                    continue;
+                }
+
+                const leftSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, x, -1);
+                const rightSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, x, 1);
+                if (leftSecondSign === 0 || rightSecondSign === 0 || leftSecondSign === rightSecondSign) {
+                    continue;
+                }
+
+                const y = evaluateFunctionYAt(x);
+                if (!isFinite(x) || !isFinite(y) || this.isPointAtHoleForFunction(func, x, y)) {
+                    continue;
+                }
+
+                let snappedX = x;
+                let snappedY = y;
+                if (Math.abs(x) < 0.02) snappedX = 0;
+                if (Math.abs(y) < 0.02) snappedY = 0;
+
+                turningPoints.push({
+                    x: snappedX,
+                    y: snappedY,
+                    func: func,
+                    type: 'inflection',
+                    derivative: derivativeStr,
+                    secondDerivative: secondDerivativeStr
+                });
+            } catch {
                 continue;
             }
         }
@@ -39227,7 +39274,7 @@ class Graphiti {
         
         // Remove all turning point badges (those with badgeType indicating turning points)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
-            !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum')
+            !badge.badgeType || (badge.badgeType !== 'maximum' && badge.badgeType !== 'minimum' && badge.badgeType !== 'inflection')
         );
     }
     
@@ -39249,14 +39296,14 @@ class Graphiti {
         
         // Remove all intercept badges (Cartesian and polar types)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
-            !badge.badgeType || (
+            badge.significantPointType !== 'intercept' && (!badge.badgeType || (
                 badge.badgeType !== 'x-intercept' && 
                 badge.badgeType !== 'y-intercept' &&
                 badge.badgeType !== 'x-axis-positive' &&
                 badge.badgeType !== 'x-axis-negative' &&
                 badge.badgeType !== 'y-axis-positive' &&
                 badge.badgeType !== 'y-axis-negative'
-            )
+            ))
         );
     }
     
@@ -42818,6 +42865,10 @@ class Graphiti {
     }
 
     findIntersectionAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        if (!this.showIntersections) {
+            return null;
+        }
+
         const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // Check regular intersections
@@ -43181,6 +43232,10 @@ class Graphiti {
     }
     
     findTurningPointAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        if (!this.showTurningPoints) {
+            return null;
+        }
+
         const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // First check regular turning points (when viewport is stable)
@@ -43217,6 +43272,10 @@ class Graphiti {
     }
     
     findInterceptAtScreenPoint(screenX, screenY, toleranceOverride = null) {
+        if (!this.showIntercepts) {
+            return null;
+        }
+
         const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // First check regular intercepts (when viewport is stable)
@@ -43954,6 +44013,9 @@ class Graphiti {
                 break;
             case 'minimum':
                 badgeColor = '#8A2BE2'; // Blue violet for minimum (matches marker)
+                break;
+            case 'inflection':
+                badgeColor = '#00E5FF'; // Bright cyan for inflection points
                 break;
             default:
                 badgeColor = '#808080'; // Gray for inflection/other (matches marker)
@@ -46298,6 +46360,9 @@ class Graphiti {
                     break;
                 case 'minimum':
                     labelText = `Local Minimum: ${coords}`;
+                    break;
+                case 'inflection':
+                    labelText = `Point of Inflection: ${coords}`;
                     break;
                 case 'intersection':
                     // Intersection badges show only coordinates

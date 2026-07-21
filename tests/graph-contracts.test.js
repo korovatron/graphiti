@@ -1401,6 +1401,260 @@ async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
     );
 }
 
+async function assertExplicitCartesianInflectionPointsAreDetected(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.showTurningPoints = true;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.turningPointsCache.clear();
+
+        Object.assign(graphiti.viewport, {
+            minX: -4,
+            maxX: 4,
+            minY: -4,
+            maxY: 10
+        });
+
+        const evaluate = (expression) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color: '#4A90E2',
+                enabled: true,
+                mode: 'cartesian'
+            };
+            const convertedExpression = graphiti.convertFromLatex(expression);
+            let cleanExpression = convertedExpression.trim();
+            if (cleanExpression.toLowerCase().startsWith('y=')) {
+                cleanExpression = cleanExpression.substring(2).trim();
+            }
+            const processedExpression = cleanExpression.toLowerCase();
+            const derivativeStr = graphiti.cleanMath.derivative(processedExpression, 'x').toString();
+            const secondDerivativeStr = graphiti.cleanMath.derivative(derivativeStr, 'x').toString();
+            return graphiti.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression)
+                .map(point => ({ x: point.x, y: point.y, type: point.type }));
+        };
+
+        return {
+            nonStationaryInflection: evaluate('y=x^3+x+5'),
+            stationaryInflection: evaluate('y=x^3+5'),
+            noConcavityChange: evaluate('y=x^4'),
+            badgeLabels: (() => {
+                const func = {
+                    id: graphiti.nextFunctionId++,
+                    expression: 'y=x^3+x+5',
+                    points: [],
+                    color: '#4A90E2',
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+                graphiti.cartesianFunctions.push(func);
+                graphiti.input.persistentBadges = [];
+                graphiti.addTurningPointBadge(0, 5, func, 'inflection');
+
+                const capturedLabels = [];
+                const originalFillText = graphiti.ctx.fillText.bind(graphiti.ctx);
+                graphiti.ctx.fillText = (text, ...args) => {
+                    capturedLabels.push(String(text));
+                    return originalFillText(text, ...args);
+                };
+                try {
+                    graphiti.updateBadgeScreenPositions();
+                    graphiti.drawPersistentBadges();
+                } finally {
+                    graphiti.ctx.fillText = originalFillText;
+                }
+
+                const svg = graphiti.buildSVGExport({
+                    frameShape: 'original',
+                    colorMode: 'colour',
+                    textSize: 'medium',
+                    strokeWidth: 'small',
+                    includeIntersections: true,
+                    includeIntercepts: true,
+                    includeTurningPoints: true
+                });
+
+                return {
+                    canvas: capturedLabels,
+                    badgeColor: graphiti.input.persistentBadges[0] ? graphiti.input.persistentBadges[0].functionColor : null,
+                    svgHasInflectionLabel: svg.includes('Point of Inflection')
+                };
+            })(),
+            overlappingHiddenInterceptTap: (() => {
+                const func = {
+                    id: graphiti.nextFunctionId++,
+                    expression: 'y=x^3',
+                    points: [],
+                    color: '#00C853',
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+                graphiti.cartesianFunctions = [func];
+                graphiti.input.persistentBadges = [];
+                graphiti.showIntersections = false;
+                graphiti.showIntercepts = true;
+                graphiti.showTurningPoints = true;
+                graphiti.currentState = graphiti.states.GRAPHING;
+
+                const processedExpression = 'x^3';
+                const derivativeStr = graphiti.cleanMath.derivative(processedExpression, 'x').toString();
+                const secondDerivativeStr = graphiti.cleanMath.derivative(derivativeStr, 'x').toString();
+                graphiti.turningPoints = graphiti.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression);
+                graphiti.intercepts = [
+                    { x: 0, y: 0, type: 'x-intercept', functionId: func.id },
+                    { x: 0, y: 0, type: 'y-intercept', functionId: func.id }
+                ];
+                graphiti.cullInterceptMarkers();
+
+                const screen = graphiti.worldToScreen(0, 0);
+                graphiti.showIntercepts = false;
+
+                let tapped = null;
+                const originalInterceptTap = graphiti.handleInterceptTap.bind(graphiti);
+                const originalTurningPointTap = graphiti.handleTurningPointTap.bind(graphiti);
+                graphiti.handleInterceptTap = (intercept, x, y) => {
+                    tapped = 'intercept';
+                    return originalInterceptTap(intercept, x, y);
+                };
+                graphiti.handleTurningPointTap = (turningPoint, x, y) => {
+                    tapped = turningPoint.type;
+                    return originalTurningPointTap(turningPoint, x, y);
+                };
+
+                try {
+                    const rect = graphiti.canvas.getBoundingClientRect();
+                    graphiti.handlePointerStart(rect.left + screen.x, rect.top + screen.y);
+                } finally {
+                    graphiti.handleInterceptTap = originalInterceptTap;
+                    graphiti.handleTurningPointTap = originalTurningPointTap;
+                    graphiti.input.mouse.down = false;
+                }
+
+                const badge = graphiti.input.persistentBadges[0] || null;
+                return {
+                    tapped,
+                    hiddenInterceptHit: !!graphiti.findInterceptAtScreenPoint(screen.x, screen.y),
+                    badgeType: badge ? badge.badgeType : null,
+                    significantPointType: badge ? badge.significantPointType : null
+                };
+            })(),
+            overlappingEnabledTapPriority: (() => {
+                const func = {
+                    id: graphiti.nextFunctionId++,
+                    expression: 'y=x^3',
+                    points: [],
+                    color: '#00C853',
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+                graphiti.cartesianFunctions = [func];
+                graphiti.input.persistentBadges = [];
+                graphiti.currentState = graphiti.states.GRAPHING;
+
+                const processedExpression = 'x^3';
+                const derivativeStr = graphiti.cleanMath.derivative(processedExpression, 'x').toString();
+                const secondDerivativeStr = graphiti.cleanMath.derivative(derivativeStr, 'x').toString();
+                graphiti.turningPoints = graphiti.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression);
+                graphiti.intersections = [{ x: 0, y: 0, func1Id: func.id, func2Id: 'other' }];
+                graphiti.intercepts = [
+                    { x: 0, y: 0, type: 'x-intercept', functionId: func.id },
+                    { x: 0, y: 0, type: 'y-intercept', functionId: func.id }
+                ];
+                graphiti.cullInterceptMarkers();
+
+                const screen = graphiti.worldToScreen(0, 0);
+                const rect = graphiti.canvas.getBoundingClientRect();
+                const tapWith = (settings) => {
+                    graphiti.input.persistentBadges = [];
+                    graphiti.showTurningPoints = settings.turning;
+                    graphiti.showIntersections = settings.intersection;
+                    graphiti.showIntercepts = settings.intercept;
+
+                    let tapped = null;
+                    const originalInterceptTap = graphiti.handleInterceptTap.bind(graphiti);
+                    const originalIntersectionTap = graphiti.handleIntersectionTap.bind(graphiti);
+                    const originalTurningPointTap = graphiti.handleTurningPointTap.bind(graphiti);
+                    graphiti.handleInterceptTap = () => { tapped = 'intercept'; };
+                    graphiti.handleIntersectionTap = () => { tapped = 'intersection'; };
+                    graphiti.handleTurningPointTap = (turningPoint) => { tapped = turningPoint.type; };
+
+                    try {
+                        graphiti.handlePointerStart(rect.left + screen.x, rect.top + screen.y);
+                    } finally {
+                        graphiti.handleInterceptTap = originalInterceptTap;
+                        graphiti.handleIntersectionTap = originalIntersectionTap;
+                        graphiti.handleTurningPointTap = originalTurningPointTap;
+                        graphiti.input.mouse.down = false;
+                    }
+
+                    return tapped;
+                };
+
+                return {
+                    allEnabled: tapWith({ turning: true, intersection: true, intercept: true }),
+                    turningDisabled: tapWith({ turning: false, intersection: true, intercept: true }),
+                    turningAndIntersectionDisabled: tapWith({ turning: false, intersection: false, intercept: true })
+                };
+            })(),
+            turningToggleTitle: document.getElementById('turning-points-toggle')?.getAttribute('title') || ''
+        };
+    });
+
+    assert(
+        result.nonStationaryInflection.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 5, 0.02)),
+        `explicit non-stationary inflection should be detected: ${JSON.stringify(result.nonStationaryInflection)}`
+    );
+    assert(
+        result.stationaryInflection.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 5, 0.02)),
+        `explicit stationary inflection should still be detected: ${JSON.stringify(result.stationaryInflection)}`
+    );
+    assert(
+        !result.noConcavityChange.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 0, 0.02)),
+        `explicit points without concavity change should not be inflections: ${JSON.stringify(result.noConcavityChange)}`
+    );
+    assert(
+        result.badgeLabels.canvas.some(label => label.includes('Point of Inflection')),
+        `inflection badge canvas label should include a description: ${JSON.stringify(result.badgeLabels)}`
+    );
+    assert(
+        result.badgeLabels.svgHasInflectionLabel,
+        `inflection badge SVG label should include a description: ${JSON.stringify(result.badgeLabels)}`
+    );
+    assert.strictEqual(
+        result.badgeLabels.badgeColor,
+        '#00E5FF',
+        `inflection badge should use the bright inflection colour: ${JSON.stringify(result.badgeLabels)}`
+    );
+    assert.deepStrictEqual(
+        result.overlappingHiddenInterceptTap,
+        {
+            tapped: 'inflection',
+            hiddenInterceptHit: false,
+            badgeType: 'inflection',
+            significantPointType: 'turningPoint'
+        },
+        `hidden intercepts should not win over overlapping inflections: ${JSON.stringify(result.overlappingHiddenInterceptTap)}`
+    );
+    assert.deepStrictEqual(
+        result.overlappingEnabledTapPriority,
+        {
+            allEnabled: 'inflection',
+            turningDisabled: 'intersection',
+            turningAndIntersectionDisabled: 'intercept'
+        },
+        `overlapping significant point taps should follow enabled priority: ${JSON.stringify(result.overlappingEnabledTapPriority)}`
+    );
+    assert(
+        /inflection point/i.test(result.turningToggleTitle),
+        `turning point toggle title should mention inflection points: ${result.turningToggleTitle}`
+    );
+}
+
 async function assertParameterZeroDenominatorDoesNotHang(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -2594,6 +2848,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertImplicitVerticalTangentsAreNotTurningMarkers(page);
+        await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
