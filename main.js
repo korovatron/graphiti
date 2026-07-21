@@ -296,6 +296,7 @@ class Graphiti {
         this.intersectionMarkersPendingViewportRefresh = false; // Keep cached markers while viewport refresh/replot is unfinished
         this.frozenInterceptBadges = []; // Store intercept badges during viewport changes
         this.interceptsPendingViewportRefresh = false; // Keep frozen intercepts until new viewport cache is ready
+        this.turningPointsPendingViewportRefresh = false; // Keep frozen turning points until new viewport cache is ready
         this.culledInterceptMarkers = []; // Cache culled intercept markers for performance
         
         // Flag for skipping expensive numerical integration recalculations during drag
@@ -3715,6 +3716,7 @@ class Graphiti {
         this.frozenTurningPointBadges = [];
         this.frozenIntersectionBadges = [];
         this.interceptsPendingViewportRefresh = false;
+        this.turningPointsPendingViewportRefresh = false;
         
         // Clear intersection arrays before recalculating from remaining function point data.
         this.clearIntersectionState({ cancelWorker: true });
@@ -21501,9 +21503,10 @@ class Graphiti {
                 .map(f => f.id)
         );
         
-        // Capture current intercepts as frozen badges ONLY if viewport wasn't already changing
-        // Filter to only include intercepts from currently enabled functions
-        if (!this.isViewportChanging && this.showIntercepts && this.intercepts.length > 0) {
+        // Capture current significant-point markers as frozen badges. The viewport may
+        // already be marked changing by the first pan/zoom draw, so do this even when
+        // isViewportChanging is true.
+        if (this.showIntercepts && this.intercepts.length > 0) {
             this.frozenInterceptBadges = this.intercepts
                 .filter(intercept => !intercept.functionId || enabledFunctionIds.has(intercept.functionId))
                 .map(intercept => ({
@@ -21515,9 +21518,7 @@ class Graphiti {
             this.interceptsPendingViewportRefresh = this.frozenInterceptBadges.length > 0;
         }
         
-        // Capture current turning points as frozen badges ONLY if viewport wasn't already changing
-        // Filter to only include turning points from currently enabled functions
-        if (!this.isViewportChanging && this.showTurningPoints && this.turningPoints.length > 0) {
+        if (this.showTurningPoints && this.turningPoints.length > 0) {
             this.frozenTurningPointBadges = this.turningPoints
                 .filter(tp => !tp.func || enabledFunctionIds.has(tp.func.id))
                 .map(turningPoint => ({
@@ -21526,6 +21527,7 @@ class Graphiti {
                     type: turningPoint.type,
                     func: turningPoint.func
                 }));
+                    this.turningPointsPendingViewportRefresh = this.frozenTurningPointBadges.length > 0;
         }
         
         this.freezeCurrentIntersectionMarkersForViewportChange();
@@ -21597,8 +21599,6 @@ class Graphiti {
                     return;
                 }
 
-                this.frozenTurningPointBadges = []; // Clear frozen turning point badges
-
                 // Skip badge calculations during polar animation or pause
                 if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
                     return;
@@ -21614,6 +21614,8 @@ class Graphiti {
                     this.intercepts = this.findAxisIntercepts();
                     this.cullInterceptMarkers(); // Pre-calculate culled markers for performance
                 }
+                this.frozenTurningPointBadges = [];
+                this.turningPointsPendingViewportRefresh = false;
                 this.frozenInterceptBadges = [];
                 this.interceptsPendingViewportRefresh = false;
                 
@@ -25798,9 +25800,6 @@ class Graphiti {
             // Update badge positions for accurate click detection
             this.updateBadgeScreenPositions();
             
-            // Force a draw to update panel bounds, then check for checkbox click
-            this.draw();
-            
             const clickedCheckbox = this.findIntegralLabelAtPoint(canvasX, canvasY);
             if (clickedCheckbox) {
                 this.handleIntegralLabelClick(clickedCheckbox);
@@ -25892,6 +25891,7 @@ class Graphiti {
                 // If badge has tangent or normal, clear frozen intercepts
                 if ((targetBadge.hasTangent || targetBadge.hasNormal) && this.showIntercepts) {
                     this.frozenInterceptBadges = [];
+                    this.interceptsPendingViewportRefresh = false;
                 }
                 
                 // Remove tangent and normal intersection badges that reference this badge
@@ -26342,6 +26342,7 @@ class Graphiti {
                     // This dramatically improves performance (75fps instead of <20fps with 5 functions)
                     // Functions will be recalculated when panning stops via handleViewportChange()
                     this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.isViewportChanging = true;
                     
                     // Redraw the entire canvas to ensure proper clearing and avoid ghost artifacts
                     this.draw();
@@ -27084,6 +27085,8 @@ class Graphiti {
         this.isViewportChanging = false;
         this.frozenInterceptBadges = [];
         this.frozenTurningPointBadges = [];
+        this.interceptsPendingViewportRefresh = false;
+        this.turningPointsPendingViewportRefresh = false;
         this.input.zoomRect.endY = 0;
         
         this.draw(); // Redraw to remove rectangle
@@ -30570,6 +30573,7 @@ class Graphiti {
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
             this.freezeCurrentIntersectionMarkersForViewportChange();
+            this.isViewportChanging = true;
             this.draw();
             this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
@@ -30601,6 +30605,7 @@ class Graphiti {
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
             this.freezeCurrentIntersectionMarkersForViewportChange();
+            this.isViewportChanging = true;
             this.draw();
             this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
         }
@@ -30925,10 +30930,12 @@ class Graphiti {
         // Clear turning points when switching modes (will be recalculated in new mode)
         this.turningPoints = [];
         this.frozenTurningPointBadges = [];
+        this.turningPointsPendingViewportRefresh = false;
         
         // Clear intercepts when switching modes (will be recalculated in new mode)
         this.intercepts = [];
         this.frozenInterceptBadges = [];
+        this.interceptsPendingViewportRefresh = false;
         
         // Clear intersections when switching modes (will be recalculated in new mode)
         this.clearIntersectionState({ cancelWorker: true });
@@ -31412,6 +31419,8 @@ class Graphiti {
         this.clearIntersectionState({ cancelWorker: true });
         this.frozenInterceptBadges = [];
         this.frozenTurningPointBadges = [];
+        this.interceptsPendingViewportRefresh = false;
+        this.turningPointsPendingViewportRefresh = false;
 
         let replottedEnabledFunction = false;
         if (func.enabled && !wasEnabled && func.expression && func.expression.trim()) {
@@ -39250,6 +39259,7 @@ class Graphiti {
         this.turningPoints = [];
         this.frozenTurningPointBadges = [];
         this.frozenIntersectionBadges = [];
+        this.turningPointsPendingViewportRefresh = false;
         
         // Remove all turning point badges (those with badgeType indicating turning points)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
@@ -39271,6 +39281,7 @@ class Graphiti {
         // Clear intercept markers and frozen badges
         this.intercepts = [];
         this.frozenInterceptBadges = [];
+        this.interceptsPendingViewportRefresh = false;
         
         // Remove all intercept badges (Cartesian and polar types)
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
@@ -40268,6 +40279,8 @@ class Graphiti {
             this.clearIntersectionState({ cancelWorker: true });
             this.frozenTurningPointBadges = [];
             this.frozenInterceptBadges = [];
+            this.turningPointsPendingViewportRefresh = false;
+            this.interceptsPendingViewportRefresh = false;
             this.isViewportChanging = false;
             
             // Clear expression cache to prevent stale compiled functions
@@ -40672,10 +40685,10 @@ class Graphiti {
 
         // Draw turning point markers if enabled and viewport is stable (skip during polar animation or pause)
         if (this.showTurningPoints && !this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
-            if (this.isViewportChanging && this.frozenTurningPointBadges.length > 0) {
-                // During viewport changes, show frozen turning point badges for visual continuity
+            if ((this.isViewportChanging || this.turningPointsPendingViewportRefresh) && this.frozenTurningPointBadges.length > 0) {
+                // During viewport changes and the settle refresh, show frozen turning point badges for visual continuity
                 this.drawFrozenTurningPointBadges();
-            } else if (!this.isViewportChanging && this.turningPoints.length > 0) {
+            } else if (!this.isViewportChanging && !this.turningPointsPendingViewportRefresh && this.turningPoints.length > 0) {
                 // When viewport is stable, show actual turning point markers
                 this.drawTurningPointMarkers();
             }
@@ -41848,9 +41861,12 @@ class Graphiti {
             return false;
         };
 
-        const activeExplicitDecimation = this.isViewportChanging && func._useExplicitCurveRenderCache && !isInequality && func.points.length > 1600;
+        const activeExplicitDecimation = this.isViewportChanging &&
+            (func._useExplicitCurveRenderCache || this.isExplicitImplicitFastPath(func)) &&
+            !isInequality &&
+            func.points.length > 600;
         const activeExplicitStep = activeExplicitDecimation
-            ? Math.max(1, Math.ceil(func.points.length / 1400))
+            ? Math.max(1, Math.ceil(func.points.length / 500))
             : 1;
 
         for (let i = 0; i < func.points.length; i++) {
@@ -42373,9 +42389,18 @@ class Graphiti {
             
             // Check if viewport has changed but curve data hasn't
             if (cached.viewport !== viewportKey) {
-                // For inequality boundaries, redraw with cached points for crisp lines
-                // (Don't scale - we want crisp boundaries even during zoom)
-                // Viewport changed - regenerate at new viewport for crisp curve rendering
+                if (this.isViewportChanging && cached.viewportBounds) {
+                    const topLeft = this.worldToScreen(cached.viewportBounds.minX, cached.viewportBounds.maxY);
+                    const bottomRight = this.worldToScreen(cached.viewportBounds.maxX, cached.viewportBounds.minY);
+                    const width = bottomRight.x - topLeft.x;
+                    const height = bottomRight.y - topLeft.y;
+
+                    if (Number.isFinite(width) && Number.isFinite(height) && Math.abs(width) > 0.001 && Math.abs(height) > 0.001) {
+                        this.ctx.drawImage(cached.canvas, topLeft.x, topLeft.y, width, height);
+                        this.drawFunctionHoles(func);
+                        return;
+                    }
+                }
             } else {
                 // Perfect cache hit - viewport and data match
                 this.ctx.drawImage(cached.canvas, 0, 0);
@@ -42591,7 +42616,13 @@ class Graphiti {
             isInequality: isInequality,
             isStrict: isStrict,
             hasConnectedPoints: hasConnectedPoints,
-            sizeMode: this.sizeMode
+            sizeMode: this.sizeMode,
+            viewportBounds: {
+                minX: this.viewport.minX,
+                maxX: this.viewport.maxX,
+                minY: this.viewport.minY,
+                maxY: this.viewport.maxY
+            }
         });
         
         // Draw to main canvas
@@ -43189,7 +43220,7 @@ class Graphiti {
         const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
         // First check regular turning points (when viewport is stable)
-        if (!this.isViewportChanging) {
+        if (!this.isViewportChanging && !this.turningPointsPendingViewportRefresh) {
             for (const turningPoint of this.turningPoints) {
                 const turningPointScreen = this.worldToScreen(turningPoint.x, turningPoint.y);
                 const distance = Math.sqrt(
@@ -43204,7 +43235,7 @@ class Graphiti {
         }
         
         // During viewport changes, check frozen turning point badges
-        if (this.isViewportChanging && this.frozenTurningPointBadges.length > 0) {
+        if ((this.isViewportChanging || this.turningPointsPendingViewportRefresh) && this.frozenTurningPointBadges.length > 0) {
             for (const frozenBadge of this.frozenTurningPointBadges) {
                 const badgeScreen = this.worldToScreen(frozenBadge.x, frozenBadge.y);
                 const distance = Math.sqrt(

@@ -24,6 +24,8 @@ const contentTypes = new Map([
     ['.svg', 'image/svg+xml; charset=utf-8']
 ]);
 
+const unsafeBrowserPorts = new Set([6000, 6665, 6666, 6667, 6668, 6669, 10080]);
+
 function startStaticServer() {
     const server = http.createServer((request, response) => {
         const requestUrl = new URL(request.url, 'http://127.0.0.1');
@@ -55,6 +57,13 @@ function startStaticServer() {
         server.once('error', reject);
         server.listen(0, '127.0.0.1', () => {
             const address = server.address();
+            if (unsafeBrowserPorts.has(address.port)) {
+                server.close(() => {
+                    startStaticServer().then(resolve, reject);
+                });
+                return;
+            }
+
             resolve({
                 server,
                 baseUrl: `http://127.0.0.1:${address.port}/`
@@ -2078,6 +2087,214 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
     assert(result.after.obliqueCount > 0, `product oblique asymptotes should still exist after replot: ${JSON.stringify(result)}`);
 }
 
+async function assertStressFastPathPanZoomStartsImmediately(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const expression = '\\frac{x-4}{x-1}y^3-\\frac{x+2}{x-1}=0';
+        for (let index = 0; index < 4; index++) {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color: ['#4A90E2', '#D0021B', '#00C853', '#F5A623'][index],
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+        }
+
+        const fastPathCount = graphiti.cartesianFunctions.filter(func => graphiti.isExplicitImplicitFastPath(func)).length;
+        const pointCounts = graphiti.cartesianFunctions.map(func => func.points.length);
+        const denseFastPathCount = graphiti.cartesianFunctions.filter(func => graphiti.isExplicitImplicitFastPath(func) && func.points.length > 600).length;
+
+        const originalDraw = graphiti.draw.bind(graphiti);
+        const originalHandleViewportChange = graphiti.handleViewportChange.bind(graphiti);
+        let pointerStartDrawCalls = 0;
+        let zoomDrawSawViewportChanging = null;
+
+        graphiti.handleViewportChange = () => {};
+        graphiti.draw = () => {
+            pointerStartDrawCalls++;
+        };
+        graphiti.handlePointerStart(400, 300);
+
+        graphiti.draw = () => {
+            zoomDrawSawViewportChanging = graphiti.isViewportChanging;
+        };
+
+        try {
+            graphiti.zoomIn();
+        } finally {
+            graphiti.draw = originalDraw;
+            graphiti.handleViewportChange = originalHandleViewportChange;
+            graphiti.isViewportChanging = false;
+            graphiti.input.mouse.down = false;
+        }
+
+        return {
+            functionCount: graphiti.cartesianFunctions.length,
+            fastPathCount,
+            pointCounts,
+            denseFastPathCount,
+            pointerStartDrawCalls,
+            zoomDrawSawViewportChanging
+        };
+    });
+
+    assert.strictEqual(result.functionCount, 4, `stress setup should create four functions: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.fastPathCount, 4, `stress functions should use explicit fast-path rendering: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.denseFastPathCount, 4, `stress functions should be dense enough to exercise interactive decimation: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pointerStartDrawCalls, 0, `background pan pointer-down should not redraw before movement: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.zoomDrawSawViewportChanging, true, `zoom draw should use viewport-changing fast path immediately: ${JSON.stringify(result)}`);
+}
+
+async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = true;
+        graphiti.showIntercepts = true;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=x^2',
+            points: [{ x: -1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 1 }],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func);
+        graphiti.intercepts = [{ x: 0, y: 0, type: 'x', functionId: func.id }];
+        graphiti.turningPoints = [{ x: 0, y: 0, type: 'minimum', func }];
+
+        const originals = {
+            plotFunction: graphiti.plotFunction.bind(graphiti),
+            findAxisIntercepts: graphiti.findAxisIntercepts.bind(graphiti),
+            findTurningPoints: graphiti.findTurningPoints.bind(graphiti),
+            cullInterceptMarkers: graphiti.cullInterceptMarkers.bind(graphiti),
+            updateIntegralPairs: graphiti.updateIntegralPairs.bind(graphiti),
+            updateBadgesFromSignificantPoints: graphiti.updateBadgesFromSignificantPoints.bind(graphiti),
+            drawFrozenInterceptBadges: graphiti.drawFrozenInterceptBadges.bind(graphiti),
+            drawInterceptMarkers: graphiti.drawInterceptMarkers.bind(graphiti),
+            drawFrozenTurningPointBadges: graphiti.drawFrozenTurningPointBadges.bind(graphiti),
+            drawTurningPointMarkers: graphiti.drawTurningPointMarkers.bind(graphiti)
+        };
+
+        let resolvePlot = null;
+        let frozenInterceptDraws = 0;
+        let staleInterceptDraws = 0;
+        let frozenTurningDraws = 0;
+        let staleTurningDraws = 0;
+
+        graphiti.plotFunction = () => new Promise(resolve => {
+            resolvePlot = resolve;
+        });
+        graphiti.findAxisIntercepts = () => [{ x: 1, y: 0, type: 'x', functionId: func.id }];
+        graphiti.findTurningPoints = () => [{ x: 1, y: 1, type: 'minimum', func }];
+        graphiti.cullInterceptMarkers = () => {};
+        graphiti.updateIntegralPairs = () => {};
+        graphiti.updateBadgesFromSignificantPoints = () => {};
+        graphiti.drawFrozenInterceptBadges = () => { frozenInterceptDraws++; };
+        graphiti.drawInterceptMarkers = () => { staleInterceptDraws++; };
+        graphiti.drawFrozenTurningPointBadges = () => { frozenTurningDraws++; };
+        graphiti.drawTurningPointMarkers = () => { staleTurningDraws++; };
+
+        try {
+            graphiti.isViewportChanging = true;
+            graphiti.viewport.minX += 1;
+            graphiti.viewport.maxX += 1;
+            graphiti.handleViewportChange({ skipCoverageRefresh: true });
+
+            await new Promise(resolve => setTimeout(resolve, 80));
+            const pendingState = {
+                isViewportChanging: graphiti.isViewportChanging,
+                interceptsPending: graphiti.interceptsPendingViewportRefresh,
+                turningPointsPending: graphiti.turningPointsPendingViewportRefresh,
+                frozenInterceptCount: graphiti.frozenInterceptBadges.length,
+                frozenTurningCount: graphiti.frozenTurningPointBadges.length
+            };
+
+            graphiti.draw();
+            const duringPendingDraw = {
+                frozenInterceptDraws,
+                staleInterceptDraws,
+                frozenTurningDraws,
+                staleTurningDraws
+            };
+
+            if (resolvePlot) {
+                resolvePlot();
+            }
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            return {
+                pendingState,
+                duringPendingDraw,
+                afterRefresh: {
+                    interceptsPending: graphiti.interceptsPendingViewportRefresh,
+                    turningPointsPending: graphiti.turningPointsPendingViewportRefresh,
+                    frozenInterceptCount: graphiti.frozenInterceptBadges.length,
+                    frozenTurningCount: graphiti.frozenTurningPointBadges.length,
+                    interceptX: graphiti.intercepts[0] ? graphiti.intercepts[0].x : null,
+                    turningX: graphiti.turningPoints[0] ? graphiti.turningPoints[0].x : null
+                }
+            };
+        } finally {
+            Object.assign(graphiti, originals);
+            graphiti.isViewportChanging = false;
+        }
+    });
+
+    assert.strictEqual(result.pendingState.isViewportChanging, false, `settle timer should mark viewport stable while refresh is pending: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.interceptsPending, true, `intercepts should stay pending during delayed refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.turningPointsPending, true, `turning points should stay pending during delayed refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.frozenInterceptCount, 1, `frozen intercept should be retained during delayed refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.frozenTurningCount, 1, `frozen turning point should be retained during delayed refresh: ${JSON.stringify(result)}`);
+    assert(result.duringPendingDraw.frozenInterceptDraws > 0, `pending refresh should draw frozen intercepts: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.duringPendingDraw.staleInterceptDraws, 0, `pending refresh should not draw stale intercepts: ${JSON.stringify(result)}`);
+    assert(result.duringPendingDraw.frozenTurningDraws > 0, `pending refresh should draw frozen turning points: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.duringPendingDraw.staleTurningDraws, 0, `pending refresh should not draw stale turning points: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.interceptsPending, false, `intercepts should clear pending state after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.turningPointsPending, false, `turning points should clear pending state after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.frozenInterceptCount, 0, `frozen intercepts should clear after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.frozenTurningCount, 0, `frozen turning points should clear after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.interceptX, 1, `fresh intercept should replace frozen marker after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.turningX, 1, `fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -2179,6 +2396,8 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
         await assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page);
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
         await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
+        await assertStressFastPathPanZoomStartsImmediately(page);
+        await assertViewportSettleKeepsFrozenSignificantMarkers(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {
