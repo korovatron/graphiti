@@ -37888,48 +37888,6 @@ class Graphiti {
                     });
                 }
                 
-                // Check for vertical tangent: ∂F/∂y changes sign (and ∂F/∂x is non-zero)
-                // This means dy/dx = -∂F/∂x / ∂F/∂y = undefined
-                if (partials1.dFdy * partials2.dFdy < 0 && 
-                    Math.abs(partials1.dFdx) > threshold && 
-                    Math.abs(partials2.dFdx) > threshold) {
-                    
-                    // Refine location using bisection
-                    let xa = p1.x, ya = p1.y;
-                    let xb = p2.x, yb = p2.y;
-                    
-                    for (let iter = 0; iter < 10; iter++) {
-                        const xm = (xa + xb) / 2;
-                        const ym = (ya + yb) / 2;
-                        const partialsM = calculatePartials(xm, ym);
-                        
-                        if (!partialsM) break;
-                        
-                        if (partials1.dFdy * partialsM.dFdy < 0) {
-                            xb = xm;
-                            yb = ym;
-                        } else {
-                            xa = xm;
-                            ya = ym;
-                        }
-                    }
-                    
-                    let xTurn = (xa + xb) / 2;
-                    let yTurn = (ya + yb) / 2;
-                    
-                    // Snap very close points to exactly origin
-                    if (Math.abs(xTurn) < 0.02) xTurn = 0;
-                    if (Math.abs(yTurn) < 0.02) yTurn = 0;
-                    
-                    turningPoints.push({
-                        x: xTurn,
-                        y: yTurn,
-                        func: func,
-                        type: 'vertical-tangent',
-                        derivative: 'implicit',
-                        secondDerivative: 'implicit'
-                    });
-                }
             }
         } catch (error) {
             console.error('Error finding implicit turning points:', error);

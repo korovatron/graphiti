@@ -1358,6 +1358,49 @@ async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     assert.deepStrictEqual(result, [], `implicit fast-path turning point warnings: ${JSON.stringify(result)}`);
 }
 
+async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+
+        const verticalTangentFunc = {
+            id: 1,
+            expression: 'x-y^2=0',
+            points: [
+                { x: 0.01, y: -0.1 },
+                { x: 0.01, y: 0.1 }
+            ],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+
+        const horizontalExtremumFunc = {
+            id: 2,
+            expression: 'x^2+y^2=1',
+            points: [
+                { x: -0.1, y: 0.9949874371 },
+                { x: 0.1, y: 0.9949874371 }
+            ],
+            color: '#D0021B',
+            enabled: true,
+            mode: 'cartesian'
+        };
+
+        graphiti.turningPointsCache.clear();
+
+        return {
+            verticalTangentPoints: graphiti.findImplicitTurningPointsForFunction(verticalTangentFunc),
+            horizontalExtremumPoints: graphiti.findImplicitTurningPointsForFunction(horizontalExtremumFunc)
+        };
+    });
+
+    assert.deepStrictEqual(result.verticalTangentPoints, [], `implicit vertical tangents should not create turning markers: ${JSON.stringify(result)}`);
+    assert(
+        result.horizontalExtremumPoints.some(point => point.type === 'maximum' && approxEqual(point.x, 0, 0.03) && approxEqual(point.y, 1, 0.03)),
+        `implicit horizontal extrema should still create turning markers: ${JSON.stringify(result)}`
+    );
+}
+
 async function assertParameterZeroDenominatorDoesNotHang(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -2550,6 +2593,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertShapeClassification(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
+        await assertImplicitVerticalTangentsAreNotTurningMarkers(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
