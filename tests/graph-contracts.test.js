@@ -2318,6 +2318,146 @@ async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.turningX, 1, `fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
 }
 
+async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = true;
+        graphiti.showIntercepts = true;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=x^2',
+            points: [{ x: -1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 1 }],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func);
+        graphiti.intercepts = [{ x: 0, y: 0, type: 'x', functionId: func.id }];
+        graphiti.turningPoints = [{ x: 0, y: 0, type: 'minimum', func }];
+
+        const originals = {
+            plotFunction: graphiti.plotFunction.bind(graphiti),
+            findAxisIntercepts: graphiti.findAxisIntercepts.bind(graphiti),
+            findTurningPoints: graphiti.findTurningPoints.bind(graphiti),
+            cullInterceptMarkers: graphiti.cullInterceptMarkers.bind(graphiti),
+            updateIntegralPairs: graphiti.updateIntegralPairs.bind(graphiti),
+            updateBadgesFromSignificantPoints: graphiti.updateBadgesFromSignificantPoints.bind(graphiti),
+            drawFrozenInterceptBadges: graphiti.drawFrozenInterceptBadges.bind(graphiti),
+            drawInterceptMarkers: graphiti.drawInterceptMarkers.bind(graphiti),
+            drawFrozenTurningPointBadges: graphiti.drawFrozenTurningPointBadges.bind(graphiti),
+            drawTurningPointMarkers: graphiti.drawTurningPointMarkers.bind(graphiti)
+        };
+
+        let resolvePlot = null;
+        let frozenInterceptDraws = 0;
+        let staleInterceptDraws = 0;
+        let frozenTurningDraws = 0;
+        let staleTurningDraws = 0;
+
+        graphiti.plotFunction = () => new Promise(resolve => {
+            resolvePlot = resolve;
+        });
+        graphiti.findAxisIntercepts = () => [{ x: 1, y: 0, type: 'x', functionId: func.id }];
+        graphiti.findTurningPoints = () => [{ x: 1, y: 1, type: 'minimum', func }];
+        graphiti.cullInterceptMarkers = () => {};
+        graphiti.updateIntegralPairs = () => {};
+        graphiti.updateBadgesFromSignificantPoints = () => {};
+        graphiti.drawFrozenInterceptBadges = () => { frozenInterceptDraws++; };
+        graphiti.drawInterceptMarkers = () => { staleInterceptDraws++; };
+        graphiti.drawFrozenTurningPointBadges = () => { frozenTurningDraws++; };
+        graphiti.drawTurningPointMarkers = () => { staleTurningDraws++; };
+
+        try {
+            graphiti.input.zoomRect.active = true;
+            graphiti.input.zoomRect.startX = 240;
+            graphiti.input.zoomRect.startY = 180;
+            graphiti.input.zoomRect.endX = 720;
+            graphiti.input.zoomRect.endY = 540;
+            graphiti.isViewportChanging = true;
+
+            graphiti.handleRightClickEnd();
+
+            await new Promise(resolve => setTimeout(resolve, 80));
+            const pendingState = {
+                isViewportChanging: graphiti.isViewportChanging,
+                interceptsPending: graphiti.interceptsPendingViewportRefresh,
+                turningPointsPending: graphiti.turningPointsPendingViewportRefresh,
+                frozenInterceptCount: graphiti.frozenInterceptBadges.length,
+                frozenTurningCount: graphiti.frozenTurningPointBadges.length
+            };
+
+            graphiti.draw();
+            const duringPendingDraw = {
+                frozenInterceptDraws,
+                staleInterceptDraws,
+                frozenTurningDraws,
+                staleTurningDraws
+            };
+
+            if (resolvePlot) {
+                resolvePlot();
+            }
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            return {
+                pendingState,
+                duringPendingDraw,
+                afterRefresh: {
+                    interceptsPending: graphiti.interceptsPendingViewportRefresh,
+                    turningPointsPending: graphiti.turningPointsPendingViewportRefresh,
+                    frozenInterceptCount: graphiti.frozenInterceptBadges.length,
+                    frozenTurningCount: graphiti.frozenTurningPointBadges.length,
+                    interceptX: graphiti.intercepts[0] ? graphiti.intercepts[0].x : null,
+                    turningX: graphiti.turningPoints[0] ? graphiti.turningPoints[0].x : null
+                }
+            };
+        } finally {
+            Object.assign(graphiti, originals);
+            graphiti.isViewportChanging = false;
+            graphiti.input.zoomRect.active = false;
+        }
+    });
+
+    assert.strictEqual(result.pendingState.isViewportChanging, false, `rectangle zoom settle should mark viewport stable while refresh is pending: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.interceptsPending, true, `rectangle zoom should keep intercepts pending during delayed refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.turningPointsPending, true, `rectangle zoom should keep turning points pending during delayed refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.frozenInterceptCount, 1, `rectangle zoom should retain frozen intercept during delayed refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingState.frozenTurningCount, 1, `rectangle zoom should retain frozen turning point during delayed refresh: ${JSON.stringify(result)}`);
+    assert(result.duringPendingDraw.frozenInterceptDraws > 0, `rectangle zoom pending refresh should draw frozen intercepts: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.duringPendingDraw.staleInterceptDraws, 0, `rectangle zoom pending refresh should not draw stale intercepts: ${JSON.stringify(result)}`);
+    assert(result.duringPendingDraw.frozenTurningDraws > 0, `rectangle zoom pending refresh should draw frozen turning points: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.duringPendingDraw.staleTurningDraws, 0, `rectangle zoom pending refresh should not draw stale turning points: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.interceptsPending, false, `rectangle zoom intercept pending state should clear after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.turningPointsPending, false, `rectangle zoom turning point pending state should clear after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.frozenInterceptCount, 0, `rectangle zoom frozen intercepts should clear after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.frozenTurningCount, 0, `rectangle zoom frozen turning points should clear after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.interceptX, 1, `rectangle zoom fresh intercept should replace frozen marker after refresh: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.afterRefresh.turningX, 1, `rectangle zoom fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -2421,6 +2561,7 @@ async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
         await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
         await assertStressFastPathPanZoomStartsImmediately(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
+        await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {

@@ -26978,6 +26978,7 @@ class Graphiti {
         const width = Math.abs(rect.endX - rect.startX);
         const height = Math.abs(rect.endY - rect.startY);
         const minSize = 20; // Minimum size in pixels to avoid accidental micro-zooms
+        let appliedZoom = false;
         
         // Only apply zoom if rectangle is large enough
         if (width > minSize && height > minSize) {
@@ -27073,6 +27074,7 @@ class Graphiti {
             this.draw();
             this.updateIntegralPairs(); // Recalculate integrals for new viewport
             this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
+            appliedZoom = true;
         }
         
         // Reset zoom rectangle state
@@ -27081,12 +27083,13 @@ class Graphiti {
         this.input.zoomRect.startY = 0;
         this.input.zoomRect.endX = 0;
         
-        // Clear viewport changing flag and frozen badges
-        this.isViewportChanging = false;
-        this.frozenInterceptBadges = [];
-        this.frozenTurningPointBadges = [];
-        this.interceptsPendingViewportRefresh = false;
-        this.turningPointsPendingViewportRefresh = false;
+        if (!appliedZoom) {
+            this.isViewportChanging = false;
+            this.frozenInterceptBadges = [];
+            this.frozenTurningPointBadges = [];
+            this.interceptsPendingViewportRefresh = false;
+            this.turningPointsPendingViewportRefresh = false;
+        }
         this.input.zoomRect.endY = 0;
         
         this.draw(); // Redraw to remove rectangle
