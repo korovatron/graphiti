@@ -1911,6 +1911,54 @@ async function assertStaleIntersectionMarkersAreDiscarded(page) {
     ], `frozen intersections should be filtered: ${JSON.stringify(result.frozen)}`);
 }
 
+async function assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = true;
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        Object.assign(graphiti.viewport, {
+            minX: -0.3,
+            maxX: -0.22,
+            minY: -0.05,
+            maxY: 0.02,
+            width: 960,
+            height: 720
+        });
+        Object.assign(graphiti.cartesianViewport, graphiti.viewport);
+
+        const makeFunction = async (expression, color) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color,
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+            return func;
+        };
+
+        const shiftedCubic = await makeFunction('y=(x-1)^3+2', '#0057FF');
+        const cubic = await makeFunction('y=x^3', '#00C853');
+        const intersections = graphiti.findIntersectionsExplicit(shiftedCubic, cubic);
+        const first = intersections[0] || null;
+
+        return first ? { x: first.x, y: first.y } : null;
+    });
+
+    assert(result, 'near-axis cubic intersection should be found');
+    assert(approxEqual(result.x, -0.2638, 0.01), `near-axis cubic intersection x should be near the true crossing: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.y, -0.01835, 0.01), `near-axis cubic intersection y should be near the true crossing: ${JSON.stringify(result)}`);
+    assert(Math.abs(result.y) > 0.005, `near-axis cubic intersection marker should not be snapped to y=0: ${JSON.stringify(result)}`);
+}
+
 async function assertMixedIntersectionFreezeWaitsForImplicitRefresh(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -2851,6 +2899,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
+        await assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page);
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
         await assertSecondPanPreservesFrozenImplicitMarkers(page);
         await assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page);
