@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.73';
+const VERSION = '1.2.74';
 
 class Graphiti {
     constructor() {
@@ -27216,6 +27216,7 @@ class Graphiti {
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.isViewportChanging = true;
                     this.draw();
                     this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
@@ -27243,6 +27244,7 @@ class Graphiti {
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.isViewportChanging = true;
                     this.draw();
                     this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
@@ -27277,6 +27279,7 @@ class Graphiti {
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
                     this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.isViewportChanging = true;
                     this.draw();
                     this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }

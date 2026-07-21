@@ -2137,6 +2137,7 @@ async function assertStressFastPathPanZoomStartsImmediately(page) {
         const originalHandleViewportChange = graphiti.handleViewportChange.bind(graphiti);
         let pointerStartDrawCalls = 0;
         let zoomDrawSawViewportChanging = null;
+        let pinchDrawSawViewportChanging = null;
 
         graphiti.handleViewportChange = () => {};
         graphiti.draw = () => {
@@ -2150,11 +2151,31 @@ async function assertStressFastPathPanZoomStartsImmediately(page) {
 
         try {
             graphiti.zoomIn();
+
+            graphiti.isViewportChanging = false;
+            graphiti.input.pinch.active = false;
+            graphiti.handleTouchStart({
+                touches: [
+                    { clientX: 300, clientY: 300 },
+                    { clientX: 500, clientY: 300 }
+                ]
+            });
+            graphiti.draw = () => {
+                pinchDrawSawViewportChanging = graphiti.isViewportChanging;
+            };
+            graphiti.handleTouchMove({
+                touches: [
+                    { clientX: 280, clientY: 300 },
+                    { clientX: 520, clientY: 300 }
+                ]
+            });
         } finally {
             graphiti.draw = originalDraw;
             graphiti.handleViewportChange = originalHandleViewportChange;
             graphiti.isViewportChanging = false;
             graphiti.input.mouse.down = false;
+            graphiti.input.pinch.active = false;
+            graphiti.input.touch.active = false;
         }
 
         return {
@@ -2163,7 +2184,8 @@ async function assertStressFastPathPanZoomStartsImmediately(page) {
             pointCounts,
             denseFastPathCount,
             pointerStartDrawCalls,
-            zoomDrawSawViewportChanging
+            zoomDrawSawViewportChanging,
+            pinchDrawSawViewportChanging
         };
     });
 
@@ -2172,6 +2194,7 @@ async function assertStressFastPathPanZoomStartsImmediately(page) {
     assert.strictEqual(result.denseFastPathCount, 4, `stress functions should be dense enough to exercise interactive decimation: ${JSON.stringify(result)}`);
     assert.strictEqual(result.pointerStartDrawCalls, 0, `background pan pointer-down should not redraw before movement: ${JSON.stringify(result)}`);
     assert.strictEqual(result.zoomDrawSawViewportChanging, true, `zoom draw should use viewport-changing fast path immediately: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pinchDrawSawViewportChanging, true, `pinch draw should use viewport-changing fast path immediately: ${JSON.stringify(result)}`);
 }
 
 async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
