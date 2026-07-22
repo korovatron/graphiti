@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 
 class Graphiti {
     constructor() {
@@ -27638,9 +27638,9 @@ class Graphiti {
     }
     
     showKeyboardHint() {
-        // Only show on non-touch devices
-        const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-        if (isTouchDevice) {
+        // Only show when a mouse/trackpad-style pointer is available.
+        const hasFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+        if (!hasFinePointer) {
             return;
         }
         
@@ -27651,10 +27651,10 @@ class Graphiti {
         setTimeout(() => {
             hint.classList.add('show');
             
-            // Fade out after 4 seconds
+            // Fade out after 7 seconds
             setTimeout(() => {
                 hint.classList.remove('show');
-            }, 4000);
+            }, 7000);
         }, 500);
     }
     

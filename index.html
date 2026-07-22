@@ -2084,6 +2084,7 @@
             opacity: 0;
             transition: opacity 0.5s ease-in-out;
             pointer-events: none;
+            line-height: 1.5;
         }
 
         .keyboard-hint.show {
@@ -3396,7 +3397,8 @@
 
     <!-- Keyboard shortcuts hint (shown after leaving title screen) -->
     <div id="keyboard-hint" class="keyboard-hint">
-        Press <kbd>?</kbd> for keyboard shortcuts
+        <div>Press <kbd>?</kbd> for keyboard shortcuts</div>
+        <div>Right-drag to zoom into a rectangle</div>
     </div>
 
     <!-- Help overlay (device-aware) -->

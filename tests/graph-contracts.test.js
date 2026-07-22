@@ -2120,8 +2120,8 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
     );
     assert.strictEqual(
         result.badgeLabels.badgeColor,
-        '#00E5FF',
-        `inflection badge should use the bright inflection colour: ${JSON.stringify(result.badgeLabels)}`
+        '#00C853',
+        `inflection badge should use the green inflection colour: ${JSON.stringify(result.badgeLabels)}`
     );
     assert.deepStrictEqual(
         result.overlappingHiddenInterceptTap,
