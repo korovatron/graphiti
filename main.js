@@ -3080,9 +3080,7 @@ class Graphiti {
         if (intersectionToggleButton) {
             intersectionToggleButton.style.background = this.showIntersections ? '#2A3F5A' : '#1a2a3f';
             intersectionToggleButton.style.opacity = this.showIntersections ? '1' : '0.6';
-            intersectionToggleButton.title = this.showIntersections 
-                ? 'Intersection detection enabled (click to disable)' 
-                : 'Intersection detection disabled (click to enable)';
+            intersectionToggleButton.title = 'Toggle curve intersection detection';
         }
     }
     
@@ -31274,21 +31272,18 @@ class Graphiti {
         
         // Update turning points toggle icon based on plot mode
         const cartesianTurningIcon = document.getElementById('turning-points-icon-cartesian');
+        const polarTurningLabel = document.getElementById('turning-points-polar-label');
         const polarTurningIcon = document.getElementById('turning-points-icon-polar');
-        const cartesianNotation = document.getElementById('turning-points-notation-cartesian');
-        const polarNotation = document.getElementById('turning-points-notation-polar');
         
-        if (cartesianTurningIcon && polarTurningIcon && cartesianNotation && polarNotation) {
+        if (cartesianTurningIcon && polarTurningLabel && polarTurningIcon) {
             if (this.plotMode === 'cartesian') {
                 cartesianTurningIcon.style.display = 'block';
+                polarTurningLabel.style.display = 'none';
                 polarTurningIcon.style.display = 'none';
-                cartesianNotation.style.display = 'inline-flex';
-                polarNotation.style.display = 'none';
             } else {
                 cartesianTurningIcon.style.display = 'none';
+                polarTurningLabel.style.display = 'inline-flex';
                 polarTurningIcon.style.display = 'block';
-                cartesianNotation.style.display = 'none';
-                polarNotation.style.display = 'inline-flex';
             }
         }
         

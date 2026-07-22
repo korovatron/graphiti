@@ -1194,6 +1194,10 @@
             box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16);
         }
 
+        .asymptote-visibility-toggle {
+            border-color: #fff;
+        }
+
         .metadata-visibility-placeholder {
             width: 12px;
             height: 12px;
@@ -2921,7 +2925,7 @@
                 <!-- Bottom Row: Mathematical Analysis Features -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;">
                     <!-- Intersection Toggle Button -->
-                    <button id="intersection-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;" title="Toggle intersection detection">
+                    <button id="intersection-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;" title="Toggle curve intersection detection">
                         <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
                             <!-- Parabola shifted up slightly from bottom -->
                             <path d="M8 28 C8 1, 24 1, 24 28" stroke="currentColor" fill="none" stroke-width="1.5"></path>
@@ -2951,34 +2955,22 @@
                     </button>
 
                     <!-- Turning Points Toggle Button -->
-                    <button id="turning-points-toggle" style="padding: 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between;" title="Toggle turning point and inflection point detection">
-                        <!-- Derivative notation (left side) as proper fractions -->
-                        <span id="turning-points-notation-cartesian" style="font-size: 11px; opacity: 0.8; font-family: 'Times New Roman', serif; font-style: italic; display: inline-flex; align-items: center; gap: 3px;">
-                            <span style="display: inline-flex; flex-direction: column; align-items: center; line-height: 0.9;">
-                                <span style="border-bottom: 1px solid currentColor; padding-bottom: 1px;">dy</span>
-                                <span style="padding-top: 1px;">dx</span>
-                            </span>
-                            <span style="align-self: center;">=0</span>
-                        </span>
-                        <span id="turning-points-notation-polar" style="font-size: 11px; opacity: 0.8; font-family: 'Times New Roman', serif; font-style: italic; display: none; align-items: center; gap: 3px;">
-                            <span style="display: inline-flex; flex-direction: column; align-items: center; line-height: 0.9;">
-                                <span style="border-bottom: 1px solid currentColor; padding-bottom: 1px;">dr</span>
+                    <button id="turning-points-toggle" style="padding: 4px 8px; font-size: 10px; height: 40px; background: #2A3F5A; border: 1px solid #555; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;" title="Toggle turning point and inflection point detection">
+                        <!-- Cartesian mode icon: curve with an inflection point and maximum -->
+                        <svg id="turning-points-icon-cartesian" width="100%" height="32" viewBox="0 0 64 32" fill="none" stroke="currentColor" stroke-width="1.8" style="display: block; flex: 1; min-width: 0;">
+                            <path d="M3 29 C8 25, 11 19, 19 18 C23 17.5, 27 18, 31 18 C38 18, 41 6, 47 6 C54 6, 58 23, 61 29" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <circle cx="25" cy="18" r="2.6" fill="currentColor"></circle>
+                            <circle cx="47" cy="6" r="2.6" fill="currentColor"></circle>
+                        </svg>
+                        <span id="turning-points-polar-label" style="display: none; flex: 0 0 auto; align-items: center; gap: 3px; font-size: 10px; line-height: 1; margin-right: 4px; white-space: nowrap;">
+                            <span style="display: inline-flex; flex-direction: column; align-items: center; line-height: 1;">
+                                <span style="border-bottom: 1px solid currentColor; padding: 0 1px 1px;">dr</span>
                                 <span style="padding-top: 1px;">dθ</span>
                             </span>
-                            <span style="align-self: center;">=0</span>
+                            <span>= 0</span>
                         </span>
-                        
-                        <!-- Cartesian mode icon: sine wave with turning points (right side) -->
-                        <svg id="turning-points-icon-cartesian" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <!-- Taller sine wave using more vertical space -->
-                            <path d="M1 16 Q8 4, 16 16 Q24 28, 31 16" stroke="currentColor" fill="none" stroke-width="1.5"></path>
-                            <!-- Maximum point marker (adjusted to actual curve peak) -->
-                            <circle cx="8" cy="10" r="2.5" fill="currentColor"></circle>
-                            <!-- Minimum point marker (adjusted to actual curve trough) -->
-                            <circle cx="24" cy="22" r="2.5" fill="currentColor"></circle>
-                        </svg>
                         <!-- Polar mode icon: r=1+sin(2θ) with turning points (right side) -->
-                        <svg id="turning-points-icon-polar" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" style="display: none;">
+                        <svg id="turning-points-icon-polar" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" style="display: none; flex: 1; min-width: 0;">
                             <!-- Modified lemniscate with fuller petals in 1st and 3rd quadrants -->
                             <polyline points="23.0,16.0 24.7,14.8 26.1,13.3 27.0,11.4 27.3,9.5 26.9,7.6 25.9,6.1 24.4,5.1 22.5,4.7 20.6,5.0 18.7,5.9 17.2,7.3 16.0,9.0 15.3,10.9 15.1,12.6 15.2,14.1 15.5,15.2 15.9,15.8 16.0,16.0 15.8,15.9 15.2,15.5 14.1,15.2 12.6,15.1 10.9,15.3 9.0,16.0 7.3,17.2 5.9,18.7 5.0,20.6 4.7,22.5 5.1,24.4 6.1,25.9 7.6,26.9 9.5,27.3 11.4,27.0 13.3,26.1 14.8,24.7 16.0,23.0 16.7,21.1 16.9,19.4 16.8,17.9 16.5,16.8 16.1,16.2 16.0,16.0 16.2,16.1 16.8,16.5 17.9,16.8 19.4,16.9 21.1,16.7 23.0,16.0" 
                                       stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"></polyline>
