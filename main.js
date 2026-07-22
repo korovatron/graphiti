@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.88';
+const VERSION = '1.2.89';
 
 class Graphiti {
     constructor() {
@@ -49355,6 +49355,9 @@ class Graphiti {
             const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
                           window.matchMedia('(display-mode: fullscreen)').matches ||
                           window.navigator.standalone === true;
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            document.documentElement.style.setProperty('--panel-bottom-overfill', isIOS && !isPWA ? '2px' : '0px');
             
             // 3. Portrait mode compensation (iPhone & iPad)
             const isPortrait = window.innerHeight > window.innerWidth;

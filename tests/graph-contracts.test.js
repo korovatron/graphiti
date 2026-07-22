@@ -894,13 +894,17 @@ async function assertShapeClassification(page) {
         return {
             finePointerHoverRule: /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^}]*#hamburger-menu:hover/.test(cssText),
             finePointerPanelHoverRule: /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^}]*#hamburger-menu\.panel-open:hover/.test(cssText),
-            ungatedHoverRule: /(?:^|})\s*#hamburger-menu(?:\.panel-open)?:hover\s*\{/.test(cssText)
+            ungatedHoverRule: /(?:^|})\s*#hamburger-menu(?:\.panel-open)?:hover\s*\{/.test(cssText),
+            panelBottomOverfillDefault: getComputedStyle(document.documentElement).getPropertyValue('--panel-bottom-overfill').trim(),
+            panelHeightUsesBottomOverfill: /#function-panel\s*\{[^}]*height:\s*calc\(var\(--actual-vh,\s*100vh\)\s*\+\s*var\(--panel-bottom-overfill,\s*0px\)\)/.test(cssText)
         };
     });
 
     assert.strictEqual(hamburgerHoverCssResult.finePointerHoverRule, true, 'hamburger hover colour should only apply to fine hover pointers');
     assert.strictEqual(hamburgerHoverCssResult.finePointerPanelHoverRule, true, 'hamburger panel-open hover colour should only apply to fine hover pointers');
     assert.strictEqual(hamburgerHoverCssResult.ungatedHoverRule, false, 'hamburger hover colour should not be ungated on touch devices');
+    assert.strictEqual(hamburgerHoverCssResult.panelBottomOverfillDefault, '0px', 'function panel bottom overfill should default to zero');
+    assert.strictEqual(hamburgerHoverCssResult.panelHeightUsesBottomOverfill, true, 'function panel height should include bottom overfill variable');
 
     const sharedLinkDeferredPanelResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;
