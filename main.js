@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.92';
+const VERSION = '1.2.93';
 
 class Graphiti {
     constructor() {
@@ -48627,21 +48627,22 @@ class Graphiti {
         if (!hamburgerMenu || !functionPanel) return;
         
         const shouldBeMobile = this.isTrueMobile();
+        const panelIsOpen = functionPanel.classList.contains('mobile-open');
         
         // Don't interfere if mobile menu is currently open (user is actively using it)
         // Special handling for iOS Safari: even with forceUpdate, preserve open panel state
-        if (!forceUpdate && functionPanel.classList.contains('mobile-open')) {
+        if (!forceUpdate && panelIsOpen) {
             return;
         }
         
-        // iOS Safari special case: Don't force close panel during orientation changes
-        if (forceUpdate && this.isIOSSafari() && !this.isStandalonePWA() && 
-            functionPanel.classList.contains('mobile-open')) {
-            // Skip layout changes but ensure hamburger is visible
+        if (forceUpdate && this.currentState === this.states.GRAPHING && panelIsOpen) {
+            functionPanel.classList.remove('hidden');
             if (shouldBeMobile) {
                 hamburgerMenu.style.display = 'flex';
             }
-            return; // Preserve panel state on iOS Safari
+            hamburgerMenu.classList.add('active');
+            hamburgerMenu.classList.add('panel-open');
+            return;
         }
         
         // Don't show hamburger on title screen regardless of mobile/desktop

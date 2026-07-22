@@ -1083,6 +1083,14 @@ async function assertShapeClassification(page) {
             wheelPrevented
         };
 
+        graphiti.handleMobileLayout(true);
+
+        const afterForcedMobileLayout = {
+            panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+
         graphiti.closeMobileMenu();
 
         await new Promise(resolve => setTimeout(resolve, 550));
@@ -1116,6 +1124,7 @@ async function assertShapeClassification(page) {
             afterFirstCanvasTap,
             afterCanvasPinch,
             afterCanvasWheel,
+            afterForcedMobileLayout,
             afterDemoSetMenuClick
         };
     });
@@ -1149,6 +1158,9 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.hamburgerPanelOpen, true, 'canvas wheel zoom should leave hamburger in panel-open state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelZoomCalls, 1, 'canvas wheel zoom should still invoke zoom handling');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelPrevented, true, 'canvas wheel zoom should prevent browser default zoom');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterForcedMobileLayout.panelHidden, false, 'forced mobile layout update should keep an open function panel visible');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterForcedMobileLayout.panelOpen, true, 'forced mobile layout update should preserve an open function panel');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterForcedMobileLayout.hamburgerPanelOpen, true, 'forced mobile layout update should preserve hamburger panel-open state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.selectedDemoSetId, 'explicit-functions', 'demo set menu click should request the selected demo set');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.panelOpen, false, 'demo set menu click should close function panel on narrow screens');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.hamburgerPanelOpen, false, 'demo set menu click should restore hamburger closed state on narrow screens');
