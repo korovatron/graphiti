@@ -946,6 +946,32 @@ async function assertShapeClassification(page) {
             hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
         };
 
+        const dispatchPanelTouch = (type, touchCount) => {
+            const event = new Event(type, { bubbles: true, cancelable: true });
+            Object.defineProperty(event, 'touches', {
+                value: Array.from({ length: touchCount }, (_, index) => ({
+                    clientX: 120 + index * 40,
+                    clientY: 160
+                }))
+            });
+            functionPanel.dispatchEvent(event);
+            return event.defaultPrevented;
+        };
+
+        const dispatchPanelGesture = (type) => {
+            const event = new Event(type, { bubbles: true, cancelable: true });
+            functionPanel.dispatchEvent(event);
+            return event.defaultPrevented;
+        };
+
+        const panelPinchPrevention = {
+            singleTouchMovePrevented: dispatchPanelTouch('touchmove', 1),
+            multiTouchStartPrevented: dispatchPanelTouch('touchstart', 2),
+            multiTouchMovePrevented: dispatchPanelTouch('touchmove', 2),
+            gestureStartPrevented: dispatchPanelGesture('gesturestart'),
+            gestureChangePrevented: dispatchPanelGesture('gesturechange')
+        };
+
         graphiti.input.maxMoveDistance = 42;
         const canvas = document.getElementById('canvas');
         const canvasRect = canvas.getBoundingClientRect();
@@ -1085,6 +1111,7 @@ async function assertShapeClassification(page) {
             duringBuild,
             afterUnhide,
             afterBuild,
+            panelPinchPrevention,
             afterCanvasPan,
             afterFirstCanvasTap,
             afterCanvasPinch,
@@ -1103,6 +1130,11 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelHidden, false, 'shared-link build completion should show function panel');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelOpen, true, 'shared-link build completion should start panel slide-in');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'shared-link build completion should mark hamburger as panel-open');
+    assert.strictEqual(sharedLinkDeferredPanelResult.panelPinchPrevention.singleTouchMovePrevented, false, 'function panel should keep single-touch scrolling available');
+    assert.strictEqual(sharedLinkDeferredPanelResult.panelPinchPrevention.multiTouchStartPrevented, true, 'function panel should prevent two-touch pinch start');
+    assert.strictEqual(sharedLinkDeferredPanelResult.panelPinchPrevention.multiTouchMovePrevented, true, 'function panel should prevent two-touch pinch movement');
+    assert.strictEqual(sharedLinkDeferredPanelResult.panelPinchPrevention.gestureStartPrevented, true, 'function panel should prevent Safari gesture start');
+    assert.strictEqual(sharedLinkDeferredPanelResult.panelPinchPrevention.gestureChangePrevented, true, 'function panel should prevent Safari gesture change');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.panelOpen, false, 'shared-link first canvas pan should close function panel');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.hamburgerPanelOpen, false, 'shared-link first canvas pan should restore hamburger closed state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.viewportMoved, true, 'shared-link first canvas pan should still move the viewport');
@@ -1120,6 +1152,57 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.selectedDemoSetId, 'explicit-functions', 'demo set menu click should request the selected demo set');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.panelOpen, false, 'demo set menu click should close function panel on narrow screens');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.hamburgerPanelOpen, false, 'demo set menu click should restore hamburger closed state on narrow screens');
+
+    const resumePanelResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const functionPanel = document.getElementById('function-panel');
+        const hamburgerMenu = document.getElementById('hamburger-menu');
+        const originalShowGraphBuildOverlayForFunctions = graphiti.showGraphBuildOverlayForFunctions.bind(graphiti);
+        const originalUpdateIntegralPairs = graphiti.updateIntegralPairs.bind(graphiti);
+        const originalEnsureAnimationLoopRunning = graphiti.ensureAnimationLoopRunning.bind(graphiti);
+
+        graphiti.showGraphBuildOverlayForFunctions = async () => false;
+        graphiti.updateIntegralPairs = () => {};
+        graphiti.ensureAnimationLoopRunning = () => {};
+
+        const results = [];
+        try {
+            graphiti.currentState = graphiti.states.GRAPHING;
+
+            for (const mode of ['cartesian', 'polar']) {
+                graphiti.plotMode = mode;
+                if (functionPanel) {
+                    functionPanel.classList.add('hidden');
+                    functionPanel.classList.remove('mobile-open');
+                }
+                if (hamburgerMenu) {
+                    hamburgerMenu.classList.remove('active');
+                    hamburgerMenu.classList.remove('panel-open');
+                }
+
+                await graphiti.handleAppResume();
+
+                results.push({
+                    mode,
+                    panelHidden: functionPanel ? functionPanel.classList.contains('hidden') : null,
+                    panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+                    hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+                });
+            }
+        } finally {
+            graphiti.showGraphBuildOverlayForFunctions = originalShowGraphBuildOverlayForFunctions;
+            graphiti.updateIntegralPairs = originalUpdateIntegralPairs;
+            graphiti.ensureAnimationLoopRunning = originalEnsureAnimationLoopRunning;
+        }
+
+        return results;
+    });
+
+    for (const result of resumePanelResult) {
+        assert.strictEqual(result.panelHidden, false, `${result.mode} app resume should unhide the function panel`);
+        assert.strictEqual(result.panelOpen, true, `${result.mode} app resume should open the function panel`);
+        assert.strictEqual(result.hamburgerPanelOpen, true, `${result.mode} app resume should mark hamburger panel-open`);
+    }
 
     const sharedHashReplacementResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;

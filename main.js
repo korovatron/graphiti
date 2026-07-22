@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.87';
+const VERSION = '1.2.88';
 
 class Graphiti {
     constructor() {
@@ -25370,17 +25370,35 @@ class Graphiti {
         
         // Function Panel Touch Events - prevent touch events from bubbling to canvas
         if (functionPanel) {
+            const preventPanelPinch = (e) => {
+                e.stopPropagation();
+
+                if (e.touches && e.touches.length > 1) {
+                    e.preventDefault();
+                }
+            };
+
             functionPanel.addEventListener('touchstart', (e) => {
-                e.stopPropagation(); // Prevent bubbling to document/canvas handlers
-            }, { passive: true });
+                preventPanelPinch(e); // Prevent bubbling to document/canvas handlers
+            }, { passive: false });
             
             functionPanel.addEventListener('touchmove', (e) => {
-                e.stopPropagation(); // Prevent bubbling to document/canvas handlers
-            }, { passive: true });
+                preventPanelPinch(e); // Prevent bubbling to document/canvas handlers
+            }, { passive: false });
             
             functionPanel.addEventListener('touchend', (e) => {
                 e.stopPropagation(); // Prevent bubbling to document/canvas handlers
             }, { passive: true });
+
+            functionPanel.addEventListener('gesturestart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            functionPanel.addEventListener('gesturechange', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
         }
         
         // Page Visibility API - Cancel expensive operations when page is hidden
@@ -40923,7 +40941,23 @@ class Graphiti {
             if (showBuildOverlay) {
                 this.hideGraphBuildOverlay();
             }
+
+            this.openFunctionPanelAfterAppResume();
         }
+    }
+
+    openFunctionPanelAfterAppResume() {
+        if (this.currentState !== this.states.GRAPHING) {
+            return false;
+        }
+
+        const functionPanel = document.getElementById('function-panel');
+        if (functionPanel && functionPanel.classList.contains('mobile-open') && !functionPanel.classList.contains('hidden')) {
+            return false;
+        }
+
+        this.openFunctionPanelForGraphing();
+        return true;
     }
 
     showAnimationRestartIndicator() {
