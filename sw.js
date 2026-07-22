@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-v1.2.97';
+const CACHE_NAME = 'graphiti-v1.2.98';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -14,7 +14,7 @@ const ASSETS_TO_CACHE = [
     './logo.png',
     './logoTrans.png',
     './images/graphitiTitle.png',
-    './images/graphitiShareImage.png',
+    './images/graphitiShareImage1.png',
     './images/yt_icon_white_digital.png'
 ];
 

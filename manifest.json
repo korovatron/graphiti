@@ -2,7 +2,7 @@
   "id": "graphiti-function-plotter",
   "name": "Graphiti",
   "short_name": "Graphiti",
-  "description": "Interactive mathematical function plotter with real-time graphing",
+  "description": "Free online graphing calculator and function plotter with automatic graph analysis",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -17,7 +17,7 @@
   ],
   "screenshots": [
     {
-      "src": "./images/graphitiShareImage.png",
+      "src": "./images/graphitiShareImage1.png",
       "sizes": "1200x630",
       "type": "image/png",
       "form_factor": "wide"
