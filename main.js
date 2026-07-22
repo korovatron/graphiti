@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.86';
+const VERSION = '1.2.87';
 
 class Graphiti {
     constructor() {
@@ -27333,6 +27333,7 @@ class Graphiti {
             this.input.maxMoveDistance = 0;
         } else if (e.touches.length === 2) {
             // Two touches - start pinch gesture
+            this.closeFunctionPanelForNarrowScreenAutoClose();
             this.input.pinch.active = true;
             this.input.mouse.down = false; // Disable panning during pinch
             

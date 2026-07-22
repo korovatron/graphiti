@@ -995,6 +995,73 @@ async function assertShapeClassification(page) {
         await new Promise(resolve => setTimeout(resolve, 550));
         graphiti.openMobileMenu();
 
+        let pinchViewportChangeCalls = 0;
+        const pinchInitialRange = graphiti.viewport.maxX - graphiti.viewport.minX;
+        graphiti.handleViewportChange = () => {
+            pinchViewportChangeCalls++;
+        };
+        graphiti.handleTouchStart({
+            touches: [
+                { clientX: tapX - 50, clientY: tapY },
+                { clientX: tapX + 50, clientY: tapY }
+            ]
+        });
+        graphiti.handleTouchMove({
+            touches: [
+                { clientX: tapX - 70, clientY: tapY },
+                { clientX: tapX + 70, clientY: tapY }
+            ]
+        });
+        graphiti.handleTouchEnd({ touches: [] });
+        graphiti.handleViewportChange = originalHandleViewportChange;
+
+        const afterCanvasPinch = {
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null,
+            viewportZoomed: graphiti.viewport.maxX - graphiti.viewport.minX !== pinchInitialRange,
+            viewportChangeCalls: pinchViewportChangeCalls
+        };
+
+        Object.assign(graphiti.viewport, originalViewport);
+        Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
+        graphiti.input.pinch.active = false;
+        graphiti.input.touch.active = false;
+        graphiti.isViewportChanging = false;
+        graphiti.frozenInterceptBadges = [];
+        graphiti.frozenTurningPointBadges = [];
+        graphiti.interceptsPendingViewportRefresh = false;
+        graphiti.turningPointsPendingViewportRefresh = false;
+        graphiti.draw();
+
+        await new Promise(resolve => setTimeout(resolve, 550));
+        graphiti.openMobileMenu();
+
+        const originalZoomIn = graphiti.zoomIn.bind(graphiti);
+        let wheelZoomCalls = 0;
+        let wheelPrevented = false;
+        graphiti.zoomIn = () => {
+            wheelZoomCalls++;
+        };
+        graphiti.handleWheel({
+            deltaY: -1,
+            preventDefault: () => {
+                wheelPrevented = true;
+            }
+        });
+        graphiti.zoomIn = originalZoomIn;
+
+        const afterCanvasWheel = {
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null,
+            wheelZoomCalls,
+            wheelPrevented
+        };
+
+        graphiti.closeMobileMenu();
+
+        await new Promise(resolve => setTimeout(resolve, 550));
+        graphiti.openMobileMenu();
+
         const originalAddDemoSet = graphiti.addDemoSet;
         let selectedDemoSetId = null;
         graphiti.addDemoSet = (demoSetId) => {
@@ -1020,6 +1087,8 @@ async function assertShapeClassification(page) {
             afterBuild,
             afterCanvasPan,
             afterFirstCanvasTap,
+            afterCanvasPinch,
+            afterCanvasWheel,
             afterDemoSetMenuClick
         };
     });
@@ -1040,6 +1109,14 @@ async function assertShapeClassification(page) {
     assert(sharedLinkDeferredPanelResult.afterCanvasPan.viewportChangeCalls > 0, 'shared-link first canvas pan should still request viewport refresh');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.panelOpen, false, 'shared-link first canvas tap should close function panel even after stale touch movement state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.hamburgerPanelOpen, false, 'shared-link first canvas tap should restore hamburger closed state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.panelOpen, false, 'shared-link canvas pinch should close function panel on narrow screens');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.hamburgerPanelOpen, false, 'shared-link canvas pinch should restore hamburger closed state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.viewportZoomed, true, 'shared-link canvas pinch should still zoom the viewport');
+    assert(sharedLinkDeferredPanelResult.afterCanvasPinch.viewportChangeCalls > 0, 'shared-link canvas pinch should still request viewport refresh');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.panelOpen, true, 'canvas wheel zoom should not close function panel on narrow screens');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.hamburgerPanelOpen, true, 'canvas wheel zoom should leave hamburger in panel-open state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelZoomCalls, 1, 'canvas wheel zoom should still invoke zoom handling');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelPrevented, true, 'canvas wheel zoom should prevent browser default zoom');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.selectedDemoSetId, 'explicit-functions', 'demo set menu click should request the selected demo set');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.panelOpen, false, 'demo set menu click should close function panel on narrow screens');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.hamburgerPanelOpen, false, 'demo set menu click should restore hamburger closed state on narrow screens');
