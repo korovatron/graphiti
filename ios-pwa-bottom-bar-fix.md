@@ -3,7 +3,7 @@
 ## The Problem
 
 When the app opens in full-screen PWA mode on iPhone, there is sometimes a bar
-across the bottom of the screen. It is intermittent — sometimes present,
+across the bottom of the screen. It is intermittent - sometimes present,
 sometimes not. Rotating to landscape and back to portrait makes it disappear.
 
 This is caused by a race condition: iOS does not always have the
@@ -17,6 +17,14 @@ There is also a secondary bug: in PWA/standalone mode, iOS incorrectly
 reported height about 59px too short on iPhone (32px on iPad). This leaves the
 gap at the bottom.
 
+A later Safari/PWA discovery is important: `visualViewport.height` must not be
+used as the app-wide full-screen height. On iOS it can report transient heights
+while the share sheet, browser chrome, screenshots, or tab/app switching are in
+progress. If that value is written to `--actual-vh`, the whole layout can be
+poisoned until another resize/orientation event corrects it. Graphiti now uses
+`window.innerHeight` as the source of truth for `--actual-vh`, matching the
+behaviour that proved stable in Vectorama.
+
 ---
 
 ## How It Was Fixed in Graphiti
@@ -26,8 +34,8 @@ from the constructor as the very first thing.
 
 ### The CSS side
 
-`html`, `body`, and `#app-container` all use `var(--actual-vh, 100vh)` instead
-of `100vh` directly:
+`html`, `body`, `#app-container`, and `#function-panel` all use
+`var(--actual-vh, 100vh)` instead of `100vh` directly:
 
 ```css
 html, body {
@@ -35,6 +43,10 @@ html, body {
 }
 
 #app-container {
+    height: var(--actual-vh, 100vh);
+}
+
+#function-panel {
     height: var(--actual-vh, 100vh);
 }
 ```
@@ -49,16 +61,17 @@ fixIOSViewportBug() {
     let lastKnownHeight = 0;
 
     const setActualViewportHeight = () => {
-        // 1. Use visualViewport API when available (more reliable than innerHeight on iOS)
+        // 1. Use innerHeight for global layout height. iOS visualViewport can
+        // report transient share-sheet/browser-chrome heights that should not
+        // become the app's full-screen CSS height.
         let viewportHeight = window.innerHeight;
-        if (window.visualViewport && window.visualViewport.height) {
-            viewportHeight = window.visualViewport.height;
-        }
 
         // 2. Detect PWA mode (bug only occurs in PWA, not Safari browser)
         const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
                       window.matchMedia('(display-mode: fullscreen)').matches ||
                       window.navigator.standalone === true;
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
         // 3. Portrait mode compensation (iPhone & iPad)
         const isPortrait = window.innerHeight > window.innerWidth;
@@ -112,11 +125,6 @@ fixIOSViewportBug() {
         setTimeout(setActualViewportHeight, 300);
     });
 
-    // visualViewport is more reliable in PWA mode
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', setActualViewportHeight);
-    }
-
     // Re-run when app comes back from background (handles app-switching on iOS)
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
@@ -129,13 +137,17 @@ fixIOSViewportBug() {
 
 ### Key points for the fix to work
 
-1. **Call `fixIOSViewportBug()` first** — in Graphiti it is literally the first
+1. **Call `fixIOSViewportBug()` first** - in Graphiti it is literally the first
    line of the constructor, before anything else runs.
 
 2. **Use `var(--actual-vh, 100vh)`** for every element that needs to fill the
    full screen height. The fallback `100vh` ensures desktop browsers still work.
 
-3. **The safe-area-top CSS variable must exist.** In Graphiti's `index.html`:
+3. **Use `window.innerHeight` for `--actual-vh`, not `visualViewport.height`.**
+    `visualViewport` is useful for local keyboard/chrome observations, but it is
+    too volatile to drive the root app height on iOS Safari/PWA.
+
+4. **The safe-area-top CSS variable must exist.** In Graphiti's `index.html`:
    ```css
    :root {
        --safe-area-top: env(safe-area-inset-top);
@@ -144,19 +156,19 @@ fixIOSViewportBug() {
    }
    ```
 
-4. **The viewport meta tag must include `viewport-fit=cover`:**
+5. **The viewport meta tag must include `viewport-fit=cover`:**
    ```html
    <meta name="viewport" content="width=device-width, initial-scale=1.0,
        maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
    ```
    Without this, `env(safe-area-inset-*)` returns zero on iOS.
 
-5. **The Apple PWA meta tags must be present:**
+6. **The Apple PWA meta tags must be present:**
    ```html
    <meta name="apple-mobile-web-app-capable" content="yes">
    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
    ```
-   `black-translucent` is important — it tells iOS to draw behind the status bar
+    `black-translucent` is important - it tells iOS to draw behind the status bar
    and notch, which is what causes the safe-area behaviour in the first place.
 
 ---
@@ -166,18 +178,24 @@ fixIOSViewportBug() {
 iOS calculates `env(safe-area-inset-top)` asynchronously after launch. If you
 read it too early you get `0`, which means the height compensation does nothing,
 and you get the gap. Running at 50ms, 150ms, 300ms, 500ms, 800ms, 1200ms covers
-all the devices/conditions seen in testing — some are fast, some slow. The
+all the devices/conditions seen in testing - some are fast, some slow. The
 `lastKnownHeight` guard triggers a resize event only when the value actually
 changes significantly (>30px), so there is no visual flicker on devices where
 the first read is already correct.
 
+Do not add a `visualViewport.resize` listener back to this root height fix unless
+there is a very specific new reason. Recent iPhone testing showed that
+`visualViewport.height` can be the stale or transient value that creates the
+bottom-gap problem after share-sheet/screenshot/browser-chrome transitions.
+
 ---
 
-## Relevant git commits in Graphiti (oldest → newest)
+## Relevant git commits in Graphiti (oldest to newest)
 
 | Commit    | Description |
 |-----------|-------------|
-| `06a008b` | Original JS fix — `setActualViewportHeight()` + `--actual-vh` CSS var |
+| `06a008b` | Original JS fix - `setActualViewportHeight()` + `--actual-vh` CSS var |
 | `c0ae93b` | Added `void document.body.offsetHeight` reflow trick + `visibilitychange` handler for app-switching |
-| `9dec2be` | Comprehensive rewrite ported from Mandelscope — portrait-mode safe-area-top compensation, staggered timeouts up to 1200ms, `visualViewport` listener |
+| `9dec2be` | Comprehensive rewrite ported from Mandelscope - portrait-mode safe-area-top compensation, staggered timeouts up to 1200ms, `visualViewport` listener |
 | `bb2210f` | Added `(display-mode: fullscreen)` to PWA detection (iOS can use either) |
+| `6839bf3` | Switched root app height back to `window.innerHeight`; removed `visualViewport.height` from `--actual-vh` after iPhone Safari/PWA share-sheet testing |
