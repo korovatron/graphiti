@@ -951,18 +951,76 @@ async function assertShapeClassification(page) {
         const canvasRect = canvas.getBoundingClientRect();
         const tapX = canvasRect.left + Math.min(canvasRect.width - 20, 360);
         const tapY = canvasRect.top + 120;
+
+        const originalHandleViewportChange = graphiti.handleViewportChange.bind(graphiti);
+        let panViewportChangeCalls = 0;
+        const originalViewport = { ...graphiti.viewport };
+        const originalCartesianViewport = { ...graphiti.cartesianViewport };
+        const initialMinX = graphiti.viewport.minX;
+        graphiti.handleViewportChange = () => {
+            panViewportChangeCalls++;
+        };
+        graphiti.handleTouchStart({ touches: [{ clientX: tapX, clientY: tapY }] });
+        graphiti.handleTouchMove({ touches: [{ clientX: tapX + 40, clientY: tapY }] });
+        graphiti.handleTouchEnd({ touches: [] });
+        graphiti.handleViewportChange = originalHandleViewportChange;
+
+        const afterCanvasPan = {
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null,
+            viewportMoved: graphiti.viewport.minX !== initialMinX,
+            viewportChangeCalls: panViewportChangeCalls
+        };
+
+        Object.assign(graphiti.viewport, originalViewport);
+        Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
+        graphiti.isViewportChanging = false;
+        graphiti.frozenInterceptBadges = [];
+        graphiti.frozenTurningPointBadges = [];
+        graphiti.interceptsPendingViewportRefresh = false;
+        graphiti.turningPointsPendingViewportRefresh = false;
+        graphiti.draw();
+
+        await new Promise(resolve => setTimeout(resolve, 550));
+        graphiti.openMobileMenu();
+
         graphiti.handleTouchStart({ touches: [{ clientX: tapX, clientY: tapY }] });
         graphiti.handleTouchEnd({ touches: [] });
+
+        const afterFirstCanvasTap = {
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
+
+        await new Promise(resolve => setTimeout(resolve, 550));
+        graphiti.openMobileMenu();
+
+        const originalAddDemoSet = graphiti.addDemoSet;
+        let selectedDemoSetId = null;
+        graphiti.addDemoSet = (demoSetId) => {
+            selectedDemoSetId = demoSetId;
+        };
+
+        const demoSetItem = document.querySelector('.demo-set-item[data-demo-set="explicit-functions"]');
+        if (demoSetItem) {
+            demoSetItem.click();
+        }
+        graphiti.addDemoSet = originalAddDemoSet;
+
+        const afterDemoSetMenuClick = {
+            selectedDemoSetId,
+            panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
+            hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
+        };
 
         return {
             showBuildOverlay,
             duringBuild,
             afterUnhide,
             afterBuild,
-            afterFirstCanvasTap: {
-                panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
-                hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null
-            }
+            afterCanvasPan,
+            afterFirstCanvasTap,
+            afterDemoSetMenuClick
         };
     });
 
@@ -976,8 +1034,15 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelHidden, false, 'shared-link build completion should show function panel');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.panelOpen, true, 'shared-link build completion should start panel slide-in');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterBuild.hamburgerPanelOpen, true, 'shared-link build completion should mark hamburger as panel-open');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.panelOpen, false, 'shared-link first canvas pan should close function panel');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.hamburgerPanelOpen, false, 'shared-link first canvas pan should restore hamburger closed state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.viewportMoved, true, 'shared-link first canvas pan should still move the viewport');
+    assert(sharedLinkDeferredPanelResult.afterCanvasPan.viewportChangeCalls > 0, 'shared-link first canvas pan should still request viewport refresh');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.panelOpen, false, 'shared-link first canvas tap should close function panel even after stale touch movement state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.hamburgerPanelOpen, false, 'shared-link first canvas tap should restore hamburger closed state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.selectedDemoSetId, 'explicit-functions', 'demo set menu click should request the selected demo set');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.panelOpen, false, 'demo set menu click should close function panel on narrow screens');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterDemoSetMenuClick.hamburgerPanelOpen, false, 'demo set menu click should restore hamburger closed state on narrow screens');
 
     const sharedHashReplacementResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;

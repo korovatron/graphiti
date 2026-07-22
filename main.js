@@ -24763,6 +24763,7 @@ class Graphiti {
                     
                     // Handle demo set
                     this.addDemoSet(demoSetId);
+                    this.closeFunctionPanelForNarrowScreenAutoClose();
                     
                     // Close dropdown
                     examplesDropdown.classList.remove('show');
@@ -25519,14 +25520,7 @@ class Graphiti {
             }
             
             // Close function panel on narrow screens when clicking the graph area
-            const isNarrowScreen = window.innerWidth < 1024;
-            if (isNarrowScreen) {
-                const functionPanel = document.getElementById('function-panel');
-                // Close panel if it's open
-                if (functionPanel && functionPanel.classList.contains('mobile-open')) {
-                    this.closeMobileMenu();
-                }
-            }
+            this.closeFunctionPanelForNarrowScreenAutoClose();
         });
         
         // Touch Events
@@ -26543,6 +26537,7 @@ class Graphiti {
                 const panThreshold = this.input.touch.active ? 0 : 2;
                 
                 if (Math.abs(deltaX) > panThreshold || Math.abs(deltaY) > panThreshold) {
+                    this.closeFunctionPanelForNarrowScreenAutoClose();
                     this.input.dragging = true;
                     
                     // Convert screen delta to world delta
@@ -27523,13 +27518,7 @@ class Graphiti {
             
             if (isTap) {
                 // Close function panel on narrow screens when tapping the canvas
-                const isNarrowScreen = window.innerWidth < 1024;
-                if (isNarrowScreen) {
-                    const functionPanel = document.getElementById('function-panel');
-                    if (functionPanel && functionPanel.classList.contains('mobile-open')) {
-                        this.closeMobileMenu();
-                    }
-                }
+                this.closeFunctionPanelForNarrowScreenAutoClose();
             }
             
             // Reset tap tracking
@@ -32599,6 +32588,20 @@ class Graphiti {
         } else {
             this.openMobileMenu();
         }
+    }
+
+    closeFunctionPanelForNarrowScreenAutoClose() {
+        if (window.innerWidth >= 1024) {
+            return false;
+        }
+
+        const functionPanel = document.getElementById('function-panel');
+        if (!functionPanel || !functionPanel.classList.contains('mobile-open')) {
+            return false;
+        }
+
+        this.closeMobileMenu();
+        return true;
     }
 
     clearMathLiveFocusState() {
