@@ -655,7 +655,8 @@ async function assertShapeClassification(page) {
             asymptoteToggleHidden: asymptoteToggle ? asymptoteToggle.classList.contains('is-hidden') : null,
             envelopeToggleHidden: envelopeToggle ? envelopeToggle.classList.contains('is-hidden') : null,
             asymptoteContainerVisible: asymptoteContainer ? asymptoteContainer.classList.contains('visible') : false,
-            envelopeContainerVisible: envelopeContainer ? envelopeContainer.classList.contains('visible') : false
+            envelopeContainerVisible: envelopeContainer ? envelopeContainer.classList.contains('visible') : false,
+            asymptoteEquationCount: asymptoteContainer ? asymptoteContainer.querySelectorAll('.asymptote-equation-item').length : 0
         };
 
         asymptoteToggle.click();
@@ -668,6 +669,7 @@ async function assertShapeClassification(page) {
             envelopeToggleHidden: envelopeToggle ? envelopeToggle.classList.contains('is-hidden') : null,
             asymptoteContainerVisible: asymptoteContainer ? asymptoteContainer.classList.contains('visible') : false,
             envelopeContainerVisible: envelopeContainer ? envelopeContainer.classList.contains('visible') : false,
+            asymptoteEquationCount: asymptoteContainer ? asymptoteContainer.querySelectorAll('.asymptote-equation-item').length : 0,
             savedFunctionKeys: Object.keys(JSON.parse(JSON.stringify(func))).filter(key => key === 'showAsymptotes' || key === 'showEnvelopes')
         };
 
@@ -678,11 +680,13 @@ async function assertShapeClassification(page) {
     assert.strictEqual(metadataToggleResult.before.envelopeVisible, true, 'envelope overlay should default to visible');
     assert.strictEqual(metadataToggleResult.before.asymptoteToggleHidden, false, 'asymptote toggle should default to filled');
     assert.strictEqual(metadataToggleResult.before.envelopeToggleHidden, false, 'envelope toggle should default to filled');
+    assert(metadataToggleResult.before.asymptoteEquationCount > 0, 'asymptote equations should render while asymptotes are visible');
     assert.strictEqual(metadataToggleResult.after.asymptoteVisible, false, 'asymptote toggle should hide asymptote overlays');
     assert.strictEqual(metadataToggleResult.after.envelopeVisible, false, 'envelope toggle should hide envelope overlays');
     assert.strictEqual(metadataToggleResult.after.asymptoteToggleHidden, true, 'asymptote toggle should become hollow when hidden');
     assert.strictEqual(metadataToggleResult.after.envelopeToggleHidden, true, 'envelope toggle should become hollow when hidden');
-    assert.strictEqual(metadataToggleResult.after.asymptoteContainerVisible, true, 'asymptote metadata should remain visible when overlay hidden');
+    assert.strictEqual(metadataToggleResult.after.asymptoteContainerVisible, true, 'asymptote row should remain visible when overlay hidden');
+    assert.strictEqual(metadataToggleResult.after.asymptoteEquationCount, 0, 'asymptote equations should hide when overlay hidden');
     assert.strictEqual(metadataToggleResult.after.envelopeContainerVisible, true, 'envelope metadata should remain visible when overlay hidden');
 
     const lineDomResult = await page.evaluate(() => {

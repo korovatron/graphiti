@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.2';
+const VERSION = '1.3.3';
 
 class Graphiti {
     constructor() {
@@ -17229,21 +17229,23 @@ class Graphiti {
             infoContainer.classList.remove('visible');
         } else {
             infoContainer.classList.add('visible');
-            for (const equation of equations) {
-                const item = document.createElement('math-field');
-                item.className = 'asymptote-equation-item asymptote-equation-field';
-                item.setAttribute('read-only', 'true');
-                item.setAttribute('default-mode', 'math');
-                item.setAttribute('virtual-keyboard-mode', 'off');
-                item.setAttribute('tabindex', '-1');
-                item.setAttribute('color-scheme', 'dark');
-                item.style.setProperty('font-size', '18px', 'important');
-                item.style.setProperty('--mathlive-font-size', '18px');
-                if (isWideMetadataEquation(equation)) {
-                    item.classList.add('asymptote-equation-item-wide');
+            if (asymptotePlotVisible) {
+                for (const equation of equations) {
+                    const item = document.createElement('math-field');
+                    item.className = 'asymptote-equation-item asymptote-equation-field';
+                    item.setAttribute('read-only', 'true');
+                    item.setAttribute('default-mode', 'math');
+                    item.setAttribute('virtual-keyboard-mode', 'off');
+                    item.setAttribute('tabindex', '-1');
+                    item.setAttribute('color-scheme', 'dark');
+                    item.style.setProperty('font-size', '18px', 'important');
+                    item.style.setProperty('--mathlive-font-size', '18px');
+                    if (isWideMetadataEquation(equation)) {
+                        item.classList.add('asymptote-equation-item-wide');
+                    }
+                    item.value = equation;
+                    equationList.appendChild(item);
                 }
-                item.value = equation;
-                equationList.appendChild(item);
             }
         }
 
