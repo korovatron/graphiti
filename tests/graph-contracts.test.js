@@ -894,17 +894,44 @@ async function assertShapeClassification(page) {
         return {
             finePointerHoverRule: /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^}]*#hamburger-menu:hover/.test(cssText),
             finePointerPanelHoverRule: /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^}]*#hamburger-menu\.panel-open:hover/.test(cssText),
-            ungatedHoverRule: /(?:^|})\s*#hamburger-menu(?:\.panel-open)?:hover\s*\{/.test(cssText),
-            panelBottomOverfillDefault: getComputedStyle(document.documentElement).getPropertyValue('--panel-bottom-overfill').trim(),
-            panelHeightUsesBottomOverfill: /#function-panel\s*\{[^}]*height:\s*calc\(var\(--actual-vh,\s*100vh\)\s*\+\s*var\(--panel-bottom-overfill,\s*0px\)\)/.test(cssText)
+            ungatedHoverRule: /(?:^|})\s*#hamburger-menu(?:\.panel-open)?:hover\s*\{/.test(cssText)
         };
     });
 
     assert.strictEqual(hamburgerHoverCssResult.finePointerHoverRule, true, 'hamburger hover colour should only apply to fine hover pointers');
     assert.strictEqual(hamburgerHoverCssResult.finePointerPanelHoverRule, true, 'hamburger panel-open hover colour should only apply to fine hover pointers');
     assert.strictEqual(hamburgerHoverCssResult.ungatedHoverRule, false, 'hamburger hover colour should not be ungated on touch devices');
-    assert.strictEqual(hamburgerHoverCssResult.panelBottomOverfillDefault, '0px', 'function panel bottom overfill should default to zero');
-    assert.strictEqual(hamburgerHoverCssResult.panelHeightUsesBottomOverfill, true, 'function panel height should include bottom overfill variable');
+
+    const iosViewportHeightResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        const baseOptions = {
+            isIOS: true,
+            isPortrait: true,
+            innerHeight: 812,
+            screenWidth: 393,
+            screenHeight: 852,
+            lastKnownHeight: 0
+        };
+
+        return {
+            rejectsShareSheetShortHeight: graphiti.getReliableIOSViewportHeight(540, baseOptions),
+            keepsSafariChromeHeight: graphiti.getReliableIOSViewportHeight(650, baseOptions),
+            usesLastKnownWhenInnerHeightIsAlsoShort: graphiti.getReliableIOSViewportHeight(540, {
+                ...baseOptions,
+                innerHeight: 540,
+                lastKnownHeight: 812
+            }),
+            leavesNonIOSHeightAlone: graphiti.getReliableIOSViewportHeight(540, {
+                ...baseOptions,
+                isIOS: false
+            })
+        };
+    });
+
+    assert.strictEqual(iosViewportHeightResult.rejectsShareSheetShortHeight, 812, 'iOS viewport guard should reject share-sheet-short visual viewport height');
+    assert.strictEqual(iosViewportHeightResult.keepsSafariChromeHeight, 650, 'iOS viewport guard should keep plausible Safari browser chrome viewport height');
+    assert.strictEqual(iosViewportHeightResult.usesLastKnownWhenInnerHeightIsAlsoShort, 812, 'iOS viewport guard should fall back to last known height when available');
+    assert.strictEqual(iosViewportHeightResult.leavesNonIOSHeightAlone, 540, 'viewport guard should not alter non-iOS heights');
 
     const sharedLinkDeferredPanelResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;

@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.89';
+const VERSION = '1.2.90';
 
 class Graphiti {
     constructor() {
@@ -49357,10 +49357,14 @@ class Graphiti {
                           window.navigator.standalone === true;
             const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
                           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            document.documentElement.style.setProperty('--panel-bottom-overfill', isIOS && !isPWA ? '2px' : '0px');
             
             // 3. Portrait mode compensation (iPhone & iPad)
             const isPortrait = window.innerHeight > window.innerWidth;
+            viewportHeight = this.getReliableIOSViewportHeight(viewportHeight, {
+                isIOS,
+                isPortrait,
+                lastKnownHeight
+            });
             
             if (isPWA && isPortrait) {
                 // Compare actual viewport with expected screen height
@@ -49422,6 +49426,25 @@ class Graphiti {
                 setTimeout(setActualViewportHeight, 200);
             }
         });
+    }
+
+    getReliableIOSViewportHeight(viewportHeight, options = {}) {
+        if (!options.isIOS || !options.isPortrait || !Number.isFinite(viewportHeight)) {
+            return viewportHeight;
+        }
+
+        const innerHeight = Number.isFinite(options.innerHeight) ? options.innerHeight : window.innerHeight;
+        const screenWidth = Number.isFinite(options.screenWidth) ? options.screenWidth : window.screen.width;
+        const screenHeight = Number.isFinite(options.screenHeight) ? options.screenHeight : window.screen.height;
+        const screenPortraitHeight = Math.max(screenHeight, screenWidth);
+        const minimumReasonableHeight = screenPortraitHeight * 0.72;
+        const fallbackHeight = Math.max(innerHeight || 0, options.lastKnownHeight || 0);
+
+        if (viewportHeight > 0 && viewportHeight < minimumReasonableHeight && fallbackHeight > viewportHeight) {
+            return fallbackHeight;
+        }
+
+        return viewportHeight;
     }
 
     // Helper functions for MathLive range inputs
