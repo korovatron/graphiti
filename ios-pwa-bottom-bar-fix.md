@@ -196,6 +196,14 @@ iOS standalone portrait and the height is still short after applying
 `safe-area-inset-top`, Graphiti falls back to the portrait screen height instead
 of preserving the browser-chrome-sized gap.
 
+The Vectorama comparison showed another important part of the fix: do not leave
+the app shell as a normal relative block that can be visibly shorter than the
+installed PWA viewport. Graphiti now pins `#app-container` to the viewport with
+`position: fixed` and `inset: 0`, and gives both the app shell and fixed function
+panel the same `100vh` fallback plus `--actual-vh`/`min-height` pattern used in
+Vectorama. This prevents the page background from showing below the app if iOS
+briefly reports a short height during rotation.
+
 ---
 
 ## Relevant git commits in Graphiti (oldest to newest)
