@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.90';
+const VERSION = '1.2.91';
 
 class Graphiti {
     constructor() {
@@ -49345,11 +49345,10 @@ class Graphiti {
         let lastKnownHeight = 0;
         
         const setActualViewportHeight = () => {
-            // 1. Use visualViewport API when available (more reliable than innerHeight on iOS)
+            // 1. Use innerHeight for global layout height. iOS visualViewport can
+            // report transient share-sheet/browser-chrome heights that should not
+            // become the app's full-screen CSS height.
             let viewportHeight = window.innerHeight;
-            if (window.visualViewport && window.visualViewport.height) {
-                viewportHeight = window.visualViewport.height;
-            }
             
             // 2. Detect PWA mode (bug only occurs in PWA, not Safari browser)
             const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
@@ -49360,11 +49359,6 @@ class Graphiti {
             
             // 3. Portrait mode compensation (iPhone & iPad)
             const isPortrait = window.innerHeight > window.innerWidth;
-            viewportHeight = this.getReliableIOSViewportHeight(viewportHeight, {
-                isIOS,
-                isPortrait,
-                lastKnownHeight
-            });
             
             if (isPWA && isPortrait) {
                 // Compare actual viewport with expected screen height
@@ -49415,9 +49409,6 @@ class Graphiti {
             setTimeout(setActualViewportHeight, 100);
             setTimeout(setActualViewportHeight, 300);
         });
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', setActualViewportHeight);
-        }
         
         // Additional safety: recalculate when page becomes visible (handles app switching on iOS)
         document.addEventListener('visibilitychange', () => {
@@ -49426,25 +49417,6 @@ class Graphiti {
                 setTimeout(setActualViewportHeight, 200);
             }
         });
-    }
-
-    getReliableIOSViewportHeight(viewportHeight, options = {}) {
-        if (!options.isIOS || !options.isPortrait || !Number.isFinite(viewportHeight)) {
-            return viewportHeight;
-        }
-
-        const innerHeight = Number.isFinite(options.innerHeight) ? options.innerHeight : window.innerHeight;
-        const screenWidth = Number.isFinite(options.screenWidth) ? options.screenWidth : window.screen.width;
-        const screenHeight = Number.isFinite(options.screenHeight) ? options.screenHeight : window.screen.height;
-        const screenPortraitHeight = Math.max(screenHeight, screenWidth);
-        const minimumReasonableHeight = screenPortraitHeight * 0.72;
-        const fallbackHeight = Math.max(innerHeight || 0, options.lastKnownHeight || 0);
-
-        if (viewportHeight > 0 && viewportHeight < minimumReasonableHeight && fallbackHeight > viewportHeight) {
-            return fallbackHeight;
-        }
-
-        return viewportHeight;
     }
 
     // Helper functions for MathLive range inputs

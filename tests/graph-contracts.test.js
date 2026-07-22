@@ -902,37 +902,6 @@ async function assertShapeClassification(page) {
     assert.strictEqual(hamburgerHoverCssResult.finePointerPanelHoverRule, true, 'hamburger panel-open hover colour should only apply to fine hover pointers');
     assert.strictEqual(hamburgerHoverCssResult.ungatedHoverRule, false, 'hamburger hover colour should not be ungated on touch devices');
 
-    const iosViewportHeightResult = await page.evaluate(() => {
-        const graphiti = window.graphiti;
-        const baseOptions = {
-            isIOS: true,
-            isPortrait: true,
-            innerHeight: 812,
-            screenWidth: 393,
-            screenHeight: 852,
-            lastKnownHeight: 0
-        };
-
-        return {
-            rejectsShareSheetShortHeight: graphiti.getReliableIOSViewportHeight(540, baseOptions),
-            keepsSafariChromeHeight: graphiti.getReliableIOSViewportHeight(650, baseOptions),
-            usesLastKnownWhenInnerHeightIsAlsoShort: graphiti.getReliableIOSViewportHeight(540, {
-                ...baseOptions,
-                innerHeight: 540,
-                lastKnownHeight: 812
-            }),
-            leavesNonIOSHeightAlone: graphiti.getReliableIOSViewportHeight(540, {
-                ...baseOptions,
-                isIOS: false
-            })
-        };
-    });
-
-    assert.strictEqual(iosViewportHeightResult.rejectsShareSheetShortHeight, 812, 'iOS viewport guard should reject share-sheet-short visual viewport height');
-    assert.strictEqual(iosViewportHeightResult.keepsSafariChromeHeight, 650, 'iOS viewport guard should keep plausible Safari browser chrome viewport height');
-    assert.strictEqual(iosViewportHeightResult.usesLastKnownWhenInnerHeightIsAlsoShort, 812, 'iOS viewport guard should fall back to last known height when available');
-    assert.strictEqual(iosViewportHeightResult.leavesNonIOSHeightAlone, 540, 'viewport guard should not alter non-iOS heights');
-
     const sharedLinkDeferredPanelResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;
         const functionPanel = document.getElementById('function-panel');
