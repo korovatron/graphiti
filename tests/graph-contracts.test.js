@@ -1206,7 +1206,7 @@ async function assertShapeClassification(page) {
 }
 
 async function assertStrictImplicitInequalityVerticalComponentsAreDashed(page) {
-    const result = await page.evaluate(() => {
+    const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
         Object.assign(graphiti.viewport, {
@@ -1574,7 +1574,7 @@ async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
 }
 
 async function assertExplicitCartesianInflectionPointsAreDetected(page) {
-    const result = await page.evaluate(() => {
+    const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
         graphiti.showTurningPoints = true;
@@ -1614,6 +1614,7 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
         return {
             nonStationaryInflection: evaluate('y=x^3+x+5'),
             stationaryInflection: evaluate('y=x^3+5'),
+            singularCubeRootInflection: evaluate('y=\\sqrt[3]{x}'),
             noConcavityChange: evaluate('y=x^4'),
             badgeLabels: (() => {
                 const func = {
@@ -1773,6 +1774,26 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
                     turningAndIntersectionDisabled: tapWith({ turning: false, intersection: false, intercept: true })
                 };
             })(),
+            implicitCubeRootInflection: await (async () => {
+                const func = {
+                    id: graphiti.nextFunctionId++,
+                    expression: 'y^3=x',
+                    points: [],
+                    color: '#00C853',
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+                graphiti.cartesianFunctions = [func];
+                graphiti.input.persistentBadges = [];
+                graphiti.showTurningPoints = true;
+
+                await graphiti.plotFunction(func);
+                graphiti.turningPoints = graphiti.findTurningPoints();
+                return {
+                    renderMode: func.implicitRenderMode || null,
+                    points: graphiti.turningPoints.map(point => ({ x: point.x, y: point.y, type: point.type }))
+                };
+            })(),
             turningToggleTitle: document.getElementById('turning-points-toggle')?.getAttribute('title') || ''
         };
     });
@@ -1784,6 +1805,10 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
     assert(
         result.stationaryInflection.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 5, 0.02)),
         `explicit stationary inflection should still be detected: ${JSON.stringify(result.stationaryInflection)}`
+    );
+    assert(
+        result.singularCubeRootInflection.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 0, 0.02)),
+        `explicit cube-root singular inflection should be detected: ${JSON.stringify(result.singularCubeRootInflection)}`
     );
     assert(
         !result.noConcavityChange.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 0, 0.02)),
@@ -1820,6 +1845,15 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
             turningAndIntersectionDisabled: 'intercept'
         },
         `overlapping significant point taps should follow enabled priority: ${JSON.stringify(result.overlappingEnabledTapPriority)}`
+    );
+    assert.strictEqual(
+        result.implicitCubeRootInflection.renderMode,
+        'monomial-explicit',
+        `implicit cube-root form should use monomial explicit rendering: ${JSON.stringify(result.implicitCubeRootInflection)}`
+    );
+    assert(
+        result.implicitCubeRootInflection.points.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 0, 0.02)),
+        `implicit cube-root singular inflection should be detected: ${JSON.stringify(result.implicitCubeRootInflection)}`
     );
     assert(
         /inflection point/i.test(result.turningToggleTitle),

@@ -37515,6 +37515,31 @@ class Graphiti {
             return 0;
         };
 
+        const getSideConcavitySign = (xValue, direction) => {
+            const symbolicSign = getSideDerivativeSign(evaluateSecondDerivativeAt, xValue, direction);
+            if (symbolicSign !== 0) {
+                return symbolicSign;
+            }
+
+            const offset = rootProbeOffset();
+            for (const multiplier of [0.5, 1, 2, 4]) {
+                const h = offset * multiplier;
+                try {
+                    const near = evaluateFunctionYAt(xValue + direction * h);
+                    const middle = evaluateFunctionYAt(xValue + direction * 2 * h);
+                    const far = evaluateFunctionYAt(xValue + direction * 3 * h);
+                    const secondDifference = (far - (2 * middle) + near) / (h * h);
+                    if (Number.isFinite(secondDifference) && Math.abs(secondDifference) > 1e-7) {
+                        return Math.sign(secondDifference);
+                    }
+                } catch {
+                    // Try a wider one-sided stencil.
+                }
+            }
+
+            return 0;
+        };
+
         const classifyStationaryRoot = (xValue, secondDerivValue) => {
             if (Number.isFinite(secondDerivValue) && Math.abs(secondDerivValue) > 1e-10) {
                 return secondDerivValue > 0 ? 'minimum' : 'maximum';
@@ -37541,6 +37566,94 @@ class Graphiti {
         const hasInflectionNear = (xValue) => turningPoints.some(point =>
             point.type === 'inflection' && Math.abs(point.x - xValue) <= Math.max(rootProbeOffset(), 1e-5)
         );
+
+        const addInflectionPoint = (xValue) => {
+            try {
+                if (hasInflectionNear(xValue)) {
+                    return;
+                }
+
+                const leftSecondSign = getSideConcavitySign(xValue, -1);
+                const rightSecondSign = getSideConcavitySign(xValue, 1);
+                if (leftSecondSign === 0 || rightSecondSign === 0 || leftSecondSign === rightSecondSign) {
+                    return;
+                }
+
+                const y = evaluateFunctionYAt(xValue);
+                if (!isFinite(xValue) || !isFinite(y) || this.isPointAtHoleForFunction(func, xValue, y)) {
+                    return;
+                }
+
+                let snappedX = xValue;
+                let snappedY = y;
+                if (Math.abs(xValue) < 0.02) snappedX = 0;
+                if (Math.abs(y) < 0.02) snappedY = 0;
+
+                turningPoints.push({
+                    x: snappedX,
+                    y: snappedY,
+                    func: func,
+                    type: 'inflection',
+                    derivative: derivativeStr,
+                    secondDerivative: secondDerivativeStr
+                });
+            } catch {
+                // Singular candidates are probes; ignore candidates that cannot be evaluated safely.
+            }
+        };
+
+        const findCubeRootSingularCandidates = () => {
+            const candidates = [];
+            const addRootsFromArgument = (argumentNode) => {
+                const coefficients = this.extractPolynomialCoeffs(argumentNode);
+                if (!coefficients || this.getPolynomialDegree(coefficients) < 1) {
+                    return;
+                }
+
+                for (const root of this.findPolynomialRealRoots(coefficients)) {
+                    if (!Number.isFinite(root) || root < xMin || root > xMax) {
+                        continue;
+                    }
+                    if (!candidates.some(existing => Math.abs(existing - root) <= Math.max(rootProbeOffset(), 1e-7))) {
+                        candidates.push(root);
+                    }
+                }
+            };
+
+            const visit = (node) => {
+                if (!node) {
+                    return;
+                }
+                if (node.type === 'ParenthesisNode') {
+                    visit(node.content);
+                    return;
+                }
+                if (node.type === 'FunctionNode') {
+                    const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+                    const args = node.args || [];
+                    if (name === 'cbrt' && args.length === 1) {
+                        addRootsFromArgument(args[0]);
+                    }
+                    for (const arg of args) {
+                        visit(arg);
+                    }
+                    return;
+                }
+                if (Array.isArray(node.args)) {
+                    for (const arg of node.args) {
+                        visit(arg);
+                    }
+                }
+            };
+
+            try {
+                visit(this.cleanMath.parse(processedExpression || ''));
+            } catch {
+                return candidates;
+            }
+
+            return candidates;
+        };
 
         const isLocallyFlatDerivativeRoot = (xValue) => {
             const range = Math.max(Math.abs(xMax - xMin), 1);
@@ -37629,38 +37742,11 @@ class Graphiti {
 
         const inflectionRoots = this.findRootsInRange(secondDerivativeStr, xMin, xMax);
         for (const x of inflectionRoots) {
-            try {
-                if (hasInflectionNear(x)) {
-                    continue;
-                }
+            addInflectionPoint(x);
+        }
 
-                const leftSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, x, -1);
-                const rightSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, x, 1);
-                if (leftSecondSign === 0 || rightSecondSign === 0 || leftSecondSign === rightSecondSign) {
-                    continue;
-                }
-
-                const y = evaluateFunctionYAt(x);
-                if (!isFinite(x) || !isFinite(y) || this.isPointAtHoleForFunction(func, x, y)) {
-                    continue;
-                }
-
-                let snappedX = x;
-                let snappedY = y;
-                if (Math.abs(x) < 0.02) snappedX = 0;
-                if (Math.abs(y) < 0.02) snappedY = 0;
-
-                turningPoints.push({
-                    x: snappedX,
-                    y: snappedY,
-                    func: func,
-                    type: 'inflection',
-                    derivative: derivativeStr,
-                    secondDerivative: secondDerivativeStr
-                });
-            } catch {
-                continue;
-            }
+        for (const x of findCubeRootSingularCandidates()) {
+            addInflectionPoint(x);
         }
         
         return turningPoints;
@@ -37850,10 +37936,7 @@ class Graphiti {
             const secondDerivative = this.cleanMath.derivative(radicandDerivative, 'x');
             const secondDerivativeStr = secondDerivative.toString();
             const roots = this.findRootsInRange(derivativeStr, -256, 256, 4096);
-
-            if (roots.length === 0) {
-                return turningPoints;
-            }
+            const radicandRoots = this.findMonomialRadicandRoots(radicandExpression);
 
             const compiledBranch = this.getCompiledExpression(branchExpression);
             const compiledRadicand = this.getCompiledExpression(radicandExpression);
@@ -37862,6 +37945,33 @@ class Graphiti {
             const scope = this.getEvaluationScope({ x: 0, pi: Math.PI, e: Math.E });
             const xSpan = 512;
             const signProbeOffset = Math.max(1e-5, xSpan * 1e-5);
+            const evaluateBranchAt = (x) => {
+                scope.x = x;
+                try {
+                    const value = compiledBranch.evaluate(scope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+            const sideConcavitySign = (x, direction) => {
+                for (const multiplier of [0.5, 1, 2, 4]) {
+                    const h = signProbeOffset * multiplier;
+                    const near = evaluateBranchAt(x + direction * h);
+                    const middle = evaluateBranchAt(x + direction * 2 * h);
+                    const far = evaluateBranchAt(x + direction * 3 * h);
+                    if (near === null || middle === null || far === null) {
+                        continue;
+                    }
+
+                    const secondDifference = (far - (2 * middle) + near) / (h * h);
+                    if (Number.isFinite(secondDifference) && Math.abs(secondDifference) > 1e-7) {
+                        return Math.sign(secondDifference);
+                    }
+                }
+
+                return 0;
+            };
 
             for (const x of roots) {
                 scope.x = x;
@@ -37904,6 +38014,41 @@ class Graphiti {
                     y: snappedY,
                     func: branchFunc,
                     type,
+                    derivative: derivativeStr,
+                    secondDerivative: secondDerivativeStr
+                });
+            }
+
+            for (const x of radicandRoots) {
+                if (!Number.isFinite(x) || x < this.viewport.minX || x > this.viewport.maxX) {
+                    continue;
+                }
+
+                const y = evaluateBranchAt(x);
+                if (!Number.isFinite(y) || this.isPointAtHoleForFunction(func, x, y)) {
+                    continue;
+                }
+
+                const leftSecondSign = sideConcavitySign(x, -1);
+                const rightSecondSign = sideConcavitySign(x, 1);
+                if (leftSecondSign === 0 || rightSecondSign === 0 || leftSecondSign === rightSecondSign) {
+                    continue;
+                }
+
+                if (turningPoints.some(point => point.type === 'inflection' && Math.abs(point.x - x) <= signProbeOffset)) {
+                    continue;
+                }
+
+                let snappedX = x;
+                let snappedY = y;
+                if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+                turningPoints.push({
+                    x: snappedX,
+                    y: snappedY,
+                    func: branchFunc,
+                    type: 'inflection',
                     derivative: derivativeStr,
                     secondDerivative: secondDerivativeStr
                 });
