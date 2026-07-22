@@ -37041,6 +37041,12 @@ class Graphiti {
                     continue;
                 }
 
+                if (func.implicitRenderMode === 'monomial-x-explicit') {
+                    const implicitTurningPoints = this.findImplicitTurningPointsForFunction(func);
+                    turningPoints.push(...implicitTurningPoints);
+                    continue;
+                }
+
                 if (func.implicitRenderMode === 'monomial-explicit' && func.monomialYPower === 2 && func.monomialYRadicandExpression && Array.isArray(func.monomialYExplicitExpressions)) {
                     const squareTurningPoints = this.findMonomialSquareTurningPointsForFunction(func);
                     turningPoints.push(...squareTurningPoints);
@@ -38189,7 +38195,8 @@ class Graphiti {
                 return turningPoints;
             }
             
-            const { leftExpression, rightExpression } = equation;
+            const derivativeEquation = this.buildDenominatorClearedImplicitEquation(equation) || equation;
+            const { leftExpression, rightExpression } = derivativeEquation;
             
             // Get compiled expressions for efficient evaluation
             const leftCompiled = this.getCompiledExpression(leftExpression.toLowerCase());
@@ -38224,6 +38231,88 @@ class Graphiti {
                 const dFdy = (fyPlus - fyMinus) / (2 * h);
                 
                 return { dFdx, dFdy };
+            };
+
+            const calculateImplicitSecondDerivative = (x, y) => {
+                const partials = calculatePartials(x, y);
+                if (!partials || Math.abs(partials.dFdy) <= threshold) {
+                    return null;
+                }
+
+                const f = evalF(x, y);
+                const fxPlus = evalF(x + h, y);
+                const fxMinus = evalF(x - h, y);
+                const fyPlus = evalF(x, y + h);
+                const fyMinus = evalF(x, y - h);
+                const fxyPP = evalF(x + h, y + h);
+                const fxyPM = evalF(x + h, y - h);
+                const fxyMP = evalF(x - h, y + h);
+                const fxyMM = evalF(x - h, y - h);
+
+                if ([f, fxPlus, fxMinus, fyPlus, fyMinus, fxyPP, fxyPM, fxyMP, fxyMM].some(value => value === null || !Number.isFinite(value))) {
+                    return null;
+                }
+
+                const fxx = (fxPlus - (2 * f) + fxMinus) / (h * h);
+                const fyy = (fyPlus - (2 * f) + fyMinus) / (h * h);
+                const fxy = (fxyPP - fxyPM - fxyMP + fxyMM) / (4 * h * h);
+                const numerator = (fxx * partials.dFdy * partials.dFdy) -
+                    (2 * fxy * partials.dFdx * partials.dFdy) +
+                    (fyy * partials.dFdx * partials.dFdx);
+                const secondDerivative = -numerator / Math.pow(partials.dFdy, 3);
+
+                return Number.isFinite(secondDerivative) ? secondDerivative : null;
+            };
+
+            const findImplicitInflectionBetween = (p1, p2, second1, second2) => {
+                let left = p1;
+                let right = p2;
+                let leftSecond = second1;
+                let rightSecond = second2;
+
+                for (let iter = 0; iter < 18; iter++) {
+                    const mid = {
+                        x: (left.x + right.x) * 0.5,
+                        y: (left.y + right.y) * 0.5
+                    };
+                    const midPartials = calculatePartials(mid.x, mid.y);
+                    const midSecond = calculateImplicitSecondDerivative(mid.x, mid.y);
+                    if (!midPartials || Math.abs(midPartials.dFdy) <= threshold || midSecond === null || Math.abs(midSecond) > 1e8) {
+                        return null;
+                    }
+
+                    if (Math.abs(midSecond) <= 1e-5) {
+                        left = mid;
+                        right = mid;
+                        break;
+                    }
+
+                    if (leftSecond * midSecond <= 0) {
+                        right = mid;
+                        rightSecond = midSecond;
+                    } else if (midSecond * rightSecond <= 0) {
+                        left = mid;
+                        leftSecond = midSecond;
+                    } else {
+                        return null;
+                    }
+                }
+
+                const x = (left.x + right.x) * 0.5;
+                const y = (left.y + right.y) * 0.5;
+                const partials = calculatePartials(x, y);
+                if (!partials || Math.abs(partials.dFdy) <= threshold || this.isPointAtHoleForFunction(func, x, y)) {
+                    return null;
+                }
+
+                const nearby = turningPoints.some(point =>
+                    Math.abs(point.x - x) <= 0.03 && Math.abs(point.y - y) <= 0.03
+                );
+                if (nearby) {
+                    return null;
+                }
+
+                return { x, y };
             };
             
             // Scan through plotted points looking for sign changes in partial derivatives
@@ -38310,6 +38399,57 @@ class Graphiti {
                     });
                 }
                 
+            }
+
+            for (let i = 0; i < func.points.length - 1; i++) {
+                const p1 = func.points[i];
+                const p2 = func.points[i + 1];
+
+                if (!p1 || !p2 || !isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) {
+                    continue;
+                }
+
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const pointDistance = Math.sqrt((dx * dx) + (dy * dy));
+                const viewportDiagonal = Math.sqrt(
+                    Math.pow(this.viewport.maxX - this.viewport.minX, 2) +
+                    Math.pow(this.viewport.maxY - this.viewport.minY, 2)
+                );
+                if (!Number.isFinite(pointDistance) || pointDistance <= 0 || pointDistance > Math.max(0.5, viewportDiagonal * 0.04)) {
+                    continue;
+                }
+
+                const partials1 = calculatePartials(p1.x, p1.y);
+                const partials2 = calculatePartials(p2.x, p2.y);
+                if (!partials1 || !partials2 || Math.abs(partials1.dFdy) <= threshold || Math.abs(partials2.dFdy) <= threshold) {
+                    continue;
+                }
+
+                const second1 = calculateImplicitSecondDerivative(p1.x, p1.y);
+                const second2 = calculateImplicitSecondDerivative(p2.x, p2.y);
+                if (second1 === null || second2 === null || Math.abs(second1) <= 1e-7 || Math.abs(second2) <= 1e-7 || second1 * second2 >= 0) {
+                    continue;
+                }
+
+                const inflectionPoint = findImplicitInflectionBetween(p1, p2, second1, second2);
+                if (!inflectionPoint) {
+                    continue;
+                }
+
+                let xInflection = inflectionPoint.x;
+                let yInflection = inflectionPoint.y;
+                if (Math.abs(xInflection) < 0.02) xInflection = 0;
+                if (Math.abs(yInflection) < 0.02) yInflection = 0;
+
+                turningPoints.push({
+                    x: xInflection,
+                    y: yInflection,
+                    func: func,
+                    type: 'inflection',
+                    derivative: 'implicit',
+                    secondDerivative: 'implicit'
+                });
             }
         } catch (error) {
             console.error('Error finding implicit turning points:', error);

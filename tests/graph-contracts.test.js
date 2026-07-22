@@ -1573,6 +1573,65 @@ async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
     );
 }
 
+async function assertImplicitInflectionPointsAreDetected(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.showTurningPoints = true;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.turningPointsCache.clear();
+
+        Object.assign(graphiti.viewport, {
+            minX: -3,
+            maxX: 3,
+            minY: -2,
+            maxY: 2
+        });
+
+        const analyse = async (expression) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color: '#4A90E2',
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions = [func];
+            graphiti.input.persistentBadges = [];
+            graphiti.turningPointsCache.clear();
+            await graphiti.plotFunction(func);
+            graphiti.turningPoints = graphiti.findTurningPoints();
+            return graphiti.turningPoints.map(point => ({ x: point.x, y: point.y, type: point.type }));
+        };
+
+        return {
+            rationalImplicit: await analyse('y^2=1/(x^2-y^3)'),
+            circle: await analyse('x^2+y^2=1')
+        };
+    });
+
+    const rationalInflections = result.rationalImplicit.filter(point => point.type === 'inflection');
+    assert(
+        rationalInflections.some(point => approxEqual(point.x, -1.1836363818, 0.08) && approxEqual(point.y, -0.7430407104, 0.08)),
+        `implicit rational curve should detect left inflection: ${JSON.stringify(result.rationalImplicit)}`
+    );
+    assert(
+        rationalInflections.some(point => approxEqual(point.x, 1.1836363818, 0.08) && approxEqual(point.y, -0.7430407104, 0.08)),
+        `implicit rational curve should detect right inflection: ${JSON.stringify(result.rationalImplicit)}`
+    );
+    assert(
+        !rationalInflections.some(point => point.y > 0),
+        `implicit rational curve should not label upper branches as inflections: ${JSON.stringify(result.rationalImplicit)}`
+    );
+    assert(
+        !result.circle.some(point => point.type === 'inflection'),
+        `circle should not produce implicit inflection markers: ${JSON.stringify(result.circle)}`
+    );
+}
+
 async function assertExplicitCartesianInflectionPointsAreDetected(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -3104,6 +3163,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertInverseCubeRootImplicitPlotsAsCubic(page);
         await assertPolarStationaryPointsAreNamedRadialExtrema(page);
         await assertImplicitVerticalTangentsAreNotTurningMarkers(page);
+        await assertImplicitInflectionPointsAreDetected(page);
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
