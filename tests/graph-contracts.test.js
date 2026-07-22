@@ -902,6 +902,17 @@ async function assertShapeClassification(page) {
     assert.strictEqual(hamburgerHoverCssResult.finePointerPanelHoverRule, true, 'hamburger panel-open hover colour should only apply to fine hover pointers');
     assert.strictEqual(hamburgerHoverCssResult.ungatedHoverRule, false, 'hamburger hover colour should not be ungated on touch devices');
 
+    const badgeTextContrastResult = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        return {
+            greenBadgeText: graphiti.getContrastingTextColor('#00C853'),
+            blueBadgeText: graphiti.getContrastingTextColor('#0057FF')
+        };
+    });
+
+    assert.strictEqual(badgeTextContrastResult.greenBadgeText, '#000000', 'green curve and inflection badges should use black text');
+    assert.strictEqual(badgeTextContrastResult.blueBadgeText, '#FFFFFF', 'non-green dark badges should keep white text');
+
     const sharedLinkDeferredPanelResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;
         const functionPanel = document.getElementById('function-panel');
@@ -1052,6 +1063,96 @@ async function assertShapeClassification(page) {
         Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
         graphiti.input.pinch.active = false;
         graphiti.input.touch.active = false;
+        graphiti.input.touch.pendingTapAction = null;
+        graphiti.isViewportChanging = false;
+        graphiti.frozenInterceptBadges = [];
+        graphiti.frozenTurningPointBadges = [];
+        graphiti.interceptsPendingViewportRefresh = false;
+        graphiti.turningPointsPendingViewportRefresh = false;
+        graphiti.draw();
+
+        graphiti.closeMobileMenu();
+        graphiti.cartesianFunctions = [{
+            id: 9001,
+            expression: 'x',
+            color: '#0057FF',
+            enabled: true,
+            mode: 'cartesian',
+            points: []
+        }];
+        graphiti.plotMode = 'cartesian';
+        graphiti.input.persistentBadges = [];
+        graphiti.input.badgeIdCounter = 0;
+        const curveScreen = graphiti.worldToScreen(0, 0);
+        const curveTapX = canvasRect.left + curveScreen.x;
+        const curveTapY = canvasRect.top + curveScreen.y;
+
+        graphiti.handleTouchStart({ touches: [{ clientX: curveTapX, clientY: curveTapY }] });
+        graphiti.handleTouchEnd({ touches: [] });
+        const badgesAfterCurveTap = graphiti.input.persistentBadges.length;
+
+        graphiti.input.persistentBadges = [];
+        graphiti.input.badgeIdCounter = 0;
+        const curvePanInitialMinX = graphiti.viewport.minX;
+        let curvePanViewportChangeCalls = 0;
+        graphiti.handleViewportChange = () => {
+            curvePanViewportChangeCalls++;
+        };
+        graphiti.handleTouchStart({ touches: [{ clientX: curveTapX, clientY: curveTapY }] });
+        graphiti.handleTouchMove({ touches: [{ clientX: curveTapX + 45, clientY: curveTapY }] });
+        graphiti.handleTouchEnd({ touches: [] });
+        graphiti.handleViewportChange = originalHandleViewportChange;
+
+        const curveTouchTrace = {
+            badgesAfterTap: badgesAfterCurveTap,
+            badgesAfterPan: graphiti.input.persistentBadges.length,
+            viewportMoved: graphiti.viewport.minX !== curvePanInitialMinX,
+            viewportChangeCalls: curvePanViewportChangeCalls
+        };
+
+        Object.assign(graphiti.viewport, originalViewport);
+        Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
+        graphiti.input.persistentBadges = [];
+        graphiti.input.badgeIdCounter = 0;
+        graphiti.input.touch.active = false;
+        graphiti.input.touch.pendingTapAction = null;
+        graphiti.isViewportChanging = false;
+        graphiti.frozenInterceptBadges = [];
+        graphiti.frozenTurningPointBadges = [];
+        graphiti.interceptsPendingViewportRefresh = false;
+        graphiti.turningPointsPendingViewportRefresh = false;
+        graphiti.draw();
+
+        graphiti.handlePointerStart(curveTapX, curveTapY);
+        graphiti.handlePointerEnd();
+        const badgesAfterMouseCurveClick = graphiti.input.persistentBadges.length;
+
+        graphiti.input.persistentBadges = [];
+        graphiti.input.badgeIdCounter = 0;
+        const curveMousePanInitialMinX = graphiti.viewport.minX;
+        let curveMousePanViewportChangeCalls = 0;
+        graphiti.handleViewportChange = () => {
+            curveMousePanViewportChangeCalls++;
+        };
+        graphiti.handlePointerStart(curveTapX, curveTapY);
+        graphiti.handlePointerMove(curveTapX + 45, curveTapY);
+        graphiti.handlePointerEnd();
+        graphiti.handleViewportChange = originalHandleViewportChange;
+
+        const curveMouseTrace = {
+            badgesAfterClick: badgesAfterMouseCurveClick,
+            badgesAfterDrag: graphiti.input.persistentBadges.length,
+            viewportMoved: graphiti.viewport.minX !== curveMousePanInitialMinX,
+            viewportChangeCalls: curveMousePanViewportChangeCalls
+        };
+
+        Object.assign(graphiti.viewport, originalViewport);
+        Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
+        graphiti.cartesianFunctions = [];
+        graphiti.input.persistentBadges = [];
+        graphiti.input.pinch.active = false;
+        graphiti.input.touch.active = false;
+        graphiti.input.touch.pendingTapAction = null;
         graphiti.isViewportChanging = false;
         graphiti.frozenInterceptBadges = [];
         graphiti.frozenTurningPointBadges = [];
@@ -1122,6 +1223,8 @@ async function assertShapeClassification(page) {
             panelPinchPrevention,
             afterCanvasPan,
             afterFirstCanvasTap,
+            curveTouchTrace,
+            curveMouseTrace,
             afterCanvasPinch,
             afterCanvasWheel,
             afterForcedMobileLayout,
@@ -1150,6 +1253,14 @@ async function assertShapeClassification(page) {
     assert(sharedLinkDeferredPanelResult.afterCanvasPan.viewportChangeCalls > 0, 'shared-link first canvas pan should still request viewport refresh');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.panelOpen, false, 'shared-link first canvas tap should close function panel even after stale touch movement state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.hamburgerPanelOpen, false, 'shared-link first canvas tap should restore hamburger closed state');
+    assert.strictEqual(sharedLinkDeferredPanelResult.curveTouchTrace.badgesAfterTap, 1, 'touch tap on a curve should add a trace badge');
+    assert.strictEqual(sharedLinkDeferredPanelResult.curveTouchTrace.badgesAfterPan, 0, 'touch pan starting on a curve should not add a trace badge');
+    assert.strictEqual(sharedLinkDeferredPanelResult.curveTouchTrace.viewportMoved, true, 'touch pan starting on a curve should pan the viewport');
+    assert(sharedLinkDeferredPanelResult.curveTouchTrace.viewportChangeCalls > 0, 'touch pan starting on a curve should request viewport refresh');
+    assert.strictEqual(sharedLinkDeferredPanelResult.curveMouseTrace.badgesAfterClick, 1, 'mouse click on a curve should add a trace badge');
+    assert.strictEqual(sharedLinkDeferredPanelResult.curveMouseTrace.badgesAfterDrag, 0, 'mouse drag starting on a curve should not add a trace badge');
+    assert.strictEqual(sharedLinkDeferredPanelResult.curveMouseTrace.viewportMoved, true, 'mouse drag starting on a curve should pan the viewport');
+    assert(sharedLinkDeferredPanelResult.curveMouseTrace.viewportChangeCalls > 0, 'mouse drag starting on a curve should request viewport refresh');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.panelOpen, false, 'shared-link canvas pinch should close function panel on narrow screens');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.hamburgerPanelOpen, false, 'shared-link canvas pinch should restore hamburger closed state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.viewportZoomed, true, 'shared-link canvas pinch should still zoom the viewport');

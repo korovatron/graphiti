@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.1';
+const VERSION = '1.3.2';
 
 class Graphiti {
     constructor() {
@@ -201,7 +201,8 @@ class Graphiti {
                 // Fixed center points for directional zoom
                 fixedCenterWorldX: 0,
                 fixedCenterWorldY: 0
-            }
+            },
+            pendingTapAction: null
         };
         
         // Mathematical functions - separate collections for each mode
@@ -26031,6 +26032,7 @@ class Graphiti {
         this.input.mouse.x = canvasX;
         this.input.mouse.y = canvasY;
         this.input.mouse.down = true;
+        this.input.mouse.pendingTapAction = null;
         this.input.lastX = canvasX;
         this.input.lastY = canvasY;
         this.input.dragging = false;
@@ -26189,6 +26191,12 @@ class Graphiti {
             // Third, check for turning point marker tap. Turning points and inflections take priority over other significant points at the same location.
             const tappedTurningPoint = this.showTurningPoints ? this.findTurningPointAtScreenPoint(canvasX, canvasY) : null;
             if (tappedTurningPoint) {
+                if (this.input.touch.active) {
+                    this.input.touch.pendingTapAction = { type: 'turningPoint', point: tappedTurningPoint, clientX: x, clientY: y };
+                    this.input.tracing.active = false;
+                    return;
+                }
+
                 // Handle turning point tap and exit early
                 this.handleTurningPointTap(tappedTurningPoint, x, y);
                 return; // Don't process any other input logic
@@ -26197,6 +26205,12 @@ class Graphiti {
             // Fourth, check for intersection marker tap.
             const tappedIntersection = this.showIntersections ? this.findIntersectionAtScreenPoint(canvasX, canvasY) : null;
             if (tappedIntersection) {
+                if (this.input.touch.active) {
+                    this.input.touch.pendingTapAction = { type: 'intersection', point: tappedIntersection, clientX: x, clientY: y };
+                    this.input.tracing.active = false;
+                    return;
+                }
+
                 // Handle intersection tap and exit early
                 this.handleIntersectionTap(tappedIntersection, x, y);
                 return; // Don't process any other input logic
@@ -26205,6 +26219,12 @@ class Graphiti {
             // Fifth, check for intercept marker tap.
             const tappedIntercept = this.showIntercepts ? this.findInterceptAtScreenPoint(canvasX, canvasY) : null;
             if (tappedIntercept) {
+                if (this.input.touch.active) {
+                    this.input.touch.pendingTapAction = { type: 'intercept', point: tappedIntercept, clientX: x, clientY: y };
+                    this.input.tracing.active = false;
+                    return;
+                }
+
                 // Handle intercept tap and exit early
                 this.handleInterceptTap(tappedIntercept, x, y);
                 return; // Don't process any other input logic
@@ -26233,33 +26253,73 @@ class Graphiti {
             }
             
             if (curvePoint) {
-                // Check if the most recent badge on this function has an integral
-                // If so, and there's only 1 integral, the next badge should also be an integral (for pairing)
-                const badgesOnFunction = this.input.persistentBadges
-                    .filter(b => b.functionId === curvePoint.function.id);
-                
-                const recentBadges = badgesOnFunction.sort((a, b) => b.id - a.id); // Sort by ID descending (most recent first)
-                const mostRecentBadge = recentBadges[0];
-                const integralCount = badgesOnFunction.filter(b => b.hasIntegral).length;
-                
-                // Only add integral next if most recent is integral AND there's only 1 integral badge
-                const shouldAddIntegral = mostRecentBadge && mostRecentBadge.hasIntegral && integralCount === 1;
-                
-                // Enter tracing mode (don't clear existing badges)
-                this.input.tracing.active = true;
-                this.input.tracing.functionId = curvePoint.function.id;
-                this.input.tracing.worldX = curvePoint.worldX;
-                this.input.tracing.worldY = curvePoint.worldY;
-                this.input.tracing.theta = curvePoint.theta; // Store theta for polar parametric tracing
-                this.input.tracing.tValue = curvePoint.tValue; // Store tValue for parametric tracing
-                this.input.tracing.addIntegralNext = shouldAddIntegral; // Flag to add integral directly
-                
-                // Set dragging flag to use cached numerical integration during drag
-                this.isDraggingBadge = true;
+                if (this.input.touch.active) {
+                    this.input.touch.pendingTapAction = { type: 'curvePoint', curvePoint };
+                    this.input.tracing.active = false;
+                    this.isDraggingBadge = false;
+                    return;
+                }
+
+                this.input.mouse.pendingTapAction = { type: 'curvePoint', curvePoint };
+                this.input.tracing.active = false;
+                this.isDraggingBadge = false;
             } else {
                 // Normal panning mode
                 this.input.tracing.active = false;
             }
+        }
+    }
+
+    startTracingFromCurvePoint(curvePoint) {
+        if (!curvePoint || !curvePoint.function) {
+            this.input.tracing.active = false;
+            return;
+        }
+
+        if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
+            this.input.tracing.active = false;
+            return;
+        }
+
+        // Check if the most recent badge on this function has an integral
+        // If so, and there's only 1 integral, the next badge should also be an integral (for pairing)
+        const badgesOnFunction = this.input.persistentBadges
+            .filter(b => b.functionId === curvePoint.function.id);
+        
+        const recentBadges = badgesOnFunction.sort((a, b) => b.id - a.id); // Sort by ID descending (most recent first)
+        const mostRecentBadge = recentBadges[0];
+        const integralCount = badgesOnFunction.filter(b => b.hasIntegral).length;
+        
+        // Only add integral next if most recent is integral AND there's only 1 integral badge
+        const shouldAddIntegral = mostRecentBadge && mostRecentBadge.hasIntegral && integralCount === 1;
+        
+        // Enter tracing mode (don't clear existing badges)
+        this.input.tracing.active = true;
+        this.input.tracing.functionId = curvePoint.function.id;
+        this.input.tracing.worldX = curvePoint.worldX;
+        this.input.tracing.worldY = curvePoint.worldY;
+        this.input.tracing.theta = curvePoint.theta; // Store theta for polar parametric tracing
+        this.input.tracing.tValue = curvePoint.tValue; // Store tValue for parametric tracing
+        this.input.tracing.addIntegralNext = shouldAddIntegral; // Flag to add integral directly
+        
+        // Set dragging flag to use cached numerical integration during drag
+        this.isDraggingBadge = true;
+    }
+
+    handlePendingTouchTapAction() {
+        const pendingAction = this.input.touch.pendingTapAction;
+        if (!pendingAction) {
+            return;
+        }
+
+        if (pendingAction.type === 'curvePoint') {
+            this.startTracingFromCurvePoint(pendingAction.curvePoint);
+        } else if (pendingAction.type === 'turningPoint') {
+            this.handleTurningPointTap(pendingAction.point, pendingAction.clientX, pendingAction.clientY);
+        } else if (pendingAction.type === 'intersection') {
+            this.handleIntersectionTap(pendingAction.point, pendingAction.clientX, pendingAction.clientY);
+        } else if (pendingAction.type === 'intercept') {
+            this.handleInterceptTap(pendingAction.point, pendingAction.clientX, pendingAction.clientY);
         }
     }
     
@@ -26564,6 +26624,7 @@ class Graphiti {
                 const panThreshold = this.input.touch.active ? 0 : 2;
                 
                 if (Math.abs(deltaX) > panThreshold || Math.abs(deltaY) > panThreshold) {
+                    this.input.mouse.pendingTapAction = null;
                     this.closeFunctionPanelForNarrowScreenAutoClose();
                     this.input.dragging = true;
                     
@@ -26699,6 +26760,17 @@ class Graphiti {
         // Safety check: prevent duplicate handling if already processed
         if (!this.input.mouse.down) {
             return;
+        }
+        
+        if (this.input.mouse.pendingTapAction && !this.input.dragging) {
+            const pendingAction = this.input.mouse.pendingTapAction;
+            this.input.mouse.pendingTapAction = null;
+
+            if (pendingAction.type === 'curvePoint') {
+                this.startTracingFromCurvePoint(pendingAction.curvePoint);
+            }
+        } else {
+            this.input.mouse.pendingTapAction = null;
         }
         
         // Handle badge interaction (tap vs hold based on movement, not time)
@@ -27363,6 +27435,7 @@ class Graphiti {
             this.closeFunctionPanelForNarrowScreenAutoClose();
             this.input.pinch.active = true;
             this.input.mouse.down = false; // Disable panning during pinch
+            this.input.touch.pendingTapAction = null;
             
             // Reset tap tracking since this is now a pinch gesture
             this.input.startX = null;
@@ -27545,9 +27618,12 @@ class Graphiti {
             const isTap = this.input.maxMoveDistance <= 10 && tapDuration <= 300;
             
             if (isTap) {
+                this.handlePendingTouchTapAction();
+
                 // Close function panel on narrow screens when tapping the canvas
                 this.closeFunctionPanelForNarrowScreenAutoClose();
             }
+            this.input.touch.pendingTapAction = null;
             
             // Reset tap tracking
             this.input.startX = null;
@@ -27563,6 +27639,7 @@ class Graphiti {
         } else if (e.touches.length === 1 && this.input.pinch.active) {
             // Went from pinch to single touch
             this.input.pinch.active = false;
+            this.input.touch.pendingTapAction = null;
             const touch = e.touches[0];
             this.handlePointerStart(touch.clientX, touch.clientY);
         }
@@ -47395,6 +47472,10 @@ class Graphiti {
     }
 
     getContrastingTextColor(backgroundColor) {
+        if (backgroundColor && backgroundColor.toUpperCase() === '#00C853') {
+            return '#000000';
+        }
+
         // Convert hex color to RGB
         let r, g, b;
         
