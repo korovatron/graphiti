@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.94';
+const VERSION = '1.2.95';
 
 class Graphiti {
     constructor() {
@@ -49374,11 +49374,14 @@ class Graphiti {
                     const computedStyle = getComputedStyle(document.documentElement);
                     const safeTop = computedStyle.getPropertyValue('--safe-area-top');
                     const safeTopPx = parseInt(safeTop) || 0;
+                    const heightWithSafeTop = viewportHeight + safeTopPx;
+                    const remainingShortfall = screenPortraitHeight - heightWithSafeTop;
                     
-                    // Add it back to compensate for iOS bug
-                    if (safeTopPx > 0) {
-                        viewportHeight += safeTopPx;
-                    } else if (difference <= 90) {
+                    if (remainingShortfall > 8 && difference <= 180) {
+                        viewportHeight = screenPortraitHeight;
+                    } else if (safeTopPx > 0) {
+                        viewportHeight = heightWithSafeTop;
+                    } else if (difference <= 180) {
                         viewportHeight = screenPortraitHeight;
                     }
                 }

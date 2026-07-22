@@ -188,12 +188,13 @@ there is a very specific new reason. Recent iPhone testing showed that
 `visualViewport.height` can be the stale or transient value that creates the
 bottom-gap problem after share-sheet/screenshot/browser-chrome transitions.
 
-After landscape-to-portrait rotation in PWA mode, iOS can also settle briefly on
-the same too-short portrait `innerHeight` while `safe-area-inset-top` is still
-unavailable. The fix therefore runs a longer staggered retry sequence after
-orientation changes, and if the app is in iOS standalone portrait with a known
-safe-area-sized shortfall but `safe-area-inset-top` is still `0`, it falls back
-to the portrait screen height instead of preserving the short height.
+After landscape-to-portrait rotation in PWA mode, iOS can first report the old
+landscape height, then settle on a portrait `innerHeight` that still looks like
+Safari browser mode with chrome reserved at the bottom. The fix therefore runs
+a longer staggered retry sequence after orientation changes. If the app is in
+iOS standalone portrait and the height is still short after applying
+`safe-area-inset-top`, Graphiti falls back to the portrait screen height instead
+of preserving the browser-chrome-sized gap.
 
 ---
 
