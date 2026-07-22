@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.97';
+const VERSION = '1.3.0';
 
 class Graphiti {
     constructor() {
@@ -1742,6 +1742,13 @@ class Graphiti {
                 ],
                 description: 'Explicit Functions Demo',
                 viewport: { minX: -6, maxX: 6, minY: -3, maxY: 4 }
+            },
+            'curvilinear-asymptote': {
+                expressions: [
+                    'y=\\frac{x^3-x+4}{x-1}'                            // Rational curve with parabolic asymptote
+                ],
+                description: 'Curvilinear Asymptote Demo',
+                viewport: { minX: -4, maxX: 5, minY: -20, maxY: 25 }
             },
             'inequality-intersection': {
                 expressions: [
