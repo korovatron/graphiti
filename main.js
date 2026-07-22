@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.93';
+const VERSION = '1.2.94';
 
 class Graphiti {
     constructor() {
@@ -49363,7 +49363,7 @@ class Graphiti {
             // 3. Portrait mode compensation (iPhone & iPad)
             const isPortrait = window.innerHeight > window.innerWidth;
             
-            if (isPWA && isPortrait) {
+            if (isIOS && isPWA && isPortrait) {
                 // Compare actual viewport with expected screen height
                 const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
                 const difference = screenPortraitHeight - viewportHeight;
@@ -49378,6 +49378,8 @@ class Graphiti {
                     // Add it back to compensate for iOS bug
                     if (safeTopPx > 0) {
                         viewportHeight += safeTopPx;
+                    } else if (difference <= 90) {
+                        viewportHeight = screenPortraitHeight;
                     }
                 }
             }
@@ -49397,27 +49399,31 @@ class Graphiti {
             lastKnownHeight = viewportHeight;
         };
 
+        const scheduleViewportHeightUpdates = (delays) => {
+            delays.forEach(delay => {
+                setTimeout(setActualViewportHeight, delay);
+            });
+        };
+
         // 5. Multiple delayed calculations (iOS doesn't always have safe area values ready immediately)
         setActualViewportHeight();
-        setTimeout(setActualViewportHeight, 50);
-        setTimeout(setActualViewportHeight, 150);
-        setTimeout(setActualViewportHeight, 300);
-        setTimeout(setActualViewportHeight, 500);
-        setTimeout(setActualViewportHeight, 800);
-        setTimeout(setActualViewportHeight, 1200);
+        scheduleViewportHeightUpdates([50, 150, 300, 500, 800, 1200]);
 
         // 9. Event listeners
         window.addEventListener('resize', setActualViewportHeight);
         window.addEventListener('orientationchange', () => {
-            setTimeout(setActualViewportHeight, 100);
-            setTimeout(setActualViewportHeight, 300);
+            scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800]);
         });
+        if (screen.orientation) {
+            screen.orientation.addEventListener('change', () => {
+                scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800]);
+            });
+        }
         
         // Additional safety: recalculate when page becomes visible (handles app switching on iOS)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
-                setTimeout(setActualViewportHeight, 50);
-                setTimeout(setActualViewportHeight, 200);
+                scheduleViewportHeightUpdates([50, 200, 500, 900]);
             }
         });
     }
