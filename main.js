@@ -44640,7 +44640,7 @@ class Graphiti {
                 badgeColor = '#00E5FF';
                 break;
             case 'inflection':
-                badgeColor = '#00E5FF'; // Bright cyan for inflection points
+                badgeColor = '#00C853'; // Green for inflection points
                 break;
             default:
                 badgeColor = '#808080'; // Gray for inflection/other (matches marker)
