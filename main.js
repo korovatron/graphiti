@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.2.91';
+const VERSION = '1.2.92';
 
 class Graphiti {
     constructor() {
@@ -2119,6 +2119,8 @@ class Graphiti {
         
         // Save to localStorage
         this.saveFunctionsToLocalStorage();
+
+        this.trackGoatCounterEvent(`Graphiti-${demoSetId}-demo loaded`);
     }
 
     // Helper method to programmatically add a badge with tangent/normal to a function

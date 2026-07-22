@@ -3293,6 +3293,68 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.turningX, 1, `rectangle zoom fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
 }
 
+async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const originalGoatCounter = window.goatcounter;
+        const originals = {
+            addExampleFunction: graphiti.addExampleFunction,
+            draw: graphiti.draw,
+            getCurrentFunctions: graphiti.getCurrentFunctions,
+            saveFunctionsToLocalStorage: graphiti.saveFunctionsToLocalStorage,
+            updateRangeInputs: graphiti.updateRangeInputs,
+            viewport: { ...graphiti.viewport }
+        };
+
+        const events = [];
+        const loadedExpressions = [];
+        let drawCalls = 0;
+        let saveCalls = 0;
+
+        try {
+            window.goatcounter = {
+                count: event => events.push(event)
+            };
+            graphiti.addExampleFunction = async expression => {
+                loadedExpressions.push(expression);
+            };
+            graphiti.draw = () => {
+                drawCalls++;
+            };
+            graphiti.getCurrentFunctions = () => [];
+            graphiti.saveFunctionsToLocalStorage = () => {
+                saveCalls++;
+            };
+            graphiti.updateRangeInputs = () => {};
+
+            await graphiti.addDemoSet('better-than-desmos');
+            await graphiti.addDemoSet('not-a-demo-set');
+
+            return { events, loadedExpressions, drawCalls, saveCalls };
+        } finally {
+            window.goatcounter = originalGoatCounter;
+            graphiti.addExampleFunction = originals.addExampleFunction;
+            graphiti.draw = originals.draw;
+            graphiti.getCurrentFunctions = originals.getCurrentFunctions;
+            graphiti.saveFunctionsToLocalStorage = originals.saveFunctionsToLocalStorage;
+            graphiti.updateRangeInputs = originals.updateRangeInputs;
+            Object.assign(graphiti.viewport, originals.viewport);
+        }
+    });
+
+    assert.deepStrictEqual(result.loadedExpressions, [
+        'y^2=\\frac{1}{x^2-y^3}',
+        '\\left(y-1\\right)\\left(y-\\frac{1}{x}\\right)=0'
+    ], `demo set analytics test should load the selected demo expressions: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.drawCalls, 1, `valid demo set should finish drawing once: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.saveCalls, 1, `valid demo set should save once: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.events, [{
+        path: '/event/graphiti-better-than-desmos-demo-loaded',
+        title: 'Graphiti-better-than-desmos-demo loaded',
+        event: true
+    }], `valid demo set should track one GoatCounter load event: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -3403,6 +3465,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
         await assertStressFastPathPanZoomStartsImmediately(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
+        await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
     } finally {
