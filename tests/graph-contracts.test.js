@@ -689,6 +689,25 @@ async function assertShapeClassification(page) {
     assert.strictEqual(metadataToggleResult.after.asymptoteEquationCount, 0, 'asymptote equations should hide when overlay hidden');
     assert.strictEqual(metadataToggleResult.after.envelopeContainerVisible, true, 'envelope metadata should remain visible when overlay hidden');
 
+    const parenthesizedReciprocalTrigAsymptoteResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('y=1/((sin(x)-cos(x)))');
+        const func = graphiti.cartesianFunctions[0];
+        await graphiti.plotFunction(func);
+
+        return graphiti.buildAsymptoteDisplayLatex(func);
+    });
+
+    assert.strictEqual(parenthesizedReciprocalTrigAsymptoteResult.length, 1, 'extra denominator parentheses should keep reciprocal trig asymptotes compact');
+    assert.strictEqual(parenthesizedReciprocalTrigAsymptoteResult[0], 'x = \\frac{\\pi}{4} + \\pi n', 'extra denominator parentheses should render the same compact asymptote family');
+
     const lineDomResult = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';

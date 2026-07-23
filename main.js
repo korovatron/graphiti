@@ -4304,14 +4304,14 @@ class Graphiti {
             const hasXVariable = /\bx\b/.test(expressionForSampling);
             const hasStepDiscontinuityFunction = !func.monomialYExplicitProxy && /(^|[^a-z])(floor|ceil|sign)\s*\(/.test(expressionForSampling);
             const hasAsymptoteTrigWithX = hasXVariable && /(^|[^a-z])(tan|cot|sec|csc)\s*\(/.test(expressionForSampling);
-            const hasReciprocalPeriodicTrigWithX = hasXVariable && /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expressionForSampling);
+            const hasReciprocalPeriodicTrigWithX = hasXVariable && /\/\s*(?:\(\s*)*(sin|cos|tan)\s*\(/.test(expressionForSampling);
             const shouldSkipNumericHorizontalAsymptotes = hasAsymptoteTrigWithX || hasReciprocalPeriodicTrigWithX;
             const baseAsymptoteSpacing = this.angleMode === 'degrees' ? 180 : Math.PI;
 
             let frequencyMultiplier = 1;
             const multiplierMatch = expressionForSampling.match(/(?:tan|cot|sec|csc)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/)
                 || (hasReciprocalPeriodicTrigWithX
-                    ? expressionForSampling.match(/\/\s*\(?\s*(?:sin|cos|tan)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/)
+                    ? expressionForSampling.match(/\/\s*(?:\(\s*)*(?:sin|cos|tan)\s*\(\s*([0-9]*\.?[0-9]+)\s*\*?\s*x/)
                     : null);
             if (multiplierMatch) {
                 const parsed = parseFloat(multiplierMatch[1]);
@@ -17317,7 +17317,7 @@ class Graphiti {
         const curvedAsymptotes = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
 
         const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
-        const hasReciprocalPeriodicTrigVerticals = /\/\s*\(?\s*(sin|cos|tan)\s*\(/.test(expression);
+        const hasReciprocalPeriodicTrigVerticals = /\/\s*(?:\(\s*)*(sin|cos|tan)\s*\(/.test(expression);
         const hasPeriodicTrigVerticals = (hasNamedPeriodicTrigVerticals || hasReciprocalPeriodicTrigVerticals) && verticalValues.length >= 2;
         if (hasPeriodicTrigVerticals) {
             const periodicEquation = this.formatPeriodicVerticalAsymptoteLatex(verticalValues);
