@@ -49501,9 +49501,28 @@ class Graphiti {
             });
         };
 
+        const scheduleIOSPWALayoutRefreshes = (delays) => {
+            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+                          window.matchMedia('(display-mode: fullscreen)').matches ||
+                          window.navigator.standalone === true;
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+            if (!isIOS || !isPWA) {
+                return;
+            }
+
+            delays.forEach(delay => {
+                setTimeout(() => {
+                    window.dispatchEvent(new Event('resize'));
+                }, delay);
+            });
+        };
+
         // 5. Multiple delayed calculations (iOS doesn't always have safe area values ready immediately)
         setActualViewportHeight();
-        scheduleViewportHeightUpdates([50, 150, 300, 500, 800, 1200]);
+        scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800, 2400]);
+        scheduleIOSPWALayoutRefreshes([350, 900, 1800, 2400]);
 
         // 9. Event listeners
         window.addEventListener('resize', setActualViewportHeight);

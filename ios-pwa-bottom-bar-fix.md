@@ -136,10 +136,30 @@ fixIOSViewportBug() {
         });
     };
 
+    const scheduleIOSPWALayoutRefreshes = (delays) => {
+        const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+                      window.matchMedia('(display-mode: fullscreen)').matches ||
+                      window.navigator.standalone === true;
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        if (!isIOS || !isPWA) {
+            return;
+        }
+
+        delays.forEach(delay => {
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, delay);
+        });
+    };
+
+
     // Run immediately, then stagger multiple attempts because iOS doesn't
     // always have safe-area values ready right away on launch
     setActualViewportHeight();
-    scheduleViewportHeightUpdates([50, 150, 300, 500, 800, 1200]);
+    scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800, 2400]);
+    scheduleIOSPWALayoutRefreshes([350, 900, 1800, 2400]);
 
     // Keep it updated on resize and orientation change
     window.addEventListener('resize', setActualViewportHeight);
@@ -209,11 +229,18 @@ fixIOSViewportBug() {
 
 iOS calculates `env(safe-area-inset-top)` asynchronously after launch. If you
 read it too early you get `0`, which means the height compensation does nothing,
-and you get the gap. Running at 50ms, 150ms, 300ms, 500ms, 800ms, 1200ms covers
-all the devices/conditions seen in testing - some are fast, some slow. The
+and you get the gap. Running at 50ms, 100ms, 200ms, 350ms, 600ms, 900ms,
+1300ms, 1800ms and 2400ms covers the delayed cold-launch settling seen after
+the app was last closed or suspended in landscape and then reopened in portrait.
+Some devices are fast, some slow. The
 `lastKnownHeight` guard triggers a resize event only when the value actually
 changes significantly (>30px), so there is no visual flicker on devices where
 the first read is already correct.
+
+The cold-launch path also schedules a few iOS-PWA-only resize events after the
+delayed height reads. This mirrors the manual rotate-and-back workaround: the
+rotation path fixes the bug because it causes both a fresh height read and a
+layout/canvas refresh after iOS has settled.
 
 Do not add a `visualViewport.resize` listener back to this root height fix unless
 there is a very specific new reason. Recent iPhone testing showed that
