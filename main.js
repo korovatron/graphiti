@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.6';
+const VERSION = '1.3.8';
 
 class Graphiti {
     constructor() {
@@ -49440,17 +49440,20 @@ class Graphiti {
         // iOS incorrectly subtracts safe-area-inset-top from innerHeight in PWA mode
         let lastKnownHeight = 0;
 
-        const updatePWALandscapeClass = () => {
+        const updateTitleLandscapeClasses = () => {
             const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
                           window.matchMedia('(display-mode: fullscreen)').matches ||
                           window.navigator.standalone === true;
             const isLandscape = window.innerWidth > window.innerHeight;
-            const isCompactLandscape = isLandscape && window.innerWidth <= 950;
+            const isCompactLandscape = isLandscape && window.innerWidth <= 1100;
+            const isTouchDevice = window.matchMedia('(pointer: coarse)').matches ||
+                                  navigator.maxTouchPoints > 0;
             document.documentElement.classList.toggle('pwa-landscape', isPWA && isCompactLandscape);
+            document.documentElement.classList.toggle('title-compact-landscape', isTouchDevice && isCompactLandscape);
         };
         
         const setActualViewportHeight = () => {
-            updatePWALandscapeClass();
+            updateTitleLandscapeClasses();
 
             // 1. Use innerHeight for global layout height. iOS visualViewport can
             // report transient share-sheet/browser-chrome heights that should not
@@ -49538,10 +49541,12 @@ class Graphiti {
         // 9. Event listeners
         window.addEventListener('resize', setActualViewportHeight);
         window.addEventListener('orientationchange', () => {
+            updateTitleLandscapeClasses();
             scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800]);
         });
         if (screen.orientation) {
             screen.orientation.addEventListener('change', () => {
+                updateTitleLandscapeClasses();
                 scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800]);
             });
         }
@@ -49549,6 +49554,7 @@ class Graphiti {
         // Additional safety: recalculate when page becomes visible (handles app switching on iOS)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
+                updateTitleLandscapeClasses();
                 scheduleViewportHeightUpdates([50, 200, 500, 900]);
             }
         });

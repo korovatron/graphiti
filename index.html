@@ -867,7 +867,8 @@
             }
         }
 
-        html.pwa-landscape .title-screen p.copyright {
+        html.pwa-landscape .title-screen p.copyright,
+        html.title-compact-landscape .title-screen p.copyright {
             position: static;
             left: auto;
             bottom: auto;
@@ -875,27 +876,32 @@
             margin-top: 10px;
         }
 
-        html.pwa-landscape #hamburger-menu {
+        html.pwa-landscape #hamburger-menu,
+        html.title-compact-landscape #hamburger-menu {
             top: calc(10px + var(--safe-area-top, 0px)) !important;
             right: calc(10px + var(--safe-area-right, 0px)) !important;
         }
 
-        html.pwa-landscape .title-screen .logo {
+        html.pwa-landscape .title-screen .logo,
+        html.title-compact-landscape .title-screen .logo {
             max-height: 46px !important;
             margin-bottom: 6px !important;
         }
 
-        html.pwa-landscape .title-screen p {
+        html.pwa-landscape .title-screen p,
+        html.title-compact-landscape .title-screen p {
             font-size: 1em !important;
             margin-bottom: 15px !important;
         }
 
-        html.pwa-landscape .title-screen p[style*="margin-top: 30px"] {
+        html.pwa-landscape .title-screen p[style*="margin-top: 30px"],
+        html.title-compact-landscape .title-screen p[style*="margin-top: 30px"] {
             margin-top: 10px !important;
             margin-bottom: 5px !important;
         }
 
-        html.pwa-landscape .title-screen p.copyright {
+        html.pwa-landscape .title-screen p.copyright,
+        html.title-compact-landscape .title-screen p.copyright {
             font-size: 0.7em !important;
             bottom: calc(10px + var(--safe-area-bottom, 0px)) !important;
         }
