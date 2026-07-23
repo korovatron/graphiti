@@ -255,6 +255,18 @@ iOS standalone portrait and the height is still short after applying
 `safe-area-inset-top`, Graphiti falls back to the portrait screen height instead
 of preserving the browser-chrome-sized gap.
 
+Heavy graph replots make this race much easier to reproduce. If several nasty
+implicit equations keep the calculation indicator visible for a couple of
+seconds, iOS can report three visible stages after rotating back to portrait:
+the old landscape height with a huge bottom bar, a Safari-chrome-sized bottom
+bar, and finally the full installed PWA height. During the few seconds after an
+orientation event, Graphiti now treats a portrait-orientation `innerHeight` that
+is still close to the landscape screen dimension, or still short after applying
+`safe-area-inset-top`, as transient and promotes it to the portrait screen
+height. The orientation retry sequence also runs out to 4.5s and dispatches
+matching resize refreshes, so delayed plotting work has less chance to leave the
+canvas measured against either intermediate height.
+
 The Vectorama comparison showed another important part of the fix: do not leave
 the app shell as a normal relative block that can be visibly shorter than the
 installed PWA viewport. Graphiti now pins `#app-container` to the viewport with

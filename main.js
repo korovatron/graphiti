@@ -49439,6 +49439,36 @@ class Graphiti {
         // Complete iOS PWA viewport bug fix (iPhone & iPad)
         // iOS incorrectly subtracts safe-area-inset-top from innerHeight in PWA mode
         let lastKnownHeight = 0;
+        let orientationSettlingUntil = 0;
+
+        const isIOSDevice = () => /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        const isStandalonePWA = () => window.matchMedia('(display-mode: standalone)').matches ||
+            window.matchMedia('(display-mode: fullscreen)').matches ||
+            window.navigator.standalone === true;
+
+        const getScreenOrientationType = () => {
+            if (screen.orientation && typeof screen.orientation.type === 'string') {
+                return screen.orientation.type;
+            }
+            return '';
+        };
+
+        const isPortraitOrientation = () => {
+            const orientationType = getScreenOrientationType();
+            if (orientationType) {
+                return orientationType.includes('portrait');
+            }
+            if (typeof window.orientation === 'number') {
+                return Math.abs(window.orientation) !== 90;
+            }
+            return window.innerHeight > window.innerWidth;
+        };
+
+        const markOrientationSettling = () => {
+            orientationSettlingUntil = performance.now() + 6000;
+        };
         
         const setActualViewportHeight = () => {
             // 1. Use innerHeight for global layout height. iOS visualViewport can
@@ -49447,18 +49477,17 @@ class Graphiti {
             let viewportHeight = window.innerHeight;
             
             // 2. Detect PWA mode (bug only occurs in PWA, not Safari browser)
-            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
-                          window.matchMedia('(display-mode: fullscreen)').matches ||
-                          window.navigator.standalone === true;
-            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const isPWA = isStandalonePWA();
+            const isIOS = isIOSDevice();
             
             // 3. Portrait mode compensation (iPhone & iPad)
-            const isPortrait = window.innerHeight > window.innerWidth;
+            const isPortrait = window.innerHeight > window.innerWidth ||
+                               (isIOS && isPWA && isPortraitOrientation());
             
             if (isIOS && isPWA && isPortrait) {
                 // Compare actual viewport with expected screen height
                 const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
+                const screenLandscapeHeight = Math.min(window.screen.height, window.screen.width);
                 const difference = screenPortraitHeight - viewportHeight;
                 
                 // iPhone diff ~59px, iPad diff ~32px - use 15px threshold
@@ -49470,7 +49499,13 @@ class Graphiti {
                     const heightWithSafeTop = viewportHeight + safeTopPx;
                     const remainingShortfall = screenPortraitHeight - heightWithSafeTop;
                     
-                    if (remainingShortfall > 8 && difference <= 180) {
+                    const isSettlingAfterOrientation = performance.now() < orientationSettlingUntil;
+                    const hasUnfilledPortraitHeight = remainingShortfall > 8;
+                    const looksLikeStaleLandscapeHeight = viewportHeight <= screenLandscapeHeight + safeTopPx + 20;
+
+                    if (isSettlingAfterOrientation && (looksLikeStaleLandscapeHeight || hasUnfilledPortraitHeight)) {
+                        viewportHeight = screenPortraitHeight;
+                    } else if (remainingShortfall > 8 && difference <= 180) {
                         viewportHeight = screenPortraitHeight;
                     } else if (safeTopPx > 0) {
                         viewportHeight = heightWithSafeTop;
@@ -49527,11 +49562,17 @@ class Graphiti {
         // 9. Event listeners
         window.addEventListener('resize', setActualViewportHeight);
         window.addEventListener('orientationchange', () => {
-            scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800]);
+            markOrientationSettling();
+            const orientationDelays = [50, 100, 200, 350, 600, 900, 1300, 1800, 2400, 3200, 4500];
+            scheduleViewportHeightUpdates(orientationDelays);
+            scheduleIOSPWALayoutRefreshes([350, 900, 1800, 2400, 3200, 4500]);
         });
         if (screen.orientation) {
             screen.orientation.addEventListener('change', () => {
-                scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800]);
+                markOrientationSettling();
+                const orientationDelays = [50, 100, 200, 350, 600, 900, 1300, 1800, 2400, 3200, 4500];
+                scheduleViewportHeightUpdates(orientationDelays);
+                scheduleIOSPWALayoutRefreshes([350, 900, 1800, 2400, 3200, 4500]);
             });
         }
         
