@@ -49482,6 +49482,42 @@ class Graphiti {
 
         const hasActiveImplicitCalculation = () => this.activeImplicitCalculations instanceof Set &&
             this.activeImplicitCalculations.size > 0;
+
+        const getPortraitHeightCacheKey = (screenPortraitHeight, screenLandscapeHeight) => {
+            const pixelRatio = Math.round((window.devicePixelRatio || 1) * 100) / 100;
+            return `graphiti-ios-pwa-portrait-vh:${screenPortraitHeight}x${screenLandscapeHeight}:dpr${pixelRatio}`;
+        };
+
+        const readCachedPortraitHeight = (screenPortraitHeight, screenLandscapeHeight) => {
+            try {
+                const cacheKey = getPortraitHeightCacheKey(screenPortraitHeight, screenLandscapeHeight);
+                const cachedHeight = parseInt(localStorage.getItem(cacheKey), 10);
+                if (!Number.isFinite(cachedHeight)) {
+                    return 0;
+                }
+                if (cachedHeight <= screenLandscapeHeight + 20 || cachedHeight > screenPortraitHeight + 20) {
+                    return 0;
+                }
+                return cachedHeight;
+            } catch (error) {
+                return 0;
+            }
+        };
+
+        const saveCachedPortraitHeight = (viewportHeight, screenPortraitHeight, screenLandscapeHeight) => {
+            if (viewportHeight < screenPortraitHeight - 8) {
+                return;
+            }
+
+            try {
+                const cacheKey = getPortraitHeightCacheKey(screenPortraitHeight, screenLandscapeHeight);
+                const cachedHeight = readCachedPortraitHeight(screenPortraitHeight, screenLandscapeHeight);
+                const heightToSave = Math.max(cachedHeight, Math.round(viewportHeight));
+                localStorage.setItem(cacheKey, String(heightToSave));
+            } catch (error) {
+                // localStorage can be unavailable in private browsing or restricted contexts.
+            }
+        };
         
         const setActualViewportHeight = () => {
             // 1. Use innerHeight for global layout height. iOS visualViewport can
@@ -49501,6 +49537,7 @@ class Graphiti {
                 // Compare actual viewport with expected screen height
                 const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
                 const screenLandscapeHeight = Math.min(window.screen.height, window.screen.width);
+                const cachedGoodPortraitHeight = readCachedPortraitHeight(screenPortraitHeight, screenLandscapeHeight);
                 const difference = screenPortraitHeight - viewportHeight;
                 
                 // iPhone diff ~59px, iPad diff ~32px - use 15px threshold
@@ -49526,6 +49563,12 @@ class Graphiti {
                         viewportHeight = screenPortraitHeight;
                     }
                 }
+
+                if (cachedGoodPortraitHeight > 0 && viewportHeight < cachedGoodPortraitHeight - 8) {
+                    viewportHeight = cachedGoodPortraitHeight;
+                }
+
+                saveCachedPortraitHeight(viewportHeight, screenPortraitHeight, screenLandscapeHeight);
             }
             // Landscape mode - skip all compensation (CSS env() handles notch automatically)
             

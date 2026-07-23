@@ -284,6 +284,17 @@ actually changed, and the post-calculation orientation refresh is coalesced so
 the `orientationchange` and `screen.orientation.change` handlers cannot start
 duplicate wait loops.
 
+The smaller browser-chrome-sized bottom bar can still arrive as a late resize
+after the huge stale-landscape bar has already been corrected. To stop that late
+short value from overwriting a known-good full-screen layout, Graphiti stores the
+last confirmed full portrait PWA height in `localStorage`, keyed by portrait
+screen size, landscape screen size and device pixel ratio. The cache is guarded
+against poisoning: values close to the landscape height are ignored, over-tall
+values are ignored, and new values are only stored when they are within 8px of
+the expected portrait screen height. If a later portrait height is shorter than
+that cached good value, Graphiti uses the cached height immediately and still
+continues the normal delayed iOS settling checks.
+
 The Vectorama comparison showed another important part of the fix: do not leave
 the app shell as a normal relative block that can be visibly shorter than the
 installed PWA viewport. Graphiti now pins `#app-container` to the viewport with
