@@ -267,6 +267,23 @@ height. The orientation retry sequence also runs out to 4.5s and dispatches
 matching resize refreshes, so delayed plotting work has less chance to leave the
 canvas measured against either intermediate height.
 
+If the landscape-to-portrait rotation is initiated while implicit graph
+recalculation is already active, the bad state is more likely. In that case the
+main orientation retry timers can run while the graph is still busy, and the
+canvas can be measured against one of the transient iOS heights. Graphiti now
+checks `activeImplicitCalculations` when orientation changes; if implicit work is
+active, it keeps the orientation-settling window alive and runs another height
+read plus resize refresh after the calculations go quiet, with a 12s cap.
+
+The busy indicator can also appear to finish and then restart up to several
+times after rotation. That happens because iOS emits multiple resize pulses
+while the viewport is settling, and Graphiti's resize path eventually reaches
+`handleViewportChange()`, which cancels and restarts implicit replots. The canvas
+resize path now ignores resize events when the app container dimensions have not
+actually changed, and the post-calculation orientation refresh is coalesced so
+the `orientationchange` and `screen.orientation.change` handlers cannot start
+duplicate wait loops.
+
 The Vectorama comparison showed another important part of the fix: do not leave
 the app shell as a normal relative block that can be visibly shorter than the
 installed PWA viewport. Graphiti now pins `#app-container` to the viewport with

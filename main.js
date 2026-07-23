@@ -24479,23 +24479,32 @@ class Graphiti {
     }
     
     setupCanvas() {
+        let hasSizedCanvas = false;
+
         const resizeCanvas = () => {
             const container = document.getElementById('app-container');
             const rect = container.getBoundingClientRect();
+            const width = Math.round(rect.width);
+            const height = Math.round(rect.height);
+
+            if (hasSizedCanvas && this.canvas.width === width && this.canvas.height === height) {
+                return;
+            }
             
-            this.canvas.width = rect.width;
-            this.canvas.height = rect.height;
+            hasSizedCanvas = true;
+            this.canvas.width = width;
+            this.canvas.height = height;
 
             // Update both viewports with new canvas dimensions
-            this.cartesianViewport.width = rect.width;
-            this.cartesianViewport.height = rect.height;
-            this.cartesianViewport.centerX = rect.width / 2;
-            this.cartesianViewport.centerY = rect.height / 2;
+            this.cartesianViewport.width = width;
+            this.cartesianViewport.height = height;
+            this.cartesianViewport.centerX = width / 2;
+            this.cartesianViewport.centerY = height / 2;
 
-            this.polarViewport.width = rect.width;
-            this.polarViewport.height = rect.height;
-            this.polarViewport.centerX = rect.width / 2;
-            this.polarViewport.centerY = rect.height / 2;
+            this.polarViewport.width = width;
+            this.polarViewport.height = height;
+            this.polarViewport.centerX = width / 2;
+            this.polarViewport.centerY = height / 2;
 
             this.updateViewport();
         };
@@ -49440,6 +49449,7 @@ class Graphiti {
         // iOS incorrectly subtracts safe-area-inset-top from innerHeight in PWA mode
         let lastKnownHeight = 0;
         let orientationSettlingUntil = 0;
+        let postCalculationOrientationRefreshPending = false;
 
         const isIOSDevice = () => /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -49469,6 +49479,9 @@ class Graphiti {
         const markOrientationSettling = () => {
             orientationSettlingUntil = performance.now() + 6000;
         };
+
+        const hasActiveImplicitCalculation = () => this.activeImplicitCalculations instanceof Set &&
+            this.activeImplicitCalculations.size > 0;
         
         const setActualViewportHeight = () => {
             // 1. Use innerHeight for global layout height. iOS visualViewport can
@@ -49554,6 +49567,30 @@ class Graphiti {
             });
         };
 
+        const schedulePostCalculationOrientationRefresh = () => {
+            if (postCalculationOrientationRefreshPending || !hasActiveImplicitCalculation()) {
+                return;
+            }
+
+            postCalculationOrientationRefreshPending = true;
+            const startedAt = performance.now();
+            const maxWaitMs = 12000;
+            const checkForSettledCalculations = () => {
+                if (hasActiveImplicitCalculation() && performance.now() - startedAt < maxWaitMs) {
+                    markOrientationSettling();
+                    setTimeout(checkForSettledCalculations, 250);
+                    return;
+                }
+
+                markOrientationSettling();
+                scheduleViewportHeightUpdates([0, 50, 200, 500, 900]);
+                scheduleIOSPWALayoutRefreshes([0, 100, 500, 900]);
+                postCalculationOrientationRefreshPending = false;
+            };
+
+            setTimeout(checkForSettledCalculations, 250);
+        };
+
         // 5. Multiple delayed calculations (iOS doesn't always have safe area values ready immediately)
         setActualViewportHeight();
         scheduleViewportHeightUpdates([50, 100, 200, 350, 600, 900, 1300, 1800, 2400]);
@@ -49566,6 +49603,7 @@ class Graphiti {
             const orientationDelays = [50, 100, 200, 350, 600, 900, 1300, 1800, 2400, 3200, 4500];
             scheduleViewportHeightUpdates(orientationDelays);
             scheduleIOSPWALayoutRefreshes([350, 900, 1800, 2400, 3200, 4500]);
+            schedulePostCalculationOrientationRefresh();
         });
         if (screen.orientation) {
             screen.orientation.addEventListener('change', () => {
@@ -49573,6 +49611,7 @@ class Graphiti {
                 const orientationDelays = [50, 100, 200, 350, 600, 900, 1300, 1800, 2400, 3200, 4500];
                 scheduleViewportHeightUpdates(orientationDelays);
                 scheduleIOSPWALayoutRefreshes([350, 900, 1800, 2400, 3200, 4500]);
+                schedulePostCalculationOrientationRefresh();
             });
         }
         
