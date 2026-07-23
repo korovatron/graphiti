@@ -28361,7 +28361,7 @@ class Graphiti {
                         labelText = `Polar Stationary Point: ${coords}`;
                         break;
                     case 'inflection':
-                        labelText = `Point of Inflection: ${coords}`;
+                        labelText = `${badge.isStationaryInflection === true ? 'Stationary Inflection' : 'Point of Inflection'}: ${coords}`;
                         break;
                     case 'intersection':
                         labelText = coords;
@@ -30340,6 +30340,7 @@ class Graphiti {
                     // Badge type and significant point type for special badges (intersections, turning points, etc.)
                     badgeType: badge.badgeType,
                     significantPointType: badge.significantPointType,
+                    isStationaryInflection: badge.isStationaryInflection === true,
                     // Function color (important for intersection badges which use pink, not function color)
                     functionColor: badge.functionColor,
                     // Custom text for special badges
@@ -30609,6 +30610,7 @@ class Graphiti {
                         // Restore badge type and significant point type (critical for intersections, turning points, etc.)
                         badgeType: badgeData.badgeType,
                         significantPointType: badgeData.significantPointType,
+                        isStationaryInflection: badgeData.isStationaryInflection === true,
                         // Restore custom text for special badges
                         customText: badgeData.customText,
                         // Restore function IDs for intersection badges
@@ -31956,6 +31958,9 @@ class Graphiti {
             
             badge.worldX = match.x;
             badge.worldY = match.y;
+            if (badge.badgeType === 'inflection') {
+                badge.isStationaryInflection = match.isStationaryInflection === true;
+            }
             // Update reference to the freshest computed coordinates so next lookup stays accurate
             badge.snapRefX = match.x;
             badge.snapRefY = match.y;
@@ -37681,6 +37686,15 @@ class Graphiti {
             point.type === 'inflection' && Math.abs(point.x - xValue) <= Math.max(rootProbeOffset(), 1e-5)
         );
 
+        const isStationaryInflectionAt = (xValue) => {
+            try {
+                const slope = evaluateDerivativeAt(xValue);
+                return Number.isFinite(slope) && Math.abs(slope) <= 1e-7;
+            } catch {
+                return false;
+            }
+        };
+
         const addInflectionPoint = (xValue) => {
             try {
                 if (hasInflectionNear(xValue)) {
@@ -37708,6 +37722,7 @@ class Graphiti {
                     y: snappedY,
                     func: func,
                     type: 'inflection',
+                    isStationaryInflection: isStationaryInflectionAt(xValue),
                     derivative: derivativeStr,
                     secondDerivative: secondDerivativeStr
                 });
@@ -37844,6 +37859,7 @@ class Graphiti {
                         y: snappedY,
                         func: func,
                         type: type, // 'minimum', 'maximum', or 'inflection'
+                        isStationaryInflection: type === 'inflection',
                         derivative: derivativeStr,
                         secondDerivative: secondDerivativeStr
                     });
@@ -38163,6 +38179,7 @@ class Graphiti {
                     y: snappedY,
                     func: branchFunc,
                     type: 'inflection',
+                    isStationaryInflection: false,
                     derivative: derivativeStr,
                     secondDerivative: secondDerivativeStr
                 });
@@ -38176,6 +38193,7 @@ class Graphiti {
                         x: point.x,
                         y: point.y,
                         type: point.type,
+                        isStationaryInflection: point.isStationaryInflection === true,
                         derivative: point.derivative,
                         secondDerivative: point.secondDerivative
                     }))
@@ -44704,11 +44722,14 @@ class Graphiti {
             turningPoint.y,
             turningPoint.func,
             turningPoint.type,
-            turningPoint.tValue // Pass tValue for parametric functions
+            turningPoint.tValue, // Pass tValue for parametric functions
+            {
+                isStationaryInflection: turningPoint.isStationaryInflection === true
+            }
         );
     }
     
-    addTurningPointBadge(worldX, worldY, func, type, tValue = null) {
+    addTurningPointBadge(worldX, worldY, func, type, tValue = null, options = {}) {
         // Use color coding for turning point badges
         let badgeColor;
         
@@ -44762,6 +44783,7 @@ class Graphiti {
             customText: null,
             badgeType: type, // 'maximum', 'minimum', etc.
             significantPointType: 'turningPoint', // Mark for position updates
+            isStationaryInflection: type === 'inflection' && options.isStationaryInflection === true,
             tValue: tValue, // Store t parameter for parametric functions
             screenX: 0, // Will be updated during rendering
             screenY: 0  // Will be updated during rendering
@@ -46676,7 +46698,7 @@ class Graphiti {
                 ? badge.tValue 
                 : null;
             
-            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue, tValueParam, badge.significantPointType);
+            const badgeInfo = this.drawTracingBadge(badge.screenX, badge.screenY, badge.functionColor, displayX, badge.worldY, false, isBeingHeld, badge.customText, badge.badgeType, badge.hasTangent, badge.hasNormal, badge.hasIntegral, badge.neonIntegral, badge.tangentSlope, badge.secondDerivative, func, func2, integralLimitType, thetaValue, tValueParam, badge.significantPointType, badge.isStationaryInflection === true);
             
             // Store close button bounds for click detection
             if (badgeInfo && badgeInfo.closeButton) {
@@ -46968,7 +46990,7 @@ class Graphiti {
         this.ctx.restore();
     }
     
-    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null, tValue = null, significantPointType = null) {
+    drawTracingBadge(screenX, screenY, color, worldX, worldY, isActive = false, isBeingHeld = false, customText = null, badgeType = null, hasTangent = false, hasNormal = false, hasIntegral = false, neonIntegral = false, tangentSlope = null, secondDerivative = null, func = null, func2 = null, integralLimitType = null, thetaValue = null, tValue = null, significantPointType = null, isStationaryInflection = false) {
         // Draw the circle indicator
         this.ctx.save();
         
@@ -47085,7 +47107,7 @@ class Graphiti {
                     labelText = `Polar Stationary Point: ${coords}`;
                     break;
                 case 'inflection':
-                    labelText = `Point of Inflection: ${coords}`;
+                    labelText = `${isStationaryInflection === true ? 'Stationary Inflection' : 'Point of Inflection'}: ${coords}`;
                     break;
                 case 'intersection':
                     // Intersection badges show only coordinates

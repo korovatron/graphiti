@@ -2038,7 +2038,12 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
             const derivativeStr = graphiti.cleanMath.derivative(processedExpression, 'x').toString();
             const secondDerivativeStr = graphiti.cleanMath.derivative(derivativeStr, 'x').toString();
             return graphiti.findTurningPointsForFunction(func, derivativeStr, secondDerivativeStr, processedExpression)
-                .map(point => ({ x: point.x, y: point.y, type: point.type }));
+                .map(point => ({
+                    x: point.x,
+                    y: point.y,
+                    type: point.type,
+                    isStationaryInflection: point.isStationaryInflection === true
+                }));
         };
 
         return {
@@ -2058,6 +2063,7 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
                 graphiti.cartesianFunctions.push(func);
                 graphiti.input.persistentBadges = [];
                 graphiti.addTurningPointBadge(0, 5, func, 'inflection');
+                graphiti.addTurningPointBadge(0, 6, func, 'inflection', null, { isStationaryInflection: true });
 
                 const capturedLabels = [];
                 const originalFillText = graphiti.ctx.fillText.bind(graphiti.ctx);
@@ -2085,7 +2091,8 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
                 return {
                     canvas: capturedLabels,
                     badgeColor: graphiti.input.persistentBadges[0] ? graphiti.input.persistentBadges[0].functionColor : null,
-                    svgHasInflectionLabel: svg.includes('Point of Inflection')
+                    svgHasInflectionLabel: svg.includes('Point of Inflection'),
+                    svgHasStationaryInflectionLabel: svg.includes('Stationary Inflection')
                 };
             })(),
             overlappingHiddenInterceptTap: (() => {
@@ -2233,8 +2240,16 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
         `explicit non-stationary inflection should be detected: ${JSON.stringify(result.nonStationaryInflection)}`
     );
     assert(
+        result.nonStationaryInflection.some(point => point.type === 'inflection' && point.isStationaryInflection === false),
+        `explicit non-stationary inflection should keep the default label classification: ${JSON.stringify(result.nonStationaryInflection)}`
+    );
+    assert(
         result.stationaryInflection.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 5, 0.02)),
         `explicit stationary inflection should still be detected: ${JSON.stringify(result.stationaryInflection)}`
+    );
+    assert(
+        result.stationaryInflection.some(point => point.type === 'inflection' && point.isStationaryInflection === true),
+        `explicit stationary inflection should carry stationary label metadata: ${JSON.stringify(result.stationaryInflection)}`
     );
     assert(
         result.singularCubeRootInflection.some(point => point.type === 'inflection' && approxEqual(point.x, 0, 0.02) && approxEqual(point.y, 0, 0.02)),
@@ -2249,8 +2264,16 @@ async function assertExplicitCartesianInflectionPointsAreDetected(page) {
         `inflection badge canvas label should include a description: ${JSON.stringify(result.badgeLabels)}`
     );
     assert(
+        result.badgeLabels.canvas.some(label => label.includes('Stationary Inflection')),
+        `stationary inflection badge canvas label should be specific: ${JSON.stringify(result.badgeLabels)}`
+    );
+    assert(
         result.badgeLabels.svgHasInflectionLabel,
         `inflection badge SVG label should include a description: ${JSON.stringify(result.badgeLabels)}`
+    );
+    assert(
+        result.badgeLabels.svgHasStationaryInflectionLabel,
+        `stationary inflection badge SVG label should be specific: ${JSON.stringify(result.badgeLabels)}`
     );
     assert.strictEqual(
         result.badgeLabels.badgeColor,
