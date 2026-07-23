@@ -628,6 +628,13 @@
             height: auto;
             margin-bottom: 20px;
         }
+
+        .title-screen .title-heartbeat-wave {
+            flex: 0 1 auto;
+            width: clamp(132px, 18vw, 150px);
+            height: auto;
+            margin-bottom: 20px;
+        }
         
         /* Sine wave animated tagline */
         .sine-wave-text {
@@ -712,6 +719,7 @@
         .title-screen .title-guide-link {
             display: inline-block;
             margin-top: 4px;
+            margin-bottom: 10px;
             font-size: 0.95em;
             color: #8EC5FF;
             text-decoration: underline;
@@ -846,8 +854,8 @@
 
         }
 
-        /* Very short landscape screens: allow natural flow to avoid overlap */
-        @media (orientation: landscape) and (max-height: 420px) {
+        /* Short landscape screens: allow natural flow to avoid overlap */
+        @media (orientation: landscape) and (max-height: 500px) {
             .title-screen p.copyright {
                 position: static;
                 left: auto;
@@ -1879,8 +1887,8 @@
             
             /* Reduce logo size in landscape to save vertical space */
             .title-screen .logo {
-                max-height: 70px !important; /* Reduced from 120px */
-                margin-bottom: 10px !important; /* Reduced from 20px */
+                max-height: 46px !important; /* Reduced from 120px */
+                margin-bottom: 6px !important; /* Reduced from 20px */
             }
             
             /* Reduce text spacing in landscape */
@@ -2707,7 +2715,7 @@
                     <!-- JavaScript will populate this with animated letters -->
                 </div>
                 
-                <svg viewBox="0 0 200 64" xmlns="http://www.w3.org/2000/svg" style="width: 150px; height: auto; margin-bottom: 20px;">
+                <svg class="title-heartbeat-wave" viewBox="0 0 200 64" xmlns="http://www.w3.org/2000/svg">
                     <defs>
                         <!-- Two full rainbows across the whole path, with lighter blues/purples -->
                         <linearGradient id="rainbow"
