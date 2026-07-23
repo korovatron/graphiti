@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.5';
+const VERSION = '1.3.6';
 
 class Graphiti {
     constructor() {
@@ -49439,8 +49439,19 @@ class Graphiti {
         // Complete iOS PWA viewport bug fix (iPhone & iPad)
         // iOS incorrectly subtracts safe-area-inset-top from innerHeight in PWA mode
         let lastKnownHeight = 0;
+
+        const updatePWALandscapeClass = () => {
+            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+                          window.matchMedia('(display-mode: fullscreen)').matches ||
+                          window.navigator.standalone === true;
+            const isLandscape = window.innerWidth > window.innerHeight;
+            const isCompactLandscape = isLandscape && window.innerWidth <= 950;
+            document.documentElement.classList.toggle('pwa-landscape', isPWA && isCompactLandscape);
+        };
         
         const setActualViewportHeight = () => {
+            updatePWALandscapeClass();
+
             // 1. Use innerHeight for global layout height. iOS visualViewport can
             // report transient share-sheet/browser-chrome heights that should not
             // become the app's full-screen CSS height.

@@ -855,7 +855,9 @@
         }
 
         /* Short landscape screens: allow natural flow to avoid overlap */
-        @media (orientation: landscape) and (max-height: 500px) {
+        @media (orientation: landscape) and (max-height: 500px),
+               (display-mode: standalone) and (orientation: landscape) and (max-width: 950px),
+               (display-mode: fullscreen) and (orientation: landscape) and (max-width: 950px) {
             .title-screen p.copyright {
                 position: static;
                 left: auto;
@@ -863,6 +865,39 @@
                 transform: none;
                 margin-top: 10px;
             }
+        }
+
+        html.pwa-landscape .title-screen p.copyright {
+            position: static;
+            left: auto;
+            bottom: auto;
+            transform: none;
+            margin-top: 10px;
+        }
+
+        html.pwa-landscape #hamburger-menu {
+            top: calc(10px + var(--safe-area-top, 0px)) !important;
+            right: calc(10px + var(--safe-area-right, 0px)) !important;
+        }
+
+        html.pwa-landscape .title-screen .logo {
+            max-height: 46px !important;
+            margin-bottom: 6px !important;
+        }
+
+        html.pwa-landscape .title-screen p {
+            font-size: 1em !important;
+            margin-bottom: 15px !important;
+        }
+
+        html.pwa-landscape .title-screen p[style*="margin-top: 30px"] {
+            margin-top: 10px !important;
+            margin-bottom: 5px !important;
+        }
+
+        html.pwa-landscape .title-screen p.copyright {
+            font-size: 0.7em !important;
+            bottom: calc(10px + var(--safe-area-bottom, 0px)) !important;
         }
         
         .function-item {
@@ -1879,7 +1914,9 @@
         
         /* Landscape orientation adjustments - More specific mobile detection */
         @media (max-width: 500px) and (orientation: landscape),
-               (max-height: 500px) and (orientation: landscape) {
+               (max-height: 500px) and (orientation: landscape),
+               (display-mode: standalone) and (orientation: landscape) and (max-width: 950px),
+               (display-mode: fullscreen) and (orientation: landscape) and (max-width: 950px) {
             #hamburger-menu {
                 top: calc(10px + var(--safe-area-top, 0px)) !important;
                 right: calc(10px + var(--safe-area-right, 0px)) !important;
@@ -1908,7 +1945,7 @@
                 font-size: 0.7em !important; /* Smaller text */
                 bottom: calc(10px + var(--safe-area-bottom, 0px)) !important; /* Closer to bottom */
             }
-            
+
             /* Simple landscape keyboard height reduction - no aggressive positioning */
             .ML__keyboard,
             math-field::part(keyboard) {
