@@ -1,14 +1,25 @@
-const CACHE_NAME = 'graphiti-v1.3.15';
+const CACHE_NAME = 'graphiti-v1.3.18';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './guide.html',
     './automatic-asymptote-detection.html',
+    './implicit-equation-graphing-calculator.html',
     './main.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_AMS-Regular.woff2',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Main-Bold.woff2',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Main-Italic.woff2',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Main-Regular.woff2',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Math-Italic.woff2',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Size1-Regular.woff2',
+    'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Size2-Regular.woff2',
     './intersection-worker.js',
     './manifest.json',
     './sw.js',
@@ -17,6 +28,7 @@ const ASSETS_TO_CACHE = [
     './images/graphitiTitle.png',
     './images/graphitiShareImage1.png',
     './images/graphitiFeatures/asymptopes.png',
+    './images/graphitiFeatures/implicit.png',
     './images/yt_icon_white_digital.png'
 ];
 
