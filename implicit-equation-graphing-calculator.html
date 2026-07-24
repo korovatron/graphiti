@@ -153,11 +153,32 @@
             transition: filter 0.2s, box-shadow 0.2s;
         }
 
+        .launch-link {
+            border-color: rgba(82, 218, 103, 0.8);
+            background: linear-gradient(135deg, #198A42 0%, #48C95A 52%, #B9E83A 100%);
+            color: #071C1E;
+            font-weight: 800;
+            box-shadow: 0 8px 22px rgba(53, 224, 88, 0.18), 0 2px 8px rgba(0, 0, 0, 0.35);
+            transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+        }
+
         .launch-link:hover,
         .primary-link:hover {
             color: var(--text-primary);
             filter: brightness(1.15);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link:hover {
+            color: #071C1E;
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 28px rgba(53, 224, 88, 0.28), 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link:focus-visible {
+            outline: 3px solid rgba(255, 255, 255, 0.9);
+            outline-offset: 3px;
         }
 
         .launch-link-short {
