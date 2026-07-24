@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.28';
+const VERSION = '1.3.29';
 
 class Graphiti {
     constructor() {
@@ -27179,7 +27179,19 @@ class Graphiti {
             // Recalculate tangent intersections since badge state changed
             // This will call draw() since isViewportChanging is now false
             if (this.showIntersections) {
+                if (originalState && (originalState.hasTangent || originalState.hasNormal)) {
+                    this.tangentIntersections = this.findTangentIntersections();
+                    this.normalIntersections = this.findNormalIntersections();
+                }
                 this.updateCombinedIntersections();
+                if (originalState && (originalState.hasTangent || originalState.hasNormal) && this.frozenIntersectionBadges.length > 0) {
+                    this.frozenIntersectionBadges = this.getCurrentIntersectionMarkerSnapshot(this.frozenIntersectionBadges).map(intersection => ({
+                        x: intersection.x,
+                        y: intersection.y,
+                        func1Id: intersection.func1Id,
+                        func2Id: intersection.func2Id
+                    }));
+                }
             }
             
             // Detect and calculate integral pairs - only if integral badges changed
@@ -34218,10 +34230,36 @@ class Graphiti {
               (badge.func1Id === functionId || badge.func2Id === functionId))
         );
     }
+
+    removeIntersectionMarkersForLineId(lineId) {
+        const normalizedLineId = String(lineId);
+        const referencesLine = intersection => {
+            if (!intersection) {
+                return false;
+            }
+
+            const func1Id = intersection.func1Id !== undefined ? intersection.func1Id : (intersection.func1 ? intersection.func1.id : undefined);
+            const func2Id = intersection.func2Id !== undefined ? intersection.func2Id : (intersection.func2 ? intersection.func2.id : undefined);
+            return String(func1Id) === normalizedLineId || String(func2Id) === normalizedLineId;
+        };
+        const prune = intersections => Array.isArray(intersections)
+            ? intersections.filter(intersection => !referencesLine(intersection))
+            : [];
+
+        this.intersections = prune(this.intersections);
+        this.explicitIntersections = prune(this.explicitIntersections);
+        this.implicitIntersections = prune(this.implicitIntersections);
+        this.tangentIntersections = prune(this.tangentIntersections);
+        this.normalIntersections = prune(this.normalIntersections);
+        this.combinedIntersections = prune(this.combinedIntersections);
+        this.frozenIntersectionBadges = prune(this.frozenIntersectionBadges);
+        this.lastIntersectionMarkerSnapshot = prune(this.lastIntersectionMarkerSnapshot);
+    }
     
     removeTangentIntersectionBadgesForBadge(badgeId) {
         // Remove tangent intersection badges that reference the specified badge
         const tangentBadgeIdString = `tangent_${badgeId}`;
+        this.removeIntersectionMarkersForLineId(tangentBadgeIdString);
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             !((badge.badgeType === 'tangent-intersection' || badge.badgeType === 'tangent-tangent-intersection') && 
               (badge.func1Id === tangentBadgeIdString || badge.func2Id === tangentBadgeIdString))
@@ -34236,6 +34274,7 @@ class Graphiti {
     removeNormalIntersectionBadgesForBadge(badgeId) {
         // Remove normal intersection badges that reference the specified badge
         const normalBadgeIdString = `normal_${badgeId}`;
+        this.removeIntersectionMarkersForLineId(normalBadgeIdString);
         this.input.persistentBadges = this.input.persistentBadges.filter(badge => 
             !((badge.badgeType === 'normal-intersection' || badge.badgeType === 'normal-normal-intersection' || badge.badgeType === 'normal-tangent-intersection') && 
               (badge.func1Id === normalBadgeIdString || badge.func2Id === normalBadgeIdString))

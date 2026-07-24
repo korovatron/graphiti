@@ -2570,6 +2570,56 @@ async function assertStaleIntersectionMarkersAreDiscarded(page) {
     ], `frozen intersections should be filtered: ${JSON.stringify(result.frozen)}`);
 }
 
+async function assertDraggedLineIntersectionCachesArePruned(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [
+            { id: 1, expression: 'y=x', points: [{ x: 0, y: 0 }, { x: 2, y: 2 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
+            { id: 2, expression: 'y=0', points: [{ x: 0, y: 0 }, { x: 2, y: 0 }], enabled: true, mode: 'cartesian', color: '#D0021B' }
+        ];
+        graphiti.polarFunctions = [];
+
+        const staleTangent = { x: 1, y: 1, func1Id: 'tangent_7', func2Id: 1 };
+        const staleNormal = { x: 2, y: 2, func1Id: 'normal_8', func2Id: 2 };
+        const currentMarker = { x: 0, y: 0, func1Id: 1, func2Id: 2 };
+
+        graphiti.intersections = [staleTangent, staleNormal, currentMarker];
+        graphiti.explicitIntersections = [staleTangent, currentMarker];
+        graphiti.implicitIntersections = [staleNormal, currentMarker];
+        graphiti.tangentIntersections = [staleTangent];
+        graphiti.normalIntersections = [staleNormal];
+        graphiti.combinedIntersections = [staleTangent, staleNormal, currentMarker];
+        graphiti.frozenIntersectionBadges = [staleTangent, staleNormal, currentMarker];
+        graphiti.lastIntersectionMarkerSnapshot = [staleTangent, staleNormal, currentMarker];
+
+        graphiti.removeTangentIntersectionBadgesForBadge(7);
+        graphiti.removeNormalIntersectionBadgesForBadge(8);
+
+        const snapshot = array => array.map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id }));
+        return {
+            intersections: snapshot(graphiti.intersections),
+            explicitIntersections: snapshot(graphiti.explicitIntersections),
+            implicitIntersections: snapshot(graphiti.implicitIntersections),
+            tangentIntersections: snapshot(graphiti.tangentIntersections),
+            normalIntersections: snapshot(graphiti.normalIntersections),
+            combinedIntersections: snapshot(graphiti.combinedIntersections),
+            frozenIntersectionBadges: snapshot(graphiti.frozenIntersectionBadges),
+            lastIntersectionMarkerSnapshot: snapshot(graphiti.lastIntersectionMarkerSnapshot)
+        };
+    });
+
+    const currentMarker = [{ x: 0, y: 0, func1Id: 1, func2Id: 2 }];
+    assert.deepStrictEqual(result.intersections, currentMarker, `dragged tangent/normal markers should be pruned from intersections: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.explicitIntersections, currentMarker, `dragged tangent markers should be pruned from explicit cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.implicitIntersections, currentMarker, `dragged normal markers should be pruned from implicit cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.tangentIntersections, [], `dragged tangent markers should be pruned from tangent cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.normalIntersections, [], `dragged normal markers should be pruned from normal cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.combinedIntersections, currentMarker, `dragged line markers should be pruned from combined cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.frozenIntersectionBadges, currentMarker, `dragged line markers should be pruned from frozen cache: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.lastIntersectionMarkerSnapshot, currentMarker, `dragged line markers should be pruned from last snapshot: ${JSON.stringify(result)}`);
+}
+
 async function assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -3908,6 +3958,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
+        await assertDraggedLineIntersectionCachesArePruned(page);
         await assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page);
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
         await assertSecondPanPreservesFrozenImplicitMarkers(page);
