@@ -1980,11 +1980,13 @@ async function assertImplicitInflectionPointsAreDetected(page) {
 
         return {
             rationalImplicit: await analyse('y^2=1/(x^2-y^3)'),
+            cancelledImplicitCubic: await analyse('((x-4)/(x-1))*y^3-((x+2)/(x-1))=0'),
             circle: await analyse('x^2+y^2=1')
         };
     });
 
     const rationalInflections = result.rationalImplicit.filter(point => point.type === 'inflection');
+    const cancelledCubicInflections = result.cancelledImplicitCubic.filter(point => point.type === 'inflection');
     assert(
         rationalInflections.some(point => approxEqual(point.x, -1.1836363818, 0.08) && approxEqual(point.y, -0.7430407104, 0.08)),
         `implicit rational curve should detect left inflection: ${JSON.stringify(result.rationalImplicit)}`
@@ -1996,6 +1998,14 @@ async function assertImplicitInflectionPointsAreDetected(page) {
     assert(
         !rationalInflections.some(point => point.y > 0),
         `implicit rational curve should not label upper branches as inflections: ${JSON.stringify(result.rationalImplicit)}`
+    );
+    assert(
+        cancelledCubicInflections.some(point => approxEqual(point.x, -2, 0.04)),
+        `cancelled implicit cubic should detect cube-root inflection: ${JSON.stringify(result.cancelledImplicitCubic)}`
+    );
+    assert(
+        cancelledCubicInflections.some(point => approxEqual(point.x, 0, 0.04)),
+        `cancelled implicit cubic should detect rational branch inflection: ${JSON.stringify(result.cancelledImplicitCubic)}`
     );
     assert(
         !result.circle.some(point => point.type === 'inflection'),

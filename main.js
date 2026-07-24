@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.29';
+const VERSION = '1.3.30';
 
 class Graphiti {
     constructor() {
@@ -38108,6 +38108,37 @@ class Graphiti {
             const secondDerivativeStr = secondDerivative.toString();
             const roots = this.findRootsInRange(derivativeStr, -256, 256, 4096);
             const radicandRoots = this.findMonomialRadicandRoots(radicandExpression);
+            const rationalInflectionRoots = (() => {
+                let rationalParts = this.extractPolynomialRationalParts(radicandExpression);
+                if (!rationalParts) {
+                    try {
+                        rationalParts = this.extractPolynomialRationalParts(this.cleanMath.simplify(radicandExpression).toString());
+                    } catch {
+                        rationalParts = null;
+                    }
+                }
+                if (!rationalParts) {
+                    return [];
+                }
+
+                const subtractPolynomialValues = (left, right) => this.addPolynomials(left, this.scalePolynomial(right, -1));
+                const numerator = rationalParts.numerator;
+                const denominator = rationalParts.denominator;
+                const firstNumerator = this.normalizePolynomial(subtractPolynomialValues(
+                    this.multiplyPolynomials(this.derivativePolynomial(numerator), denominator),
+                    this.multiplyPolynomials(numerator, this.derivativePolynomial(denominator))
+                ));
+                const secondNumerator = this.normalizePolynomial(subtractPolynomialValues(
+                    this.multiplyPolynomials(this.derivativePolynomial(firstNumerator), denominator),
+                    this.scalePolynomial(this.multiplyPolynomials(firstNumerator, this.derivativePolynomial(denominator)), 2)
+                ));
+                const inflectionNumerator = this.normalizePolynomial(subtractPolynomialValues(
+                    this.scalePolynomial(this.multiplyPolynomials(numerator, secondNumerator), 3),
+                    this.scalePolynomial(this.multiplyPolynomials(firstNumerator, firstNumerator), 2)
+                ));
+
+                return this.findPolynomialRealRoots(inflectionNumerator);
+            })();
 
             const compiledBranch = this.getCompiledExpression(branchExpression);
             const compiledRadicand = this.getCompiledExpression(radicandExpression);
@@ -38192,6 +38223,48 @@ class Graphiti {
 
             for (const x of radicandRoots) {
                 if (!Number.isFinite(x) || x < this.viewport.minX || x > this.viewport.maxX) {
+                    continue;
+                }
+
+                const y = evaluateBranchAt(x);
+                if (!Number.isFinite(y) || this.isPointAtHoleForFunction(func, x, y)) {
+                    continue;
+                }
+
+                const leftSecondSign = sideConcavitySign(x, -1);
+                const rightSecondSign = sideConcavitySign(x, 1);
+                if (leftSecondSign === 0 || rightSecondSign === 0 || leftSecondSign === rightSecondSign) {
+                    continue;
+                }
+
+                if (turningPoints.some(point => point.type === 'inflection' && Math.abs(point.x - x) <= signProbeOffset)) {
+                    continue;
+                }
+
+                let snappedX = x;
+                let snappedY = y;
+                if (Math.abs(snappedX) < 0.02) snappedX = 0;
+                if (Math.abs(snappedY) < 0.02) snappedY = 0;
+
+                turningPoints.push({
+                    x: snappedX,
+                    y: snappedY,
+                    func: branchFunc,
+                    type: 'inflection',
+                    isStationaryInflection: false,
+                    derivative: derivativeStr,
+                    secondDerivative: secondDerivativeStr
+                });
+            }
+
+            for (const x of rationalInflectionRoots) {
+                if (!Number.isFinite(x) || x < this.viewport.minX || x > this.viewport.maxX) {
+                    continue;
+                }
+
+                scope.x = x;
+                const radicandValue = compiledRadicand.evaluate(scope);
+                if (!Number.isFinite(radicandValue) || Math.abs(radicandValue) <= 1e-10) {
                     continue;
                 }
 
