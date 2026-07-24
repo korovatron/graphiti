@@ -166,6 +166,32 @@
             font-size: 1.08rem;
         }
 
+        .featured-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 2px;
+        }
+
+        .featured-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            color: var(--accent-bright);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .featured-link:hover {
+            color: #C7E5FF;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
         .hero-image {
             margin: 0;
             border: 1px solid var(--border);
@@ -294,6 +320,10 @@
                 <h1>Graphiti Features & Technical Capabilities</h1>
                 <p>Graphiti is a free online graphing calculator and function plotter that does more than draw curves. It helps reveal the structure and behaviour of mathematical graphs.</p>
                 <p>Graphiti automatically analyses graphs as well as plotting them. It detects asymptotes, intersections, turning points, curve types, tangents, normals and integral regions across functions, implicit equations, inequalities, polar graphs and parametric curves.</p>
+                <div class="featured-links" aria-label="External mentions of Graphiti">
+                    <a class="featured-link" href="https://www.resourceaholic.com/2026/02/5-maths-gems-196.html" rel="noopener" target="_blank">Featured in Resourceaholic's 5 Maths Gems #196</a>
+                    <a class="featured-link" href="https://mathsindex.uk/algebra/graphiti" rel="noopener" target="_blank">Listed on MathsIndex</a>
+                </div>
             </div>
             <figure class="hero-image">
                 <img src="images/graphitiShareImage1.png" alt="Graphiti showing multiple plotted graphs and analysis features">
