@@ -258,6 +258,31 @@
             margin: 6px 0;
         }
 
+        .feature-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .feature-action-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 9px 13px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            color: var(--accent-bright);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .feature-action-link:hover {
+            color: #C7E5FF;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
         footer {
             margin-top: 34px;
             padding-top: 22px;
@@ -339,6 +364,9 @@
                             <p>Graphiti can automatically identify several important graph features, including vertical, horizontal, oblique and curvilinear asymptotes, intersections, intercepts, turning points, points of inflection, removable singularities and envelopes for suitable functions.</p>
                             <p>It can also classify many recognised curve types and shapes, including lemniscates, semi-cubical parabolas, hyperbolas and other named curves when their equations match supported forms.</p>
                             <p>These features are designed to support curve sketching, visual explanation and classroom demonstration.</p>
+                            <div class="feature-actions">
+                                <a class="feature-action-link" href="automatic-asymptote-detection.html">Explore automatic asymptote detection</a>
+                            </div>
                         </div>
                     </details>
                     <details>
