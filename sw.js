@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-v1.3.24';
+const CACHE_NAME = 'graphiti-v1.3.25';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -7,6 +7,8 @@ const ASSETS_TO_CACHE = [
     './implicit-equation-graphing-calculator.html',
     './polar-graphing-calculator.html',
     './parametric-equation-graphing-calculator.html',
+    './integration-area-graphing-calculator.html',
+    './inequality-graphing-calculator.html',
     './main.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
@@ -33,6 +35,9 @@ const ASSETS_TO_CACHE = [
     './images/graphitiFeatures/implicit.png',
     './images/graphitiFeatures/polar.png',
     './images/graphitiFeatures/parametric.png',
+    './images/graphitiFeatures/definiteIntegral.png',
+    './images/graphitiFeatures/areaBetweenCurves.png',
+    './images/graphitiFeatures/inequalityIntersections.png',
     './images/yt_icon_white_digital.png'
 ];
 
