@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <!-- GoatCounter Analytics -->
+    <script data-goatcounter="https://korovatron.goatcounter.com/count"
+        async src="https://gc.zgo.at/count.js"></script>
+    <!-- End GoatCounter Analytics -->
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1A2F42">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Polar Graphing Calculator | Graphiti</title>
+    <meta name="description" content="Plot polar equations online with Graphiti. Free polar graphing calculator for A-Level Maths and Further Maths, with theta ranges, negative r options and curve animation.">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+    <link rel="icon" href="logoTrans.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="logo.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="logo.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="logo.png">
+    <link rel="shortcut icon" href="logoTrans.png">
+    <link rel="canonical" href="https://www.korovatron.co.uk/graphiti/polar-graphing-calculator.html">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Polar Graphing Calculator | Graphiti">
+    <meta property="og:description" content="Plot polar equations, rose curves, limacons and spirals online with theta ranges, negative r options and curve animation.">
+    <meta property="og:url" content="https://www.korovatron.co.uk/graphiti/polar-graphing-calculator.html">
+    <meta property="og:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiFeatures/polar.png">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "ItemPage",
+        "name": "Polar Graphing Calculator in Graphiti",
+        "description": "A focused guide to Graphiti's polar graphing tools for named polar curves, theta ranges, negative r settings and curve animation.",
+        "url": "https://www.korovatron.co.uk/graphiti/polar-graphing-calculator.html",
+        "inLanguage": "en-GB",
+        "mainEntity": {
+            "@type": "SoftwareApplication",
+            "name": "Graphiti",
+            "url": "https://www.korovatron.co.uk/graphiti/",
+            "applicationCategory": "EducationalApplication",
+            "applicationSubCategory": "Graphing calculator",
+            "operatingSystem": "Web Browser",
+            "isAccessibleForFree": true,
+            "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "GBP"
+            },
+            "featureList": [
+                "Polar equation plotting",
+                "Rose curve and limacon recognition",
+                "Theta range controls",
+                "Negative r on/off setting",
+                "Polar curve animation and step-through controls"
+            ]
+        },
+        "author": {
+            "@type": "Person",
+            "name": "Neil Kendall",
+            "url": "https://www.korovatron.co.uk"
+        }
+    }
+    </script>
+    <style>
+        :root {
+            --page-bg: #1A2F42;
+            --panel-bg: #1A2F42;
+            --panel-strong: #213B55;
+            --text-primary: #E8F4FD;
+            --text-secondary: #B8D2E8;
+            --accent: #4A90E2;
+            --accent-bright: #8EC5FF;
+            --border: rgba(142, 197, 255, 0.22);
+            --shadow: rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            background: var(--page-bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--page-bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        a {
+            color: var(--accent-bright);
+        }
+
+        a:hover {
+            color: #C7E5FF;
+        }
+
+        .page-shell {
+            width: min(1080px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 56px;
+        }
+
+        @media (display-mode: standalone), (display-mode: fullscreen) {
+            .page-shell {
+                padding-top: calc(28px + env(safe-area-inset-top, 0px));
+            }
+        }
+
+        .top-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 34px;
+        }
+
+        .brand-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .brand-link img {
+            width: 260px;
+            max-width: 68vw;
+            height: auto;
+        }
+
+        .launch-link,
+        .primary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 180px;
+            padding: 12px 30px;
+            border: 1px solid #555;
+            border-radius: 8px;
+            background: #2A3F5A;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 1em;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: filter 0.2s, box-shadow 0.2s;
+        }
+
+        .launch-link:hover,
+        .primary-link:hover {
+            color: var(--text-primary);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link-short {
+            display: none;
+        }
+
+        header {
+            display: grid;
+            grid-template-columns: minmax(0, 1.02fr) minmax(280px, 0.98fr);
+            gap: 28px;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .hero-copy h1 {
+            margin: 0 0 14px;
+            font-size: clamp(1.7rem, 3vw, 2.8rem);
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .hero-copy p {
+            margin: 0 0 18px;
+            color: var(--text-secondary);
+            font-size: 1.08rem;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        .secondary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 150px;
+            padding: 11px 18px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            color: var(--accent-bright);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .secondary-link:hover {
+            color: #C7E5FF;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .hero-image {
+            margin: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 18px 48px var(--shadow);
+        }
+
+        .hero-image img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+            gap: 24px;
+            align-items: start;
+        }
+
+        .content-section {
+            margin-bottom: 28px;
+        }
+
+        .content-section h2 {
+            margin: 0 0 14px;
+            font-size: clamp(1.35rem, 2vw, 1.8rem);
+        }
+
+        .content-section p {
+            color: var(--text-secondary);
+        }
+
+        .feature-list {
+            margin: 12px 0 0;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .feature-list li {
+            margin: 8px 0;
+        }
+
+        .example-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            padding: 18px;
+        }
+
+        .example-panel h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+        }
+
+        .example-panel h3 {
+            margin: 18px 0 8px;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+
+        .example-panel h3:first-of-type {
+            margin-top: 0;
+        }
+
+        .example-panel p {
+            color: var(--text-secondary);
+        }
+
+        .example-list {
+            margin: 10px 0 18px;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .example-list li {
+            margin: 6px 0;
+        }
+
+        .equation {
+            display: inline-block;
+            margin-top: 3px;
+            color: var(--text-primary);
+        }
+
+        .katex {
+            color: var(--text-primary);
+        }
+
+        footer {
+            margin-top: 34px;
+            padding-top: 22px;
+            border-top: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 820px) {
+            header,
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .top-nav {
+                gap: 10px;
+            }
+
+            .brand-link img {
+                width: 220px;
+                max-width: 52vw;
+            }
+
+            .launch-link {
+                min-width: 0;
+                padding: 10px 16px;
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .brand-link img {
+                max-width: 50vw;
+            }
+
+            .launch-link,
+            .primary-link,
+            .secondary-link {
+                width: 100%;
+                min-width: 0;
+                padding-inline: 14px;
+            }
+
+            .top-nav .launch-link {
+                width: auto;
+            }
+
+            .launch-link-long {
+                display: none;
+            }
+
+            .launch-link-short {
+                display: inline;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <nav class="top-nav" aria-label="Page navigation">
+            <a class="brand-link" href="./" aria-label="Return to Graphiti">
+                <img src="images/graphitiTitle.png" alt="Graphiti">
+            </a>
+            <a class="launch-link" href="./" aria-label="Launch Graphiti graphing calculator"><span class="launch-link-long">Launch Graphiti</span><span class="launch-link-short">Launch</span></a>
+        </nav>
+
+        <header>
+            <div class="hero-copy">
+                <h1>Polar graphing calculator</h1>
+                <p>Graphiti plots polar equations and helps students see how a curve is traced as \(\theta\) changes, not just what the finished curve looks like.</p>
+                <p>It is designed for A-Level Maths and Further Maths polar coordinates, with theta ranges, optional negative \(r\) plotting, animation controls and recognition for named curves such as rose curves, cardioids and limacons.</p>
+                <div class="hero-actions">
+                    <a class="primary-link" href="https://www.korovatron.co.uk/graphiti/index.html#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEygGZ4BTADwAcAnG-fXFKEJgXgCYAOgLQ58QgDY0EGABSUhGABY0MAQyFMsAc0UYAlCHgjxOJlwDEABksBWAOwAxB4ZA0UqgEaSKkDEyQ08Iqq+ACSKBg0Wkyq4lAIsfg0AL6wpD4AbLSMLGwcXLzQANSCAuwoElKyCspqGtq6BkY4JmaQIOYAQgCc0ADC-S5unt5QfgFBIeGR0bHxiSlpIORQdtnMrOx4BTw1KqouxqYWfZZ8GQAilEPuXjQ+44EgwWERUTFxkAniSckAuvAwFgaAB3BimDBQUAAWywKAAGlAALQADgAdJQbBkbCjLNAbOc7NA7DYbPBoao6IjIOi+JQ7AAWboZaAoyh8SwsznkuEATWRlDRNkoGTs3UoKPF0D43TsROoIApdH5kBsaOglnZnI1GRRdjOfBJ8HwaFiNCg+OgaIyHPpmv1dolqUVODI5va4PEqjMxpU2BQWkIkFASho0PdIHEDUh8FUAckAFlXRGYmQsHHCMbFDgQdMaEwkpgOEHvkkszm80w0DQGBgSwtyyCACpIJgoOFaAAKODhdfmP0WIAY3tU4ciBahIFiDGCFvgHn2c5AWlHFKXbvEagtzo8qjIWlYxAByzes3EndUWAnkCIx6jKAA1vdOnuDxer0Hb-BPd7J6G1AmcJQJY8D-qoCaUlAGRonwbKssKlhEmKOJZCAYGASgAAyqiRHQXCWC46GUthuFcKUDBYC4DAmBgAByUQ4VgYA0AASmM-gpMkQA" aria-label="Open the polar graphing example in Graphiti">Open polar example</a>
+                    <a class="secondary-link" href="guide.html#plotting">Back to features</a>
+                </div>
+            </div>
+            <figure class="hero-image">
+                <img src="images/graphitiFeatures/polar.png" alt="Graphiti plotting polar curves with animation controls">
+            </figure>
+        </header>
+
+        <main class="content-grid">
+            <div>
+                <section class="content-section">
+                    <h2>What polar plotting adds</h2>
+                    <p>Polar equations describe points using a radius and angle, so the shape often depends on how the curve is traced through values of \(\theta\). Graphiti includes controls for the theta range, whether negative \(r\) values are plotted, and how the curve is animated.</p>
+                    <ul class="feature-list">
+                        <li>Plot polar equations such as \(r = 2\cos(3\theta)\), \(r = 1 + \cos(\theta)\) and \(r = \theta\).</li>
+                        <li>Recognise named curves such as rose curves, cardioids and limacons.</li>
+                        <li>Identify rose curve petal counts when the visible range supports it.</li>
+                        <li>Distinguish limacon variants including inner loop and convex forms.</li>
+                        <li>Switch negative \(r\) plotting on or off to match different exam question conventions.</li>
+                    </ul>
+                </section>
+
+                <section class="content-section">
+                    <h2>Animation and step-through</h2>
+                    <p>The animation tools are useful for teaching because students can watch the curve build up as \(\theta\) changes. Step-through controls make it easier to pause at important angles, compare the current point with the final shape, and explain why the curve crosses or loops back on itself.</p>
+                    <p>This is especially helpful for rose curves, limacons and spirals, where the finished graph can hide the route taken by the polar parameter.</p>
+                </section>
+            </div>
+
+            <aside class="example-panel" aria-labelledby="example-heading">
+                <h2 id="example-heading">Example equations</h2>
+                <h3>Named polar curves</h3>
+                <p>Open a shared polar example with:</p>
+                <ul class="example-list">
+                    <li><span class="equation">\(r = 2\cos(3\theta)\)</span></li>
+                    <li><span class="equation">\(r = 1 + 2\sin(\theta)\)</span></li>
+                    <li><span class="equation">\(r = \theta\)</span></li>
+                </ul>
+                <a class="primary-link" href="https://www.korovatron.co.uk/graphiti/index.html#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEygGZ4BTADwAcAnG-fXFKEJgXgCYAOgLQ58QgDY0EGABSUhGABY0MAQyFMsAc0UYAlCHgjxOJlwDEABksBWAOwAxB4ZA0UqgEaSKkDEyQ08Iqq+ACSKBg0Wkyq4lAIsfg0AL6wpD4AbLSMLGwcXLzQANSCAuwoElKyCspqGtq6BkY4JmaQIOYAQgCc0ADC-S5unt5QfgFBIeGR0bHxiSlpIORQdtnMrOx4BTw1KqouxqYWfZZ8GQAilEPuXjQ+44EgwWERUTFxkAniSckAuvAwFgaAB3BimDBQUAAWywKAAGlAALQADgAdJQbBkbCjLNAbOc7NA7DYbPBoao6IjIOi+JQ7AAWboZaAoyh8SwsznkuEATWRlDRNkoGTs3UoKPF0D43TsROoIApdH5kBsaOglnZnI1GRRdjOfBJ8HwaFiNCg+OgaIyHPpmv1dolqUVODI5va4PEqjMxpU2BQWkIkFASho0PdIHEDUh8FUAckAFlXRGYmQsHHCMbFDgQdMaEwkpgOEHvkkszm80w0DQGBgSwtyyCACpIJgoOFaAAKODhdfmP0WIAY3tU4ciBahIFiDGCFvgHn2c5AWlHFKXbvEagtzo8qjIWlYxAByzes3EndUWAnkCIx6jKAA1vdOnuDxer0Hb-BPd7J6G1AmcJQJY8D-qoCaUlAGRonwbKssKlhEmKOJZCAYGASgAAyqiRHQXCWC46GUthuFcKUDBYC4DAmBgAByUQ4VgYA0AASmM-gpMkQA" aria-label="Open the polar graphing example in Graphiti">Open polar example</a>
+            </aside>
+        </main>
+
+        <footer>
+            <p>Graphiti is part of Korovatron, a collection of classroom-ready maths and computer science tools.</p>
+            <p><a href="https://www.korovatron.co.uk/">Korovatron</a> | <a href="guide.html">Graphiti features</a> | <a href="./">Launch Graphiti</a></p>
+        </footer>
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            if (!window.renderMathInElement) {
+                return;
+            }
+
+            renderMathInElement(document.body, {
+                delimiters: [
+                    { left: "$$", right: "$$", display: true },
+                    { left: "\\(", right: "\\)", display: false }
+                ]
+            });
+        });
+    </script>
+</body>
+</html>

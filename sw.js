@@ -1,10 +1,11 @@
-const CACHE_NAME = 'graphiti-v1.3.18';
+const CACHE_NAME = 'graphiti-v1.3.20';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './guide.html',
     './automatic-asymptote-detection.html',
     './implicit-equation-graphing-calculator.html',
+    './polar-graphing-calculator.html',
     './main.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
@@ -29,6 +30,7 @@ const ASSETS_TO_CACHE = [
     './images/graphitiShareImage1.png',
     './images/graphitiFeatures/asymptopes.png',
     './images/graphitiFeatures/implicit.png',
+    './images/graphitiFeatures/polar.png',
     './images/yt_icon_white_digital.png'
 ];
 
