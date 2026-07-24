@@ -11628,6 +11628,7 @@ class Graphiti {
         const discriminantRoots = Array.isArray(quadraticModel.discriminantRoots)
             ? quadraticModel.discriminantRoots.filter(value => Number.isFinite(value))
             : [];
+        func.quadraticDiscriminantRoots = discriminantRoots.slice();
         if (discriminantRoots.length > 0) {
             for (const branchResult of branchResults) {
                 this.addQuadraticBranchEndpointRoots(branchResult.proxyFunc, quadraticModel, discriminantRoots);
@@ -42595,6 +42596,27 @@ class Graphiti {
             return false;
         };
 
+        const crossesQuadraticDiscriminantGap = (prevWorld, nextWorld) => {
+            const roots = Array.isArray(func.quadraticDiscriminantRoots)
+                ? func.quadraticDiscriminantRoots.filter(value => Number.isFinite(value)).sort((a, b) => a - b)
+                : [];
+            if (roots.length < 2 || !prevWorld || !nextWorld) {
+                return false;
+            }
+
+            const minX = Math.min(prevWorld.x, nextWorld.x);
+            const maxX = Math.max(prevWorld.x, nextWorld.x);
+            const tolerance = Math.max(1e-9, Math.abs(this.viewport.maxX - this.viewport.minX) * 1e-9);
+            for (let rootIndex = 0; rootIndex < roots.length - 1; rootIndex++) {
+                const leftRoot = roots[rootIndex];
+                const rightRoot = roots[rootIndex + 1];
+                if (minX <= leftRoot + tolerance && maxX >= rightRoot - tolerance) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
         const activeExplicitDecimation = this.isViewportChanging &&
             (func._useExplicitCurveRenderCache || this.isExplicitImplicitFastPath(func)) &&
             !isInequality &&
@@ -42645,6 +42667,16 @@ class Graphiti {
             }
 
             if (crossesKnownVerticalAsymptote(previousWorldPoint, point)) {
+                if (pathStarted) {
+                    this.ctx.stroke();
+                    pathStarted = false;
+                }
+                previousScreenPos = screenPos;
+                previousWorldPoint = point;
+                continue;
+            }
+
+            if (crossesQuadraticDiscriminantGap(previousWorldPoint, point)) {
                 if (pathStarted) {
                     this.ctx.stroke();
                     pathStarted = false;

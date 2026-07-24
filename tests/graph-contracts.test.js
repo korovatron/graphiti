@@ -3277,6 +3277,75 @@ async function assertQuadraticImplicitEndpointsSurviveViewportDecimation(page) {
     assert.strictEqual(result.untaggedEndpointsSkippedByModulo, false, `quadratic branch endpoints skipped by modulo must be tagged: ${JSON.stringify(result)}`);
 }
 
+async function assertQuadraticImplicitViewportDrawBreaksDiscriminantGap(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.canvas.width = 1576;
+        graphiti.canvas.height = 768;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -4.798,
+            maxX: -1.327,
+            minY: -2.989,
+            maxY: 5.38,
+            width: 1576,
+            height: 768,
+            centerX: 788,
+            centerY: 384,
+            scale: 1576 / (-1.327 + 4.798)
+        });
+
+        const func = {
+            id: 1,
+            expression: '\\left(x+y-1\\right)\\left(x-y+2\\right)=1',
+            points: [
+                { x: -1.5, y: 1.5, connected: false, quadraticBranchEndpoint: true },
+                { x: 0.5, y: 1.5, connected: true, quadraticBranchEndpoint: true }
+            ],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian',
+            implicitRenderMode: 'quadratic-explicit',
+            quadraticDiscriminantRoots: [-1.5, 0.5]
+        };
+
+        const calls = [];
+        const originalLineTo = graphiti.ctx.lineTo.bind(graphiti.ctx);
+        const originalMoveTo = graphiti.ctx.moveTo.bind(graphiti.ctx);
+        const originalStroke = graphiti.ctx.stroke.bind(graphiti.ctx);
+        graphiti.ctx.lineTo = (x, y) => {
+            calls.push({ type: 'lineTo', x, y });
+            return originalLineTo(x, y);
+        };
+        graphiti.ctx.moveTo = (x, y) => {
+            calls.push({ type: 'moveTo', x, y });
+            return originalMoveTo(x, y);
+        };
+        graphiti.ctx.stroke = () => {
+            calls.push({ type: 'stroke' });
+            return originalStroke();
+        };
+
+        try {
+            graphiti.isViewportChanging = true;
+            graphiti.drawFunction(func);
+        } finally {
+            graphiti.ctx.lineTo = originalLineTo;
+            graphiti.ctx.moveTo = originalMoveTo;
+            graphiti.ctx.stroke = originalStroke;
+            graphiti.isViewportChanging = false;
+        }
+
+        return {
+            calls,
+            lineToCount: calls.filter(call => call.type === 'lineTo').length
+        };
+    });
+
+    assert.strictEqual(result.lineToCount, 0, `viewport-changing draw should not connect quadratic endpoints across discriminant gap: ${JSON.stringify(result)}`);
+}
+
 async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -3709,6 +3778,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
         await assertStressFastPathPanZoomStartsImmediately(page);
         await assertQuadraticImplicitEndpointsSurviveViewportDecimation(page);
+        await assertQuadraticImplicitViewportDrawBreaksDiscriminantGap(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
