@@ -3683,6 +3683,70 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.turningX, 1, `rectangle zoom fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
 }
 
+async function assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    try {
+        const result = await page.evaluate(async () => {
+            const graphiti = window.graphiti;
+            graphiti.currentState = graphiti.states.GRAPHING;
+            graphiti.canvas.width = 390;
+            graphiti.canvas.height = 844;
+            Object.assign(graphiti.cartesianViewport, {
+                minX: -8,
+                maxX: 8,
+                minY: -17.31282051282051,
+                maxY: 17.31282051282051,
+                width: 390,
+                height: 844,
+                centerX: 195,
+                centerY: 422,
+                scale: 24.375
+            });
+
+            const originalIsTouchExportDevice = graphiti.isTouchExportDevice.bind(graphiti);
+            graphiti.isTouchExportDevice = () => true;
+            try {
+                graphiti.toggleExportOverlay(true);
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+                const format = document.querySelector('input[name="export-format"]:checked');
+                const canvas = document.getElementById('export-preview-canvas');
+                const frame = document.getElementById('export-preview-frame');
+                const canvasRect = canvas.getBoundingClientRect();
+                const frameRect = frame.getBoundingClientRect();
+
+                graphiti.toggleExportOverlay(false);
+                return {
+                    format: format ? format.value : null,
+                    canvas: {
+                        left: canvasRect.left,
+                        top: canvasRect.top,
+                        width: canvasRect.width,
+                        height: canvasRect.height
+                    },
+                    frame: {
+                        left: frameRect.left,
+                        top: frameRect.top,
+                        width: frameRect.width,
+                        height: frameRect.height
+                    }
+                };
+            } finally {
+                graphiti.isTouchExportDevice = originalIsTouchExportDevice;
+                graphiti.toggleExportOverlay(false);
+            }
+        });
+
+        assert.strictEqual(result.format, 'png', `touch export should default to PNG: ${JSON.stringify(result)}`);
+        assert(approxEqual(result.canvas.top, result.frame.top, 0.75), `PNG preview frame top should align on first portrait open: ${JSON.stringify(result)}`);
+        assert(approxEqual(result.canvas.height, result.frame.height, 0.75), `PNG preview frame height should align on first portrait open: ${JSON.stringify(result)}`);
+        assert(approxEqual(result.canvas.left, result.frame.left, 0.75), `PNG preview frame left should align on first portrait open: ${JSON.stringify(result)}`);
+        assert(approxEqual(result.canvas.width, result.frame.width, 0.75), `PNG preview frame width should align on first portrait open: ${JSON.stringify(result)}`);
+    } finally {
+        await page.setViewportSize({ width: 960, height: 720 });
+    }
+}
+
 async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -3858,6 +3922,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertQuadraticImplicitViewportDrawBreaksDiscriminantGap(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
+        await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);

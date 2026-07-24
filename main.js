@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.27';
+const VERSION = '1.3.28';
 
 class Graphiti {
     constructor() {
@@ -27948,6 +27948,8 @@ class Graphiti {
             previewHeight = maxPreviewHeight;
             previewWidth = previewHeight * sourceRatio;
         }
+        const stageHeight = Math.max(120, previewHeight);
+        previewStage.style.height = `${stageHeight}px`;
 
         // SVG mode: show a true SVG preview that reflects current export options.
         if (format === 'svg') {
@@ -27997,11 +27999,10 @@ class Graphiti {
         previewCanvas.style.width = `${previewWidth}px`;
         previewCanvas.style.height = `${previewHeight}px`;
 
-        const canvasBounds = previewCanvas.getBoundingClientRect();
-        const previewCanvasWidth = Math.max(1, canvasBounds.width);
-        const previewCanvasHeight = Math.max(1, canvasBounds.height);
-        const canvasOffsetX = canvasBounds.left - stageBounds.left;
-        const canvasOffsetY = canvasBounds.top - stageBounds.top;
+        const previewCanvasWidth = Math.max(1, previewWidth);
+        const previewCanvasHeight = Math.max(1, previewHeight);
+        const canvasOffsetX = Math.max(0, (stageWidth - previewCanvasWidth) / 2);
+        const canvasOffsetY = Math.max(0, (stageHeight - previewCanvasHeight) / 2);
 
         const dpr = window.devicePixelRatio || 1;
         const pixelWidth = Math.max(1, Math.round(previewCanvasWidth * dpr));
