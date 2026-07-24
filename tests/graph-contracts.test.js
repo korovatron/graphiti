@@ -3201,6 +3201,82 @@ async function assertStressFastPathPanZoomStartsImmediately(page) {
     assert.strictEqual(result.pinchDrawSawViewportChanging, true, `pinch draw should use viewport-changing fast path immediately: ${JSON.stringify(result)}`);
 }
 
+async function assertQuadraticImplicitEndpointsSurviveViewportDecimation(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: '\\left(x+y-1\\right)\\left(x-y+2\\right)=1',
+            points: [],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func);
+        await graphiti.plotFunction(func);
+
+        const decimationStep = Math.max(1, Math.ceil(func.points.length / 500));
+        const endpoints = func.points
+            .map((point, index) => ({
+                index,
+                x: point.x,
+                y: point.y,
+                tagged: point.quadraticBranchEndpoint === true,
+                retainedByModulo: index % decimationStep === 0
+            }))
+            .filter(point => point.tagged);
+
+        return {
+            renderMode: func.implicitRenderMode || null,
+            explicitImplicitFastPath: graphiti.isExplicitImplicitFastPath(func),
+            decimationStep,
+            endpoints,
+            untaggedEndpointsSkippedByModulo: func.points.some((point, index) =>
+                Number.isFinite(point.x) &&
+                Number.isFinite(point.y) &&
+                Math.abs(point.x + 1.5) <= 1e-9 &&
+                Math.abs(point.y - 1.5) <= 1e-9 &&
+                point.quadraticBranchEndpoint !== true &&
+                index % decimationStep !== 0
+            )
+        };
+    });
+
+    assert.strictEqual(result.renderMode, 'quadratic-explicit', `test equation should use quadratic fast path: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.explicitImplicitFastPath, true, `test equation should be an explicit implicit fast path: ${JSON.stringify(result)}`);
+    assert(result.decimationStep > 1, `test equation should exercise viewport decimation: ${JSON.stringify(result)}`);
+    assert(
+        result.endpoints.some(point => approxEqual(point.x, -1.5, 1e-9) && approxEqual(point.y, 1.5, 1e-9) && !point.retainedByModulo),
+        `left branch endpoint should cover a point skipped by modulo decimation: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(result.untaggedEndpointsSkippedByModulo, false, `quadratic branch endpoints skipped by modulo must be tagged: ${JSON.stringify(result)}`);
+}
+
 async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -3632,6 +3708,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
         await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
         await assertStressFastPathPanZoomStartsImmediately(page);
+        await assertQuadraticImplicitEndpointsSurviveViewportDecimation(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
