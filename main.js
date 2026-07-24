@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.26';
+const VERSION = '1.3.27';
 
 class Graphiti {
     constructor() {
@@ -11310,7 +11310,7 @@ class Graphiti {
                         bestDistance = distance;
                     }
                 }
-                bestSegment.push({ x: root, y: 0, connected: true });
+                bestSegment.push({ x: root, y: 0, connected: true, monomialBranchEndpoint: true });
             }
         }
 
@@ -42639,7 +42639,7 @@ class Graphiti {
                 continue;
             }
 
-            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && point.quadraticBranchEndpoint !== true && i < func.points.length - 1) {
+            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && point.quadraticBranchEndpoint !== true && point.monomialBranchEndpoint !== true && i < func.points.length - 1) {
                 continue;
             }
 
