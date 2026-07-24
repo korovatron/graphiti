@@ -11573,7 +11573,7 @@ class Graphiti {
                     bestDistance = distance;
                 }
             }
-            bestSegment.push({ x: root, y, connected: true });
+            bestSegment.push({ x: root, y, connected: true, quadraticBranchEndpoint: true });
         }
 
         proxyFunc.points = segments.flatMap((segment, segmentIndex) => {
@@ -42617,7 +42617,7 @@ class Graphiti {
                 continue;
             }
 
-            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && i < func.points.length - 1) {
+            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && point.quadraticBranchEndpoint !== true && i < func.points.length - 1) {
                 continue;
             }
 
