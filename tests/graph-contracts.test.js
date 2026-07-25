@@ -1367,7 +1367,18 @@ async function assertShapeClassification(page) {
             parameters: { alpha: 1, beta: 1, gamma: 1, delta: 1 }
         });
 
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
         await graphiti.applySharedStateFromUrl(makeSharedState('y=x', 21));
+        const initialSharedViewport = {
+            minX: graphiti.viewport.minX,
+            maxX: graphiti.viewport.maxX,
+            minY: graphiti.viewport.minY,
+            maxY: graphiti.viewport.maxY,
+            scale: graphiti.viewport.scale,
+            width: graphiti.viewport.width,
+            height: graphiti.viewport.height
+        };
         graphiti.input.persistentBadges = [{ id: 99, functionId: 21, worldX: 0, worldY: 0 }];
         graphiti.input.badgeIdCounter = 100;
         graphiti.integralPairs = [{ badge1Id: 99, badge2Id: 100 }];
@@ -1390,7 +1401,8 @@ async function assertShapeClassification(page) {
             integralPairCount: graphiti.integralPairs.length,
             linkedBadgePairCount: graphiti.linkedBadgePairs.length,
             tempSession: graphiti.tempSession,
-            state: graphiti.currentState
+            state: graphiti.currentState,
+            initialSharedViewport
         };
     });
 
@@ -1401,6 +1413,11 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedHashReplacementResult.linkedBadgePairCount, 0, 'same-tab shared URL replacement should clear linked badge pairs omitted by the new state');
     assert.strictEqual(sharedHashReplacementResult.tempSession, true, 'same-tab shared URL replacement should remain in temporary shared-link mode');
     assert.strictEqual(sharedHashReplacementResult.state, 'graphing', 'same-tab shared URL replacement should stay in graphing state');
+    assert(Math.abs(sharedHashReplacementResult.initialSharedViewport.scale - 72) < 1e-9, `shared URL square viewport should fit the 960x720 canvas scale: ${JSON.stringify(sharedHashReplacementResult.initialSharedViewport)}`);
+    assert(Math.abs(sharedHashReplacementResult.initialSharedViewport.minX + (20 / 3)) < 1e-9, `shared URL square viewport should expand x-min for canvas aspect: ${JSON.stringify(sharedHashReplacementResult.initialSharedViewport)}`);
+    assert(Math.abs(sharedHashReplacementResult.initialSharedViewport.maxX - (20 / 3)) < 1e-9, `shared URL square viewport should expand x-max for canvas aspect: ${JSON.stringify(sharedHashReplacementResult.initialSharedViewport)}`);
+    assert.strictEqual(sharedHashReplacementResult.initialSharedViewport.minY, -5, 'shared URL square viewport should preserve y-min when height is limiting');
+    assert.strictEqual(sharedHashReplacementResult.initialSharedViewport.maxY, 5, 'shared URL square viewport should preserve y-max when height is limiting');
 
     const manuallyEditedFunctionId = await page.evaluate(() => {
         const graphiti = window.graphiti;

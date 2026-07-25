@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.32';
+const VERSION = '1.3.33';
 
 class Graphiti {
     constructor() {
@@ -30595,6 +30595,7 @@ class Graphiti {
                 this.viewport.minY = state.viewport.minY;
                 this.viewport.maxY = state.viewport.maxY;
                 this.viewport.scale = state.viewport.scale;
+                this.fitViewportBoundsToCanvasAspect();
                 this.updateRangeInputs();
             }
             
@@ -30900,6 +30901,28 @@ class Graphiti {
         this.viewport.minY = centerY - halfRangeY;
         this.viewport.maxY = centerY + halfRangeY;
         this.viewport.scale = targetScale;
+    }
+
+    fitViewportBoundsToCanvasAspect(viewport = this.viewport) {
+        const xRange = viewport.maxX - viewport.minX;
+        const yRange = viewport.maxY - viewport.minY;
+        if (!(xRange > 0) || !(yRange > 0) || !(viewport.width > 0) || !(viewport.height > 0)) {
+            return;
+        }
+
+        const xScale = viewport.width / xRange;
+        const yScale = viewport.height / yRange;
+        const targetScale = Math.min(xScale, yScale);
+        const centerX = (viewport.minX + viewport.maxX) / 2;
+        const centerY = (viewport.minY + viewport.maxY) / 2;
+        const halfWidth = viewport.width / (2 * targetScale);
+        const halfHeight = viewport.height / (2 * targetScale);
+
+        viewport.minX = centerX - halfWidth;
+        viewport.maxX = centerX + halfWidth;
+        viewport.minY = centerY - halfHeight;
+        viewport.maxY = centerY + halfHeight;
+        viewport.scale = targetScale;
     }
     
     zoomIn() {
