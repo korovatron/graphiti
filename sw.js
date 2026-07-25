@@ -1,8 +1,9 @@
-const CACHE_NAME = 'graphiti-v1.3.33';
+const CACHE_NAME = 'graphiti-v1.3.34';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './guide.html',
+    './a-level-maths-graphing-calculator.html',
     './automatic-asymptote-detection.html',
     './implicit-equation-graphing-calculator.html',
     './polar-graphing-calculator.html',
