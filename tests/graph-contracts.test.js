@@ -2695,6 +2695,139 @@ async function assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page) {
     assert(Math.abs(result.y) > 0.005, `near-axis cubic intersection marker should not be snapped to y=0: ${JSON.stringify(result)}`);
 }
 
+async function assertIntersectionHitTestChoosesNearestMarker(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.showIntersections = true;
+        graphiti.input.touch.active = false;
+
+        const viewport = {
+            minX: 0,
+            maxX: 10,
+            minY: 0,
+            maxY: 10,
+            width: 1000,
+            height: 1000,
+            centerX: 500,
+            centerY: 500,
+            scale: 100
+        };
+        Object.assign(graphiti.viewport, viewport);
+        Object.assign(graphiti.cartesianViewport, viewport);
+
+        graphiti.intersections = [
+            { x: 1, y: 1, marker: 'first' },
+            { x: 1.05, y: 1, marker: 'nearest' }
+        ];
+
+        const screen = graphiti.worldToScreen(1.05, 1);
+        const hit = graphiti.findIntersectionAtScreenPoint(screen.x, screen.y, 10);
+        return hit ? hit.marker : null;
+    });
+
+    assert.strictEqual(result, 'nearest', `intersection hit-test should choose nearest marker, got ${JSON.stringify(result)}`);
+}
+
+async function assertAsymptoticNearMissIntersectionBadgesAreRejected(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.showIntersections = true;
+        graphiti.input.touch.active = false;
+        graphiti.input.persistentBadges = [];
+
+        const viewport = {
+            minX: -3.76,
+            maxX: 4.681,
+            minY: -1.768,
+            maxY: 2.399,
+            width: 1576,
+            height: 768,
+            centerX: 788,
+            centerY: 384,
+            scale: 1576 / (4.681 + 3.76)
+        };
+        Object.assign(graphiti.viewport, viewport);
+        Object.assign(graphiti.cartesianViewport, viewport);
+
+        const implicitCurve = {
+            id: 1,
+            expression: 'y^2=1/(x^2-y^3)',
+            points: [],
+            enabled: true,
+            mode: 'cartesian',
+            color: '#0057FF'
+        };
+        const productCurve = {
+            id: 2,
+            expression: '(y-1)*(y-1/x)=0',
+            points: [],
+            enabled: true,
+            mode: 'cartesian',
+            color: '#00C853'
+        };
+        graphiti.cartesianFunctions = [implicitCurve, productCurve];
+        graphiti.polarFunctions = [];
+
+        graphiti.explicitIntersections = [];
+        graphiti.implicitIntersections = [
+            { x: 2.1, y: 1 / 2.1, func1Id: implicitCurve.id, func2Id: productCurve.id },
+            { x: Math.SQRT2, y: 1, func1Id: implicitCurve.id, func2Id: productCurve.id }
+        ];
+        graphiti.tangentIntersections = [];
+        graphiti.normalIntersections = [];
+        graphiti.implicitIntersectionsPending = false;
+        graphiti.isViewportChanging = false;
+        graphiti.updateCombinedIntersections();
+        const displayedIntersections = graphiti.intersections.map(point => ({ x: point.x, y: point.y }));
+        graphiti.freezeCurrentIntersectionMarkersForViewportChange();
+        const frozenIntersections = graphiti.frozenIntersectionBadges.map(point => ({ x: point.x, y: point.y }));
+        graphiti.input.persistentBadges = [];
+
+        const nearMiss = {
+            x: 2.1,
+            y: 1 / 2.1,
+            func1: implicitCurve,
+            func2: productCurve
+        };
+        graphiti.handleIntersectionTap(nearMiss, 0, 0);
+        const rejectedNearMissBadgeCount = graphiti.input.persistentBadges.length;
+        const nearMissAfterTap = { x: nearMiss.x, y: nearMiss.y };
+
+        const trueIntersection = {
+            x: Math.SQRT2,
+            y: 1,
+            func1: implicitCurve,
+            func2: productCurve
+        };
+        graphiti.handleIntersectionTap(trueIntersection, 0, 0);
+        const badge = graphiti.input.persistentBadges[0] || null;
+
+        return {
+            displayedIntersections,
+            frozenIntersections,
+            rejectedNearMissBadgeCount,
+            nearMissAfterTap,
+            acceptedBadgeCount: graphiti.input.persistentBadges.length,
+            acceptedBadge: badge ? { x: badge.worldX, y: badge.worldY } : null
+        };
+    });
+
+    assert.strictEqual(result.displayedIntersections.length, 1, `asymptotic near-miss should be culled from displayed markers: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.displayedIntersections[0].x, Math.SQRT2, 1e-5), `remaining displayed marker should be the true intersection: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.displayedIntersections[0].y, 1, 1e-5), `remaining displayed marker should have y=1: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.frozenIntersections.length, 1, `pan/zoom snapshot should not restore the asymptotic near-miss: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.frozenIntersections[0].x, Math.SQRT2, 1e-5), `frozen marker should be the true intersection: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.frozenIntersections[0].y, 1, 1e-5), `frozen marker should have y=1: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.rejectedNearMissBadgeCount, 0, `asymptotic near-miss should not create a badge: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.nearMissAfterTap.x, 2.1, 1e-12), `rejected near-miss marker should not be moved: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.acceptedBadgeCount, 1, `true intersection should still create a badge: ${JSON.stringify(result)}`);
+    assert(result.acceptedBadge, `true intersection badge should exist: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.acceptedBadge.x, Math.SQRT2, 1e-5), `true intersection badge x should be sqrt(2): ${JSON.stringify(result)}`);
+    assert(approxEqual(result.acceptedBadge.y, 1, 1e-5), `true intersection badge y should be 1: ${JSON.stringify(result)}`);
+}
+
 async function assertMixedIntersectionFreezeWaitsForImplicitRefresh(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -2710,7 +2843,8 @@ async function assertMixedIntersectionFreezeWaitsForImplicitRefresh(page) {
             { x: 1, y: 1, func1Id: 1, func2Id: 2 },
             { x: 1, y: 0, func1Id: 1, func2Id: 3 }
         ];
-        graphiti.intersections = graphiti.explicitIntersections.slice();
+        graphiti.implicitIntersectionsPending = false;
+        graphiti.updateCombinedIntersections();
 
         const snapshot = graphiti.getCurrentIntersectionMarkerSnapshot()
             .map(point => ({ x: point.x, y: point.y, func1Id: point.func1Id, func2Id: point.func2Id }));
@@ -3987,6 +4121,8 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertDraggedLineIntersectionCachesArePruned(page);
         await assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page);
+        await assertIntersectionHitTestChoosesNearestMarker(page);
+        await assertAsymptoticNearMissIntersectionBadgesAreRejected(page);
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
         await assertSecondPanPreservesFrozenImplicitMarkers(page);
         await assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page);

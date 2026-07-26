@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.37';
+const VERSION = '1.3.38';
 
 class Graphiti {
     constructor() {
@@ -34707,11 +34707,9 @@ class Graphiti {
     }
 
     getCurrentIntersectionMarkers(intersections) {
-        const currentFunctionIds = new Set(
-            this.getCurrentFunctions()
-                .filter(func => func && func.enabled)
-                .map(func => func.id)
-        );
+        const currentFunctions = this.getCurrentFunctions().filter(func => func && func.enabled);
+        const currentFunctionsById = new Map(currentFunctions.map(func => [func.id, func]));
+        const currentFunctionIds = new Set(currentFunctionsById.keys());
         const markers = [];
 
         for (const intersection of Array.isArray(intersections) ? intersections : []) {
@@ -34733,7 +34731,9 @@ class Graphiti {
             markers.push({
                 ...intersection,
                 func1Id,
-                func2Id
+                func2Id,
+                func1: intersection.func1 || currentFunctionsById.get(func1Id),
+                func2: intersection.func2 || currentFunctionsById.get(func2Id)
             });
         }
 
@@ -34756,11 +34756,7 @@ class Graphiti {
     getCurrentIntersectionMarkerSnapshot(additionalMarkers = []) {
         const markerSources = [
             additionalMarkers,
-            this.intersections,
-            this.explicitIntersections,
-            this.implicitIntersections,
-            this.tangentIntersections,
-            this.normalIntersections
+            this.intersections
         ];
         const markers = [];
         const seen = new Set();
@@ -34842,12 +34838,13 @@ class Graphiti {
         }
         
         // Combine explicit, implicit, tangent, and normal intersections for display
-        this.intersections = this.getCurrentIntersectionMarkers([
+        const combinedIntersections = this.getCurrentIntersectionMarkers([
             ...this.explicitIntersections,
             ...this.implicitIntersections,
             ...this.tangentIntersections,
             ...this.normalIntersections
         ]);
+        this.intersections = this.getValidatedIntersectionMarkers(combinedIntersections);
         
         // Stamp stable IDs onto each intersection so snapped badges can look up by ID
         for (const pt of this.intersections) {
@@ -34887,6 +34884,55 @@ class Graphiti {
             // This prevents a blank frame between frozen and new markers
             this.draw();
         }
+    }
+
+    getValidatedIntersectionMarkers(intersections) {
+        if (!Array.isArray(intersections) || intersections.length === 0 || this.plotMode === 'polar') {
+            return intersections || [];
+        }
+
+        const markers = [];
+        for (const intersection of intersections) {
+            if (!this.shouldValidateCartesianIntersectionMarker(intersection)) {
+                markers.push(intersection);
+                continue;
+            }
+
+            const originalX = intersection.x;
+            const originalY = intersection.y;
+            const refinedIntersection = this.refineIntersection(intersection);
+            if (!refinedIntersection || !Number.isFinite(refinedIntersection.x) || !Number.isFinite(refinedIntersection.y)) {
+                continue;
+            }
+
+            if (!this.isRefinedIntersectionAcceptable(intersection, refinedIntersection, originalX, originalY)) {
+                continue;
+            }
+
+            intersection.x = refinedIntersection.x;
+            intersection.y = refinedIntersection.y;
+            markers.push(intersection);
+        }
+
+        return markers;
+    }
+
+    shouldValidateCartesianIntersectionMarker(intersection) {
+        if (!intersection || intersection.isTangentTangentIntersection || intersection.isTangentIntersection ||
+            intersection.isNormalNormalIntersection || intersection.isNormalTangentIntersection || intersection.isNormalIntersection) {
+            return false;
+        }
+
+        const func1 = intersection.func1;
+        const func2 = intersection.func2;
+        if (!func1 || !func2 || !func1.expression || !func2.expression) {
+            return false;
+        }
+
+        const func1Type = this.detectFunctionType(func1.expression);
+        const func2Type = this.detectFunctionType(func2.expression);
+        return func1Type === 'implicit' || func1Type === 'implicit-inequality' ||
+            func2Type === 'implicit' || func2Type === 'implicit-inequality';
     }
 
     // ================================
@@ -43761,8 +43807,10 @@ class Graphiti {
         }
 
         const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
+        let nearestIntersection = null;
+        let nearestDistance = tolerance;
         
-        // Check regular intersections
+        // Check regular intersections and return the nearest marker inside the hit radius.
         for (const intersection of this.intersections) {
             const intersectionScreen = this.worldToScreen(intersection.x, intersection.y);
             const distance = Math.sqrt(
@@ -43770,12 +43818,13 @@ class Graphiti {
                 Math.pow(screenY - intersectionScreen.y, 2)
             );
             
-            if (distance <= tolerance) {
-                return intersection;
+            if (distance <= nearestDistance) {
+                nearestDistance = distance;
+                nearestIntersection = intersection;
             }
         }
         
-        return null;
+        return nearestIntersection;
     }
     
     // ================================
@@ -44359,12 +44408,19 @@ class Graphiti {
             return;
         }
         
+        const originalX = intersection.x;
+        const originalY = intersection.y;
+
         // Refine intersection using numerical method for precision (regular function-function intersections)
         const refinedIntersection = this.refineIntersection(intersection);
         
         // Validate refined coordinates
         if (isNaN(refinedIntersection.x) || isNaN(refinedIntersection.y) || 
             !isFinite(refinedIntersection.x) || !isFinite(refinedIntersection.y)) {
+            return;
+        }
+
+        if (!this.isRefinedIntersectionAcceptable(intersection, refinedIntersection, originalX, originalY)) {
             return;
         }
 
@@ -44380,6 +44436,87 @@ class Graphiti {
             intersection.func1,
             intersection.func2
         );
+    }
+
+    isRefinedIntersectionAcceptable(intersection, refinedIntersection, originalX, originalY) {
+        if (this.plotMode === 'polar') {
+            return true;
+        }
+
+        const func1 = intersection.func1;
+        const func2 = intersection.func2;
+        const func1Type = func1 && func1.expression ? this.detectFunctionType(func1.expression) : 'unknown';
+        const func2Type = func2 && func2.expression ? this.detectFunctionType(func2.expression) : 'unknown';
+        const func1IsImplicit = !func1 || !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality' || func1Type === 'parametric';
+        const func2IsImplicit = !func2 || !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality' || func2Type === 'parametric';
+
+        if (!func1IsImplicit && !func2IsImplicit) {
+            return true;
+        }
+
+        const originalScreen = this.worldToScreen(originalX, originalY);
+        const refinedScreen = this.worldToScreen(refinedIntersection.x, refinedIntersection.y);
+        const screenMove = Math.hypot(refinedScreen.x - originalScreen.x, refinedScreen.y - originalScreen.y);
+        if (!Number.isFinite(screenMove) || screenMove > this.getSignificantPointHitTolerance(false)) {
+            return false;
+        }
+
+        const residualDistance = this.getCartesianIntersectionResidualDistance(
+            func1,
+            func2,
+            refinedIntersection.x,
+            refinedIntersection.y,
+            func1Type,
+            func2Type
+        );
+        if (!Number.isFinite(residualDistance)) {
+            return false;
+        }
+
+        const viewportSpan = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY, 1);
+        const tolerance = Math.max(1e-8, viewportSpan * 1e-7);
+        return residualDistance <= tolerance;
+    }
+
+    getCartesianIntersectionResidualDistance(func1, func2, x, y, func1Type = null, func2Type = null) {
+        const residual1 = this.createCartesianIntersectionResidual(func1, func1Type);
+        const residual2 = this.createCartesianIntersectionResidual(func2, func2Type);
+        if (!residual1 || !residual2) {
+            return Infinity;
+        }
+
+        const distance1 = this.getCartesianResidualDistance(residual1, x, y);
+        const distance2 = this.getCartesianResidualDistance(residual2, x, y);
+        if (!Number.isFinite(distance1) || !Number.isFinite(distance2)) {
+            return Infinity;
+        }
+
+        return Math.hypot(distance1, distance2);
+    }
+
+    getCartesianResidualDistance(residual, x, y) {
+        const value = residual(x, y);
+        if (!Number.isFinite(value)) {
+            return Infinity;
+        }
+        if (Math.abs(value) < 1e-14) {
+            return 0;
+        }
+
+        const viewportSpan = Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY, 1);
+        const step = Math.max(1e-6, viewportSpan * 1e-6);
+        const valueX = residual(x + step, y);
+        const valueY = residual(x, y + step);
+        if (!Number.isFinite(valueX) || !Number.isFinite(valueY)) {
+            return Infinity;
+        }
+
+        const gradientNorm = Math.hypot((valueX - value) / step, (valueY - value) / step);
+        if (!Number.isFinite(gradientNorm) || gradientNorm < 1e-12) {
+            return Math.abs(value);
+        }
+
+        return Math.abs(value) / gradientNorm;
     }
     
     refineIntersection(intersection) {
