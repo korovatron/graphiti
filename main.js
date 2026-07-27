@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.40';
+const VERSION = '1.3.41';
 
 class Graphiti {
     constructor() {
@@ -26442,6 +26442,47 @@ class Graphiti {
                                 const snapTolerance = worldRange * 0.015; // 1.5% of viewport width
                                 let nearestSignificantPoint = null;
                                 let nearestDistance = snapTolerance;
+                                const snapPriorityTolerance = snapTolerance * 0.2;
+                                const getSnapPriority = pointType => {
+                                    if (pointType === 'turning') return 3;
+                                    if (pointType === 'intersection') return 2;
+                                    if (pointType === 'intercept') return 1;
+                                    return 0;
+                                };
+
+                                const considerSnapCandidate = (candidate, dist) => {
+                                    if (!candidate || !Number.isFinite(dist) || dist > snapTolerance) {
+                                        return;
+                                    }
+
+                                    if (!nearestSignificantPoint) {
+                                        nearestDistance = dist;
+                                        nearestSignificantPoint = candidate;
+                                        return;
+                                    }
+
+                                    const candidatePriority = getSnapPriority(candidate.type);
+                                    const currentPriority = getSnapPriority(nearestSignificantPoint.type);
+
+                                    // For effectively coincident markers, use deterministic priority:
+                                    // turning point > intersection > intercept.
+                                    const withinPriorityWindow = Math.abs(dist - nearestDistance) <= snapPriorityTolerance;
+                                    if (withinPriorityWindow && candidatePriority > currentPriority) {
+                                        nearestDistance = dist;
+                                        nearestSignificantPoint = candidate;
+                                        return;
+                                    }
+
+                                    // Keep higher-priority current candidate if competitor is only marginally closer.
+                                    if (candidatePriority < currentPriority && dist >= nearestDistance - snapPriorityTolerance) {
+                                        return;
+                                    }
+
+                                    if (dist < nearestDistance) {
+                                        nearestDistance = dist;
+                                        nearestSignificantPoint = candidate;
+                                    }
+                                };
                             
                             if (tracingFunction.mode === 'cartesian') {
                                 // Check turning points
@@ -26451,10 +26492,10 @@ class Graphiti {
                                             const dx = tracePoint.x - tp.x;
                                             const dy = tracePoint.y - tp.y;
                                             const dist = Math.sqrt(dx * dx + dy * dy);
-                                            if (dist < nearestDistance) {
-                                                nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: tp.x, worldY: tp.y, type: 'turning', turningType: tp.type, id: tp.id };
-                                            }
+                                            considerSnapCandidate(
+                                                { worldX: tp.x, worldY: tp.y, type: 'turning', turningType: tp.type, id: tp.id },
+                                                dist
+                                            );
                                         }
                                     }
                                 }
@@ -26466,10 +26507,10 @@ class Graphiti {
                                             const dx = tracePoint.x - intercept.x;
                                             const dy = tracePoint.y - intercept.y;
                                             const dist = Math.sqrt(dx * dx + dy * dy);
-                                            if (dist < nearestDistance) {
-                                                nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: intercept.x, worldY: intercept.y, type: 'intercept', id: intercept.id };
-                                            }
+                                            considerSnapCandidate(
+                                                { worldX: intercept.x, worldY: intercept.y, type: 'intercept', id: intercept.id },
+                                                dist
+                                            );
                                         }
                                     }
                                 }
@@ -26486,10 +26527,10 @@ class Graphiti {
                                             const dx = tracePoint.x - intersection.x;
                                             const dy = tracePoint.y - intersection.y;
                                             const dist = Math.sqrt(dx * dx + dy * dy);
-                                            if (dist < nearestDistance) {
-                                                nearestDistance = dist;
-                                                nearestSignificantPoint = { worldX: intersection.x, worldY: intersection.y, type: 'intersection', func1Id: func1Id, func2Id: func2Id, id: intersection.id };
-                                            }
+                                            considerSnapCandidate(
+                                                { worldX: intersection.x, worldY: intersection.y, type: 'intersection', func1Id: func1Id, func2Id: func2Id, id: intersection.id },
+                                                dist
+                                            );
                                         }
                                     }
                                 }
@@ -26502,21 +26543,21 @@ class Graphiti {
                                             const dx = tracePoint.x - tp.x;
                                             const dy = tracePoint.y - tp.y;
                                             const dist = Math.sqrt(dx * dx + dy * dy);
-                                            if (dist < nearestDistance) {
-                                                nearestDistance = dist;
-                                                // Calculate theta from the actual significant point coordinates
-                                                let theta = Math.atan2(tp.y, tp.x);
-                                                // Normalize to [0, 2π] range to match user expectations
-                                                if (theta < 0) theta += 2 * Math.PI;
-                                                nearestSignificantPoint = { 
-                                                    worldX: tp.x, 
-                                                    worldY: tp.y, 
+                                            // Calculate theta from the actual significant point coordinates
+                                            let theta = Math.atan2(tp.y, tp.x);
+                                            // Normalize to [0, 2π] range to match user expectations
+                                            if (theta < 0) theta += 2 * Math.PI;
+                                            considerSnapCandidate(
+                                                {
+                                                    worldX: tp.x,
+                                                    worldY: tp.y,
                                                     theta: theta,
                                                     type: 'turning',
                                                     turningType: tp.type,
                                                     id: tp.id
-                                                };
-                                            }
+                                                },
+                                                dist
+                                            );
                                         }
                                     }
                                 }
@@ -26528,20 +26569,20 @@ class Graphiti {
                                             const dx = tracePoint.x - intercept.x;
                                             const dy = tracePoint.y - intercept.y;
                                             const dist = Math.sqrt(dx * dx + dy * dy);
-                                            if (dist < nearestDistance) {
-                                                nearestDistance = dist;
-                                                // Calculate theta from the actual significant point coordinates
-                                                let theta = Math.atan2(intercept.y, intercept.x);
-                                                // Normalize to [0, 2π] range to match user expectations
-                                                if (theta < 0) theta += 2 * Math.PI;
-                                                nearestSignificantPoint = { 
-                                                    worldX: intercept.x, 
-                                                    worldY: intercept.y, 
+                                            // Calculate theta from the actual significant point coordinates
+                                            let theta = Math.atan2(intercept.y, intercept.x);
+                                            // Normalize to [0, 2π] range to match user expectations
+                                            if (theta < 0) theta += 2 * Math.PI;
+                                            considerSnapCandidate(
+                                                {
+                                                    worldX: intercept.x,
+                                                    worldY: intercept.y,
                                                     theta: theta,
                                                     type: 'intercept',
                                                     id: intercept.id
-                                                };
-                                            }
+                                                },
+                                                dist
+                                            );
                                         }
                                     }
                                 }
@@ -26556,22 +26597,22 @@ class Graphiti {
                                             const dx = tracePoint.x - intersection.x;
                                             const dy = tracePoint.y - intersection.y;
                                             const dist = Math.sqrt(dx * dx + dy * dy);
-                                            if (dist < nearestDistance) {
-                                                nearestDistance = dist;
-                                                // Calculate theta from the actual significant point coordinates
-                                                let theta = Math.atan2(intersection.y, intersection.x);
-                                                // Normalize to [0, 2π] range to match user expectations
-                                                if (theta < 0) theta += 2 * Math.PI;
-                                                nearestSignificantPoint = { 
-                                                    worldX: intersection.x, 
-                                                    worldY: intersection.y, 
+                                            // Calculate theta from the actual significant point coordinates
+                                            let theta = Math.atan2(intersection.y, intersection.x);
+                                            // Normalize to [0, 2π] range to match user expectations
+                                            if (theta < 0) theta += 2 * Math.PI;
+                                            considerSnapCandidate(
+                                                {
+                                                    worldX: intersection.x,
+                                                    worldY: intersection.y,
                                                     theta: theta,
                                                     type: 'intersection',
                                                     func1Id: func1Id,
                                                     func2Id: func2Id,
                                                     id: intersection.id
-                                                };
-                                            }
+                                                },
+                                                dist
+                                            );
                                         }
                                     }
                                 }
