@@ -421,6 +421,93 @@ async function assertEmptyMathLivePlaceholdersAreRestored(page) {
     }
 }
 
+async function assertLegacyDerivativeCacheEntriesDoNotSuppressTurningPoints(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = true;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.turningPoints = [];
+        graphiti.expressionCache.clear();
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -10,
+            maxX: 10,
+            minY: -10,
+            maxY: 10,
+            centerX: 480,
+            centerY: 360,
+            scale: 48
+        });
+
+        const sinFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=\\sin(x)',
+            points: [],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        const parabolaFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=x^2',
+            points: [],
+            color: '#E24A90',
+            enabled: true,
+            mode: 'cartesian'
+        };
+
+        graphiti.cartesianFunctions.push(sinFunc, parabolaFunc);
+        await graphiti.plotFunction(sinFunc);
+        await graphiti.plotFunction(parabolaFunc);
+
+        // Simulate legacy cache entries that stored only first derivatives as strings.
+        graphiti.expressionCache.set(`deriv_${sinFunc.id}_sin(x)`, 'cos(x)');
+        graphiti.expressionCache.set(`deriv_${parabolaFunc.id}_x^2`, '2 * x');
+
+        const turningPoints = graphiti.findTurningPoints();
+        const sinTurningPoints = turningPoints.filter(point => point.func && point.func.id === sinFunc.id);
+        const parabolaTurningPoints = turningPoints.filter(point => point.func && point.func.id === parabolaFunc.id);
+        const sinHasPiOver2Maximum = sinTurningPoints.some(point => Math.abs(point.x - Math.PI / 2) < 0.05 && point.type === 'maximum');
+        const parabolaHasOriginMinimum = parabolaTurningPoints.some(point => Math.abs(point.x) < 0.05 && Math.abs(point.y) < 0.05 && point.type === 'minimum');
+
+        const upgradedSinCache = graphiti.expressionCache.get(`deriv_${sinFunc.id}_sin(x)`);
+        const upgradedParabolaCache = graphiti.expressionCache.get(`deriv_${parabolaFunc.id}_x^2`);
+
+        return {
+            totalTurningPoints: turningPoints.length,
+            sinCount: sinTurningPoints.length,
+            parabolaCount: parabolaTurningPoints.length,
+            sinHasPiOver2Maximum,
+            parabolaHasOriginMinimum,
+            upgradedSinCache,
+            upgradedParabolaCache
+        };
+    });
+
+    assert(result.totalTurningPoints > 0, `legacy derivative cache regression should still find turning points: ${JSON.stringify(result)}`);
+    assert(result.sinCount > 0, `legacy derivative cache regression should detect sin turning points: ${JSON.stringify(result)}`);
+    assert(result.parabolaCount > 0, `legacy derivative cache regression should detect parabola turning points: ${JSON.stringify(result)}`);
+    assert(result.sinHasPiOver2Maximum, `legacy derivative cache regression should detect sin maximum near pi/2: ${JSON.stringify(result)}`);
+    assert(result.parabolaHasOriginMinimum, `legacy derivative cache regression should detect parabola minimum at origin: ${JSON.stringify(result)}`);
+    assert(
+        result.upgradedSinCache && typeof result.upgradedSinCache.first === 'string' && typeof result.upgradedSinCache.second === 'string',
+        `legacy derivative cache entry for sin should be upgraded to first/second pair: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.upgradedParabolaCache && typeof result.upgradedParabolaCache.first === 'string' && typeof result.upgradedParabolaCache.second === 'string',
+        `legacy derivative cache entry for parabola should be upgraded to first/second pair: ${JSON.stringify(result)}`
+    );
+}
+
 async function assertShapeClassification(page) {
     const cases = [
         { expression: 'x^2+y^2=1', expected: 'circle' },
@@ -4109,6 +4196,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
 
         await assertIncompleteExpressionsDoNotPlot(page);
         await assertEmptyMathLivePlaceholdersAreRestored(page);
+        await assertLegacyDerivativeCacheEntriesDoNotSuppressTurningPoints(page);
         await assertShapeClassification(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);

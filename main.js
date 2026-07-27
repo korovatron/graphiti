@@ -922,31 +922,26 @@ class Graphiti {
                                         }
                                         
                                         // Clean up any lingering MathLive backdrop elements
-                                        // This fixes the phantom overlay issue in mobile browser mode
-                                        setTimeout(() => {
-                                            const backdrops = document.querySelectorAll('.MLK__backdrop');
-                                            backdrops.forEach(backdrop => {
-                                                if (backdrop.parentNode) {
-                                                    backdrop.parentNode.removeChild(backdrop);
-                                                }
-                                            });
-                                            
-                                            // Also clean up any virtual keyboard containers that might be stuck
-                                            const keyboards = document.querySelectorAll('.ML__virtual-keyboard');
-                                            keyboards.forEach(keyboard => {
-                                                if (keyboard.style.display !== 'none' && !window.mathVirtualKeyboard.visible) {
-                                                    keyboard.style.display = 'none';
-                                                }
-                                            });
-                                        }, 100);
+                                        const backdrops = document.querySelectorAll('.MLK__backdrop');
+                                        backdrops.forEach(backdrop => {
+                                            if (backdrop.parentNode) {
+                                                backdrop.parentNode.removeChild(backdrop);
+                                            }
+                                        });
+                                        
+                                        // Also clean up any virtual keyboard containers that might be stuck
+                                        const keyboards = document.querySelectorAll('.ML__virtual-keyboard');
+                                        keyboards.forEach(keyboard => {
+                                            if (keyboard.style.display !== 'none' && !window.mathVirtualKeyboard.visible) {
+                                                keyboard.style.display = 'none';
+                                            }
+                                        });
                                     }
-                                }, 150);
+                                }, 100);
                             };
                             
                             // Detect if running as PWA
-                            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
-                                         window.matchMedia('(display-mode: fullscreen)').matches ||
-                                         window.navigator.standalone === true;
+                            const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
                             
                             // Try multiple events for better compatibility
                             window.addEventListener('orientationchange', closeKeyboardOnOrientationChange);
@@ -954,7 +949,6 @@ class Graphiti {
                             
                             // For PWA mode, use additional detection methods
                             if (isPWA) {
-                                
                                 // More frequent checking in PWA mode
                                 let resizeTimeout;
                                 window.addEventListener('resize', () => {
@@ -25080,6 +25074,8 @@ class Graphiti {
             interceptsToggleButton.addEventListener('click', () => {
                 // Toggle intercept detection
                 this.showIntercepts = !this.showIntercepts;
+                this.interceptsPendingViewportRefresh = false;
+                this.frozenInterceptBadges = [];
                 
                 // Update button visual state
                 this.updateInterceptsToggleButton();
@@ -25128,6 +25124,8 @@ class Graphiti {
             turningPointsToggleButton.addEventListener('click', () => {
                 // Toggle turning point detection (now works in both modes)
                 this.showTurningPoints = !this.showTurningPoints;
+                this.turningPointsPendingViewportRefresh = false;
+                this.frozenTurningPointBadges = [];
                 
                 // Update button visual state
                 this.updateTurningPointsToggleButton();
@@ -30342,9 +30340,10 @@ class Graphiti {
             settings: {
                 theme: document.documentElement.getAttribute('data-theme') || 'dark',
                 angleMode: this.angleMode,
-                showIntersections: document.getElementById('show-intersections')?.checked || false,
-                showIntercepts: document.getElementById('show-intercepts')?.checked || false,
-                showTurningPoints: document.getElementById('show-turning-points')?.checked || false
+                toggleStateVersion: 2,
+                showIntersections: this.showIntersections,
+                showIntercepts: this.showIntercepts,
+                showTurningPoints: this.showTurningPoints
             },
             parameters: {
                 alpha: this.parameters.alpha.value,
@@ -30514,15 +30513,40 @@ class Graphiti {
                 if (state.settings.theme) {
                     document.documentElement.setAttribute('data-theme', state.settings.theme);
                 }
-                if (document.getElementById('show-intersections')) {
-                    document.getElementById('show-intersections').checked = state.settings.showIntersections;
+                const hasBooleanMarkers =
+                    typeof state.settings.showIntersections === 'boolean' &&
+                    typeof state.settings.showIntercepts === 'boolean' &&
+                    typeof state.settings.showTurningPoints === 'boolean';
+
+                // Legacy compatibility: older URLs could store all marker toggles as false
+                // due to removed checkbox IDs. If we see that pre-versioned pattern, fall
+                // back to normal defaults (markers enabled).
+                const looksLikeLegacyToggleEncoding =
+                    state.settings.toggleStateVersion !== 2 &&
+                    hasBooleanMarkers &&
+                    state.settings.showIntersections === false &&
+                    state.settings.showIntercepts === false &&
+                    state.settings.showTurningPoints === false;
+
+                if (looksLikeLegacyToggleEncoding) {
+                    this.showIntersections = true;
+                    this.showIntercepts = true;
+                    this.showTurningPoints = true;
+                } else {
+                    if (typeof state.settings.showIntersections === 'boolean') {
+                        this.showIntersections = state.settings.showIntersections;
+                    }
+                    if (typeof state.settings.showIntercepts === 'boolean') {
+                        this.showIntercepts = state.settings.showIntercepts;
+                    }
+                    if (typeof state.settings.showTurningPoints === 'boolean') {
+                        this.showTurningPoints = state.settings.showTurningPoints;
+                    }
                 }
-                if (document.getElementById('show-intercepts')) {
-                    document.getElementById('show-intercepts').checked = state.settings.showIntercepts;
-                }
-                if (document.getElementById('show-turning-points')) {
-                    document.getElementById('show-turning-points').checked = state.settings.showTurningPoints;
-                }
+
+                this.updateIntersectionToggleButton();
+                this.updateInterceptsToggleButton();
+                this.updateTurningPointsToggleButton();
             }
             
             // Apply parameters
@@ -30725,16 +30749,29 @@ class Graphiti {
             }
             
             // Trigger full redraw and analysis while the build overlay is still visible.
+            this.intersectionMarkersPendingViewportRefresh = false;
+            this.frozenIntersectionBadges = [];
+            this.frozenInterceptBadges = [];
+            this.interceptsPendingViewportRefresh = false;
+            this.frozenTurningPointBadges = [];
+            this.turningPointsPendingViewportRefresh = false;
             this.draw();
             if (this.showIntersections) {
                 this.intersections = this.calculateIntersectionsWithWorker(true);
+            } else {
+                this.clearIntersections();
             }
             if (this.showTurningPoints) {
                 this.turningPoints = this.findTurningPoints();
+            } else {
+                this.turningPoints = [];
             }
             if (this.showIntercepts) {
                 this.intercepts = this.findAxisIntercepts();
                 this.cullInterceptMarkers();
+            } else {
+                this.intercepts = [];
+                this.culledInterceptMarkers = [];
             }
             this.updateBadgesFromSignificantPoints();
             this.updateBadgeScreenPositions();
@@ -37213,8 +37250,27 @@ class Graphiti {
                             
                             if (this.expressionCache.has(cacheKey)) {
                                 const cached = this.expressionCache.get(cacheKey);
-                                derivativeStr = cached.first;
-                                secondDerivativeStr = cached.second;
+                                if (cached && typeof cached === 'object' && typeof cached.first === 'string') {
+                                    derivativeStr = cached.first;
+                                    if (typeof cached.second === 'string') {
+                                        secondDerivativeStr = cached.second;
+                                    } else {
+                                        const secondDerivative = this.cleanMath.derivative(derivativeStr, 'x');
+                                        secondDerivativeStr = secondDerivative.toString();
+                                        this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                                    }
+                                } else if (typeof cached === 'string') {
+                                    derivativeStr = cached;
+                                    const secondDerivative = this.cleanMath.derivative(derivativeStr, 'x');
+                                    secondDerivativeStr = secondDerivative.toString();
+                                    this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                                } else {
+                                    const derivative = this.cleanMath.derivative(processedExpression, 'x');
+                                    derivativeStr = derivative.toString();
+                                    const secondDerivative = this.cleanMath.derivative(derivative, 'x');
+                                    secondDerivativeStr = secondDerivative.toString();
+                                    this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                                }
                             } else {
                                 const derivative = this.cleanMath.derivative(processedExpression, 'x');
                                 derivativeStr = derivative.toString();
@@ -37476,8 +37532,27 @@ class Graphiti {
                 
                 if (this.expressionCache.has(cacheKey)) {
                     const cached = this.expressionCache.get(cacheKey);
-                    derivativeStr = cached.first;
-                    secondDerivativeStr = cached.second;
+                    if (cached && typeof cached === 'object' && typeof cached.first === 'string') {
+                        derivativeStr = cached.first;
+                        if (typeof cached.second === 'string') {
+                            secondDerivativeStr = cached.second;
+                        } else {
+                            const secondDerivative = this.cleanMath.derivative(derivativeStr, 'x');
+                            secondDerivativeStr = secondDerivative.toString();
+                            this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                        }
+                    } else if (typeof cached === 'string') {
+                        derivativeStr = cached;
+                        const secondDerivative = this.cleanMath.derivative(derivativeStr, 'x');
+                        secondDerivativeStr = secondDerivative.toString();
+                        this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                    } else {
+                        const derivative = this.cleanMath.derivative(processedExpression, 'x');
+                        derivativeStr = derivative.toString();
+                        const secondDerivative = this.cleanMath.derivative(derivative, 'x');
+                        secondDerivativeStr = secondDerivative.toString();
+                        this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                    }
                 } else {
                     const derivative = this.cleanMath.derivative(processedExpression, 'x');
                     derivativeStr = derivative.toString();
@@ -38444,8 +38519,27 @@ class Graphiti {
                 let secondDerivativeStr;
                 if (this.expressionCache.has(cacheKey)) {
                     const cachedDerivative = this.expressionCache.get(cacheKey);
-                    derivativeStr = cachedDerivative.first;
-                    secondDerivativeStr = cachedDerivative.second;
+                    if (cachedDerivative && typeof cachedDerivative === 'object' && typeof cachedDerivative.first === 'string') {
+                        derivativeStr = cachedDerivative.first;
+                        if (typeof cachedDerivative.second === 'string') {
+                            secondDerivativeStr = cachedDerivative.second;
+                        } else {
+                            const secondDerivative = this.cleanMath.derivative(derivativeStr, 'x');
+                            secondDerivativeStr = secondDerivative.toString();
+                            this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                        }
+                    } else if (typeof cachedDerivative === 'string') {
+                        derivativeStr = cachedDerivative;
+                        const secondDerivative = this.cleanMath.derivative(derivativeStr, 'x');
+                        secondDerivativeStr = secondDerivative.toString();
+                        this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                    } else {
+                        const derivative = this.cleanMath.derivative(processedExpression, 'x');
+                        derivativeStr = derivative.toString();
+                        const secondDerivative = this.cleanMath.derivative(derivative, 'x');
+                        secondDerivativeStr = secondDerivative.toString();
+                        this.expressionCache.set(cacheKey, { first: derivativeStr, second: secondDerivativeStr });
+                    }
                 } else {
                     const derivative = this.cleanMath.derivative(processedExpression, 'x');
                     derivativeStr = derivative.toString();
@@ -41704,7 +41798,11 @@ class Graphiti {
             if ((this.isViewportChanging || this.turningPointsPendingViewportRefresh) && this.frozenTurningPointBadges.length > 0) {
                 // During viewport changes and the settle refresh, show frozen turning point badges for visual continuity
                 this.drawFrozenTurningPointBadges();
-            } else if (!this.isViewportChanging && !this.turningPointsPendingViewportRefresh && this.turningPoints.length > 0) {
+            } else if (!this.isViewportChanging && this.turningPoints.length > 0) {
+                // If pending is stale but there are no frozen markers, fall back to live markers.
+                if (this.turningPointsPendingViewportRefresh && this.frozenTurningPointBadges.length === 0) {
+                    this.turningPointsPendingViewportRefresh = false;
+                }
                 // When viewport is stable, show actual turning point markers
                 this.drawTurningPointMarkers();
             }
@@ -44271,8 +44369,9 @@ class Graphiti {
 
         const tolerance = toleranceOverride ?? this.getSignificantPointHitTolerance(false);
         
-        // First check regular turning points (when viewport is stable)
-        if (!this.isViewportChanging && !this.turningPointsPendingViewportRefresh) {
+        // First check regular turning points when viewport is stable.
+        // If pending is stale and no frozen badges exist, still use live turning points.
+        if (!this.isViewportChanging && (!this.turningPointsPendingViewportRefresh || this.frozenTurningPointBadges.length === 0)) {
             for (const turningPoint of this.turningPoints) {
                 const turningPointScreen = this.worldToScreen(turningPoint.x, turningPoint.y);
                 const distance = Math.sqrt(

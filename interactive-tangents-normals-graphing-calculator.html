@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <!-- GoatCounter Analytics -->
+    <script data-goatcounter="https://korovatron.goatcounter.com/count"
+        async src="https://gc.zgo.at/count.js"></script>
+    <!-- End GoatCounter Analytics -->
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1A2F42">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Interactive Tangents and Normals Graphing Calculator | Graphiti</title>
+    <meta name="description" content="Use draggable tangents and normals in Graphiti with live coordinate badges and first and second derivative values. Ideal for calculus teaching, turning points and inflections.">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+    <link rel="icon" href="logoTrans.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="logo.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="logo.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="logo.png">
+    <link rel="shortcut icon" href="logoTrans.png">
+    <link rel="canonical" href="https://www.korovatron.co.uk/graphiti/interactive-tangents-normals-graphing-calculator.html">
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Interactive Tangents and Normals Graphing Calculator | Graphiti">
+    <meta property="og:description" content="Drag tangents and normals along curves with live coordinate, first derivative and second derivative badges. Perfect for classroom calculus demonstrations.">
+    <meta property="og:url" content="https://www.korovatron.co.uk/graphiti/interactive-tangents-normals-graphing-calculator.html">
+    <meta property="og:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiFeatures/interactiveTangentsNormals.png">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "ItemPage",
+        "name": "Interactive Tangents and Normals in Graphiti",
+        "description": "A focused guide to Graphiti's draggable tangent and normal tools with coordinate, first derivative and second derivative badges.",
+        "url": "https://www.korovatron.co.uk/graphiti/interactive-tangents-normals-graphing-calculator.html",
+        "inLanguage": "en-GB",
+        "mainEntity": {
+            "@type": "SoftwareApplication",
+            "name": "Graphiti",
+            "url": "https://www.korovatron.co.uk/graphiti/",
+            "applicationCategory": "EducationalApplication",
+            "applicationSubCategory": "Graphing calculator",
+            "operatingSystem": "Web Browser",
+            "isAccessibleForFree": true,
+            "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "GBP"
+            },
+            "featureList": [
+                "Interactive tangent and normal markers",
+                "Draggable markers along plotted curves",
+                "Live coordinate badges",
+                "First and second derivative badge values",
+                "Turning point and inflection classification support"
+            ]
+        },
+        "author": {
+            "@type": "Person",
+            "name": "Neil Kendall",
+            "url": "https://www.korovatron.co.uk"
+        }
+    }
+    </script>
+    <style>
+        :root {
+            --page-bg: #1A2F42;
+            --panel-bg: #1A2F42;
+            --panel-strong: #213B55;
+            --text-primary: #E8F4FD;
+            --text-secondary: #B8D2E8;
+            --accent: #4A90E2;
+            --accent-bright: #8EC5FF;
+            --border: rgba(142, 197, 255, 0.22);
+            --shadow: rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            background: var(--page-bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--page-bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        a {
+            color: var(--accent-bright);
+        }
+
+        a:hover {
+            color: #C7E5FF;
+        }
+
+        .page-shell {
+            width: min(1080px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 56px;
+        }
+
+        @media (display-mode: standalone), (display-mode: fullscreen) {
+            .page-shell {
+                padding-top: calc(28px + env(safe-area-inset-top, 0px));
+            }
+        }
+
+        .top-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 34px;
+        }
+
+        .brand-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .brand-link img {
+            width: 285px;
+            max-width: 68vw;
+            height: auto;
+        }
+
+        .launch-link,
+        .primary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 180px;
+            padding: 12px 30px;
+            border: 1px solid #555;
+            border-radius: 8px;
+            background: #2A3F5A;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 1.1em;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: filter 0.2s, box-shadow 0.2s;
+        }
+
+        .launch-link {
+            border-color: rgba(82, 218, 103, 0.9);
+            background: #198A42;
+            color: #FFFFFF;
+            font-weight: 800;
+            box-shadow: 0 8px 22px rgba(53, 224, 88, 0.18), 0 2px 8px rgba(0, 0, 0, 0.35);
+            transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+        }
+
+        .launch-link:hover,
+        .primary-link:hover {
+            color: var(--text-primary);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link:hover {
+            color: #FFFFFF;
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 28px rgba(53, 224, 88, 0.28), 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link:focus-visible {
+            outline: 3px solid rgba(255, 255, 255, 0.9);
+            outline-offset: 3px;
+        }
+
+        .launch-link-short {
+            display: none;
+        }
+
+        header {
+            display: grid;
+            grid-template-columns: minmax(0, 1.02fr) minmax(280px, 0.98fr);
+            gap: 28px;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .hero-copy h1 {
+            margin: 0 0 14px;
+            font-size: clamp(1.7rem, 3vw, 2.8rem);
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .hero-copy p {
+            margin: 0 0 18px;
+            color: var(--text-secondary);
+            font-size: 1.08rem;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        .secondary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 150px;
+            padding: 11px 18px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            color: var(--accent-bright);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .secondary-link:hover {
+            color: #C7E5FF;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .hero-image {
+            margin: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 18px 48px var(--shadow);
+        }
+
+        .hero-image img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+            gap: 24px;
+            align-items: start;
+        }
+
+        .content-section {
+            margin-bottom: 28px;
+        }
+
+        .content-section h2 {
+            margin: 0 0 14px;
+            font-size: clamp(1.35rem, 2vw, 1.8rem);
+        }
+
+        .content-section p {
+            color: var(--text-secondary);
+        }
+
+        .feature-list,
+        .step-list {
+            margin: 12px 0 0;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .feature-list li,
+        .step-list li {
+            margin: 8px 0;
+        }
+
+        .example-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            padding: 18px;
+        }
+
+        .example-panel h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+        }
+
+        .example-panel h3 {
+            margin: 18px 0 8px;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+
+        .example-panel h3:first-of-type {
+            margin-top: 0;
+        }
+
+        .example-panel p {
+            color: var(--text-secondary);
+        }
+
+        .example-list {
+            margin: 10px 0 18px;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .example-list li {
+            margin: 6px 0;
+        }
+
+        footer {
+            margin-top: 34px;
+            padding-top: 22px;
+            border-top: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 820px) {
+            header,
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .top-nav {
+                gap: 10px;
+            }
+
+            .brand-link img {
+                width: 220px;
+                max-width: 52vw;
+            }
+
+            .launch-link {
+                min-width: 0;
+                padding: 10px 16px;
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .brand-link img {
+                max-width: 50vw;
+            }
+
+            .launch-link,
+            .primary-link,
+            .secondary-link {
+                width: 100%;
+                min-width: 0;
+                padding-inline: 14px;
+            }
+
+            .top-nav .launch-link {
+                width: auto;
+            }
+
+            .launch-link-long {
+                display: none;
+            }
+
+            .launch-link-short {
+                display: inline;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <nav class="top-nav" aria-label="Page navigation">
+            <a class="brand-link" href="./" aria-label="Return to Graphiti">
+                <img src="images/graphitiTitle.png" alt="Graphiti">
+            </a>
+            <a class="launch-link" href="./" aria-label="Launch Graphiti graphing calculator"><span class="launch-link-long">Launch</span><span class="launch-link-short">Launch</span></a>
+        </nav>
+
+        <header>
+            <div class="hero-copy">
+                <h1>Interactive tangents and normals graphing calculator</h1>
+                <p>Graphiti lets you add tangent and normal markers directly on plotted curves, then drag them interactively to explore local behaviour point by point.</p>
+                <p>Each badge can show coordinates and first and second derivative values. When the tangent is placed at a turning point or an inflection, the badge also indicates the detected type, making this ideal for live classroom calculus demonstrations.</p>
+                <div class="hero-actions">
+                    <a class="primary-link" href="https://www.korovatron.co.uk/graphiti/#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEygDZ4BTADwAcAnG-fXFKEATwF4AdfuxQAKOgEoQ8NDgA2OJlwDEABhUBWAOwAxbVJA0UAQwBGsmhUgYmSGvAAWR-AEkUGGgHMmR2VAQ-8GgBfWFJLTVpGFjYOLj46AD0AJn0ZeUVIEFUVAGEADnUAZn1DU3NLa1sHJ1d3Lx8-AODQkHIoPMjmVnY8LlS5BWUAIQBOaBzxkuMzCyhKuxBHFzdPb19If1lAoIBdeDAsGgB3BgUMKFAAWywUAA0oAFoRgDpNABY8yiT1JJG3rRGmkKb3glyMdHukBe70+31+-00gOBoJuAE1HupQeD0ZBMSB8GgfDQoNAkppnoUQiBLjgyMTMoSmO52EZOPBAhhsCgPIRIKAMPYaJd6SBZFgPPZzvBWR5zABZWki7xkLCswjs+w4I61GhMQKYDi8zaBDVanVMNA0BgYI1NU1HAAqSCYKBuHgACjgbjbGltmiAGEZvML3HqLiAfAxHCT4CYaBgjDGQB4jJcwUm6bIEySqSYjGQPKxiGEoIV4Mh0Ng8M5wvAjgpZGRIdBnnj60xGziks9vvABfHE5AUEhZLI+wA1Hy2KDD0fVfAOmWGc4bO2LJwAOQUYPW83nOvq62NCxQNDwi+5y99JpAp7wW6YO+vJ7PKAPa2fsfzhYd3AY9NnMdWnwABlBMq2MJhuFcBBzANXpVz9ctUHglAcgGDIsjUfIilSJB8AwHBLgdegV0AkIS0gJJkMrDgayoOsGybUtnmgN5oHUEYkkoL5CjyN4xkKMsQHbTsoBUPtBWzIcRyAjBJ1kacZLndcFyXNw5hsBYlgfJ9EJvJZ3wafSX3PdSVz3W9X104zj3gO83xWQ9PxAPMCxoX9-y4G5YJoVD9HYDxXQQLBCTcT1vU8kUMGdV1uQijT4CwUDwI4INoJQXz-JMmjUPQ9JlDULRdDwgiiJIugyNk3LoHo5SgIrNAkjq8i9laJy1ndIwsDDSAiDasUUAAawsIZvxoLqet5fqgiAA" aria-label="Open the interactive tangents and normals example in Graphiti">Open live tangents and normals example</a>
+                    <a class="secondary-link" href="guide.html#analysis">Back to features</a>
+                </div>
+            </div>
+            <figure class="hero-image">
+                <img src="images/graphitiFeatures/interactiveTangentsNormals.png" alt="Graphiti showing draggable tangent and normal markers with calculus badges">
+            </figure>
+        </header>
+
+        <main class="content-grid">
+            <div>
+                <section class="content-section">
+                    <h2>How to add and cycle markers</h2>
+                    <p>You can build up tangent and normal markers directly from the curve with repeated clicks on the same point.</p>
+                    <ol class="step-list">
+                        <li>Click on a curve to add a coordinate badge.</li>
+                        <li>Click the badge again to turn it into a tangent marker.</li>
+                        <li>Click the badge again to turn it into a normal marker.</li>
+                    </ol>
+                    <p>Repeat this on any other point of the same or different curves to add further interactive markers.</p>
+                </section>
+
+                <section class="content-section">
+                    <h2>Drag markers for live derivative feedback</h2>
+                    <p>Once a tangent or normal is added, drag it along the curve to update its values in real time. The badge follows the marker and updates continuously as you move.</p>
+                    <ul class="feature-list">
+                        <li>Coordinate readout for the selected point.</li>
+                        <li>First derivative value for local gradient behaviour.</li>
+                        <li>Second derivative value for concavity and classification work.</li>
+                    </ul>
+                </section>
+
+                <section class="content-section">
+                    <h2>Classroom calculus use</h2>
+                    <p>The tangent badge helps when teaching turning point detection and classification, as well as points of inflection. When the marker is positioned on a detected turning point or inflection, the badge also indicates the recognised type.</p>
+                    <p>This makes live board demonstrations clearer because students can see geometry and derivative values together while the marker is dragged.</p>
+                </section>
+            </div>
+
+            <aside class="example-panel" aria-labelledby="example-heading">
+                <h2 id="example-heading">Try this live demo</h2>
+                <p>Open the shared page and drag the tangent and normal markers along the curves to see how coordinates, first derivatives and second derivatives change in real time.</p>
+
+                <h3>Suggested lesson flow</h3>
+                <ul class="example-list">
+                    <li>Add a marker with one click, then cycle to tangent and normal with repeated clicks.</li>
+                    <li>Drag the tangent through a turning point and compare the sign of the second derivative before and after.</li>
+                    <li>Place a marker on an inflection and observe how the badge classification updates.</li>
+                </ul>
+
+                <a class="primary-link" href="https://www.korovatron.co.uk/graphiti/#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEygDZ4BTADwAcAnG-fXFKEATwF4AdfuxQAKOgEoQ8NDgA2OJlwDEABhUBWAOwAxbVJA0UAQwBGsmhUgYmSGvAAWR-AEkUGGgHMmR2VAQ-8GgBfWFJLTVpGFjYOLj46AD0AJn0ZeUVIEFUVAGEADnUAZn1DU3NLa1sHJ1d3Lx8-AODQkHIoPMjmVnY8LlS5BWUAIQBOaBzxkuMzCyhKuxBHFzdPb19If1lAoIBdeDAsGgB3BgUMKFAAWywUAA0oAFoRgDpNABY8yiT1JJG3rRGmkKb3glyMdHukBe70+31+-00gOBoJuAE1HupQeD0ZBMSB8GgfDQoNAkppnoUQiBLjgyMTMoSmO52EZOPBAhhsCgPIRIKAMPYaJd6SBZFgPPZzvBWR5zABZWki7xkLCswjs+w4I61GhMQKYDi8zaBDVanVMNA0BgYI1NU1HAAqSCYKBuHgACjgbjbGltmiAGEZvML3HqLiAfAxHCT4CYaBgjDGQB4jJcwUm6bIEySqSYjGQPKxiGEoIV4Mh0Ng8M5wvAjgpZGRIdBnnj60xGziks9vvABfHE5AUEhZLI+wA1Hy2KDD0fVfAOmWGc4bO2LJwAOQUYPW83nOvq62NCxQNDwi+5y99JpAp7wW6YO+vJ7PKAPa2fsfzhYd3AY9NnMdWnwABlBMq2MJhuFcBBzANXpVz9ctUHglAcgGDIsjUfIilSJB8AwHBLgdegV0AkIS0gJJkMrDgayoOsGybUtnmgN5oHUEYkkoL5CjyN4xkKMsQHbTsoBUPtBWzIcRyAjBJ1kacZLndcFyXNw5hsBYlgfJ9EJvJZ3wafSX3PdSVz3W9X104zj3gO83xWQ9PxAPMCxoX9-y4G5YJoVD9HYDxXQQLBCTcT1vU8kUMGdV1uQijT4CwUDwI4INoJQXz-JMmjUPQ9JlDULRdDwgiiJIugyNk3LoHo5SgIrNAkjq8i9laJy1ndIwsDDSAiDasUUAAawsIZvxoLqet5fqgiAA" aria-label="Open the interactive tangents and normals example in Graphiti">Open live tangents and normals example</a>
+            </aside>
+        </main>
+
+        <footer>
+            <p>Graphiti is part of Korovatron, a collection of classroom-ready maths and computer science tools.</p>
+            <p><a href="https://www.korovatron.co.uk/">Korovatron</a> | <a href="guide.html">Graphiti features</a> | <a href="./">Launch</a></p>
+        </footer>
+    </div>
+</body>
+</html>
