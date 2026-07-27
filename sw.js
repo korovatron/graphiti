@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-v1.3.39';
+const CACHE_NAME = 'graphiti-v1.3.40';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -10,6 +10,7 @@ const ASSETS_TO_CACHE = [
     './parametric-equation-graphing-calculator.html',
     './integration-area-graphing-calculator.html',
     './inequality-graphing-calculator.html',
+    './interactive-tangents-normals-graphing-calculator.html',
     './main.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
@@ -39,6 +40,7 @@ const ASSETS_TO_CACHE = [
     './images/graphitiFeatures/definiteIntegral.png',
     './images/graphitiFeatures/areaBetweenCurves.png',
     './images/graphitiFeatures/inequalityIntersections.png',
+    './images/graphitiFeatures/interactiveTangentsNormals.png',
     './images/yt_icon_white_digital.png'
 ];
 
