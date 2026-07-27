@@ -335,6 +335,24 @@ class Graphiti {
             overlayElements: {}, // References to overlay sub-elements
             lastOverlayUpdate: 0 // Throttle overlay updates
         };
+
+        // Adaptive explicit decimation (active only when pan-time frame pressure is high)
+        this.adaptiveDecimation = {
+            enabled: true,
+            frameBudgetMs: 16.7,
+            emaMs: 0,
+            active: false,
+            lastToggleTime: 0,
+            activeAlpha: 0.18,
+            idleAlpha: 0.35,
+            highThresholdMs: 3.0,
+            lowThresholdMs: 1.0,
+            toggleCooldownMs: 140,
+            minPointsForAdaptive: 600,
+            maxPressureMs: 18,
+            minTargetPoints: 300,
+            maxTargetPoints: 1100
+        };
         
         // Animation
         this.lastFrameTime = 0;
@@ -41062,6 +41080,7 @@ class Graphiti {
                 
                 // Reset viewport changing flag
                 this.isViewportChanging = false;
+                this.resetAdaptiveDecimationState();
                 
                 // Clamp deltaTime to prevent physics issues
                 this.deltaTime = 16; // ~60fps frame time
@@ -41100,6 +41119,7 @@ class Graphiti {
                 const drawTime = performance.now() - drawStart;
                 
                 const totalFrameTime = updateTime + drawTime;
+                this.updateAdaptiveDecimationLoad(totalFrameTime);
                 
                 // Warn if frame is taking too long (over 100ms)
                 if (totalFrameTime > 100) {
@@ -41126,6 +41146,85 @@ class Graphiti {
         };
         
         this.animationId = requestAnimationFrame(animate);
+    }
+
+    updateAdaptiveDecimationLoad(totalFrameTime) {
+        const adaptive = this.adaptiveDecimation;
+        if (!adaptive || !adaptive.enabled || !Number.isFinite(totalFrameTime)) {
+            return;
+        }
+
+        const pressureMs = Math.max(0, totalFrameTime - adaptive.frameBudgetMs);
+        const alpha = this.isViewportChanging ? adaptive.activeAlpha : adaptive.idleAlpha;
+        adaptive.emaMs = (adaptive.emaMs * (1 - alpha)) + (pressureMs * alpha);
+
+        if (!this.isViewportChanging && adaptive.emaMs < 0.05) {
+            adaptive.emaMs = 0;
+        }
+
+        this.updateAdaptiveDecimationActivation(performance.now());
+    }
+
+    updateAdaptiveDecimationActivation(now = performance.now()) {
+        const adaptive = this.adaptiveDecimation;
+        if (!adaptive || !adaptive.enabled) {
+            return;
+        }
+
+        const canToggle = (now - adaptive.lastToggleTime) >= adaptive.toggleCooldownMs;
+
+        if (adaptive.active) {
+            if ((!this.isViewportChanging || adaptive.emaMs <= adaptive.lowThresholdMs) && canToggle) {
+                adaptive.active = false;
+                adaptive.lastToggleTime = now;
+            }
+            return;
+        }
+
+        if (this.isViewportChanging && adaptive.emaMs >= adaptive.highThresholdMs && canToggle) {
+            adaptive.active = true;
+            adaptive.lastToggleTime = now;
+        }
+    }
+
+    resetAdaptiveDecimationState() {
+        const adaptive = this.adaptiveDecimation;
+        if (!adaptive) {
+            return;
+        }
+
+        adaptive.emaMs = 0;
+        adaptive.active = false;
+        adaptive.lastToggleTime = 0;
+    }
+
+    getAdaptiveExplicitDecimationStep(func, isInequality) {
+        const adaptive = this.adaptiveDecimation;
+        if (!adaptive || !adaptive.enabled) {
+            return 1;
+        }
+
+        const eligibleForAdaptiveDecimation =
+            this.isViewportChanging &&
+            (func._useExplicitCurveRenderCache || this.isExplicitImplicitFastPath(func)) &&
+            !isInequality &&
+            func.points.length > adaptive.minPointsForAdaptive;
+
+        if (!eligibleForAdaptiveDecimation) {
+            return 1;
+        }
+
+        this.updateAdaptiveDecimationActivation(performance.now());
+        if (!adaptive.active) {
+            return 1;
+        }
+
+        const pressureRatio = Math.min(1, Math.max(0, adaptive.emaMs / adaptive.maxPressureMs));
+        const targetPointsRange = adaptive.maxTargetPoints - adaptive.minTargetPoints;
+        const targetPoints = Math.round(adaptive.maxTargetPoints - (targetPointsRange * pressureRatio));
+        const safeTargetPoints = Math.max(adaptive.minTargetPoints, targetPoints);
+
+        return Math.max(1, Math.ceil(func.points.length / safeTargetPoints));
     }
 
     ensureAnimationLoopRunning() {
@@ -42799,13 +42898,7 @@ class Graphiti {
             return false;
         };
 
-        const activeExplicitDecimation = this.isViewportChanging &&
-            (func._useExplicitCurveRenderCache || this.isExplicitImplicitFastPath(func)) &&
-            !isInequality &&
-            func.points.length > 600;
-        const activeExplicitStep = activeExplicitDecimation
-            ? Math.max(1, Math.ceil(func.points.length / 500))
-            : 1;
+        const activeExplicitStep = this.getAdaptiveExplicitDecimationStep(func, isInequality);
 
         for (let i = 0; i < func.points.length; i++) {
             const point = func.points[i];
