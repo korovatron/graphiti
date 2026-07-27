@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <!-- GoatCounter Analytics -->
+    <script data-goatcounter="https://korovatron.goatcounter.com/count"
+        async src="https://gc.zgo.at/count.js"></script>
+    <!-- End GoatCounter Analytics -->
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#1A2F42">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Curve Identifier Graphing Calculator | Graphiti</title>
+    <meta name="description" content="Identify curve types automatically from any equation using the Graphiti online graphing calculator. Detect parabolas, circles, rose curves, limacons, foliums, and multi-curve implicit shapes across Cartesian, polar, parametric, and implicit graphs.">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+    <meta name="keywords" content="graphing calculator, curve identifier, identify curve from equation, curve classification tool, implicit curve classifier, polar curve identifier, automatic curve recognition, equation to curve name calculator">
+    <link rel="icon" href="logoTrans.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="logo.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="logo.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="logo.png">
+    <link rel="shortcut icon" href="logoTrans.png">
+    <link rel="canonical" href="https://www.korovatron.co.uk/graphiti/curve-identifier-graphing-calculator.html">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Curve Identifier Graphing Calculator | Graphiti">
+    <meta property="og:description" content="Automatically detect and name curve types from equations in Graphiti across Cartesian, implicit, parametric and polar plotting.">
+    <meta property="og:url" content="https://www.korovatron.co.uk/graphiti/curve-identifier-graphing-calculator.html">
+    <meta property="og:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiFeatures/shapeDetection.png">
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="Curve Identifier Graphing Calculator | Graphiti">
+    <meta property="twitter:description" content="Graphing calculator that identifies curves automatically across explicit, implicit, parametric and polar equations.">
+    <meta property="twitter:image" content="https://www.korovatron.co.uk/graphiti/images/graphitiFeatures/shapeDetection.png">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "ItemPage",
+                "name": "Curve Identifier Graphing Calculator - Automatically Detect Curve Types from Any Equation",
+                "description": "Graphiti can classify and name curve shapes from equations across Cartesian, implicit, parametric and polar plotting modes.",
+                "url": "https://www.korovatron.co.uk/graphiti/curve-identifier-graphing-calculator.html",
+                "inLanguage": "en-GB",
+                "mainEntity": {
+                    "@type": "SoftwareApplication",
+                    "name": "Graphiti",
+                    "url": "https://www.korovatron.co.uk/graphiti/",
+                    "applicationCategory": "EducationalApplication",
+                    "applicationSubCategory": "Graphing calculator",
+                    "operatingSystem": "Web Browser",
+                    "isAccessibleForFree": true,
+                    "offers": {
+                        "@type": "Offer",
+                        "price": "0",
+                        "priceCurrency": "GBP"
+                    },
+                    "featureList": [
+                        "Identify curve from equation input",
+                        "Automatic curve classification",
+                        "Conic and line recognition",
+                        "Polar curve naming",
+                        "Parametric curve shape recognition",
+                        "Implicit composite curve component detection",
+                        "Automatic asymptote detection where relevant"
+                    ]
+                },
+                "author": {
+                    "@type": "Person",
+                    "name": "Neil Kendall",
+                    "url": "https://www.korovatron.co.uk"
+                }
+            },
+            {
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": "Can Graphiti identify curve shape from an equation?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Yes. Graphiti can classify many curve types automatically from equations, including conics, named polar curves, lines, and several implicit and parametric families."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Can Graphiti classify implicit curves with multiple components?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Yes. Graphiti can detect and label multiple components inside composite implicit equations, such as line plus parabola or circle plus line forms."
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    </script>
+    <style>
+        :root {
+            --page-bg: #1A2F42;
+            --panel-bg: #1A2F42;
+            --panel-strong: #213B55;
+            --text-primary: #E8F4FD;
+            --text-secondary: #B8D2E8;
+            --accent: #4A90E2;
+            --accent-bright: #8EC5FF;
+            --border: rgba(142, 197, 255, 0.22);
+            --shadow: rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            background: var(--page-bg);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--page-bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        a {
+            color: var(--accent-bright);
+        }
+
+        a:hover {
+            color: #C7E5FF;
+        }
+
+        .page-shell {
+            width: min(1080px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 56px;
+        }
+
+        @media (display-mode: standalone), (display-mode: fullscreen) {
+            .page-shell {
+                padding-top: calc(28px + env(safe-area-inset-top, 0px));
+            }
+        }
+
+        .top-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 34px;
+        }
+
+        .brand-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .brand-link img {
+            width: 285px;
+            max-width: 68vw;
+            height: auto;
+        }
+
+        .launch-link,
+        .primary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 180px;
+            padding: 12px 30px;
+            border: 1px solid #555;
+            border-radius: 8px;
+            background: #2A3F5A;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 1.1em;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: filter 0.2s, box-shadow 0.2s;
+        }
+
+        .launch-link {
+            border-color: rgba(82, 218, 103, 0.9);
+            background: #198A42;
+            color: #FFFFFF;
+            font-weight: 800;
+            box-shadow: 0 8px 22px rgba(53, 224, 88, 0.18), 0 2px 8px rgba(0, 0, 0, 0.35);
+            transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
+        }
+
+        .launch-link:hover,
+        .primary-link:hover {
+            color: var(--text-primary);
+            filter: brightness(1.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link:hover {
+            color: #FFFFFF;
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 28px rgba(53, 224, 88, 0.28), 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .launch-link:focus-visible {
+            outline: 3px solid rgba(255, 255, 255, 0.9);
+            outline-offset: 3px;
+        }
+
+        .launch-link-short {
+            display: none;
+        }
+
+        header {
+            display: grid;
+            grid-template-columns: minmax(0, 1.02fr) minmax(280px, 0.98fr);
+            gap: 28px;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .hero-copy h1 {
+            margin: 0 0 14px;
+            font-size: clamp(1.7rem, 3vw, 2.8rem);
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .hero-copy p {
+            margin: 0 0 18px;
+            color: var(--text-secondary);
+            font-size: 1.08rem;
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        .secondary-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 150px;
+            padding: 11px 18px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            color: var(--accent-bright);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .secondary-link:hover {
+            color: #C7E5FF;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .hero-image {
+            margin: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 18px 48px var(--shadow);
+        }
+
+        .hero-image img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+            gap: 24px;
+            align-items: start;
+        }
+
+        .content-section {
+            margin-bottom: 28px;
+        }
+
+        .content-section h2 {
+            margin: 0 0 14px;
+            font-size: clamp(1.35rem, 2vw, 1.8rem);
+        }
+
+        .content-section h3 {
+            margin: 16px 0 8px;
+            font-size: 1.08rem;
+        }
+
+        .content-section p {
+            color: var(--text-secondary);
+        }
+
+        .feature-list {
+            margin: 12px 0 0;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .feature-list li {
+            margin: 8px 0;
+        }
+
+        .intent-list {
+            margin: 12px 0 0;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .intent-list li {
+            margin: 6px 0;
+        }
+
+        .example-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+            padding: 18px;
+        }
+
+        .example-panel h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+        }
+
+        .example-panel p {
+            color: var(--text-secondary);
+        }
+
+        .example-list {
+            margin: 10px 0 18px;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .example-list li {
+            margin: 6px 0;
+        }
+
+        .equation {
+            display: inline-block;
+            margin-top: 3px;
+            color: var(--text-primary);
+        }
+
+        .katex {
+            color: var(--text-primary);
+        }
+
+        .live-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .live-note {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        footer {
+            margin-top: 34px;
+            padding-top: 22px;
+            border-top: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 820px) {
+            header,
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .top-nav {
+                gap: 10px;
+            }
+
+            .brand-link img {
+                width: 220px;
+                max-width: 52vw;
+            }
+
+            .launch-link {
+                min-width: 0;
+                padding: 10px 16px;
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .brand-link img {
+                max-width: 50vw;
+            }
+
+            .launch-link,
+            .primary-link,
+            .secondary-link {
+                width: 100%;
+                min-width: 0;
+                padding-inline: 14px;
+            }
+
+            .top-nav .launch-link {
+                width: auto;
+            }
+
+            .launch-link-long {
+                display: none;
+            }
+
+            .launch-link-short {
+                display: inline;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+        <nav class="top-nav" aria-label="Page navigation">
+            <a class="brand-link" href="./" aria-label="Return to Graphiti">
+                <img src="images/graphitiTitle.png" alt="Graphiti">
+            </a>
+            <a class="launch-link" href="./" aria-label="Launch Graphiti graphing calculator"><span class="launch-link-long">Launch</span><span class="launch-link-short">Launch</span></a>
+        </nav>
+
+        <header>
+            <div class="hero-copy">
+                <h1>Curve Identifier - Automatically Detect Curve Types from Any Equation</h1>
+                <p>Graphiti can recognise curve types automatically from equation input. It works across Cartesian, implicit, parametric and polar plotting, detects named curves such as parabola, circle, rose and folium families, can label multiple curves inside composite implicit equations, and pairs naturally with Graphiti's automatic asymptote detection for full curve behaviour analysis.</p>
+                <div class="hero-actions">
+                    <a class="primary-link" href="./" aria-label="Open Graphiti curve identifier">Open Graphiti</a>
+                    <a class="secondary-link" href="guide.html#analysis">Back to features</a>
+                </div>
+            </div>
+            <figure class="hero-image">
+                <img src="images/graphitiFeatures/shapeDetection.png" alt="Graphiti showing automatic curve shape identification">
+            </figure>
+        </header>
+
+        <main class="content-grid">
+            <div>
+                <section class="content-section">
+                    <h2>What kinds of curves can Graphiti identify?</h2>
+                    <ul class="feature-list">
+                        <li>Conics and linear forms: circle, ellipse, parabola, hyperbola, rectangular hyperbola, line, line pair, and degenerate conic forms.</li>
+                        <li>Polar curves: rose curves, cardioids, limacons (inner loop, dimpled, convex), circles, and Archimedean spirals.</li>
+                        <li>Named and structured curves: folium of Descartes, scaled folium of Descartes, semi-cubical parabola, reciprocal-square curves, reciprocal-power curves, and catenaries.</li>
+                        <li>Implicit equations with multiple components, for example circle + line or line + parabola in product-form equations.</li>
+                        <li>Parametric curve families, including line, circle, ellipse, parabola, hyperbola, semi-cubical parabola, and folium forms.</li>
+                    </ul>
+                </section>
+
+                <section class="content-section">
+                    <h2>Built for students, teachers and fast curve lookup</h2>
+                    <p>When students ask what shape an equation produces, Graphiti helps them move quickly from expression to named graph. It can distinguish common exam questions such as parabola versus circle, identify conic forms, and classify many polar and implicit examples directly from the input equation.</p>
+                    <p>For teachers, Graphiti works as a practical curve classification tool in lessons and revision sessions, including implicit and polar curve identification. It is also useful when you need automatic curve recognition for shared examples, model answers, or quick checks while building tasks.</p>
+                    <p>If you are searching for a graphing calculator that can name curves automatically, Graphiti provides equation-to-curve identification across multiple plotting modes and combines this with asymptote analysis where relevant.</p>
+                </section>
+
+                <section class="content-section">
+                    <h2>Try it live</h2>
+                    <p>Use the links below to open live Graphiti examples covering conic identification, polar curve recognition, and composite named curves.</p>
+                    <div class="live-links">
+                        <a class="primary-link" href="https://www.korovatron.co.uk/graphiti/#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEymjhAFMAPABwCcb99cUoQAdbgGxoIMACgCeAWmi8mWAOYALDAEpeAoWPG8ETAIZpg0AL7A6h6XMVKAvAAYQ8NDj44mXAMQ2bAYQAcAVgBme1oUHQAjAQpIDCYkGnh5HXwASRQMGlldPigEHT58GkNYUijoACZ4emZWdjwuOgA9MoBqVUERUWapbhkFZSaraGDHZ1dIEDcAIQBOaC854JpQiJoomLiEpNT0zLycvIKiksoAysYWNg56pvFRAaGHJxd3LxsygDYAESDK5ciodbxECJFJpDJZfb5QoAXXgYCwNAA7gwXBgoKAALZYFAADSg4gALAA6d4+ALQaZ+PzTMplHzvPxveAYnR0PGQAJE8mkmwEgk2ADsAugAQJ02mAuZ2IAmvjORS6QEBQSGX53gSBQEfBUQCy6LKOUTtTZpgF3u8ArNoD4CWr4Pg0HkaJQfNAiX4irqcGRneNHUx0uwdJx7TQMNgULJCJBQBh5DQMb6QHwLGj4MHZAIALLepO6MhYYOEeAYHCyTM0ADKGB06QAajQmLVOJAdfh5DhEdtGwVMBxo4D7R2u2CmGgaAwMAPYkD252ACpIJgobGyAAKOGxU4BM89DB0ukT6Sb6JAeQYiUo8DCYZ0V5Ash0GJZ959fBrlE9YR0ZFkrGIsIgFu4J5GuOhYCekBEIBKYoAA1qskw-n+YEQdG0GGEAA" data-live-url="conics">Live demo: identify conics from equation</a>
+                        <a class="secondary-link" href="https://www.korovatron.co.uk/graphiti/#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEygCZ4BTADwAcAnG-fXFKEJgXkoB1+aHPkEAbGggwAKAMyCMACxoYAhoKZYA5oowBKEPGFicTLgGIADJYCsAdgBiDwyBopVAIwkVIGJkhp4RVV8AEkUDBotJlUxKARY-BoAX1hSH1laRhY2Di5eaABqAX52FHFJGQVlNQ1tXQMjHBMzSBArSwBhAA4bWRc3T28oPwCgkPDI6Nj4xJS0kHIoABYs5lZ2PHyeapVVF2NTCwAhAE5oTouB9y8aH1HAkGCwiKiYuMgEsSTU9KgANjWOU2nDaB2aRza5k6lko-wAIv1aDdhr5-I9npM3jNPnNkgBdeBgLA0ADuDFMGCgoAAtlgUAANKAAWlkADplpRoN1ZN1oHY7H1ZLzASAaao6EzIOzOdzefzBcKRfA6SgAJoszJiiUa6XwfBoWI0KjQShs6D-S1W61W1JinBkY1tCliVRmfUqbAoLSESCgJQ0GlOkBiepU+Cqb0SACyDuDMTIWEjhHgGBwWi0EgAympIgA1GhMEFUfWKHCkrFFmiYDi+h6l8uVtA0BgYOvohukgAqSCYKHpWgACjh6W2Rui7Qw3aog5Ei9SQLEGMEoHAQB49qv4FoZ+KtyBHWI1Ku7R5VGQtKxiITFq9pmJB6osPPIEQb6GUABrO7Hc+Xx-Pr6b7wC6boLgGajRvSUCWKmNSqNGEoAmylA8tyfSWHY-KnDY3SihBCH0gAMqokR0FwlguARiF0CRZFcCUDBYC4DAmBgAByUSkVgYA0AASuOATJMkQA" data-live-url="polar">Live demo: polar curve identifier</a>
+                        <a class="secondary-link" href="https://www.korovatron.co.uk/graphiti/#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEymjhAFMAPABwCcb99cUoQ6A9AZgDUAT34BePnSEh4aHABscTLgGIADKoDCADgCsfabRQBDAEZyaFSBiZIa8ABZH8ASRQYaAcyZG5UBD-waAF9YUktoABZ4emZWdjwuAB1E8wQMAAohAWhkpiwPewwASh4AJlFkhG80aFLefRl5RRUAIQBOaA1OgxpjMwsoa1sHJ1d3Lx8-AODQkHJKHWjGFjYOJJSaNPS6AFpS3PzCouTUjKEdnMS8guLRVQNZBSVIEGUNVVKANgARBsNTcyWIZ2ECOFxuTzeXyQfxyQJBAC68DAWBoAHcGIoMFBQABbLAoAAaUB2EQAdHxoG0dDo2qVSlpPjpVJE+PBcUY6MTIHwyZ8tKoIhFVAB2EXQPgRNqM6Ai9kEgCaJN5nyFnwZqjaHRFfBpbJAHLoSp5FM+HQin3UNM1nz4bU+8HwaB8NEoWmgZOZ6m9PvUfBCBpwZFdL2dTHc7CMnEdNAw2BQHkIkFAGHsNFxIZAckO2PgUY85gAskHM94yFgo4R4BgcB4CzQAMoYIzuABqNCY8U4kFKjvsODRYw7gUwHCTwL7A6HTDQNAYGHHNhB+H7aIAKkgmCgCR4AAo4AkLwZLgMMIzeDPuTs4kA+BiOSjwEyxoyPkAeIy4jlv4NyZuUAMTCMMgPFYYgkTmCEJjkXcjCwa9ICICDsxQABrCwWmA0DYPgpMkKCIA" data-live-url="named-composite">Live demo: folium, line pair and semi-cubical parabola</a>
+                    </div>
+                    <p class="live-note">Each demo opens a preloaded Graphiti state so you can inspect the recognised curve labels immediately.</p>
+                </section>
+            </div>
+
+            <aside class="example-panel" aria-labelledby="example-heading">
+                <h2 id="example-heading">Example equations</h2>
+                <p>These are typical equations Graphiti can classify:</p>
+                <ul class="example-list">
+                    <li><span class="equation">\(x^2 + y^2 = 25\)</span> (circle)</li>
+                    <li><span class="equation">\(x^2 - y^2 = 1\)</span> (rectangular hyperbola)</li>
+                    <li><span class="equation">\(x^3 + y^3 = 3xy\)</span> (folium of Descartes)</li>
+                    <li><span class="equation">\(r = 2\cos(3\theta)\)</span> (rose curve)</li>
+                    <li><span class="equation">\(r = 1 + \cos(\theta)\)</span> (cardioid)</li>
+                    <li><span class="equation">\((x^2 + y^2 - 4)(y - x) = 0\)</span> (circle + line)</li>
+                </ul>
+                <a class="primary-link" href="https://www.korovatron.co.uk/graphiti/#v=N4IgbiBcCMA0IDMCuA7AxgFwJYHsUGcoBtULAEymjhAFMAPABwCcb99cUoQ6A9AZgDUAT34BePnSEh4aHABscTLgGIADKoDCADgCsfabRQBDAEZyaFSBiZIa8ABZH8ASRQYaAcyZG5UBD-waAF9YUktoABZ4emZWdjwuAB1E8wQMAAohAWhkpiwPewwASh4AJlFkhG80aFLefRl5RRUAIQBOaA1OgxpjMwsoa1sHJ1d3Lx8-AODQkHJKHWjGFjYOJJSaNPS6AFpS3PzCouTUjKEdnMS8guLRVQNZBSVIEGUNVVKANgARBsNTcyWIZ2ECOFxuTzeXyQfxyQJBAC68DAWBoAHcGIoMFBQABbLAoAAaUB2EQAdHxoG0dDo2qVSlpPjpVJE+PBcUY6MTIHwyZ8tKoIhFVAB2EXQPgRNqM6Ai9kEgCaJN5nyFnwZqjaHRFfBpbJAHLoSp5FM+HQin3UNM1nz4bU+8HwaB8NEoWmgZOZ6m9PvUfBCBpwZFdL2dTHc7CMnEdNAw2BQHkIkFAGHsNFxIZAckO2PgUY85gAskHM94yFgo4R4BgcB4CzQAMoYIzuABqNCY8U4kFKjvsODRYw7gUwHCTwL7A6HTDQNAYGHHNhB+H7aIAKkgmCgCR4AAo4AkLwZLgMMIzeDPuTs4kA+BiOSjwEyxoyPkAeIy4jlv4NyZuUAMTCMMgPFYYgkTmCEJjkXcjCwa9ICICDsxQABrCwWmA0DYPgpMkKCIA" aria-label="Open Graphiti curve shape examples">Open curve examples in Graphiti</a>
+            </aside>
+        </main>
+
+        <footer>
+            <p>Graphiti is part of Korovatron, a collection of classroom-ready maths and computer science tools.</p>
+            <p><a href="https://www.korovatron.co.uk/">Korovatron</a> | <a href="guide.html">Graphiti features</a> | <a href="./">Launch</a></p>
+        </footer>
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            if (!window.renderMathInElement) {
+                return;
+            }
+
+            renderMathInElement(document.body, {
+                delimiters: [
+                    { left: "$$", right: "$$", display: true },
+                    { left: "\\(", right: "\\)", display: false }
+                ]
+            });
+        });
+    </script>
+</body>
+</html>

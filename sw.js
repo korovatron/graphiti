@@ -1,10 +1,11 @@
-const CACHE_NAME = 'graphiti-v1.3.41';
+const CACHE_NAME = 'graphiti-v1.3.42';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './guide.html',
     './a-level-maths-graphing-calculator.html',
     './automatic-asymptote-detection.html',
+    './curve-identifier-graphing-calculator.html',
     './implicit-equation-graphing-calculator.html',
     './polar-graphing-calculator.html',
     './parametric-equation-graphing-calculator.html',
@@ -34,6 +35,7 @@ const ASSETS_TO_CACHE = [
     './images/graphitiTitle.png',
     './images/graphitiShareImage1.png',
     './images/graphitiFeatures/asymptopes.png',
+    './images/graphitiFeatures/shapeDetection.png',
     './images/graphitiFeatures/implicit.png',
     './images/graphitiFeatures/polar.png',
     './images/graphitiFeatures/parametric.png',
