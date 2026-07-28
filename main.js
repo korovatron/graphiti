@@ -4480,6 +4480,7 @@ class Graphiti {
             
             // Use a more precise approach to ensure we include the endpoint
             const numSteps = Math.ceil((bufferedMaxX - bufferedMinX) / step);
+            const hasZeroAnchoredSquareRootPower = /(^|[^a-z0-9_])x\s*\^\s*(?:0*\.5(?:0+)?|\(\s*0*\.5(?:0+)?\s*\)|\(\s*1\s*\/\s*2\s*\)|\(\(\s*1\s*\)\s*\/\s*\(\s*2\s*\)\)\s*)/.test(processedExpression);
             
             // Collect critical points that must be included (domain boundaries)
             const criticalPoints = [];
@@ -4488,8 +4489,8 @@ class Graphiti {
                 if (bufferedMinX <= 1 && bufferedMaxX >= 1) criticalPoints.push(1);
                 if (bufferedMinX <= -1 && bufferedMaxX >= -1) criticalPoints.push(-1);
             }
-            if (processedExpression.includes('sqrt') && bufferedMinX <= 0 && bufferedMaxX >= 0) {
-                // Include x=0 for square-root domains so y=sqrt(x) anchors at the origin.
+            if ((processedExpression.includes('sqrt') || hasZeroAnchoredSquareRootPower) && bufferedMinX <= 0 && bufferedMaxX >= 0) {
+                // Include x=0 for square-root-equivalent domains so the curve anchors at the origin.
                 criticalPoints.push(0);
             }
 

@@ -2616,6 +2616,79 @@ async function assertParameterZeroDenominatorDoesNotHang(page) {
     assert.strictEqual(syntaxErrorResult.hasWarningClass, false, 'malformed expressions should not use warning styling');
 }
 
+async function assertSquareRootEquivalentExpressionsAnchorAtOrigin(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.viewport, {
+            minX: -0.2,
+            maxX: 3.1,
+            minY: -0.5,
+            maxY: 2.5,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 960 / 3.3
+        });
+        Object.assign(graphiti.cartesianViewport, graphiti.viewport);
+
+        const expressions = [
+            'y=\\sqrt{x}',
+            'y=x^{\\frac12}',
+            'y=x^{0.5}',
+            'y=x^(1/2)',
+            'y=x^0.5'
+        ];
+
+        const outputs = [];
+        for (const expression of expressions) {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color: '#4A90E2',
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions = [func];
+            await graphiti.plotFunction(func);
+
+            const finitePoints = Array.isArray(func.points)
+                ? func.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+                : [];
+            const originPoint = finitePoints.find(point => Math.abs(point.x) <= 1e-12 && Math.abs(point.y) <= 1e-12) || null;
+            const firstFinitePoint = finitePoints[0] || null;
+
+            outputs.push({
+                expression,
+                hasOriginPoint: !!originPoint,
+                firstFinitePoint
+            });
+        }
+
+        return outputs;
+    });
+
+    for (const entry of result) {
+        assert.strictEqual(
+            entry.hasOriginPoint,
+            true,
+            `${entry.expression} should include an exact origin sample: ${JSON.stringify(entry)}`
+        );
+        assert(
+            entry.firstFinitePoint && approxEqual(entry.firstFinitePoint.x, 0, 1e-12) && approxEqual(entry.firstFinitePoint.y, 0, 1e-12),
+            `${entry.expression} should start its finite samples at the origin: ${JSON.stringify(entry)}`
+        );
+    }
+}
+
 async function assertStaleIntersectionMarkersAreDiscarded(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -4206,6 +4279,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertImplicitInflectionPointsAreDetected(page);
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
+        await assertSquareRootEquivalentExpressionsAnchorAtOrigin(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertDraggedLineIntersectionCachesArePruned(page);
         await assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page);
