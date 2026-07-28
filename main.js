@@ -484,6 +484,7 @@ class Graphiti {
                                 // Accept alpha, beta, gamma as valid variables
                                 mathModeSpace: '\\:',
                                 smartFence: true,
+                                smartSuperscript: false,
                                 smartMode: false,
                                 keybindings: [
                                     ...window.MathfieldElement.options?.keybindings || [],
@@ -2347,7 +2348,7 @@ class Graphiti {
                     placeholder="${placeholder}"
                     default-mode="math"
                     smart-fence="true"
-                    smart-superscript="true"
+                    smart-superscript="false"
                     virtual-keyboard-mode="manual"
                     virtual-keyboards="numeric functions symbols greek"
                     color-scheme="dark"
@@ -2434,6 +2435,11 @@ class Graphiti {
         const mathField = funcDiv.querySelector('math-field');
         if (mathField && func.expression) {
             mathField.value = func.expression;
+        }
+
+        if (mathField) {
+            mathField.smartSuperscript = false;
+            mathField.setAttribute('smart-superscript', 'false');
         }
         
         // Set inline shortcuts for this field after it's mounted
@@ -2535,18 +2541,174 @@ class Graphiti {
                 // Silently handle keyboard setup errors
             }
         }, 100);
+
+        const clearPendingPostExponentMultiplication = () => {
+            mathField._graphitiPendingPostExponentMultiplication = false;
+        };
+
+        const INVISIBLE_TIMES = '\u2062';
+
+        const hasCollapsedSelectionAtFieldEnd = () => {
+            const selection = mathField.selection;
+            if (!selection || !Array.isArray(selection.ranges) || selection.ranges.length !== 1) {
+                return false;
+            }
+
+            const [start, end] = selection.ranges[0];
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start !== end) {
+                return false;
+            }
+
+            const value = typeof mathField.getValue === 'function' ? mathField.getValue() : '';
+            return end >= value.length;
+
+        };
+
+        const hasTrailingExponentToken = () => {
+            const value = typeof mathField.getValue === 'function' ? mathField.getValue() : '';
+            return /\^(?:\{[^{}]*\}|-?\d+)$/.test(value);
+        };
+
+        const shouldArmPostExponentMultiplication = () => hasCollapsedSelectionAtFieldEnd() && hasTrailingExponentToken();
+
+        const buildPostExponentImplicitMultiplicationText = (typedText) => {
+            if (typeof typedText !== 'string' || typedText.length === 0) {
+                return null;
+            }
+
+            if (typedText === '.') {
+                return `${INVISIBLE_TIMES}0.`;
+            }
+
+            if (/^(?:\d+|\d+\.\d+|\.\d+)$/.test(typedText)) {
+                return `${INVISIBLE_TIMES}${typedText.startsWith('.') ? `0${typedText}` : typedText}`;
+            }
+
+            return null;
+        };
+
+        const insertPostExponentImplicitMultiplication = (typedText) => {
+            const insertedText = buildPostExponentImplicitMultiplicationText(typedText);
+            if (!insertedText) {
+                return false;
+            }
+
+            if (typeof mathField.insert === 'function') {
+                mathField.insert(insertedText);
+            } else {
+                mathField.executeCommand(['insert', insertedText]);
+            }
+
+            return true;
+        };
+
+        const consumePendingPostExponentMultiplicationFromText = (typedText, { preventDefault = false, event = null, restoreByDeleting = false } = {}) => {
+            if (mathField._graphitiPendingPostExponentMultiplication !== true) {
+                return false;
+            }
+
+            if (!buildPostExponentImplicitMultiplicationText(typedText)) {
+                return false;
+            }
+
+            if (preventDefault && event && typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+
+            if (restoreByDeleting) {
+                for (let i = 0; i < typedText.length; i++) {
+                    mathField.executeCommand('deleteBackward');
+                }
+            }
+
+            const inserted = insertPostExponentImplicitMultiplication(typedText);
+            if (inserted) {
+                clearPendingPostExponentMultiplication();
+            }
+            return inserted;
+        };
+
+        const armPostExponentMultiplication = () => {
+            mathField._graphitiPendingPostExponentMultiplication = shouldArmPostExponentMultiplication();
+        };
+
+        const cleanupTrailingInvisibleTimesAfterDeletion = () => {
+            const value = typeof mathField.getValue === 'function' ? mathField.getValue() : '';
+            if (!value || !value.endsWith(INVISIBLE_TIMES)) {
+                return;
+            }
+
+            if (!hasCollapsedSelectionAtFieldEnd()) {
+                return;
+            }
+
+            // If deletion leaves an orphaned invisible-times token at the end,
+            // remove it so the expression does not temporarily become invalid.
+            mathField.executeCommand('deleteBackward');
+        };
+
+        const schedulePostExponentMultiplicationArm = () => {
+            armPostExponentMultiplication();
+            requestAnimationFrame(() => {
+                armPostExponentMultiplication();
+            });
+            setTimeout(() => {
+                armPostExponentMultiplication();
+            }, 0);
+        };
         
         // Add keyboard event listener for smart power key
         mathField.addEventListener('keydown', (event) => {
             // Smart power key: ^ behaves like the power buttons
             if (event.key === '^' && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 event.preventDefault(); // Prevent default ^ insertion
+                clearPendingPostExponentMultiplication();
                 
                 // Use the same smart behavior as the power buttons: #@^{#?}
                 // This will use selection/preceding content as base, or create placeholder if none
                 mathField.executeCommand(['insert', '#@^{#?}']);
+                return;
+            }
+
+            if (mathField._graphitiPendingPostExponentMultiplication === true && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                if (/^\d$/.test(event.key) || event.key === '.') {
+                    if (consumePendingPostExponentMultiplicationFromText(event.key, { preventDefault: true, event })) {
+                        return;
+                    }
+                }
+
+                if (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Escape') {
+                    clearPendingPostExponentMultiplication();
+                }
             }
         });
+
+        mathField.addEventListener('keyup', (event) => {
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Tab' || event.key === 'ArrowRight')) {
+                armPostExponentMultiplication();
+            }
+        });
+
+        mathField.addEventListener('beforeinput', (event) => {
+            if (typeof event.data !== 'string' || event.inputType !== 'insertText') {
+                return;
+            }
+            consumePendingPostExponentMultiplicationFromText(event.data, { preventDefault: true, event });
+        });
+
+        mathField.addEventListener('input', (event) => {
+            if (typeof event.data !== 'string' || event.inputType !== 'insertText') {
+                if (typeof event.inputType === 'string' && event.inputType.startsWith('deleteContent')) {
+                    cleanupTrailingInvisibleTimesAfterDeletion();
+                }
+                return;
+            }
+            consumePendingPostExponentMultiplicationFromText(event.data, { restoreByDeleting: true });
+        });
+
+        mathField.addEventListener('pointerup', schedulePostExponentMultiplicationArm);
+        mathField.addEventListener('touchend', schedulePostExponentMultiplicationArm);
+        mathField.addEventListener('mouseup', schedulePostExponentMultiplicationArm);
         
         // Add event listeners
         const colorIndicator = funcDiv.querySelector('.color-indicator');
@@ -2703,6 +2865,7 @@ class Graphiti {
         });
         
         mathField.addEventListener('focusout', () => {
+            clearPendingPostExponentMultiplication();
             this.deferMathFieldBlurStyleReset(mathField, () => {
                 // Check if parent has error - preserve error styling if present
                 const funcDiv = mathField.closest('.function-item');
@@ -4480,7 +4643,7 @@ class Graphiti {
             
             // Use a more precise approach to ensure we include the endpoint
             const numSteps = Math.ceil((bufferedMaxX - bufferedMinX) / step);
-            const hasZeroAnchoredSquareRootPower = /(^|[^a-z0-9_])x\s*\^\s*(?:0*\.5(?:0+)?|\(\s*0*\.5(?:0+)?\s*\)|\(\s*1\s*\/\s*2\s*\)|\(\(\s*1\s*\)\s*\/\s*\(\s*2\s*\)\)\s*)/.test(processedExpression);
+            const hasZeroAnchoredSquareRootPower = /(^|[^a-z0-9_])x\s*\^\s*(?:\(\s*0*\.5(?:0+)?\s*\)|\(\s*1\s*\/\s*2\s*\)|\(\(\s*1\s*\)\s*\/\s*\(\s*2\s*\)\)\s*)/.test(processedExpression);
             
             // Collect critical points that must be included (domain boundaries)
             const criticalPoints = [];
@@ -49613,6 +49776,10 @@ class Graphiti {
         if (!latex) return '';
         
         let expression = latex;
+
+        // MathLive can include U+2062 (INVISIBLE TIMES) when implicit
+        // multiplication is inserted without showing a visible operator.
+        expression = expression.replace(/\u2062/g, '*');
         
         // Remove MathLive placeholders that can appear during editing
         expression = expression.replace(/\\placeholder\{[^}]*\}/g, '');
@@ -49660,6 +49827,19 @@ class Graphiti {
         
         // Powers: x^{2} -> x^2, but keep parentheses for complex expressions
         expression = expression.replace(/\^{([^}]+)}/g, '^($1)');
+
+        // Treat baseline digits typed after a grouped exponent (for example after
+        // exiting superscript mode and typing 3) as implicit multiplication.
+        // This keeps visual and parsed structure aligned without introducing a
+        // visible multiplication symbol in the editor field.
+        expression = expression.replace(/\^\(([^()]+)\)(\d+(?:\.\d+)?)/g, '^($1)*$2');
+        expression = expression.replace(/\^\(([^()]+)\)(\.\d+)/g, '^($1)*0$2');
+
+        // After the user exits exponent mode, MathLive can emit plain x^0.5 text even
+        // though the 0.5 is no longer visually in superscript. Treat that unbraced decimal
+        // suffix as baseline implicit multiplication instead of folding it back into the power.
+        // Explicit grouped exponents such as x^(0.5) or x^{0.5} are preserved above.
+        expression = expression.replace(/\^(-?\d+)\.(\d+)/g, '^$1*0.$2');
         
         // Handle 10^{x} specifically before general power conversion
         expression = expression.replace(/10\^\(([^)]+)\)/g, 'pow(10,$1)'); // 10^{x} -> pow(10,x)
