@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.48';
+const VERSION = '1.3.47';
 
 class Graphiti {
     constructor() {
@@ -2791,6 +2791,16 @@ class Graphiti {
             if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Tab' || event.key === 'ArrowRight')) {
                 armPostExponentMultiplication(false);
             }
+        });
+
+        // Virtual keyboard left/right navigation can move the caret out of
+        // superscript without emitting hardware key events. Arm only when the
+        // selection change is not occurring during active text insertion.
+        mathField.addEventListener('selection-change', () => {
+            if (isProcessingInsertLikeText) {
+                return;
+            }
+            schedulePostExponentMultiplicationArm(true);
         });
 
         mathField.addEventListener('beforeinput', (event) => {

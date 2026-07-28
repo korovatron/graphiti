@@ -3111,6 +3111,38 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
                     parsed: parsedFor(value)
                 };
             })(),
+            virtualKeyboardArrowExitThenDigit: (() => {
+                field.setValue('y=x');
+                field.focus();
+                field.executeCommand(['insert', '#@^{#?}']);
+                field.insert('2');
+
+                // Simulate virtual keyboard arrow navigation out of superscript.
+                field.executeCommand('moveToNextChar');
+                field.dispatchEvent(new Event('selection-change', { bubbles: true }));
+
+                const beforeInput = new InputEvent('beforeinput', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertReplacementText',
+                    data: '3'
+                });
+                const accepted = field.dispatchEvent(beforeInput);
+                if (accepted && !beforeInput.defaultPrevented) {
+                    field.insert('3');
+                    field.dispatchEvent(new InputEvent('input', {
+                        bubbles: true,
+                        inputType: 'insertReplacementText',
+                        data: '3'
+                    }));
+                }
+
+                const value = field.getValue();
+                return {
+                    value,
+                    parsed: parsedFor(value)
+                };
+            })(),
             virtualKeyboardPowerTemplateThenDigit: (() => {
                 field.setValue('y=x');
                 field.focus();
@@ -3183,6 +3215,9 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
     assert(!result.virtualKeyboardTapExitThenDigitReplacementInputType.value.includes('*'), `virtual-keyboard tap-exit replacement-input should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
     assert(result.virtualKeyboardTapExitThenDigitReplacementInputType.value.includes('\u2062') || result.virtualKeyboardTapExitThenDigitReplacementInputType.value.includes('⁢'), `virtual-keyboard tap-exit replacement-input should include invisible-times separator: ${JSON.stringify(result)}`);
     assert.strictEqual(result.virtualKeyboardTapExitThenDigitReplacementInputType.parsed, 'y=x^2*2', `virtual-keyboard tap-exit replacement-input should parse as implicit multiplication: ${JSON.stringify(result)}`);
+    assert(!result.virtualKeyboardArrowExitThenDigit.value.includes('*'), `virtual-keyboard arrow-exit then digit should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
+    assert(result.virtualKeyboardArrowExitThenDigit.value.includes('\u2062') || result.virtualKeyboardArrowExitThenDigit.value.includes('⁢'), `virtual-keyboard arrow-exit then digit should include invisible-times separator: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.virtualKeyboardArrowExitThenDigit.parsed, 'y=x^2*3', `virtual-keyboard arrow-exit then digit should parse as implicit multiplication: ${JSON.stringify(result)}`);
     assert(!result.virtualKeyboardPowerTemplateThenDigit.value.includes('\u2062') && !result.virtualKeyboardPowerTemplateThenDigit.value.includes('⁢'), `virtual-keyboard x^n template digit entry should not inject invisible-times inside exponent: ${JSON.stringify(result)}`);
     assert(
         result.virtualKeyboardPowerTemplateThenDigit.parsed === 'y=x^2' || result.virtualKeyboardPowerTemplateThenDigit.parsed === 'y=x^(2)',
