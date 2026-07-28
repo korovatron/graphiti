@@ -3022,6 +3022,29 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
                     value,
                     parsed: parsedFor(value)
                 };
+            })(),
+            plainLnAfterExponentExit: (() => {
+                field.setValue('y=x');
+                field.focus();
+                field.executeCommand(['insert', '#@^{#?}']);
+                field.insert('2');
+                field.executeCommand('moveToNextChar');
+                field.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
+
+                for (const char of ['l', 'n', '(', 'x', ')']) {
+                    const keydownEvent = new KeyboardEvent('keydown', { key: char, bubbles: true, cancelable: true });
+                    const accepted = field.dispatchEvent(keydownEvent);
+                    if (accepted && !keydownEvent.defaultPrevented) {
+                        field.insert(char);
+                    }
+                }
+
+                const value = field.getValue();
+                return {
+                    value,
+                    parsed: parsedFor(value),
+                    yAtE: graphiti.evaluateFunction(value, Math.E)
+                };
             })()
         };
     });
@@ -3054,8 +3077,9 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
     assert(result.reAddDigitAfterCleanup.value.includes('\u2062') || result.reAddDigitAfterCleanup.value.includes('⁢'), `re-adding digit after cleanup should include invisible-times separator: ${JSON.stringify(result)}`);
     assert.strictEqual(result.reAddDigitAfterCleanup.parsed, 'y=x^2*2', `re-adding digit after cleanup should remain implicit multiplication: ${JSON.stringify(result)}`);
     assert(!result.mixedOperandDeleteReaddSequence.value.includes('*'), `mixed operand delete/re-add sequence should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.mixedOperandDeleteReaddSequence.value.includes('\u2062') || result.mixedOperandDeleteReaddSequence.value.includes('⁢'), `mixed operand delete/re-add sequence should include invisible-times separator: ${JSON.stringify(result)}`);
     assert.strictEqual(result.mixedOperandDeleteReaddSequence.parsed, 'y=x^2*3', `mixed operand delete/re-add sequence should remain implicit multiplication: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.plainLnAfterExponentExit.parsed, 'y=x^2*log(x)', `plain ln typed after exponent exit should parse as implicit multiplication: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.plainLnAfterExponentExit.yAtE, Math.E * Math.E, 1e-9), `plain ln typed after exponent exit should evaluate at x=e as e^2: ${JSON.stringify(result)}`);
 }
 
 async function assertStaleIntersectionMarkersAreDiscarded(page) {

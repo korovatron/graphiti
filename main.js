@@ -2626,16 +2626,6 @@ class Graphiti {
                 return `${INVISIBLE_TIMES}${typedText.startsWith('.') ? `0${typedText}` : typedText}`;
             }
 
-            // Variables/functions entered after explicit superscript exit should
-            // also be treated as implicit multiplication, e.g. x^2 then x -> x^2*x.
-            if (/^[a-zA-Z]+$/.test(typedText)) {
-                return `${INVISIBLE_TIMES}${typedText}`;
-            }
-
-            if (/^\\[a-zA-Z]+$/.test(typedText)) {
-                return `${INVISIBLE_TIMES}${typedText}`;
-            }
-
             if (typedText === '(') {
                 return `${INVISIBLE_TIMES}(`;
             }
@@ -2738,7 +2728,7 @@ class Graphiti {
             }
 
             if (mathField._graphitiPendingPostExponentMultiplication === true && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                if (event.key.length === 1) {
+                if (/^\d$/.test(event.key) || event.key === '.' || event.key === '(') {
                     if (consumePendingPostExponentMultiplicationFromText(event.key, { preventDefault: true, event })) {
                         return;
                     }
@@ -2767,6 +2757,9 @@ class Graphiti {
             if (typeof event.data !== 'string' || event.inputType !== 'insertText') {
                 if (typeof event.inputType === 'string' && event.inputType.startsWith('deleteContent')) {
                     cleanupTrailingInvisibleTimesAfterDeletion();
+                    if (hasCollapsedSelectionAtFieldEnd() && hasTrailingExponentToken()) {
+                        armPostExponentMultiplication(false);
+                    }
                 }
                 return;
             }
@@ -49901,12 +49894,14 @@ class Graphiti {
         // visible multiplication symbol in the editor field.
         expression = expression.replace(/\^(\((?:[^()]|\([^()]*\))*\))(\d+(?:\.\d+)?)/g, '^$1*$2');
         expression = expression.replace(/\^(\((?:[^()]|\([^()]*\))*\))(\.\d+)/g, '^$1*0$2');
+        expression = expression.replace(/\^(\((?:[^()]|\([^()]*\))*\))(?=[a-zA-Z\\(])/g, '^$1*');
 
         // After the user exits exponent mode, MathLive can emit plain x^0.5 text even
         // though the 0.5 is no longer visually in superscript. Treat that unbraced decimal
         // suffix as baseline implicit multiplication instead of folding it back into the power.
         // Explicit grouped exponents such as x^(0.5) or x^{0.5} are preserved above.
         expression = expression.replace(/\^(-?\d+)\.(\d+)/g, '^$1*0.$2');
+        expression = expression.replace(/\^(-?\d+)(?=[a-zA-Z\\(])/g, '^$1*');
         
         // Handle 10^{x} specifically before general power conversion
         expression = expression.replace(/10\^\(([^)]+)\)/g, 'pow(10,$1)'); // 10^{x} -> pow(10,x)
@@ -50074,6 +50069,7 @@ class Graphiti {
         
         // Logarithms and exponentials (corrected for math.js)
         expression = expression.replace(/\\ln/g, 'log');     // ln(x) -> log(x) (natural log in math.js)
+        expression = expression.replace(/\bln\s*\(/g, 'log(');
         
         // Convert \log to base-10 logarithm marker
         expression = expression.replace(/\\log/g, 'log10_');  // log(x) -> log10_(x) marker
