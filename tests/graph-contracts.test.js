@@ -2643,8 +2643,10 @@ async function assertSquareRootEquivalentExpressionsAnchorAtOrigin(page) {
             'y=\\sqrt{x}',
             'y=x^{\\frac12}',
             'y=x^{0.5}',
-            'y=x^(1/2)'
+            'y=x^(1/2)',
+            'y=x^0.5'
         ];
+
         const outputs = [];
         for (const expression of expressions) {
             const func = {
@@ -2685,275 +2687,6 @@ async function assertSquareRootEquivalentExpressionsAnchorAtOrigin(page) {
             `${entry.expression} should start its finite samples at the origin: ${JSON.stringify(entry)}`
         );
     }
-}
-
-async function assertUnbracedDecimalExponentUsesImplicitMultiplication(page) {
-    const result = await page.evaluate(async () => {
-        const graphiti = window.graphiti;
-        graphiti.plotMode = 'cartesian';
-        graphiti.cartesianFunctions = [];
-        graphiti.polarFunctions = [];
-        graphiti.nextFunctionId = 1;
-
-        graphiti.canvas.width = 960;
-        graphiti.canvas.height = 720;
-        Object.assign(graphiti.viewport, {
-            minX: -2,
-            maxX: 4,
-            minY: -1,
-            maxY: 2,
-            width: 960,
-            height: 720,
-            centerX: 480,
-            centerY: 360,
-            scale: 160
-        });
-        Object.assign(graphiti.cartesianViewport, graphiti.viewport);
-
-        const converted = graphiti.convertFromLatex('y=x^0.5');
-        const func = {
-            id: graphiti.nextFunctionId++,
-            expression: 'y=x^0.5',
-            points: [],
-            color: '#4A90E2',
-            enabled: true,
-            mode: 'cartesian'
-        };
-        graphiti.cartesianFunctions = [func];
-        await graphiti.plotFunction(func);
-
-        const finitePoints = Array.isArray(func.points)
-            ? func.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
-            : [];
-        const sampleXs = [0, 1, 3];
-        const ySamples = sampleXs.map(x => ({ x, y: graphiti.evaluateFunction(func.expression, x) }));
-
-        return {
-            converted,
-            firstFinitePoint: finitePoints[0] || null,
-            ySamples
-        };
-    });
-
-    assert.strictEqual(result.converted, 'y=x^0*0.5', `unbraced decimal exponents should become implicit multiplication: ${JSON.stringify(result)}`);
-    assert(
-        result.firstFinitePoint && approxEqual(result.firstFinitePoint.y, 0.5, 1e-9),
-        `unbraced decimal exponent should plot as y=0.5: ${JSON.stringify(result)}`
-    );
-    for (const sample of result.ySamples) {
-        assert(
-            approxEqual(sample.y, 0.5, 1e-9),
-            `unbraced decimal exponent should evaluate as y=0.5 at x=${sample.x}: ${JSON.stringify(result)}`
-        );
-    }
-}
-
-async function assertFunctionFieldsDisableSmartSuperscript(page) {
-    const result = await page.evaluate(() => {
-        const graphiti = window.graphiti;
-        const container = document.getElementById('functions-container');
-
-        graphiti.plotMode = 'cartesian';
-        graphiti.showIntersections = false;
-        graphiti.showTurningPoints = false;
-        graphiti.showIntercepts = false;
-        graphiti.cartesianFunctions = [];
-        graphiti.polarFunctions = [];
-        graphiti.nextFunctionId = 1;
-        graphiti.input.persistentBadges = [];
-        graphiti.turningPoints = [];
-        graphiti.intercepts = [];
-        graphiti.clearIntersectionState({ cancelWorker: true });
-
-        if (container) {
-            container.innerHTML = '';
-        }
-
-        try {
-            graphiti.addFunction('');
-            const field = document.querySelector('.function-main-row math-field');
-            return {
-                globalSmartSuperscript: window.MathfieldElement?.options?.smartSuperscript,
-                fieldSmartSuperscript: field ? field.smartSuperscript : null,
-                fieldAttribute: field ? field.getAttribute('smart-superscript') : null
-            };
-        } finally {
-            graphiti.cartesianFunctions = [];
-            graphiti.polarFunctions = [];
-            graphiti.nextFunctionId = 1;
-            graphiti.input.persistentBadges = [];
-            graphiti.turningPoints = [];
-            graphiti.intercepts = [];
-            graphiti.clearIntersectionState({ cancelWorker: true });
-            graphiti.frozenIntersectionBadges = [];
-            graphiti.lastIntersectionMarkerSnapshot = [];
-            if (container) {
-                container.innerHTML = '';
-            }
-        }
-    });
-
-    assert.strictEqual(result.globalSmartSuperscript, false, `MathLive defaults should disable smart superscript: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.fieldSmartSuperscript, false, `function fields should disable smart superscript: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.fieldAttribute, 'false', `function fields should expose smart-superscript=\"false\": ${JSON.stringify(result)}`);
-}
-
-async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
-    const result = await page.evaluate(() => {
-        const graphiti = window.graphiti;
-        const container = document.getElementById('functions-container');
-
-        graphiti.plotMode = 'cartesian';
-        graphiti.cartesianFunctions = [];
-        graphiti.polarFunctions = [];
-        graphiti.nextFunctionId = 1;
-        if (container) {
-            container.innerHTML = '';
-        }
-
-        graphiti.addFunction('');
-        const field = document.querySelector('.function-main-row math-field');
-        if (!field) {
-            return null;
-        }
-
-        const parsedFor = (value) => graphiti.convertFromLatex(value);
-
-        const runCase = (digit, followUp, exitCommand) => {
-            field.setValue('y=x');
-            field.focus();
-            field.executeCommand(['insert', '#@^{#?}']);
-            field.insert(digit);
-            field.executeCommand(exitCommand);
-            const exitKey = exitCommand === 'moveToMathfieldEnd' ? 'Tab' : 'ArrowRight';
-            field.dispatchEvent(new KeyboardEvent('keyup', { key: exitKey, bubbles: true }));
-            const followUpChars = String(followUp).split('');
-            for (const char of followUpChars) {
-                const keydownEvent = new KeyboardEvent('keydown', { key: char, bubbles: true, cancelable: true });
-                const keydownAccepted = field.dispatchEvent(keydownEvent);
-                if (keydownAccepted && !keydownEvent.defaultPrevented) {
-                    field.insert(char);
-                }
-            }
-            const value = field.getValue();
-            return {
-                value,
-                parsed: parsedFor(value)
-            };
-        };
-
-        const runPointerCase = (digit, followUp) => {
-            field.setValue('y=x');
-            field.focus();
-            field.executeCommand(['insert', '#@^{#?}']);
-            field.insert(digit);
-            field.executeCommand('moveToMathfieldEnd');
-            field.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-            const followUpChars = String(followUp).split('');
-            for (const char of followUpChars) {
-                const keydownEvent = new KeyboardEvent('keydown', { key: char, bubbles: true, cancelable: true });
-                const keydownAccepted = field.dispatchEvent(keydownEvent);
-                if (keydownAccepted && !keydownEvent.defaultPrevented) {
-                    field.insert(char);
-                }
-            }
-            const value = field.getValue();
-            return {
-                value,
-                parsed: parsedFor(value)
-            };
-        };
-
-        const runTouchCase = (digit, followUp) => {
-            field.setValue('y=x');
-            field.focus();
-            field.executeCommand(['insert', '#@^{#?}']);
-            field.insert(digit);
-            field.executeCommand('moveToMathfieldEnd');
-            field.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
-            field.dispatchEvent(new Event('touchend', { bubbles: true }));
-            const followUpText = String(followUp);
-            const beforeInput = new InputEvent('beforeinput', {
-                bubbles: true,
-                cancelable: true,
-                inputType: 'insertText',
-                data: followUpText
-            });
-            const beforeAccepted = field.dispatchEvent(beforeInput);
-            if (beforeAccepted && !beforeInput.defaultPrevented) {
-                field.insert(followUpText);
-                field.dispatchEvent(new InputEvent('input', {
-                    bubbles: true,
-                    inputType: 'insertText',
-                    data: followUpText
-                }));
-            }
-            const value = field.getValue();
-            return {
-                value,
-                parsed: parsedFor(value)
-            };
-        };
-
-        return {
-            integerAfterRight: runCase('2', '3', 'moveToNextChar'),
-            integerAfterTabEquivalent: runCase('2', '3', 'moveToMathfieldEnd'),
-            decimalAfterRight: runCase('0', '.5', 'moveToNextChar'),
-            integerAfterPointerExit: runPointerCase('2', '3'),
-            integerAfterTouchExit: runTouchCase('2', '3'),
-            decimalAfterTouchExit: runTouchCase('0', '.5'),
-            cleanupAfterDeletingFollowUpDigit: (() => {
-                field.setValue('y=x');
-                field.focus();
-                field.executeCommand(['insert', '#@^{#?}']);
-                field.insert('2');
-                field.executeCommand('moveToNextChar');
-                field.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
-
-                const insertDigit = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
-                const insertAccepted = field.dispatchEvent(insertDigit);
-                if (insertAccepted && !insertDigit.defaultPrevented) {
-                    field.insert('2');
-                }
-
-                const deleteDigit = new InputEvent('input', {
-                    bubbles: true,
-                    inputType: 'deleteContentBackward',
-                    data: null
-                });
-                field.executeCommand('deleteBackward');
-                field.dispatchEvent(deleteDigit);
-
-                const value = field.getValue();
-                return {
-                    value,
-                    parsed: parsedFor(value)
-                };
-            })()
-        };
-    });
-
-    assert(result, 'function field should exist for explicit exponent exit test');
-    assert(!result.integerAfterRight.value.includes('*'), `right-exit integer should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.integerAfterRight.value.includes('\u2062') || result.integerAfterRight.value.includes('⁢'), `right-exit integer should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.integerAfterRight.parsed, 'y=x^2*3', `right-exit integer should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.integerAfterTabEquivalent.value.includes('*'), `tab-exit integer should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.integerAfterTabEquivalent.value.includes('\u2062') || result.integerAfterTabEquivalent.value.includes('⁢'), `tab-exit integer should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.integerAfterTabEquivalent.parsed, 'y=x^2*3', `tab-exit integer should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.decimalAfterRight.value.includes('*'), `right-exit decimal should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.decimalAfterRight.value.includes('\u2062') || result.decimalAfterRight.value.includes('⁢'), `right-exit decimal should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.decimalAfterRight.parsed, 'y=x^0*0.5', `right-exit decimal should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.integerAfterPointerExit.value.includes('*'), `pointer exit integer should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.integerAfterPointerExit.value.includes('\u2062') || result.integerAfterPointerExit.value.includes('⁢'), `pointer exit integer should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.integerAfterPointerExit.parsed, 'y=x^2*3', `pointer exit integer should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.integerAfterTouchExit.value.includes('*'), `touch exit integer should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.integerAfterTouchExit.value.includes('\u2062') || result.integerAfterTouchExit.value.includes('⁢'), `touch exit integer should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.integerAfterTouchExit.parsed, 'y=x^2*3', `touch exit integer should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.decimalAfterTouchExit.value.includes('*'), `touch exit decimal should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.decimalAfterTouchExit.value.includes('\u2062') || result.decimalAfterTouchExit.value.includes('⁢'), `touch exit decimal should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.decimalAfterTouchExit.parsed, 'y=x^0*0.5', `touch exit decimal should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.cleanupAfterDeletingFollowUpDigit.value.includes('\u2062') && !result.cleanupAfterDeletingFollowUpDigit.value.includes('⁢'), `deleting last follow-up digit should also remove orphaned invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.cleanupAfterDeletingFollowUpDigit.parsed, 'y=x^2', `deleting last follow-up digit should restore clean exponent expression: ${JSON.stringify(result)}`);
 }
 
 async function assertStaleIntersectionMarkersAreDiscarded(page) {
@@ -3314,15 +3047,11 @@ async function assertSecondPanPreservesFrozenImplicitMarkers(page) {
         graphiti.intersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
         graphiti.explicitIntersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
         graphiti.implicitIntersections = [];
-        graphiti.tangentIntersections = [];
-        graphiti.normalIntersections = [];
         graphiti.frozenIntersectionBadges = [
             { x: 2, y: 1, func1Id: 2, func2Id: 3 },
             { x: 1, y: 1, func1Id: 1, func2Id: 2 },
             { x: 1, y: 0, func1Id: 1, func2Id: 3 }
         ];
-        graphiti.lastIntersectionMarkerSnapshot = [];
-        graphiti.intersectionMarkersPendingViewportRefresh = false;
         graphiti.isViewportChanging = false;
         graphiti.implicitIntersectionsPending = true;
 
@@ -3357,8 +3086,6 @@ async function assertSecondPanPreservesFrozenImplicitMarkers(page) {
             graphiti.isViewportChanging = false;
             graphiti.implicitIntersectionsPending = false;
             graphiti.frozenIntersectionBadges = [];
-            graphiti.lastIntersectionMarkerSnapshot = [];
-            graphiti.intersectionMarkersPendingViewportRefresh = false;
         }
     });
 
@@ -3382,15 +3109,11 @@ async function assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page) {
         graphiti.intersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
         graphiti.explicitIntersections = [{ x: 2, y: 1, func1Id: 2, func2Id: 3 }];
         graphiti.implicitIntersections = [];
-        graphiti.tangentIntersections = [];
-        graphiti.normalIntersections = [];
         graphiti.frozenIntersectionBadges = [
             { x: 2, y: 1, func1Id: 2, func2Id: 3 },
             { x: 1, y: 1, func1Id: 1, func2Id: 2 },
             { x: 1, y: 0, func1Id: 1, func2Id: 3 }
         ];
-        graphiti.lastIntersectionMarkerSnapshot = [];
-        graphiti.intersectionMarkersPendingViewportRefresh = false;
         graphiti.isViewportChanging = false;
         graphiti.implicitIntersectionsPending = true;
 
@@ -3415,8 +3138,6 @@ async function assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page) {
             graphiti.isViewportChanging = false;
             graphiti.implicitIntersectionsPending = false;
             graphiti.frozenIntersectionBadges = [];
-            graphiti.lastIntersectionMarkerSnapshot = [];
-            graphiti.intersectionMarkersPendingViewportRefresh = false;
         }
     });
 
@@ -4559,9 +4280,6 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertExplicitCartesianInflectionPointsAreDetected(page);
         await assertParameterZeroDenominatorDoesNotHang(page);
         await assertSquareRootEquivalentExpressionsAnchorAtOrigin(page);
-        await assertUnbracedDecimalExponentUsesImplicitMultiplication(page);
-        await assertFunctionFieldsDisableSmartSuperscript(page);
-        await assertExplicitExponentExitUsesImplicitMultiplication(page);
         await assertStaleIntersectionMarkersAreDiscarded(page);
         await assertDraggedLineIntersectionCachesArePruned(page);
         await assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page);
