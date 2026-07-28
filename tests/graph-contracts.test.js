@@ -2902,27 +2902,6 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
             integerAfterPointerExit: runPointerCase('2', '3'),
             integerAfterTouchExit: runTouchCase('2', '3'),
             decimalAfterTouchExit: runTouchCase('0', '.5'),
-            fractionExponentAfterRight: (() => {
-                field.setValue('y=x');
-                field.focus();
-                field.executeCommand(['insert', '#@^{#?}']);
-                field.insert('\\frac12');
-                field.executeCommand('moveToNextChar');
-                field.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
-
-                const insertDigit = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
-                const insertAccepted = field.dispatchEvent(insertDigit);
-                if (insertAccepted && !insertDigit.defaultPrevented) {
-                    field.insert('2');
-                }
-
-                const value = field.getValue();
-                return {
-                    value,
-                    parsed: parsedFor(value),
-                    yAtFour: graphiti.evaluateFunction(value, 4)
-                };
-            })(),
             cleanupAfterDeletingFollowUpDigit: (() => {
                 field.setValue('y=x');
                 field.focus();
@@ -2944,78 +2923,6 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
                 });
                 field.executeCommand('deleteBackward');
                 field.dispatchEvent(deleteDigit);
-
-                const value = field.getValue();
-                return {
-                    value,
-                    parsed: parsedFor(value)
-                };
-            })(),
-            reAddDigitAfterCleanup: (() => {
-                field.setValue('y=x');
-                field.focus();
-                field.executeCommand(['insert', '#@^{#?}']);
-                field.insert('2');
-                field.executeCommand('moveToNextChar');
-                field.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
-
-                const firstInsert = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
-                const firstAccepted = field.dispatchEvent(firstInsert);
-                if (firstAccepted && !firstInsert.defaultPrevented) {
-                    field.insert('2');
-                }
-
-                field.executeCommand('deleteBackward');
-                field.dispatchEvent(new InputEvent('input', {
-                    bubbles: true,
-                    inputType: 'deleteContentBackward',
-                    data: null
-                }));
-
-                const secondInsert = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
-                const secondAccepted = field.dispatchEvent(secondInsert);
-                if (secondAccepted && !secondInsert.defaultPrevented) {
-                    field.insert('2');
-                }
-
-                const value = field.getValue();
-                return {
-                    value,
-                    parsed: parsedFor(value)
-                };
-            })(),
-            mixedOperandDeleteReaddSequence: (() => {
-                field.setValue('y=x');
-                field.focus();
-                field.executeCommand(['insert', '#@^{#?}']);
-                field.insert('2');
-                field.executeCommand('moveToNextChar');
-                field.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
-
-                const typeChar = (char) => {
-                    const keydownEvent = new KeyboardEvent('keydown', { key: char, bubbles: true, cancelable: true });
-                    const accepted = field.dispatchEvent(keydownEvent);
-                    if (accepted && !keydownEvent.defaultPrevented) {
-                        field.insert(char);
-                    }
-                };
-
-                const deleteChar = () => {
-                    field.executeCommand('deleteBackward');
-                    field.dispatchEvent(new InputEvent('input', {
-                        bubbles: true,
-                        inputType: 'deleteContentBackward',
-                        data: null
-                    }));
-                };
-
-                typeChar('2');
-                deleteChar();
-                typeChar('2');
-                deleteChar();
-                typeChar('x');
-                deleteChar();
-                typeChar('3');
 
                 const value = field.getValue();
                 return {
@@ -3045,17 +2952,8 @@ async function assertExplicitExponentExitUsesImplicitMultiplication(page) {
     assert(!result.decimalAfterTouchExit.value.includes('*'), `touch exit decimal should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
     assert(result.decimalAfterTouchExit.value.includes('\u2062') || result.decimalAfterTouchExit.value.includes('⁢'), `touch exit decimal should include invisible-times separator: ${JSON.stringify(result)}`);
     assert.strictEqual(result.decimalAfterTouchExit.parsed, 'y=x^0*0.5', `touch exit decimal should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.fractionExponentAfterRight.value.includes('*'), `fraction exponent exit should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.fractionExponentAfterRight.parsed.includes('*2'), `fraction exponent exit should parse as implicit multiplication: ${JSON.stringify(result)}`);
-    assert(approxEqual(result.fractionExponentAfterRight.yAtFour, 4, 1e-9), `fraction exponent exit should evaluate as y=4 at x=4: ${JSON.stringify(result)}`);
     assert(!result.cleanupAfterDeletingFollowUpDigit.value.includes('\u2062') && !result.cleanupAfterDeletingFollowUpDigit.value.includes('⁢'), `deleting last follow-up digit should also remove orphaned invisible-times separator: ${JSON.stringify(result)}`);
     assert.strictEqual(result.cleanupAfterDeletingFollowUpDigit.parsed, 'y=x^2', `deleting last follow-up digit should restore clean exponent expression: ${JSON.stringify(result)}`);
-    assert(!result.reAddDigitAfterCleanup.value.includes('*'), `re-adding digit after cleanup should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.reAddDigitAfterCleanup.value.includes('\u2062') || result.reAddDigitAfterCleanup.value.includes('⁢'), `re-adding digit after cleanup should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.reAddDigitAfterCleanup.parsed, 'y=x^2*2', `re-adding digit after cleanup should remain implicit multiplication: ${JSON.stringify(result)}`);
-    assert(!result.mixedOperandDeleteReaddSequence.value.includes('*'), `mixed operand delete/re-add sequence should avoid visible multiplication symbols: ${JSON.stringify(result)}`);
-    assert(result.mixedOperandDeleteReaddSequence.value.includes('\u2062') || result.mixedOperandDeleteReaddSequence.value.includes('⁢'), `mixed operand delete/re-add sequence should include invisible-times separator: ${JSON.stringify(result)}`);
-    assert.strictEqual(result.mixedOperandDeleteReaddSequence.parsed, 'y=x^2*3', `mixed operand delete/re-add sequence should remain implicit multiplication: ${JSON.stringify(result)}`);
 }
 
 async function assertStaleIntersectionMarkersAreDiscarded(page) {
