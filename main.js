@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.45';
+const VERSION = '1.3.46';
 
 class Graphiti {
     constructor() {
@@ -2566,10 +2566,52 @@ class Graphiti {
 
         const hasTrailingExponentToken = () => {
             const value = typeof mathField.getValue === 'function' ? mathField.getValue() : '';
-            return /\^(?:\{[^{}]*\}|-?\d+)$/.test(value);
+            if (!value) {
+                return false;
+            }
+
+            const endIndex = value.length - 1;
+            if (value[endIndex] === '}') {
+                let depth = 0;
+                for (let i = endIndex; i >= 0; i--) {
+                    const char = value[i];
+                    if (char === '}') {
+                        depth++;
+                    } else if (char === '{') {
+                        depth--;
+                        if (depth === 0) {
+                            return i > 0 && value[i - 1] === '^';
+                        }
+                    }
+                }
+                return false;
+            }
+
+            if (/\d/.test(value[endIndex])) {
+                let i = endIndex;
+                while (i >= 0 && /\d/.test(value[i])) {
+                    i--;
+                }
+                if (i >= 0 && value[i] === '-') {
+                    i--;
+                }
+                return i >= 0 && value[i] === '^';
+            }
+
+            return false;
         };
 
-        const shouldArmPostExponentMultiplication = () => hasCollapsedSelectionAtFieldEnd() && hasTrailingExponentToken();
+        const shouldArmPostExponentMultiplication = (requireCollapsedSelection = true) => {
+            if (!hasTrailingExponentToken()) {
+                return false;
+            }
+
+            if (!requireCollapsedSelection) {
+                return true;
+            }
+
+            return hasCollapsedSelectionAtFieldEnd();
+        };
 
         const buildPostExponentImplicitMultiplicationText = (typedText) => {
             if (typeof typedText !== 'string' || typedText.length === 0) {
@@ -2582,6 +2624,20 @@ class Graphiti {
 
             if (/^(?:\d+|\d+\.\d+|\.\d+)$/.test(typedText)) {
                 return `${INVISIBLE_TIMES}${typedText.startsWith('.') ? `0${typedText}` : typedText}`;
+            }
+
+            // Variables/functions entered after explicit superscript exit should
+            // also be treated as implicit multiplication, e.g. x^2 then x -> x^2*x.
+            if (/^[a-zA-Z]+$/.test(typedText)) {
+                return `${INVISIBLE_TIMES}${typedText}`;
+            }
+
+            if (/^\\[a-zA-Z]+$/.test(typedText)) {
+                return `${INVISIBLE_TIMES}${typedText}`;
+            }
+
+            if (typedText === '(') {
+                return `${INVISIBLE_TIMES}(`;
             }
 
             return null;
@@ -2607,6 +2663,10 @@ class Graphiti {
                 return false;
             }
 
+            if (!hasCollapsedSelectionAtFieldEnd()) {
+                return false;
+            }
+
             if (!buildPostExponentImplicitMultiplicationText(typedText)) {
                 return false;
             }
@@ -2628,8 +2688,8 @@ class Graphiti {
             return inserted;
         };
 
-        const armPostExponentMultiplication = () => {
-            mathField._graphitiPendingPostExponentMultiplication = shouldArmPostExponentMultiplication();
+        const armPostExponentMultiplication = (requireCollapsedSelection = true) => {
+            mathField._graphitiPendingPostExponentMultiplication = shouldArmPostExponentMultiplication(requireCollapsedSelection);
         };
 
         const cleanupTrailingInvisibleTimesAfterDeletion = () => {
@@ -2645,15 +2705,22 @@ class Graphiti {
             // If deletion leaves an orphaned invisible-times token at the end,
             // remove it so the expression does not temporarily become invalid.
             mathField.executeCommand('deleteBackward');
+            try {
+                mathField.selection = { ranges: [[Infinity, Infinity]] };
+            } catch {
+                // Ignore direct selection assignment failures and use command path below.
+            }
+            mathField.executeCommand('moveToMathfieldEnd');
+            armPostExponentMultiplication(false);
         };
 
-        const schedulePostExponentMultiplicationArm = () => {
-            armPostExponentMultiplication();
+        const schedulePostExponentMultiplicationArm = (requireCollapsedSelection = true) => {
+            armPostExponentMultiplication(requireCollapsedSelection);
             requestAnimationFrame(() => {
-                armPostExponentMultiplication();
+                armPostExponentMultiplication(requireCollapsedSelection);
             });
             setTimeout(() => {
-                armPostExponentMultiplication();
+                armPostExponentMultiplication(requireCollapsedSelection);
             }, 0);
         };
         
@@ -2671,7 +2738,7 @@ class Graphiti {
             }
 
             if (mathField._graphitiPendingPostExponentMultiplication === true && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                if (/^\d$/.test(event.key) || event.key === '.') {
+                if (event.key.length === 1) {
                     if (consumePendingPostExponentMultiplicationFromText(event.key, { preventDefault: true, event })) {
                         return;
                     }
@@ -2685,7 +2752,7 @@ class Graphiti {
 
         mathField.addEventListener('keyup', (event) => {
             if (!event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'Tab' || event.key === 'ArrowRight')) {
-                armPostExponentMultiplication();
+                armPostExponentMultiplication(false);
             }
         });
 
@@ -2706,9 +2773,9 @@ class Graphiti {
             consumePendingPostExponentMultiplicationFromText(event.data, { restoreByDeleting: true });
         });
 
-        mathField.addEventListener('pointerup', schedulePostExponentMultiplicationArm);
-        mathField.addEventListener('touchend', schedulePostExponentMultiplicationArm);
-        mathField.addEventListener('mouseup', schedulePostExponentMultiplicationArm);
+        mathField.addEventListener('pointerup', () => schedulePostExponentMultiplicationArm(false));
+        mathField.addEventListener('touchend', () => schedulePostExponentMultiplicationArm(false));
+        mathField.addEventListener('mouseup', () => schedulePostExponentMultiplicationArm(false));
         
         // Add event listeners
         const colorIndicator = funcDiv.querySelector('.color-indicator');
@@ -49832,8 +49899,8 @@ class Graphiti {
         // exiting superscript mode and typing 3) as implicit multiplication.
         // This keeps visual and parsed structure aligned without introducing a
         // visible multiplication symbol in the editor field.
-        expression = expression.replace(/\^\(([^()]+)\)(\d+(?:\.\d+)?)/g, '^($1)*$2');
-        expression = expression.replace(/\^\(([^()]+)\)(\.\d+)/g, '^($1)*0$2');
+        expression = expression.replace(/\^(\((?:[^()]|\([^()]*\))*\))(\d+(?:\.\d+)?)/g, '^$1*$2');
+        expression = expression.replace(/\^(\((?:[^()]|\([^()]*\))*\))(\.\d+)/g, '^$1*0$2');
 
         // After the user exits exponent mode, MathLive can emit plain x^0.5 text even
         // though the 0.5 is no longer visually in superscript. Treat that unbraced decimal
