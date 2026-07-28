@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.47';
+const VERSION = '1.3.46';
 
 class Graphiti {
     constructor() {
@@ -2602,11 +2602,6 @@ class Graphiti {
         };
 
         const shouldArmPostExponentMultiplication = (requireCollapsedSelection = true) => {
-            const value = typeof mathField.getValue === 'function' ? mathField.getValue() : '';
-            if (this.hasIncompleteMathLiveInput(value)) {
-                return false;
-            }
-
             if (!hasTrailingExponentToken()) {
                 return false;
             }
@@ -2638,12 +2633,6 @@ class Graphiti {
             return null;
         };
 
-        const stripExponentLeadingInvisibleTimes = (value) => {
-            return String(value || '')
-                .replace(/\^\{(?:\u2062)+/g, '^{')
-                .replace(/\^\((?:\u2062)+/g, '^(');
-        };
-
         const insertPostExponentImplicitMultiplication = (typedText) => {
             const insertedText = buildPostExponentImplicitMultiplicationText(typedText);
             if (!insertedText) {
@@ -2659,24 +2648,9 @@ class Graphiti {
             return true;
         };
 
-        const consumePendingPostExponentMultiplicationFromText = (typedText, { preventDefault = false, event = null, restoreByDeleting = false, dispatchSyntheticInput = false } = {}) => {
+        const consumePendingPostExponentMultiplicationFromText = (typedText, { preventDefault = false, event = null, restoreByDeleting = false } = {}) => {
             if (mathField._graphitiPendingPostExponentMultiplication !== true) {
                 return false;
-            }
-
-            const currentValue = typeof mathField.getValue === 'function' ? mathField.getValue() : '';
-            if (this.hasIncompleteMathLiveInput(currentValue)) {
-                clearPendingPostExponentMultiplication();
-                return false;
-            }
-
-            const trailingBracedExponentMatch = currentValue.match(/\^\{([^{}]*)\}$/);
-            if (trailingBracedExponentMatch) {
-                const trailingExponentContent = String(trailingBracedExponentMatch[1] || '').trim();
-                if (!trailingExponentContent || trailingExponentContent.includes('#') || trailingExponentContent === INVISIBLE_TIMES) {
-                    clearPendingPostExponentMultiplication();
-                    return false;
-                }
             }
 
             if (!hasCollapsedSelectionAtFieldEnd()) {
@@ -2700,30 +2674,9 @@ class Graphiti {
             const inserted = insertPostExponentImplicitMultiplication(typedText);
             if (inserted) {
                 clearPendingPostExponentMultiplication();
-                if (dispatchSyntheticInput) {
-                    try {
-                        mathField.dispatchEvent(new InputEvent('input', {
-                            bubbles: true,
-                            inputType: 'insertText',
-                            data: typedText
-                        }));
-                    } catch {
-                        mathField.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
-                }
             }
             return inserted;
         };
-
-        const isInsertLikeTextEvent = (event) => {
-            if (!event || typeof event.data !== 'string' || event.data.length === 0) {
-                return false;
-            }
-
-            return typeof event.inputType === 'string' && event.inputType.startsWith('insert');
-        };
-
-        let isProcessingInsertLikeText = false;
 
         const armPostExponentMultiplication = (requireCollapsedSelection = true) => {
             mathField._graphitiPendingPostExponentMultiplication = shouldArmPostExponentMultiplication(requireCollapsedSelection);
@@ -2793,34 +2746,15 @@ class Graphiti {
             }
         });
 
-        // Virtual keyboard left/right navigation can move the caret out of
-        // superscript without emitting hardware key events. Arm only when the
-        // selection change is not occurring during active text insertion.
-        mathField.addEventListener('selection-change', () => {
-            if (isProcessingInsertLikeText) {
-                return;
-            }
-            schedulePostExponentMultiplicationArm(true);
-        });
-
         mathField.addEventListener('beforeinput', (event) => {
-            if (!isInsertLikeTextEvent(event)) {
+            if (typeof event.data !== 'string' || event.inputType !== 'insertText') {
                 return;
             }
-            isProcessingInsertLikeText = true;
-            try {
-                consumePendingPostExponentMultiplicationFromText(event.data, {
-                    preventDefault: true,
-                    event,
-                    dispatchSyntheticInput: true
-                });
-            } finally {
-                isProcessingInsertLikeText = false;
-            }
+            consumePendingPostExponentMultiplicationFromText(event.data, { preventDefault: true, event });
         });
 
         mathField.addEventListener('input', (event) => {
-            if (!isInsertLikeTextEvent(event)) {
+            if (typeof event.data !== 'string' || event.inputType !== 'insertText') {
                 if (typeof event.inputType === 'string' && event.inputType.startsWith('deleteContent')) {
                     cleanupTrailingInvisibleTimesAfterDeletion();
                     if (hasCollapsedSelectionAtFieldEnd() && hasTrailingExponentToken()) {
@@ -2829,12 +2763,7 @@ class Graphiti {
                 }
                 return;
             }
-            isProcessingInsertLikeText = true;
-            try {
-                consumePendingPostExponentMultiplicationFromText(event.data, { restoreByDeleting: true });
-            } finally {
-                isProcessingInsertLikeText = false;
-            }
+            consumePendingPostExponentMultiplicationFromText(event.data, { restoreByDeleting: true });
         });
 
         mathField.addEventListener('pointerup', () => schedulePostExponentMultiplicationArm(false));
@@ -3062,7 +2991,6 @@ class Graphiti {
             // On touch devices, tapping the same field can keep stale focus without
             // emitting a new focusin event. Explicitly attempt to reopen keyboard.
             if (!toggleClicked) {
-                schedulePostExponentMultiplicationArm(false);
                 tryShowKeyboardForField(true);
             }
         });
@@ -3070,19 +2998,7 @@ class Graphiti {
         mathField.addEventListener('input', () => {
             // Store LaTeX directly instead of converting
             try {
-                let fieldValue = mathField.getValue();
-                const sanitizedFieldValue = stripExponentLeadingInvisibleTimes(fieldValue);
-                if (sanitizedFieldValue !== fieldValue && !mathField._graphitiSanitizingExponentInvisibleTimes) {
-                    mathField._graphitiSanitizingExponentInvisibleTimes = true;
-                    try {
-                        mathField.setValue(sanitizedFieldValue);
-                        fieldValue = sanitizedFieldValue;
-                    } finally {
-                        mathField._graphitiSanitizingExponentInvisibleTimes = false;
-                    }
-                }
-
-                const latex = this.restoreEmptyMathLivePlaceholders(fieldValue, mathField);
+                const latex = this.restoreEmptyMathLivePlaceholders(mathField.getValue(), mathField);
                 func.expression = latex; // Store LaTeX format
 
                 // Remove derived asymptote/hole info immediately when field is empty.
@@ -49920,12 +49836,6 @@ class Graphiti {
         if (!latex) return '';
         
         let expression = latex;
-
-        // Safety normalisation: if an invisible-times marker ends up inside an
-        // exponent group (for example x^{⁢2}), strip it before parsing.
-        expression = expression
-            .replace(/\^\{(?:\u2062)+/g, '^{')
-            .replace(/\^\((?:\u2062)+/g, '^(');
 
         // MathLive can include U+2062 (INVISIBLE TIMES) when implicit
         // multiplication is inserted without showing a visible operator.
