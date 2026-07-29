@@ -3192,6 +3192,91 @@ async function assertPanDuringRefreshRestoresLastIntersectionSnapshot(page) {
     ], `pan during pending viewport refresh should restore last complete marker snapshot: ${JSON.stringify(result)}`);
 }
 
+async function assertViewportChangeSkipsImplicitIntersectionWorkWhenIntersectionsHidden(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const originalShowIntersections = graphiti.showIntersections;
+        const originalShowTurningPoints = graphiti.showTurningPoints;
+        const originalShowIntercepts = graphiti.showIntercepts;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const addFunction = async (expression, color) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color,
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+            return func;
+        };
+
+        await addFunction('x^2-y^2=1', '#4A90E2');
+        await addFunction('x^2-y^2=1', '#D0021B');
+
+        const originalCalculateImplicitIntersections = graphiti.calculateImplicitIntersections.bind(graphiti);
+        let implicitIntersectionCalls = 0;
+        graphiti.calculateImplicitIntersections = () => {
+            implicitIntersectionCalls++;
+            return Promise.resolve();
+        };
+
+        try {
+            graphiti.handleViewportChange({ skipCoverageRefresh: true });
+            await new Promise(resolve => setTimeout(resolve, 260));
+
+            return {
+                implicitIntersectionCalls,
+                pending: graphiti.implicitIntersectionsPending
+            };
+        } finally {
+            graphiti.calculateImplicitIntersections = originalCalculateImplicitIntersections;
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+            if (graphiti.implicitIntersectionTimer) {
+                clearTimeout(graphiti.implicitIntersectionTimer);
+                graphiti.implicitIntersectionTimer = null;
+            }
+            graphiti.isViewportChanging = false;
+            graphiti.implicitIntersectionsPending = false;
+            graphiti.showIntersections = originalShowIntersections;
+            graphiti.showTurningPoints = originalShowTurningPoints;
+            graphiti.showIntercepts = originalShowIntercepts;
+        }
+    });
+
+    assert.strictEqual(result.implicitIntersectionCalls, 0, `hidden intersections should skip implicit intersection viewport work: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pending, false, `hidden intersections should not stay pending after viewport change: ${JSON.stringify(result)}`);
+}
+
 async function assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -4288,6 +4373,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
         await assertSecondPanPreservesFrozenImplicitMarkers(page);
         await assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page);
+        await assertViewportChangeSkipsImplicitIntersectionWorkWhenIntersectionsHidden(page);
         await assertPanDuringRefreshRestoresLastIntersectionSnapshot(page);
         await assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page);
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);

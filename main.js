@@ -21807,8 +21807,21 @@ class Graphiti {
             this.refreshExplicitCoverageForViewport();
         }
         
-        // Schedule implicit intersection recalculation after viewport changes settle
-        this.scheduleImplicitIntersectionCalculation();
+        // Schedule implicit intersection recalculation only when intersection markers are enabled.
+        // Without this guard, hidden intersections can still trigger expensive high-res implicit
+        // pair processing during viewport changes.
+        if (this.showIntersections) {
+            this.scheduleImplicitIntersectionCalculation();
+        } else {
+            if (this.implicitIntersectionTimer) {
+                clearTimeout(this.implicitIntersectionTimer);
+                this.implicitIntersectionTimer = null;
+            }
+            this.implicitIntersectionsPending = false;
+            this.intersectionMarkersPendingViewportRefresh = false;
+            this.frozenIntersectionBadges = [];
+            this.lastIntersectionMarkerSnapshot = [];
+        }
         
         // Cancel any ongoing implicit function calculations
         this.cancelAllImplicitCalculations();
