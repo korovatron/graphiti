@@ -3277,6 +3277,96 @@ async function assertViewportChangeSkipsImplicitIntersectionWorkWhenIntersection
     assert.strictEqual(result.pending, false, `hidden intersections should not stay pending after viewport change: ${JSON.stringify(result)}`);
 }
 
+async function assertIdenticalImplicitEquationsReuseGeometry(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        const originalShowIntersections = graphiti.showIntersections;
+        const originalShowTurningPoints = graphiti.showTurningPoints;
+        const originalShowIntercepts = graphiti.showIntercepts;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const func1 = {
+            id: graphiti.nextFunctionId++,
+            expression: 'x^2-y^2=1',
+            points: [],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        const func2 = {
+            id: graphiti.nextFunctionId++,
+            expression: 'x^2-y^2=1',
+            points: [],
+            color: '#D0021B',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func1, func2);
+
+        const originalPlotImplicitFunction = graphiti.plotImplicitFunction.bind(graphiti);
+        let implicitPlotCalls = 0;
+        graphiti.plotImplicitFunction = async (...args) => {
+            implicitPlotCalls++;
+            return originalPlotImplicitFunction(...args);
+        };
+
+        try {
+            await graphiti.plotFunction(func1);
+            await graphiti.plotFunction(func2);
+
+            return {
+                implicitPlotCalls,
+                func1PointCount: func1.points.length,
+                func2PointCount: func2.points.length,
+                func2RenderMode: func2.implicitRenderMode || null
+            };
+        } finally {
+            graphiti.plotImplicitFunction = originalPlotImplicitFunction;
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+            if (graphiti.implicitIntersectionTimer) {
+                clearTimeout(graphiti.implicitIntersectionTimer);
+                graphiti.implicitIntersectionTimer = null;
+            }
+            graphiti.showIntersections = originalShowIntersections;
+            graphiti.showTurningPoints = originalShowTurningPoints;
+            graphiti.showIntercepts = originalShowIntercepts;
+            graphiti.isViewportChanging = false;
+            graphiti.implicitIntersectionsPending = false;
+        }
+    });
+
+    assert.strictEqual(result.implicitPlotCalls, 1, `identical implicit equations should reuse geometry instead of replotting: ${JSON.stringify(result)}`);
+    assert(result.func1PointCount > 0, `first implicit equation should still plot points: ${JSON.stringify(result)}`);
+    assert(result.func2PointCount > 0, `reused implicit equation should receive plotted points: ${JSON.stringify(result)}`);
+    assert(result.func2RenderMode, `reused implicit equation should preserve render mode metadata: ${JSON.stringify(result)}`);
+}
+
 async function assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -3355,6 +3445,70 @@ async function assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries
         result.some(point => approxEqual(point.x, 6, 0.04) && approxEqual(point.y, 5, 0.04)),
         `viewport-changing implicit intersections should keep vertical/rational point (6, 5), got ${JSON.stringify(result)}`
     );
+}
+
+async function assertIdenticalImplicitPairsAreSkippedForIntersections(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = true;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.clearIntersectionState({ cancelWorker: true });
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const addFunction = async (expression, color) => {
+            const func = {
+                id: graphiti.nextFunctionId++,
+                expression,
+                points: [],
+                color,
+                enabled: true,
+                mode: 'cartesian'
+            };
+            graphiti.cartesianFunctions.push(func);
+            await graphiti.plotFunction(func);
+            return func;
+        };
+
+        await addFunction('x^2-y^2=1', '#4A90E2');
+        await addFunction('x^2-y^2=1', '#D0021B');
+
+        graphiti.calculateIntersectionsWithWorker(true);
+
+        const startTime = Date.now();
+        while ((graphiti.implicitIntersectionsPending || graphiti.isWorkerCalculating) && Date.now() - startTime < 3000) {
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+
+        return {
+            intersectionCount: graphiti.intersections.length,
+            implicitCount: graphiti.implicitIntersections.length,
+            explicitCount: graphiti.explicitIntersections.length
+        };
+    });
+
+    assert.strictEqual(result.explicitCount, 0, `identical implicit expressions should not add explicit intersections: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.implicitCount, 0, `identical implicit expressions should not add implicit intersections: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.intersectionCount, 0, `identical implicit expressions should not create visible intersection markers: ${JSON.stringify(result)}`);
 }
 
 async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
@@ -4374,8 +4528,10 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertSecondPanPreservesFrozenImplicitMarkers(page);
         await assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page);
         await assertViewportChangeSkipsImplicitIntersectionWorkWhenIntersectionsHidden(page);
+        await assertIdenticalImplicitEquationsReuseGeometry(page);
         await assertPanDuringRefreshRestoresLastIntersectionSnapshot(page);
         await assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries(page);
+        await assertIdenticalImplicitPairsAreSkippedForIntersections(page);
         await assertImplicitVerticalComponentsIntersectExplicitCurves(page);
         await assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page);
         await assertStressFastPathPanZoomStartsImmediately(page);

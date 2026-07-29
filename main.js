@@ -250,6 +250,35 @@ class Graphiti {
         
         // Implicit curve rendering cache - cache the rendered curve itself
         this.implicitCurveCache = new Map(); // Cache: functionId -> { canvas, viewport, pointsHash, color, isInequality, isStrict }
+        this.implicitMetadataCopyKeys = [
+            'implicitRenderMode',
+            'implicitDenominatorCleared',
+            'explicitVerticalAsymptotes',
+            'horizontalAsymptotes',
+            'obliqueAsymptotes',
+            'curvedAsymptotes',
+            'asymptoteData',
+            'envelopeData',
+            'holes',
+            'affineExplicitExpression',
+            'affineVerticalComponents',
+            '_viewportCoverageSampleRange',
+            'monomialYExplicitExpressions',
+            'monomialYCacheKey',
+            'monomialYRadicandExpression',
+            'monomialYPower',
+            'monomialYVerticalComponents',
+            'monomialYKnownStructure',
+            'monomialYExplicitProxy',
+            'quadraticYExplicitProxy',
+            'quadraticDiscriminantRoots',
+            'quadraticYVerticalComponents',
+            'productImplicitFactorExpressions',
+            'productImplicitFactorRenderModes',
+            'productImplicitVerticalComponents',
+            'singleVariableImplicitVerticalComponents',
+            'singleVariableImplicitHorizontalComponents'
+        ];
         
         // Extended viewport buffer configuration for smooth panning
         this.implicitBufferConfig = {
@@ -4166,6 +4195,14 @@ class Graphiti {
         }
         
         if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+            if (this.tryReuseIdenticalImplicitGeometry(func, functionType)) {
+                if (this.performance.enabled) {
+                    const elapsed = performance.now() - startTime;
+                    this.performance.plotTimes.set(func.id, elapsed);
+                }
+                return;
+            }
+
             const preserveFastPathMetadata = this.isExplicitImplicitFastPath(func) &&
                 (this.isViewportChanging || func._preserveFastPathMetadataDuringViewportRefresh);
             if (!preserveFastPathMetadata) {
@@ -6309,6 +6346,106 @@ class Graphiti {
         }
 
         return func && func.expression ? this.detectFunctionType(func.expression) : 'explicit';
+    }
+
+    getImplicitGeometryViewportKey() {
+        return `${this.plotMode}|${this.viewport.minX}|${this.viewport.maxX}|${this.viewport.minY}|${this.viewport.maxY}|${this.viewport.width}|${this.viewport.height}|${this.angleMode}`;
+    }
+
+    getNormalisedImplicitExpression(expression) {
+        return this.convertFromLatex(String(expression || ''))
+            .toLowerCase()
+            .replace(/\s+/g, '');
+    }
+
+    shouldSkipIdenticalIntersectionPair(func1, func2) {
+        if (!func1 || !func2 || !func1.expression || !func2.expression) {
+            return false;
+        }
+
+        const expr1 = this.getNormalisedImplicitExpression(func1.expression);
+        const expr2 = this.getNormalisedImplicitExpression(func2.expression);
+        return !!expr1 && expr1 === expr2;
+    }
+
+    cloneSerializable(value) {
+        if (value === undefined) {
+            return undefined;
+        }
+
+        if (typeof structuredClone === 'function') {
+            return structuredClone(value);
+        }
+
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    cloneImplicitPoints(points) {
+        if (!Array.isArray(points)) {
+            return [];
+        }
+
+        return points.map(point => ({ ...point }));
+    }
+
+    copyImplicitMetadataForReuse(sourceFunc, targetFunc) {
+        if (!sourceFunc || !targetFunc) {
+            return;
+        }
+
+        this.clearFunctionAsymptoteData(targetFunc);
+
+        for (const key of this.implicitMetadataCopyKeys) {
+            if (sourceFunc[key] === undefined) {
+                delete targetFunc[key];
+                continue;
+            }
+
+            targetFunc[key] = this.cloneSerializable(sourceFunc[key]);
+        }
+
+        this.updateFunctionAsymptoteInfo(targetFunc);
+    }
+
+    tryReuseIdenticalImplicitGeometry(func, functionType) {
+        if (!func || functionType !== 'implicit' || !func.expression) {
+            return false;
+        }
+
+        const viewportKey = this.getImplicitGeometryViewportKey();
+        const normalisedExpression = this.getNormalisedImplicitExpression(func.expression);
+        if (!normalisedExpression) {
+            return false;
+        }
+
+        const reuseCandidate = this.getCurrentFunctions().find(other => {
+            if (!other || other.id === func.id || !other.enabled || other.validationError || !other.expression) {
+                return false;
+            }
+
+            if (this.detectFunctionType(other.expression) !== 'implicit') {
+                return false;
+            }
+
+            if (other._implicitGeometryViewportKey !== viewportKey) {
+                return false;
+            }
+
+            if (!Array.isArray(other.points) || other.points.length === 0) {
+                return false;
+            }
+
+            return this.getNormalisedImplicitExpression(other.expression) === normalisedExpression;
+        });
+
+        if (!reuseCandidate) {
+            return false;
+        }
+
+        this.copyImplicitMetadataForReuse(reuseCandidate, func);
+        this.applyImplicitFunctionPoints(func, this.cloneImplicitPoints(reuseCandidate.points));
+        func._implicitGeometryViewportKey = viewportKey;
+        return true;
     }
 
     getIntersectionPointsWithImplicitVerticalComponents(func, sourcePoints = null) {
@@ -12969,6 +13106,7 @@ class Graphiti {
 
         // Keep legacy readers in sync.
         func.points = points;
+        func._implicitGeometryViewportKey = this.getImplicitGeometryViewportKey();
 
         // Invalidate curve cache when points change.
         this.implicitCurveCache.delete(func.id);
@@ -21948,6 +22086,10 @@ class Graphiti {
             for (let j = i + 1; j < enabledFunctions.length; j++) {
                 const func1 = enabledFunctions[i];
                 const func2 = enabledFunctions[j];
+
+                if (this.shouldSkipIdenticalIntersectionPair(func1, func2)) {
+                    continue;
+                }
                 
                 console.log(`[Intersections] Checking pair: "${func1.expression}" vs "${func2.expression}"`);
                 const pairIntersections = this.findIntersectionsBetweenFunctions(func1, func2);
@@ -34666,6 +34808,7 @@ class Graphiti {
             functions: explicitFunctions.map(func => ({
                 id: func.id,
                 expression: func.expression,
+                normalizedExpression: this.getNormalisedImplicitExpression(func.expression),
                 points: func.points,
                 color: func.color,
                 enabled: func.enabled
@@ -34774,6 +34917,7 @@ class Graphiti {
                 return {
                     id: func.id,
                     expression: func.expression,
+                    normalizedExpression: this.getNormalisedImplicitExpression(func.expression),
                     points: this.getIntersectionPointsWithImplicitVerticalComponents(func),
                     color: func.color,
                     enabled: func.enabled,
@@ -34892,7 +35036,9 @@ class Graphiti {
 
         const shouldPreserveFrozenMarkers = this.isViewportChanging || this.implicitIntersectionsPending || this.intersectionMarkersPendingViewportRefresh;
         const preservedMarkers = shouldPreserveFrozenMarkers
-            ? [...this.frozenIntersectionBadges, ...this.lastIntersectionMarkerSnapshot]
+            ? (this.frozenIntersectionBadges.length > 0
+                ? [...this.frozenIntersectionBadges]
+                : [...this.lastIntersectionMarkerSnapshot])
             : [];
         const currentIntersectionMarkers = this.getCurrentIntersectionMarkerSnapshot(
             preservedMarkers

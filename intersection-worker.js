@@ -93,6 +93,20 @@ self.onerror = function(error) {
 // INTERSECTION DETECTION FUNCTIONS
 // ================================
 
+function normalizeExpressionText(expression) {
+    return String(expression || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function shouldSkipIdenticalFunctionPair(func1, func2) {
+    if (!func1 || !func2) {
+        return false;
+    }
+
+    const expr1 = func1.normalizedExpression || normalizeExpressionText(func1.expression);
+    const expr2 = func2.normalizedExpression || normalizeExpressionText(func2.expression);
+    return !!expr1 && expr1 === expr2;
+}
+
 function findIntersections(functions, plotMode) {
     // Find intersection points between all pairs of enabled functions
     const intersections = [];
@@ -108,6 +122,10 @@ function findIntersections(functions, plotMode) {
         for (let j = i + 1; j < enabledFunctions.length; j++) {
             const func1 = enabledFunctions[i];
             const func2 = enabledFunctions[j];
+
+            if (shouldSkipIdenticalFunctionPair(func1, func2)) {
+                continue;
+            }
             
                 if ((func1.isImplicit === false) && (func2.isImplicit === false)) {
                     continue;
