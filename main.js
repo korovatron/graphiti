@@ -1542,6 +1542,40 @@ class Graphiti {
         return this.plotMode === 'polar' ? this.polarFunctions : this.cartesianFunctions;
     }
 
+    getActiveEnabledFunctions(functions = this.getCurrentFunctions()) {
+        if (!Array.isArray(functions) || functions.length === 0) {
+            return [];
+        }
+
+        const latestByKey = new Map();
+        for (const func of functions) {
+            if (!func || !func.enabled || func.validationError || !func.expression || !func.expression.trim()) {
+                continue;
+            }
+
+            const normalizedExpression = this.getCachedNormalisedFunctionExpression(func);
+            const functionType = this.getEffectiveFunctionType(func);
+            const dedupeKey = normalizedExpression ? `${functionType}|${normalizedExpression}` : `${functionType}|id:${func.id}`;
+            latestByKey.set(dedupeKey, func);
+        }
+
+        const activeFunctions = [];
+        for (const func of functions) {
+            if (!func || !func.enabled || func.validationError || !func.expression || !func.expression.trim()) {
+                continue;
+            }
+
+            const normalizedExpression = this.getCachedNormalisedFunctionExpression(func);
+            const functionType = this.getEffectiveFunctionType(func);
+            const dedupeKey = normalizedExpression ? `${functionType}|${normalizedExpression}` : `${functionType}|id:${func.id}`;
+            if (latestByKey.get(dedupeKey) === func) {
+                activeFunctions.push(func);
+            }
+        }
+
+        return activeFunctions;
+    }
+
     get viewport() {
         const current = this.plotMode === 'polar' ? this.polarViewport : this.cartesianViewport;
         
@@ -6358,13 +6392,29 @@ class Graphiti {
             .replace(/\s+/g, '');
     }
 
+    getCachedNormalisedFunctionExpression(func) {
+        if (!func || !func.expression) {
+            return '';
+        }
+
+        const source = String(func.expression);
+        if (func._normalizedExpressionSource === source && typeof func._normalizedExpressionValue === 'string') {
+            return func._normalizedExpressionValue;
+        }
+
+        const normalised = this.getNormalisedImplicitExpression(source);
+        func._normalizedExpressionSource = source;
+        func._normalizedExpressionValue = normalised;
+        return normalised;
+    }
+
     shouldSkipIdenticalIntersectionPair(func1, func2) {
         if (!func1 || !func2 || !func1.expression || !func2.expression) {
             return false;
         }
 
-        const expr1 = this.getNormalisedImplicitExpression(func1.expression);
-        const expr2 = this.getNormalisedImplicitExpression(func2.expression);
+        const expr1 = this.getCachedNormalisedFunctionExpression(func1);
+        const expr2 = this.getCachedNormalisedFunctionExpression(func2);
         return !!expr1 && expr1 === expr2;
     }
 
@@ -6413,7 +6463,7 @@ class Graphiti {
         }
 
         const viewportKey = this.getImplicitGeometryViewportKey();
-        const normalisedExpression = this.getNormalisedImplicitExpression(func.expression);
+        const normalisedExpression = this.getCachedNormalisedFunctionExpression(func);
         if (!normalisedExpression) {
             return false;
         }
@@ -6435,7 +6485,7 @@ class Graphiti {
                 return false;
             }
 
-            return this.getNormalisedImplicitExpression(other.expression) === normalisedExpression;
+            return this.getCachedNormalisedFunctionExpression(other) === normalisedExpression;
         });
 
         if (!reuseCandidate) {
@@ -6717,8 +6767,7 @@ class Graphiti {
     countEnabledInequalities() {
         // Count all enabled inequalities of all types
         let count = 0;
-        for (const func of this.getCurrentFunctions()) {
-            if (!func.enabled) continue;
+        for (const func of this.getActiveEnabledFunctions()) {
             const functionType = this.detectFunctionType(func.expression);
             if (functionType === 'explicit-inequality' || 
                 functionType === 'implicit-inequality' || 
@@ -7159,8 +7208,7 @@ class Graphiti {
         
         // Collect all enabled inequalities
         const inequalities = [];
-        for (const func of this.getCurrentFunctions()) {
-            if (!func.enabled) continue;
+        for (const func of this.getActiveEnabledFunctions()) {
             const functionType = this.detectFunctionType(func.expression);
             if (functionType === 'explicit-inequality' || 
                 functionType === 'implicit-inequality' || 
@@ -21988,7 +22036,7 @@ class Graphiti {
             
             // Replot explicit functions with updated viewport
             const explicitReplotPromises = [];
-            this.getCurrentFunctions().forEach(func => {
+            this.getActiveEnabledFunctions().forEach(func => {
                 if (func.expression && func.enabled && !func.validationError) {
                     const functionType = this.getEffectiveFunctionType(func);
                     if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant') {
@@ -22006,7 +22054,7 @@ class Graphiti {
             
             // Replot implicit functions and inequalities
             // For inequalities, this recalculates grid data at proper resolution
-            const hasImplicitFunctionsToReplot = this.getCurrentFunctions().some(func => {
+            const hasImplicitFunctionsToReplot = this.getActiveEnabledFunctions().some(func => {
                 if (!func.expression || !func.enabled || func.validationError) return false;
                 const functionType = this.getEffectiveFunctionType(func);
                 return functionType === 'implicit' || functionType === 'implicit-inequality';
@@ -32101,7 +32149,7 @@ class Graphiti {
         this.cancelAllImplicitCalculations();
         
         // Get implicit functions and inequalities to replot
-        const implicitFunctions = this.getCurrentFunctions().filter(func => {
+        const implicitFunctions = this.getActiveEnabledFunctions().filter(func => {
             if (!func.expression || !func.enabled || func.validationError) return false;
             const functionType = this.getEffectiveFunctionType(func);
             // During viewport changes, skip inequalities - they'll use cached grid data
@@ -34762,7 +34810,7 @@ class Graphiti {
         }
 
         // Check if we have implicit functions that will need calculation
-        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled && !f.validationError && f.points.length > 0);
+        const allFunctions = this.getActiveEnabledFunctions().filter(f => f.points.length > 0);
         const hasImplicitFunctions = allFunctions.some(f => this.isMathematicallyImplicitFunction(f));
         
         // Set pending flag BEFORE calculating explicit intersections
@@ -34790,14 +34838,27 @@ class Graphiti {
         this.isWorkerCalculating = true;
 
         // Process explicit functions and theta-constant rays for fast intersection detection
-        const explicitFunctions = this.getCurrentFunctions().filter(f => {
-            if (!f.enabled || f.validationError || f.points.length === 0) return false;
+        const explicitFunctions = this.getActiveEnabledFunctions().filter(f => {
+            if (f.points.length === 0) return false;
             if (this.isMathematicallyImplicitFunction(f)) return false;
             const functionType = this.getEffectiveFunctionType(f);
             return functionType === 'explicit' || functionType === 'theta-constant' || functionType === 'polar' || functionType === 'explicit-inequality' || functionType === 'polar-inequality';
         });
 
-        if (explicitFunctions.length < 2) {
+        const uniqueExplicitFunctions = [];
+        const seenExplicitKeys = new Set();
+        for (const func of explicitFunctions) {
+            const explicitType = this.getEffectiveFunctionType(func);
+            const normalizedExpression = this.getCachedNormalisedFunctionExpression(func);
+            const dedupeKey = normalizedExpression ? `${explicitType}|${normalizedExpression}` : `${explicitType}|id:${func.id}`;
+            if (seenExplicitKeys.has(dedupeKey)) {
+                continue;
+            }
+            seenExplicitKeys.add(dedupeKey);
+            uniqueExplicitFunctions.push(func);
+        }
+
+        if (uniqueExplicitFunctions.length < 2) {
             this.explicitIntersections = [];
             this.updateCombinedIntersections();
             this.isWorkerCalculating = false;
@@ -34805,10 +34866,10 @@ class Graphiti {
         }
 
         const workerData = {
-            functions: explicitFunctions.map(func => ({
+            functions: uniqueExplicitFunctions.map(func => ({
                 id: func.id,
                 expression: func.expression,
-                normalizedExpression: this.getNormalisedImplicitExpression(func.expression),
+                normalizedExpression: this.getCachedNormalisedFunctionExpression(func),
                 points: func.points,
                 color: func.color,
                 enabled: func.enabled
@@ -34849,7 +34910,7 @@ class Graphiti {
 
         // Check for implicit functions by TYPE, not by whether they currently have points
         // During viewport changes, implicit functions may temporarily have empty points arrays
-        const allFunctions = this.getCurrentFunctions().filter(f => f.enabled);
+        const allFunctions = this.getActiveEnabledFunctions();
         const hasImplicitFunctions = allFunctions.some(f => this.isMathematicallyImplicitFunction(f));
         
         if (!hasImplicitFunctions) {
@@ -34871,8 +34932,7 @@ class Graphiti {
 
     async calculateImplicitIntersections() {
         // During viewport changes, use cached points; otherwise use current points
-        const allFunctions = this.getCurrentFunctions().filter(f => {
-            if (!f.enabled) return false;
+        const allFunctions = this.getActiveEnabledFunctions().filter(f => {
             const points = this.isViewportChanging ? (f.cachedPoints || f.points || []) : (f.points || []);
             return points.length > 0;
         });
@@ -34887,27 +34947,60 @@ class Graphiti {
             return;
         }
 
-        // Replot implicit functions at high resolution for intersection detection
+        // Replot implicit functions at high resolution for intersection detection.
+        // Duplicate implicit expressions can reuse the first high-res geometry to
+        // avoid repeating expensive marching-squares work.
         const highResFunctions = [];
+        const highResImplicitReuse = new Map();
+        const seenWorkerFunctionKeys = new Set();
         
         for (const func of allFunctions) {
             const detectedType = this.detectFunctionType(func.expression);
+            const workerType = this.isMathematicallyImplicitFunction(func) ? 'implicit' : this.getEffectiveFunctionType(func);
+            const normalizedExpression = this.getCachedNormalisedFunctionExpression(func);
+            const workerDedupeKey = normalizedExpression ? `${workerType}|${normalizedExpression}` : `${workerType}|id:${func.id}`;
+            if (seenWorkerFunctionKeys.has(workerDedupeKey)) {
+                continue;
+            }
+
             if (detectedType === 'implicit' || detectedType === 'implicit-inequality') {
+                const reuseKey = normalizedExpression ? `${detectedType}|${normalizedExpression}` : '';
+                const reusable = reuseKey ? highResImplicitReuse.get(reuseKey) : null;
+
+                if (reusable && Array.isArray(reusable.points) && reusable.points.length > 0) {
+                    seenWorkerFunctionKeys.add(workerDedupeKey);
+                    highResFunctions.push(reusable);
+                    continue;
+                }
+
                 // Create a copy and replot at high resolution
                 const highResFunc = {
                     ...func,
                     points: [] // Will be filled by high-res plotting
                 };
                 await this.plotImplicitFunction(highResFunc, true, false); // true = high resolution, false = not startup
+
+                if (reuseKey && Array.isArray(highResFunc.points) && highResFunc.points.length > 0) {
+                    highResImplicitReuse.set(reuseKey, highResFunc);
+                }
+                seenWorkerFunctionKeys.add(workerDedupeKey);
                 highResFunctions.push(highResFunc);
             } else {
                 // Use existing points for explicit and parametric functions (cached if viewport changing)
                 const funcPoints = this.isViewportChanging ? (func.cachedPoints || func.points || []) : (func.points || []);
+                seenWorkerFunctionKeys.add(workerDedupeKey);
                 highResFunctions.push({
                     ...func,
                     points: funcPoints
                 });
             }
+        }
+
+        if (highResFunctions.length < 2) {
+            this.implicitIntersections = [];
+            this.implicitIntersectionsPending = false;
+            this.updateCombinedIntersections();
+            return;
         }
 
         // Use worker for intersection calculation with high-res data
@@ -34917,7 +35010,7 @@ class Graphiti {
                 return {
                     id: func.id,
                     expression: func.expression,
-                    normalizedExpression: this.getNormalisedImplicitExpression(func.expression),
+                    normalizedExpression: this.getCachedNormalisedFunctionExpression(func),
                     points: this.getIntersectionPointsWithImplicitVerticalComponents(func),
                     color: func.color,
                     enabled: func.enabled,
@@ -35506,11 +35599,11 @@ class Graphiti {
     
     findCartesianAxisIntercepts() {
         const intercepts = [];
-        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+        const enabledFunctions = this.getActiveEnabledFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
             // Use displayPoints (stable buffer) if available, otherwise fall back to points
             const pointsToCheck = f.displayPoints || f.points;
-            if (!f.enabled || !pointsToCheck || pointsToCheck.length === 0) {
+            if (!pointsToCheck || pointsToCheck.length === 0) {
                 return false;
             }
             
@@ -37333,9 +37426,9 @@ class Graphiti {
     
     findCartesianTurningPoints() {
         const turningPoints = [];
-        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+        const enabledFunctions = this.getActiveEnabledFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
-            if (!f.enabled || !f.points || f.points.length === 0) {
+            if (!f.points || f.points.length === 0) {
                 return false;
             }
             
@@ -37779,9 +37872,9 @@ class Graphiti {
     
     findPolarTurningPoints() {
         const turningPoints = [];
-        const enabledFunctions = this.getCurrentFunctions().filter(f => {
+        const enabledFunctions = this.getActiveEnabledFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
-            if (!f.enabled || !f.points || f.points.length === 0) {
+            if (!f.points || f.points.length === 0) {
                 return false;
             }
             
@@ -41955,23 +42048,21 @@ class Graphiti {
         }
         
         // Draw functions from current mode only
-        this.getCurrentFunctions().forEach(func => {
-            if (func.enabled) {
-                const functionType = this.detectFunctionType(func.expression);
-                const isExplicitFastPath = this.isExplicitImplicitFastPath(func);
-                if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !isExplicitFastPath) {
-                    // Draw implicit functions/inequalities using displayPoints (stable during calculations)
-                    const pointsToCheck = func.displayPoints || func.points;
-                    // For implicit inequalities, draw even if no boundary points (may need full-viewport shading)
-                    if ((pointsToCheck && pointsToCheck.length > 0) || 
-                        (functionType === 'implicit-inequality' && func.gridData)) {
-                        this.drawImplicitFunction(func);
-                    }
-                } else {
-                    // Always draw explicit functions for smooth interaction
-                    if (func.points && func.points.length > 0) {
-                        this.drawFunction(func);
-                    }
+        this.getActiveEnabledFunctions().forEach(func => {
+            const functionType = this.detectFunctionType(func.expression);
+            const isExplicitFastPath = this.isExplicitImplicitFastPath(func);
+            if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !isExplicitFastPath) {
+                // Draw implicit functions/inequalities using displayPoints (stable during calculations)
+                const pointsToCheck = func.displayPoints || func.points;
+                // For implicit inequalities, draw even if no boundary points (may need full-viewport shading)
+                if ((pointsToCheck && pointsToCheck.length > 0) || 
+                    (functionType === 'implicit-inequality' && func.gridData)) {
+                    this.drawImplicitFunction(func);
+                }
+            } else {
+                // Always draw explicit functions for smooth interaction
+                if (func.points && func.points.length > 0) {
+                    this.drawFunction(func);
                 }
             }
         });

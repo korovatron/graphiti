@@ -3450,6 +3450,12 @@ async function assertViewportChangingImplicitIntersectionsKeepVerticalBoundaries
 async function assertIdenticalImplicitPairsAreSkippedForIntersections(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
+        const originalPlotImplicitFunction = graphiti.plotImplicitFunction.bind(graphiti);
+        const originalWorkerPostMessage = graphiti.intersectionWorker && graphiti.intersectionWorker.postMessage
+            ? graphiti.intersectionWorker.postMessage.bind(graphiti.intersectionWorker)
+            : null;
+        let highResPlotCalls = 0;
+        let implicitWorkerFunctionCount = null;
         graphiti.plotMode = 'cartesian';
         graphiti.currentState = graphiti.states.GRAPHING;
         graphiti.cartesianFunctions = [];
@@ -3492,23 +3498,59 @@ async function assertIdenticalImplicitPairsAreSkippedForIntersections(page) {
         await addFunction('x^2-y^2=1', '#4A90E2');
         await addFunction('x^2-y^2=1', '#D0021B');
 
-        graphiti.calculateIntersectionsWithWorker(true);
+        graphiti.plotImplicitFunction = async (...args) => {
+            if (args[1] === true) {
+                highResPlotCalls++;
+            }
+            return originalPlotImplicitFunction(...args);
+        };
 
-        const startTime = Date.now();
-        while ((graphiti.implicitIntersectionsPending || graphiti.isWorkerCalculating) && Date.now() - startTime < 3000) {
-            await new Promise(resolve => setTimeout(resolve, 25));
+        if (graphiti.intersectionWorker && originalWorkerPostMessage) {
+            graphiti.intersectionWorker.postMessage = message => {
+                if (message && message.type === 'CALCULATE_INTERSECTIONS' && message.data && message.data.calculationType === 'implicit') {
+                    implicitWorkerFunctionCount = Array.isArray(message.data.functions) ? message.data.functions.length : null;
+                }
+                return originalWorkerPostMessage(message);
+            };
         }
 
-        return {
-            intersectionCount: graphiti.intersections.length,
-            implicitCount: graphiti.implicitIntersections.length,
-            explicitCount: graphiti.explicitIntersections.length
-        };
+        try {
+            graphiti.calculateIntersectionsWithWorker(true);
+
+            const startTime = Date.now();
+            while ((graphiti.implicitIntersectionsPending || graphiti.isWorkerCalculating) && Date.now() - startTime < 3000) {
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+
+            return {
+                intersectionCount: graphiti.intersections.length,
+                implicitCount: graphiti.implicitIntersections.length,
+                explicitCount: graphiti.explicitIntersections.length,
+                highResPlotCalls,
+                implicitWorkerFunctionCount
+            };
+        } finally {
+            graphiti.plotImplicitFunction = originalPlotImplicitFunction;
+            if (graphiti.intersectionWorker && originalWorkerPostMessage) {
+                graphiti.intersectionWorker.postMessage = originalWorkerPostMessage;
+            }
+            if (graphiti.implicitIntersectionTimer) {
+                clearTimeout(graphiti.implicitIntersectionTimer);
+                graphiti.implicitIntersectionTimer = null;
+            }
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+            graphiti.implicitIntersectionsPending = false;
+        }
     });
 
     assert.strictEqual(result.explicitCount, 0, `identical implicit expressions should not add explicit intersections: ${JSON.stringify(result)}`);
     assert.strictEqual(result.implicitCount, 0, `identical implicit expressions should not add implicit intersections: ${JSON.stringify(result)}`);
     assert.strictEqual(result.intersectionCount, 0, `identical implicit expressions should not create visible intersection markers: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.highResPlotCalls, 0, `identical implicit expressions should be skipped before high-resolution intersection plotting: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.implicitWorkerFunctionCount, null, `identical implicit expressions should short-circuit implicit worker processing after deduplication: ${JSON.stringify(result)}`);
 }
 
 async function assertImplicitVerticalComponentsIntersectExplicitCurves(page) {
