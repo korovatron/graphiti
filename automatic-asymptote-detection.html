@@ -31,29 +31,60 @@
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
-        "@type": "ItemPage",
-        "name": "Automatic Asymptote Detection in Graphiti",
-        "description": "A focused guide to Graphiti's automatic asymptote detection for vertical, horizontal, oblique and curvilinear asymptotes.",
-        "url": "https://www.korovatron.co.uk/graphiti/automatic-asymptote-detection.html",
-        "inLanguage": "en-GB",
-        "mainEntity": {
-            "@type": "SoftwareApplication",
-            "name": "Graphiti",
-            "url": "https://www.korovatron.co.uk/graphiti/",
-            "applicationCategory": "EducationalApplication",
-            "operatingSystem": "Web Browser",
-            "featureList": [
-                "Automatic asymptote detection",
-                "Vertical, horizontal and oblique asymptotes",
-                "Curvilinear asymptote detection",
-                "Equations for detected asymptotes"
-            ]
-        },
-        "author": {
-            "@type": "Person",
-            "name": "Neil Kendall",
-            "url": "https://www.korovatron.co.uk"
-        }
+        "@graph": [
+            {
+                "@type": "BreadcrumbList",
+                "@id": "https://www.korovatron.co.uk/graphiti/automatic-asymptote-detection.html#breadcrumb",
+                "itemListElement": [
+                    {
+                        "@type": "ListItem",
+                        "position": 1,
+                        "name": "Graphiti",
+                        "item": "https://www.korovatron.co.uk/graphiti/"
+                    },
+                    {
+                        "@type": "ListItem",
+                        "position": 2,
+                        "name": "Guide",
+                        "item": "https://www.korovatron.co.uk/graphiti/guide.html"
+                    },
+                    {
+                        "@type": "ListItem",
+                        "position": 3,
+                        "name": "Automatic asymptote detection",
+                        "item": "https://www.korovatron.co.uk/graphiti/automatic-asymptote-detection.html"
+                    }
+                ]
+            },
+            {
+                "@type": "ItemPage",
+                "name": "Automatic Asymptote Detection in Graphiti",
+                "description": "A focused guide to Graphiti's automatic asymptote detection for vertical, horizontal, oblique and curvilinear asymptotes.",
+                "url": "https://www.korovatron.co.uk/graphiti/automatic-asymptote-detection.html",
+                "inLanguage": "en-GB",
+                "mainEntity": {
+                    "@type": "SoftwareApplication",
+                    "name": "Graphiti",
+                    "url": "https://www.korovatron.co.uk/graphiti/",
+                    "applicationCategory": "EducationalApplication",
+                    "operatingSystem": "Web Browser",
+                    "featureList": [
+                        "Automatic asymptote detection",
+                        "Vertical, horizontal and oblique asymptotes",
+                        "Curvilinear asymptote detection",
+                        "Equations for detected asymptotes"
+                    ]
+                },
+                "author": {
+                    "@type": "Person",
+                    "name": "Neil Kendall",
+                    "url": "https://www.korovatron.co.uk"
+                },
+                "breadcrumb": {
+                    "@id": "https://www.korovatron.co.uk/graphiti/automatic-asymptote-detection.html#breadcrumb"
+                }
+            }
+        ]
     }
     </script>
     <style>

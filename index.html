@@ -62,48 +62,68 @@
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "Graphiti",
-        "alternateName": ["Graphiti Graphing Calculator", "Free Online Graphing Calculator", "Online Graph Plotter"],
-        "description": "Graphiti is a free online graphing calculator and graph plotter that automatically detects asymptotes, intersections, turning points, inflection points, tangents, integrals, and curve behaviour.",
-        "url": "https://www.korovatron.co.uk/graphiti/",
-        "applicationCategory": "EducationalApplication",
-        "applicationSubCategory": "Graphing calculator",
-        "operatingSystem": "Web Browser",
-        "inLanguage": "en-GB",
-        "isAccessibleForFree": true,
-        "educationalUse": "Function plotting, curve sketching, asymptote detection, and calculus visualisation",
-        "featureList": [
-            "Online graphing calculator",
-            "Function plotter",
-            "Automatic asymptote detection",
-            "Intersection detection",
-            "Turning point detection",
-            "Inflection point detection",
-            "Tangent and normal lines",
-            "Definite integrals and area between curves",
-            "Implicit equation plotting",
-            "Inequality graphing",
-            "Polar graphs",
-            "Parametric curves",
-            "SVG and PNG export",
-            "Progressive Web App offline support"
-        ],
-        "author": {
-            "@type": "Person",
-            "name": "Neil Kendall",
-            "url": "https://www.korovatron.co.uk"
-        },
-        "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "GBP"
-        },
-        "browserRequirements": "Requires JavaScript. Works on desktop and mobile browsers.",
-        "softwareVersion": "2025.2",
-        "datePublished": "2025-01-01",
-        "dateModified": "2026-07-24",
-        "image": "https://www.korovatron.co.uk/graphiti/images/graphitiShareImage1.png"
+        "@graph": [
+            {
+                "@type": "BreadcrumbList",
+                "@id": "https://www.korovatron.co.uk/graphiti/#breadcrumb",
+                "itemListElement": [
+                    {
+                        "@type": "ListItem",
+                        "position": 1,
+                        "name": "Graphiti",
+                        "item": "https://www.korovatron.co.uk/graphiti/"
+                    }
+                ]
+            },
+            {
+                "@type": "WebApplication",
+                "@id": "https://www.korovatron.co.uk/graphiti/#webapplication",
+                "name": "Graphiti",
+                "alternateName": ["Graphiti Graphing Calculator", "Free Online Graphing Calculator", "Online Graph Plotter"],
+                "description": "Graphiti is a free online graphing calculator and graph plotter that automatically detects asymptotes, intersections, turning points, inflection points, tangents, integrals, and curve behaviour.",
+                "url": "https://www.korovatron.co.uk/graphiti/",
+                "applicationCategory": "EducationalApplication",
+                "applicationSubCategory": "Graphing calculator",
+                "operatingSystem": "Web Browser",
+                "inLanguage": "en-GB",
+                "isAccessibleForFree": true,
+                "educationalUse": "Function plotting, curve sketching, asymptote detection, and calculus visualisation",
+                "featureList": [
+                    "Online graphing calculator",
+                    "Function plotter",
+                    "Automatic asymptote detection",
+                    "Intersection detection",
+                    "Turning point detection",
+                    "Inflection point detection",
+                    "Tangent and normal lines",
+                    "Definite integrals and area between curves",
+                    "Implicit equation plotting",
+                    "Inequality graphing",
+                    "Polar graphs",
+                    "Parametric curves",
+                    "SVG and PNG export",
+                    "Progressive Web App offline support"
+                ],
+                "author": {
+                    "@type": "Person",
+                    "name": "Neil Kendall",
+                    "url": "https://www.korovatron.co.uk"
+                },
+                "offers": {
+                    "@type": "Offer",
+                    "price": "0",
+                    "priceCurrency": "GBP"
+                },
+                "browserRequirements": "Requires JavaScript. Works on desktop and mobile browsers.",
+                "softwareVersion": "2025.2",
+                "datePublished": "2025-01-01",
+                "dateModified": "2026-07-24",
+                "image": "https://www.korovatron.co.uk/graphiti/images/graphitiShareImage1.png",
+                "breadcrumb": {
+                    "@id": "https://www.korovatron.co.uk/graphiti/#breadcrumb"
+                }
+            }
+        ]
     }
     </script>
 
