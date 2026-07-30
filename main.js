@@ -27879,7 +27879,6 @@ class Graphiti {
                     this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.isViewportChanging = true;
                     this.draw();
-                    this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
                 
             } else if (effectiveDirection === 'vertical') {
@@ -27907,7 +27906,6 @@ class Graphiti {
                     this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.isViewportChanging = true;
                     this.draw();
-                    this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
                 
             } else {
@@ -27942,13 +27940,14 @@ class Graphiti {
                     this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.isViewportChanging = true;
                     this.draw();
-                    this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
                 }
             }
         }
     }
     
     handleTouchEnd(e) {
+        const wasPinching = this.input.pinch.active;
+
         if (e.touches.length === 0) {
             // All touches ended - check for tap
             const tapDuration = Date.now() - this.input.startTime;
@@ -27973,6 +27972,10 @@ class Graphiti {
             
             this.handlePointerEnd();
             this.input.pinch.active = false;
+
+            if (wasPinching) {
+                this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
+            }
         } else if (e.touches.length === 1 && this.input.pinch.active) {
             // Went from pinch to single touch
             this.input.pinch.active = false;
