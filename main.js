@@ -203,7 +203,8 @@ class Graphiti {
                 fixedCenterWorldY: 0
             },
             pendingTapAction: null,
-            viewportPanActive: false
+            viewportPanActive: false,
+            keyboardPanActive: false
         };
         
         // Mathematical functions - separate collections for each mode
@@ -25896,7 +25897,23 @@ class Graphiti {
         });
 
         document.addEventListener('keyup', (e) => {
-            this.input.keys.delete(e.key.toLowerCase());
+            const key = e.key.toLowerCase();
+            this.input.keys.delete(key);
+
+            const isPanKey = key === 'arrowleft' || key === 'arrowright' || key === 'arrowup' || key === 'arrowdown' ||
+                key === 'a' || key === 'd' || key === 'w' || key === 's';
+
+            if (isPanKey && this.input.keyboardPanActive) {
+                const hasRemainingPanKeys = this.input.keys.has('arrowleft') || this.input.keys.has('arrowright') ||
+                    this.input.keys.has('arrowup') || this.input.keys.has('arrowdown') ||
+                    this.input.keys.has('a') || this.input.keys.has('d') ||
+                    this.input.keys.has('w') || this.input.keys.has('s');
+
+                if (!hasRemainingPanKeys) {
+                    this.input.keyboardPanActive = false;
+                    this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
+                }
+            }
         });
 
         const isMathLiveTouchInteraction = (event) => {
@@ -41992,8 +42009,8 @@ class Graphiti {
         // Note: We don't recalculate functions here for performance - just redraw existing points
         // Functions will be recalculated when panning stops via handleViewportChange debounce
         if (hasPanned) {
+            this.input.keyboardPanActive = true;
             this.updateRangeInputs();
-            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
             this.draw(); // Redraw existing points immediately for smooth panning
         }
     }
