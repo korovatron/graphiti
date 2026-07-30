@@ -1,7 +1,7 @@
 {
   "id": "graphiti-function-plotter",
-  "name": "Free Online Graphing Calculator & Graph Plotter | Graphiti",
-  "short_name": "Free Online Graphing Calculator",
+  "name": "Graphiti",
+  "short_name": "Graphiti",
   "description": "Free online graphing calculator and function plotter with automatic graph analysis",
   "start_url": "./index.html",
   "scope": "./",
