@@ -344,6 +344,7 @@ class Graphiti {
         this.isViewportChanging = false; // Track if actively panning/zooming
         this.viewportChangeTimer = null; // Debounce timer for viewport changes
         this.zoomSettleTimer = null; // Debounce timer for wheel/keyboard zoom settle
+        this.keyboardZoomPendingSettle = false; // Track +/- key zoom that should settle on key release
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -25929,7 +25930,15 @@ class Graphiti {
         });
 
         document.addEventListener('keyup', (e) => {
-            this.input.keys.delete(e.key.toLowerCase());
+            const key = e.key.toLowerCase();
+            this.input.keys.delete(key);
+            if (this.isKeyboardZoomKey(key)) {
+                this.settleKeyboardZoomIfPending();
+            }
+        });
+
+        window.addEventListener('blur', () => {
+            this.settleKeyboardZoomIfPending();
         });
 
         const isMathLiveTouchInteraction = (event) => {
@@ -28113,12 +28122,12 @@ class Graphiti {
             case '=':  // Plus key (without needing Shift)
             case '+':  // Plus key (with Shift or numpad)
                 e.preventDefault(); // Prevent browser zoom
-                this.zoomIn({ showWorkIndicator: true });
+                this.zoomIn({ showWorkIndicator: true, deferUntilKeyUp: true });
                 break;
             case '-':  // Minus key (both main keyboard and numpad)
             case '_':  // Underscore (Shift + minus, just in case)
                 e.preventDefault(); // Prevent browser zoom
-                this.zoomOut({ showWorkIndicator: true });
+                this.zoomOut({ showWorkIndicator: true, deferUntilKeyUp: true });
                 break;
         }
     }
@@ -31359,6 +31368,11 @@ class Graphiti {
     }
 
     scheduleZoomViewportSettle(options = {}) {
+        if (options.deferUntilKeyUp) {
+            this.keyboardZoomPendingSettle = true;
+            return;
+        }
+
         if (this.zoomSettleTimer) {
             clearTimeout(this.zoomSettleTimer);
             this.zoomSettleTimer = null;
@@ -31376,6 +31390,29 @@ class Graphiti {
             this.zoomSettleTimer = null;
             this.handleViewportChange(viewportOptions);
         }, settleDelayMs);
+    }
+
+    isKeyboardZoomKey(key) {
+        return key === '=' || key === '+' || key === '-' || key === '_';
+    }
+
+    settleKeyboardZoomIfPending() {
+        if (!this.keyboardZoomPendingSettle) {
+            return;
+        }
+
+        this.keyboardZoomPendingSettle = false;
+        if (this.zoomSettleTimer) {
+            clearTimeout(this.zoomSettleTimer);
+            this.zoomSettleTimer = null;
+        }
+
+        this.handleViewportChange({
+            skipCoverageRefresh: true,
+            showWorkIndicator: true,
+            showWorkIndicatorEarly: false,
+            immediate: true
+        });
     }
     
     zoomIn(options = {}) {
