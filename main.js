@@ -25893,6 +25893,15 @@ class Graphiti {
             e.preventDefault();
             this.handleTouchCancel(e);
         }, { passive: false });
+
+        document.addEventListener('touchcancel', (e) => {
+            if (!this.input.touch.active && !this.input.pinch.active && !this.input.mouse.down && !this.input.viewportPanActive) {
+                return;
+            }
+
+            e.preventDefault();
+            this.handleTouchCancel(e);
+        }, { passive: false, capture: true });
         
         // Keyboard Events
         document.addEventListener('keydown', (e) => {
