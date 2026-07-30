@@ -28068,10 +28068,10 @@ class Graphiti {
         
         if (e.deltaY > 0) {
             // Zoom out
-            this.zoomOut({ settleDelayMs: 180, showWorkIndicator: true });
+            this.zoomOut({ settleDelayMs: 500, showWorkIndicator: true });
         } else {
             // Zoom in
-            this.zoomIn({ settleDelayMs: 180, showWorkIndicator: true });
+            this.zoomIn({ settleDelayMs: 500, showWorkIndicator: true });
         }
     }
     
