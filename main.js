@@ -297,6 +297,7 @@ class Graphiti {
         this.intersectionDebounceTimer = null; // Timer for debounced intersection updates
         this.isViewportChanging = false; // Flag to track active pan/zoom operations
         this.viewportRefreshGeneration = 0; // Invalidates stale post-viewport significant-point refreshes
+        this.pendingViewportRefreshTasks = 0; // Track in-flight viewport settle replots
         
         // Integration system
         this.integralPairs = []; // Store pairs of integral badges for area calculation
@@ -22082,13 +22083,31 @@ class Graphiti {
             if (!func || !func.enabled || func.validationError || !func.expression) return false;
             return func._useExplicitCurveRenderCache && this.getEffectiveFunctionType(func) === 'explicit';
         });
-        const viewportSettleDelay = options.immediate ? 0 : (hasAsymptoteHeavyExplicitReplot ? 180 : 50);
+        const showViewportWorkIndicator = options.showWorkIndicator ?? this.shouldShowViewportWorkIndicator();
+        const viewportSettleDelay = options.immediate ? 0 : (options.settleDelayMs ?? (hasAsymptoteHeavyExplicitReplot ? 180 : 50));
+
+        // For wheel/keyboard zoom, surface pending recomputation immediately so the user
+        // gets deterministic feedback even when settle windows are short.
+        if (showViewportWorkIndicator && options.showWorkIndicatorEarly) {
+            this.showGraphWorkIndicator();
+        }
 
         // Set new timer to recalculate intersections and turning points after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(async () => {
             this.isViewportChanging = false;
+            this.pendingViewportRefreshTasks += 1;
+            let finalizeViewportRefreshTaskCalled = false;
+            const finalizeViewportRefreshTask = () => {
+                if (finalizeViewportRefreshTaskCalled) {
+                    return;
+                }
+                finalizeViewportRefreshTaskCalled = true;
+                this.pendingViewportRefreshTasks = Math.max(0, this.pendingViewportRefreshTasks - 1);
+                if (showViewportWorkIndicator) {
+                    this.hideGraphWorkIndicatorWhenIdle();
+                }
+            };
             this.saveViewportBounds();
-            const showViewportWorkIndicator = this.shouldShowViewportWorkIndicator();
             if (showViewportWorkIndicator) {
                 this.showGraphWorkIndicator();
                 await this.waitForGraphBuildOverlayPaint();
@@ -22126,6 +22145,7 @@ class Graphiti {
 
             const refreshSignificantPoints = () => {
                 if (viewportRefreshGeneration !== this.viewportRefreshGeneration) {
+                    finalizeViewportRefreshTask();
                     return;
                 }
 
@@ -22155,9 +22175,7 @@ class Graphiti {
                 // Update badge positions to match recalculated significant points
                 this.updateBadgesFromSignificantPoints();
 
-                if (showViewportWorkIndicator && !this.implicitIntersectionsPending) {
-                    this.hideGraphWorkIndicator();
-                }
+                finalizeViewportRefreshTask();
             };
 
             if (explicitReplotPromises.length > 0) {
@@ -28030,10 +28048,10 @@ class Graphiti {
         
         if (e.deltaY > 0) {
             // Zoom out
-            this.zoomOut();
+            this.zoomOut({ settleDelayMs: 180, showWorkIndicator: true });
         } else {
             // Zoom in
-            this.zoomIn();
+            this.zoomIn({ settleDelayMs: 180, showWorkIndicator: true });
         }
     }
     
@@ -28084,12 +28102,12 @@ class Graphiti {
             case '=':  // Plus key (without needing Shift)
             case '+':  // Plus key (with Shift or numpad)
                 e.preventDefault(); // Prevent browser zoom
-                this.zoomIn();
+                this.zoomIn({ showWorkIndicator: true });
                 break;
             case '-':  // Minus key (both main keyboard and numpad)
             case '_':  // Underscore (Shift + minus, just in case)
                 e.preventDefault(); // Prevent browser zoom
-                this.zoomOut();
+                this.zoomOut({ showWorkIndicator: true });
                 break;
         }
     }
@@ -31329,7 +31347,7 @@ class Graphiti {
         viewport.scale = targetScale;
     }
     
-    zoomIn() {
+    zoomIn(options = {}) {
         // Zoom in by shrinking the ranges around the center
         const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
         const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
@@ -31357,11 +31375,19 @@ class Graphiti {
             this.freezeCurrentIntersectionMarkersForViewportChange();
             this.isViewportChanging = true;
             this.draw();
-            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
+            const viewportOptions = {
+                skipCoverageRefresh: true,
+                showWorkIndicator: options.showWorkIndicator ?? true,
+                showWorkIndicatorEarly: options.showWorkIndicatorEarly ?? true
+            };
+            if (typeof options.settleDelayMs === 'number') {
+                viewportOptions.settleDelayMs = options.settleDelayMs;
+            }
+            this.handleViewportChange(viewportOptions); // Debounced recalculation
         }
     }
     
-    zoomOut() {
+    zoomOut(options = {}) {
         // Zoom out by expanding the ranges around the center
         const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
         const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
@@ -31389,7 +31415,15 @@ class Graphiti {
             this.freezeCurrentIntersectionMarkersForViewportChange();
             this.isViewportChanging = true;
             this.draw();
-            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
+            const viewportOptions = {
+                skipCoverageRefresh: true,
+                showWorkIndicator: options.showWorkIndicator ?? true,
+                showWorkIndicatorEarly: options.showWorkIndicatorEarly ?? true
+            };
+            if (typeof options.settleDelayMs === 'number') {
+                viewportOptions.settleDelayMs = options.settleDelayMs;
+            }
+            this.handleViewportChange(viewportOptions); // Debounced recalculation
         }
     }
     
@@ -32890,21 +32924,72 @@ class Graphiti {
         const indicator = document.getElementById('graph-work-indicator');
         if (!indicator) return;
 
+        if (this.graphWorkIndicatorHideTimer) {
+            clearTimeout(this.graphWorkIndicatorHideTimer);
+            this.graphWorkIndicatorHideTimer = null;
+        }
+        if (this.graphWorkIndicatorFinalizeHideTimer) {
+            clearTimeout(this.graphWorkIndicatorFinalizeHideTimer);
+            this.graphWorkIndicatorFinalizeHideTimer = null;
+        }
+
         indicator.classList.remove('hidden');
         indicator.offsetHeight;
         indicator.classList.add('visible');
+        this.graphWorkIndicatorVisibleSince = performance.now();
+    }
+
+    shouldKeepGraphWorkIndicatorVisible() {
+        return this.isViewportChanging ||
+            this.pendingViewportRefreshTasks > 0 ||
+            this.intersectionMarkersPendingViewportRefresh ||
+            this.implicitIntersectionsPending ||
+            this.isWorkerCalculating ||
+            (this.activeImplicitCalculations && this.activeImplicitCalculations.size > 0);
+    }
+
+    hideGraphWorkIndicatorWhenIdle() {
+        if (this.shouldKeepGraphWorkIndicatorVisible()) {
+            return;
+        }
+        this.hideGraphWorkIndicator();
     }
 
     hideGraphWorkIndicator() {
         const indicator = document.getElementById('graph-work-indicator');
         if (!indicator) return;
 
-        indicator.classList.remove('visible');
-        setTimeout(() => {
-            if (!indicator.classList.contains('visible')) {
-                indicator.classList.add('hidden');
+        const visibleSince = this.graphWorkIndicatorVisibleSince || 0;
+        const elapsed = Math.max(0, performance.now() - visibleSince);
+        const minVisibleMs = 220;
+        const deferHideMs = Math.max(0, minVisibleMs - elapsed);
+
+        if (this.graphWorkIndicatorHideTimer) {
+            clearTimeout(this.graphWorkIndicatorHideTimer);
+            this.graphWorkIndicatorHideTimer = null;
+        }
+        if (this.graphWorkIndicatorFinalizeHideTimer) {
+            clearTimeout(this.graphWorkIndicatorFinalizeHideTimer);
+            this.graphWorkIndicatorFinalizeHideTimer = null;
+        }
+
+        this.graphWorkIndicatorHideTimer = setTimeout(() => {
+            if (this.shouldKeepGraphWorkIndicatorVisible()) {
+                this.graphWorkIndicatorHideTimer = null;
+                // Re-check later so the indicator can hide once async viewport work fully settles.
+                setTimeout(() => this.hideGraphWorkIndicatorWhenIdle(), 120);
+                return;
             }
-        }, 150);
+
+            indicator.classList.remove('visible');
+            this.graphWorkIndicatorFinalizeHideTimer = setTimeout(() => {
+                if (!indicator.classList.contains('visible') && !this.shouldKeepGraphWorkIndicatorVisible()) {
+                    indicator.classList.add('hidden');
+                }
+                this.graphWorkIndicatorFinalizeHideTimer = null;
+            }, 150);
+            this.graphWorkIndicatorHideTimer = null;
+        }, deferHideMs);
     }
 
     waitForGraphBuildOverlayPaint() {
@@ -35326,7 +35411,7 @@ class Graphiti {
             }
             this.updateBadgesFromSignificantPoints();
             this.updateBadgeScreenPositions();
-            this.hideGraphWorkIndicator();
+            this.hideGraphWorkIndicatorWhenIdle();
         }
         
         // Only trigger redraw if viewport is not changing AND no implicit intersections are pending
