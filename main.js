@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.48';
+const VERSION = '1.3.54';
 
 class Graphiti {
     constructor() {
@@ -8987,6 +8987,13 @@ class Graphiti {
             return points;
         }
 
+        // If denominator clearing introduced no real-domain exclusions,
+        // the transformed equation is equivalent in the real plane and
+        // residual-based point pruning only removes valid marching samples.
+        if (!Array.isArray(metadata.domainExclusions) || metadata.domainExclusions.length === 0) {
+            return points;
+        }
+
         let leftCompiled;
         let rightCompiled;
         try {
@@ -17259,6 +17266,12 @@ class Graphiti {
         delete func.productImplicitVerticalComponents;
         delete func.singleVariableImplicitVerticalComponents;
         delete func.singleVariableImplicitHorizontalComponents;
+        delete func.quadraticDiscriminantRoots;
+        delete func.quadraticYExplicitExpressions;
+        delete func.quadraticYCacheKey;
+        delete func.quadraticYDiscriminantExpression;
+        delete func.quadraticYVerticalComponents;
+        delete func._useExplicitCurveRenderCache;
 
         this.updateFunctionAsymptoteInfo(func);
     }
@@ -20343,30 +20356,23 @@ class Graphiti {
         const visibleWidth = visible.maxX - visible.minX;
         const visibleHeight = visible.maxY - visible.minY;
         const visibleSize = Math.max(visibleWidth, visibleHeight);
-        const useFullGrid = visibleSize > 40;
-        
-        if (useFullGrid) {
-            // Wide zoom: Full grid evaluation for reliability
-            // Implicit equations need high resolution to catch thin curves
+        // Localized marching can miss thin disconnected implicit branches at medium/wide ranges.
+        // Prefer full-grid earlier to preserve topology (for example quartics with inner and outer components).
+        const useFullGrid = visibleSize > 6;
+
+        const buildFullGridPoints = () => {
             const grid = [];
-            let evals = 0;
-            
+
             for (let i = 0; i <= resolution; i++) {
                 grid[i] = [];
                 for (let j = 0; j <= resolution; j++) {
                     const x = viewport.minX + i * stepX;
                     const y = viewport.minY + j * stepY;
                     grid[i][j] = evalPoint(x, y);
-                    evals++;
-                    
-                    if (evals % 500 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
-                        return { points: [], gridData: null };
-                    }
                 }
             }
-            
-            // Generate contour segments from full grid
-            const segments = [];
+
+            const fullSegments = [];
             const segmentBudget = this.getImplicitSegmentBudget();
             let reachedSegmentBudget = false;
             const iOrder = this.getBalancedIndexOrder(resolution);
@@ -20376,41 +20382,52 @@ class Graphiti {
                 for (const j of jOrder) {
                     const x = viewport.minX + i * stepX;
                     const y = viewport.minY + j * stepY;
-                    
+
                     const corners = [
                         grid[i][j],
                         grid[i+1][j],
                         grid[i+1][j+1],
                         grid[i][j+1]
                     ];
-                    
+
                     let config = 0;
                     for (let k = 0; k < 4; k++) {
                         if (corners[k] > 0) config |= (1 << k);
                     }
-                    
+
                     if (config !== 0 && config !== 15) {
                         const cellSegments = this.getMarchingSquaresSegments(config, corners, x, y, stepX, stepY, verticalAsymptotes);
-                        reachedSegmentBudget = this.addSegmentsWithBudget(segments, cellSegments, segmentBudget);
+                        reachedSegmentBudget = this.addSegmentsWithBudget(fullSegments, cellSegments, segmentBudget);
                         if (reachedSegmentBudget) break;
                     }
                 }
             }
-            
-            const points = [];
-            for (const segment of segments) {
-                points.push({ x: segment.start.x, y: segment.start.y, connected: true });
-                points.push({ x: segment.end.x, y: segment.end.y, connected: true });
-                points.push({ x: NaN, y: NaN, connected: false });
+
+            const fullPoints = [];
+            for (const segment of fullSegments) {
+                fullPoints.push({ x: segment.start.x, y: segment.start.y, connected: true });
+                fullPoints.push({ x: segment.end.x, y: segment.end.y, connected: true });
+                fullPoints.push({ x: NaN, y: NaN, connected: false });
             }
-            
-            return { points, gridData: null };
+
+            return {
+                points: fullPoints,
+                segmentCount: fullSegments.length
+            };
+        };
+        
+        if (useFullGrid) {
+            // Wide zoom: Full grid evaluation for reliability.
+            // Implicit equations need high resolution to catch thin curves.
+            const fullGridResult = buildFullGridPoints();
+            return { points: fullGridResult.points, gridData: null };
         }
         
         // Normal/close zoom: Use localized optimization for speed
-        // This dramatically reduces evaluations at extreme zoom (e.g., 420×420 = 176,400 → ~20,000)
-        // Resolution is already scaled by caller, so coarse resolution is based on that
-        const coarseResolution = Math.min(90, Math.floor(resolution / 3)); // Adaptive coarse resolution
+        // This dramatically reduces evaluations at extreme zoom (e.g., 420×420 = 176,400 -> ~20,000)
+        // Resolution is already scaled by caller, so coarse resolution is based on that.
+        // Keep a higher floor/cap to avoid missing thin implicit branches in mid-wide viewports.
+        const coarseResolution = Math.min(120, Math.max(72, Math.floor(resolution / 2.6)));
         const coarseStepX = viewportWidth / coarseResolution;
         const coarseStepY = viewportHeight / coarseResolution;
         
@@ -20438,8 +20455,33 @@ class Graphiti {
                     coarseGrid[i+1][j+1],
                     coarseGrid[i][j+1]
                 ];
-                const hasPositive = corners.some(v => v > 0);
-                const hasNegative = corners.some(v => v < 0);
+                let hasPositive = corners.some(v => v > 0);
+                let hasNegative = corners.some(v => v < 0);
+
+                // Corner-only sign checks can miss narrow branches that cross the
+                // interior of a coarse cell. Probe centre and edge midpoints only
+                // when corners are inconclusive.
+                if (!(hasPositive && hasNegative)) {
+                    const cellMinX = viewport.minX + i * coarseStepX;
+                    const cellMinY = viewport.minY + j * coarseStepY;
+                    const samplePoints = [
+                        { x: cellMinX + 0.5 * coarseStepX, y: cellMinY + 0.5 * coarseStepY }, // centre
+                        { x: cellMinX + 0.5 * coarseStepX, y: cellMinY }, // bottom midpoint
+                        { x: cellMinX + coarseStepX, y: cellMinY + 0.5 * coarseStepY }, // right midpoint
+                        { x: cellMinX + 0.5 * coarseStepX, y: cellMinY + coarseStepY }, // top midpoint
+                        { x: cellMinX, y: cellMinY + 0.5 * coarseStepY } // left midpoint
+                    ];
+
+                    for (const sample of samplePoints) {
+                        const value = evalPoint(sample.x, sample.y);
+                        if (value > 0) hasPositive = true;
+                        if (value < 0) hasNegative = true;
+                        if (hasPositive && hasNegative) {
+                            break;
+                        }
+                    }
+                }
+
                 if (hasPositive && hasNegative) {
                     boundaryCells.add(`${i},${j}`);
                 }
@@ -20447,7 +20489,7 @@ class Graphiti {
         }
         
         // Phase 3: Localized high-resolution evaluation near boundaries only
-        const margin = 3; // Cells to expand for smooth interpolation
+        const margin = visibleSize > 20 ? 6 : visibleSize > 10 ? 5 : 4; // Expand more at wider localised zoom to preserve thin branches
         const fineRegions = new Set();
         
         for (const cellKey of boundaryCells) {
@@ -20534,6 +20576,24 @@ class Graphiti {
             points.push({ x: segment.start.x, y: segment.start.y, connected: true });
             points.push({ x: segment.end.x, y: segment.end.y, connected: true });
             points.push({ x: NaN, y: NaN, connected: false });
+        }
+
+        // Safety net: if localized detection is too sparse, fall back to full-grid.
+        // This prevents severe branch dropouts in some viewport alignments.
+        const fineCoverageRatio = fullGridEvals > 0 ? (fineEvals / fullGridEvals) : 0;
+        const shouldFallbackToFullGrid =
+            visibleSize > 1 &&
+            boundaryCells.size > 0 &&
+            (
+                segments.length < 120 ||
+                fineCoverageRatio < 0.015
+            );
+
+        if (shouldFallbackToFullGrid) {
+            const fullGridResult = buildFullGridPoints();
+            if (fullGridResult.segmentCount > segments.length * 1.25) {
+                return { points: fullGridResult.points, gridData };
+            }
         }
         
         // Package grid data for inequality shading with both extended and visible bounds
@@ -41592,6 +41652,25 @@ class Graphiti {
             return 1;
         }
 
+        const functionType = func && func.expression
+            ? this.detectFunctionType(func.expression)
+            : null;
+        const isImplicitFamily = functionType === 'implicit' || functionType === 'implicit-inequality';
+
+        // Never decimate marching implicit contours during draw.
+        // They are already discretized into short line segments and additional
+        // skipping creates visible "broken dash" artefacts at some viewports.
+        if (func && typeof func.implicitRenderMode === 'string' && func.implicitRenderMode.startsWith('marching')) {
+            return 1;
+        }
+
+        // Also avoid decimating implicit-family fast-path renderers
+        // (affine/monomial/quadratic explicit proxies), because the additional
+        // discriminant/asymptote split logic can over-break when points are skipped.
+        if (isImplicitFamily) {
+            return 1;
+        }
+
         const eligibleForAdaptiveDecimation =
             this.isViewportChanging &&
             (func._useExplicitCurveRenderCache || this.isExplicitImplicitFastPath(func)) &&
@@ -43746,6 +43825,75 @@ class Graphiti {
         context.restore();
     }
 
+    filterImplicitObliqueAsymptotesBySampleSpread(func, points) {
+        if (!func || !func.asymptoteData || !Array.isArray(func.asymptoteData.oblique) || func.asymptoteData.oblique.length === 0) {
+            return;
+        }
+
+        if (!Array.isArray(points) || points.length === 0) {
+            return;
+        }
+
+        const finitePoints = points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+        if (finitePoints.length < 20) {
+            return;
+        }
+
+        const xSpan = Math.max(1e-9, this.viewport.maxX - this.viewport.minX);
+        const ySpan = Math.max(1e-9, this.viewport.maxY - this.viewport.minY);
+        const edgeMarginX = xSpan * 0.12;
+        const edgeMarginY = ySpan * 0.12;
+        const lineTolerance = Math.max(ySpan * 0.045, xSpan * 0.045);
+        const minSpreadX = xSpan * 0.35;
+        const minSpreadY = ySpan * 0.35;
+
+        const edgePoints = finitePoints.filter(point =>
+            point.x <= this.viewport.minX + edgeMarginX ||
+            point.x >= this.viewport.maxX - edgeMarginX ||
+            point.y <= this.viewport.minY + edgeMarginY ||
+            point.y >= this.viewport.maxY - edgeMarginY
+        );
+
+        if (edgePoints.length === 0) {
+            func.asymptoteData.oblique = [];
+            func.obliqueAsymptotes = [];
+            return;
+        }
+
+        const filteredOblique = [];
+        for (const line of func.asymptoteData.oblique) {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                continue;
+            }
+
+            const matches = edgePoints.filter(point => {
+                const expectedY = (line.m * point.x) + line.b;
+                if (!Number.isFinite(expectedY)) {
+                    return false;
+                }
+                return Math.abs(point.y - expectedY) <= lineTolerance;
+            });
+
+            if (matches.length < 4) {
+                continue;
+            }
+
+            const minMatchX = Math.min(...matches.map(point => point.x));
+            const maxMatchX = Math.max(...matches.map(point => point.x));
+            const minMatchY = Math.min(...matches.map(point => point.y));
+            const maxMatchY = Math.max(...matches.map(point => point.y));
+            const spreadX = maxMatchX - minMatchX;
+            const spreadY = maxMatchY - minMatchY;
+
+            if (spreadX >= minSpreadX || spreadY >= minSpreadY) {
+                filteredOblique.push(line);
+            }
+        }
+
+        func.asymptoteData.oblique = filteredOblique;
+        func.obliqueAsymptotes = filteredOblique;
+    }
+
     drawImplicitFunction(func) {
         // Use stable displayPoints if available, otherwise fall back to points
         // displayPoints won't change during viewport panning, eliminating "blink"
@@ -43929,6 +44077,25 @@ class Graphiti {
                 // Build continuous paths from marching squares segments for consistent dash patterns
                 // Connect segments that share endpoints to create smooth dash flow
                 const segments = [];
+                const screenMargin = 50;
+                const clipMinX = -screenMargin;
+                const clipMaxX = this.viewport.width + screenMargin;
+                const clipMinY = -screenMargin;
+                const clipMaxY = this.viewport.height + screenMargin;
+                const pointInExpandedViewport = (point) =>
+                    point.x >= clipMinX && point.x <= clipMaxX && point.y >= clipMinY && point.y <= clipMaxY;
+                const segmentIntersectsExpandedViewport = (start, end) => {
+                    if (pointInExpandedViewport(start) || pointInExpandedViewport(end)) {
+                        return true;
+                    }
+
+                    const segmentMinX = Math.min(start.x, end.x);
+                    const segmentMaxX = Math.max(start.x, end.x);
+                    const segmentMinY = Math.min(start.y, end.y);
+                    const segmentMaxY = Math.max(start.y, end.y);
+
+                    return !(segmentMaxX < clipMinX || segmentMinX > clipMaxX || segmentMaxY < clipMinY || segmentMinY > clipMaxY);
+                };
                 
                 // First, collect all visible segments with screen coordinates
                 for (let i = 0; i < pointsToUse.length - 1; i += 3) {
@@ -43942,11 +44109,10 @@ class Graphiti {
                         const startScreen = this.worldToScreen(startPoint.x, startPoint.y);
                         const endScreen = this.worldToScreen(endPoint.x, endPoint.y);
                         
-                        // Only include if at least one endpoint is visible
-                        if ((startScreen.x >= -50 && startScreen.x <= this.viewport.width + 50 &&
-                             startScreen.y >= -50 && startScreen.y <= this.viewport.height + 50) ||
-                            (endScreen.x >= -50 && endScreen.x <= this.viewport.width + 50 &&
-                             endScreen.y >= -50 && endScreen.y <= this.viewport.height + 50)) {
+                        // Include segments that intersect the expanded viewport even
+                        // when both endpoints are off-screen. This prevents dropped
+                        // branches on steep implicit curves.
+                        if (segmentIntersectsExpandedViewport(startScreen, endScreen)) {
                             
                             segments.push({
                                 start: startScreen,
@@ -50434,6 +50600,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (versionElement) {
         versionElement.textContent = VERSION;
     }
+
+    // Expose active build version for quick cache/debug verification.
+    window.GRAPHITI_VERSION = VERSION;
     
     window.graphiti = new Graphiti();
 });
