@@ -25888,6 +25888,11 @@ class Graphiti {
             
             this.handleTouchEnd(e);
         }, { passive: false });
+
+        this.canvas.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            this.handleTouchCancel(e);
+        }, { passive: false });
         
         // Keyboard Events
         document.addEventListener('keydown', (e) => {
@@ -27982,6 +27987,32 @@ class Graphiti {
             this.input.touch.pendingTapAction = null;
             const touch = e.touches[0];
             this.handlePointerStart(touch.clientX, touch.clientY);
+        }
+    }
+
+    handleTouchCancel(e) {
+        const shouldSettleViewport = this.input.viewportPanActive || this.input.pinch.active;
+
+        this.input.touch.pendingTapAction = null;
+        this.input.startX = null;
+        this.input.startY = null;
+        this.input.startTime = null;
+        this.input.maxMoveDistance = 0;
+        this.input.touch.active = false;
+        this.input.pinch.active = false;
+
+        if (this.input.mouse.down) {
+            this.handlePointerEnd();
+            return;
+        }
+
+        this.input.viewportPanActive = false;
+        this.input.mouse.pendingTapAction = null;
+        this.input.dragging = false;
+        this.input.mouse.down = false;
+
+        if (shouldSettleViewport) {
+            this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
         }
     }
     
