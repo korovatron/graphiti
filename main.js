@@ -343,6 +343,7 @@ class Graphiti {
         };
         this.isViewportChanging = false; // Track if actively panning/zooming
         this.viewportChangeTimer = null; // Debounce timer for viewport changes
+        this.zoomSettleTimer = null; // Debounce timer for wheel/keyboard zoom settle
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -26337,6 +26338,11 @@ class Graphiti {
     }
     
     handlePointerStart(x, y) {
+        if (this.zoomSettleTimer) {
+            clearTimeout(this.zoomSettleTimer);
+            this.zoomSettleTimer = null;
+        }
+
         // Convert client coordinates to canvas coordinates
         const rect = this.canvas.getBoundingClientRect();
         const canvasX = x - rect.left;
@@ -27785,6 +27791,11 @@ class Graphiti {
     
     // Touch handling methods for pinch-to-zoom
     handleTouchStart(e) {
+        if (this.zoomSettleTimer) {
+            clearTimeout(this.zoomSettleTimer);
+            this.zoomSettleTimer = null;
+        }
+
         // Set touch flag for tolerance detection
         this.input.touch.active = true;
         
@@ -31346,6 +31357,26 @@ class Graphiti {
         viewport.maxY = centerY + halfHeight;
         viewport.scale = targetScale;
     }
+
+    scheduleZoomViewportSettle(options = {}) {
+        if (this.zoomSettleTimer) {
+            clearTimeout(this.zoomSettleTimer);
+            this.zoomSettleTimer = null;
+        }
+
+        const settleDelayMs = typeof options.settleDelayMs === 'number' ? options.settleDelayMs : 180;
+        const viewportOptions = {
+            skipCoverageRefresh: true,
+            showWorkIndicator: options.showWorkIndicator ?? true,
+            showWorkIndicatorEarly: options.showWorkIndicatorEarly ?? false,
+            immediate: true
+        };
+
+        this.zoomSettleTimer = setTimeout(() => {
+            this.zoomSettleTimer = null;
+            this.handleViewportChange(viewportOptions);
+        }, settleDelayMs);
+    }
     
     zoomIn(options = {}) {
         // Zoom in by shrinking the ranges around the center
@@ -31375,15 +31406,7 @@ class Graphiti {
             this.freezeCurrentIntersectionMarkersForViewportChange();
             this.isViewportChanging = true;
             this.draw();
-            const viewportOptions = {
-                skipCoverageRefresh: true,
-                showWorkIndicator: options.showWorkIndicator ?? true,
-                showWorkIndicatorEarly: options.showWorkIndicatorEarly ?? true
-            };
-            if (typeof options.settleDelayMs === 'number') {
-                viewportOptions.settleDelayMs = options.settleDelayMs;
-            }
-            this.handleViewportChange(viewportOptions); // Debounced recalculation
+            this.scheduleZoomViewportSettle(options);
         }
     }
     
@@ -31415,15 +31438,7 @@ class Graphiti {
             this.freezeCurrentIntersectionMarkersForViewportChange();
             this.isViewportChanging = true;
             this.draw();
-            const viewportOptions = {
-                skipCoverageRefresh: true,
-                showWorkIndicator: options.showWorkIndicator ?? true,
-                showWorkIndicatorEarly: options.showWorkIndicatorEarly ?? true
-            };
-            if (typeof options.settleDelayMs === 'number') {
-                viewportOptions.settleDelayMs = options.settleDelayMs;
-            }
-            this.handleViewportChange(viewportOptions); // Debounced recalculation
+            this.scheduleZoomViewportSettle(options);
         }
     }
     
