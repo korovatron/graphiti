@@ -202,7 +202,8 @@ class Graphiti {
                 fixedCenterWorldX: 0,
                 fixedCenterWorldY: 0
             },
-            pendingTapAction: null
+            pendingTapAction: null,
+            viewportPanActive: false
         };
         
         // Mathematical functions - separate collections for each mode
@@ -22081,7 +22082,7 @@ class Graphiti {
             if (!func || !func.enabled || func.validationError || !func.expression) return false;
             return func._useExplicitCurveRenderCache && this.getEffectiveFunctionType(func) === 'explicit';
         });
-        const viewportSettleDelay = hasAsymptoteHeavyExplicitReplot ? 180 : 50;
+        const viewportSettleDelay = options.immediate ? 0 : (hasAsymptoteHeavyExplicitReplot ? 180 : 50);
 
         // Set new timer to recalculate intersections and turning points after user stops pan/zoom
         this.intersectionDebounceTimer = setTimeout(async () => {
@@ -26951,6 +26952,7 @@ class Graphiti {
                     this.input.mouse.pendingTapAction = null;
                     this.closeFunctionPanelForNarrowScreenAutoClose();
                     this.input.dragging = true;
+                    this.input.viewportPanActive = true;
                     
                     // Convert screen delta to world delta
                     const worldRange = this.viewport.maxX - this.viewport.minX;
@@ -26966,17 +26968,13 @@ class Graphiti {
                     // Update range inputs to reflect the pan (immediate for responsiveness)
                     this.updateRangeInputs(true);
                     
-                    // During panning, just redraw existing points without recalculating
-                    // This dramatically improves performance (75fps instead of <20fps with 5 functions)
-                    // Functions will be recalculated when panning stops via handleViewportChange()
+                    // During panning, just redraw existing points without recalculating.
+                    // Recalculation is deferred until pointer release.
                     this.freezeCurrentIntersectionMarkersForViewportChange();
                     this.isViewportChanging = true;
                     
                     // Redraw the entire canvas to ensure proper clearing and avoid ghost artifacts
                     this.draw();
-                    
-                    // Debounce the expensive intersection/turning point calculations and implicit function replotting
-                    this.handleViewportChange({ skipCoverageRefresh: true });
                 }
             }
             
@@ -27085,6 +27083,8 @@ class Graphiti {
         if (!this.input.mouse.down) {
             return;
         }
+
+        const shouldSettleViewport = this.input.viewportPanActive;
         
         if (this.input.mouse.pendingTapAction && !this.input.dragging) {
             const pendingAction = this.input.mouse.pendingTapAction;
@@ -27550,12 +27550,13 @@ class Graphiti {
         this.input.badgeInteraction.snapState.snappedPoint = null;
         this.input.badgeInteraction.snapState.snapStartTime = 0;
         
+        if (shouldSettleViewport) {
+            this.input.viewportPanActive = false;
+            this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
+        }
+
         // Clear dragging flag
         this.isDraggingBadge = false;
-        
-        // Don't trigger viewport change on pointer end - it's already handled by debounced timer
-        // The timer in handleViewportChange triggers when movement stops (even before pointer release)
-        // Calling it again here would cause duplicate calculations
         
         this.input.mouse.down = false;
         this.input.dragging = false;
