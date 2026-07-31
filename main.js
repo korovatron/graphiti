@@ -23199,12 +23199,14 @@ class Graphiti {
 
                 if (bestMatch) {
                     badgeToUpdate.significantPointType = bestType;
+                    badgeToUpdate.significantPointId = bestMatch.id || null;
                     badgeToUpdate.func1Id = bestFunc1Id;
                     badgeToUpdate.func2Id = bestFunc2Id;
                     badgeToUpdate.snapRefX = bestMatch.x;
                     badgeToUpdate.snapRefY = bestMatch.y;
                 } else {
                     badgeToUpdate.significantPointType = null;
+                    badgeToUpdate.significantPointId = null;
                     badgeToUpdate.func1Id = null;
                     badgeToUpdate.func2Id = null;
                     badgeToUpdate.snapRefX = undefined;
@@ -26424,6 +26426,7 @@ class Graphiti {
                     neonTangent: targetBadge.neonTangent || false,
                     badgeType: targetBadge.badgeType || null,
                     significantPointType: targetBadge.significantPointType || null,
+                    significantPointId: targetBadge.significantPointId || null,
                     func1Id: targetBadge.func1Id || null,
                     func2Id: targetBadge.func2Id || null,
                     snapRefX: targetBadge.snapRefX,
@@ -27280,6 +27283,7 @@ class Graphiti {
                     if (wasQuickTap && prevState) {
                         // Badge didn't move - restore the link it had before
                         newBadge.significantPointType = prevState.significantPointType || null;
+                        newBadge.significantPointId = prevState.significantPointId || null;
                         newBadge.badgeType = prevState.badgeType || null;
                         newBadge.func1Id = prevState.func1Id || null;
                         newBadge.func2Id = prevState.func2Id || null;
@@ -27289,6 +27293,7 @@ class Graphiti {
                         // Dropped while snapped - link to the significant point
                         const snapType = snapState.snappedPoint.type;
                         newBadge.significantPointType = snapType === 'turning' ? 'turningPoint' : snapType;
+                        newBadge.significantPointId = snapState.snappedPoint.id || null;
                         newBadge.badgeType = snapType === 'turning' ? (snapState.snappedPoint.turningType || null) : newBadge.badgeType;
                         newBadge.func1Id = snapState.snappedPoint.func1Id || null;
                         newBadge.func2Id = snapState.snappedPoint.func2Id || null;
@@ -27298,6 +27303,7 @@ class Graphiti {
                     } else if (!wasQuickTap) {
                         // Dropped without a snap - clear any previous link
                         newBadge.significantPointType = null;
+                        newBadge.significantPointId = null;
                         newBadge.badgeType = null;
                         newBadge.func1Id = null;
                         newBadge.func2Id = null;
@@ -32442,6 +32448,15 @@ class Graphiti {
         // is not changed, so the next time the point comes into view it will be found again.
         //
         const normalizeId = id => (id === null || id === undefined ? null : String(id));
+        const getTurningPointRelinkToleranceSquared = () => {
+            const viewportWidth = Math.max(1, this.viewport.width || this.canvas.width || 1);
+            const viewportHeight = Math.max(1, this.viewport.height || this.canvas.height || 1);
+            const worldPerPixelX = Math.max(1e-12, (this.viewport.maxX - this.viewport.minX) / viewportWidth);
+            const worldPerPixelY = Math.max(1e-12, (this.viewport.maxY - this.viewport.minY) / viewportHeight);
+            const tolerance = Math.max(0.02, Math.min(0.75, Math.max(worldPerPixelX, worldPerPixelY) * 18));
+            return tolerance * tolerance;
+        };
+        const turningPointRelinkToleranceSquared = getTurningPointRelinkToleranceSquared();
         
         this.input.persistentBadges.forEach(badge => {
             // Skip badges that don't have a significant point type
@@ -32453,10 +32468,12 @@ class Graphiti {
             const refY = badge.snapRefY !== undefined ? badge.snapRefY : badge.worldY;
             
             let candidates = [];
+            let usedExactTurningPointIdMatch = false;
             
             if (badge.significantPointType === 'turningPoint') {
                 candidates = this.turningPoints.filter(tp =>
-                    !tp.func || tp.func.id === badge.functionId
+                    (!tp.func || tp.func.id === badge.functionId) &&
+                    (!badge.badgeType || tp.type === badge.badgeType)
                 );
             } else if (badge.significantPointType === 'intercept') {
                 candidates = this.intercepts.filter(pt => pt.functionId === badge.functionId);
@@ -32479,22 +32496,45 @@ class Graphiti {
             // Find the candidate closest to the reference position
             let match = null;
             let closestDist = Infinity;
-            for (const pt of candidates) {
-                const dx = pt.x - refX;
-                const dy = pt.y - refY;
-                const d = dx * dx + dy * dy;
-                if (d < closestDist) { closestDist = d; match = pt; }
+
+            if (badge.significantPointType === 'turningPoint' && badge.significantPointId) {
+                const exactMatch = candidates.find(pt => pt.id === badge.significantPointId);
+                if (exactMatch) {
+                    match = exactMatch;
+                    closestDist = 0;
+                    usedExactTurningPointIdMatch = true;
+                }
+            }
+
+            if (!match) {
+                for (const pt of candidates) {
+                    const dx = pt.x - refX;
+                    const dy = pt.y - refY;
+                    const d = dx * dx + dy * dy;
+                    if (d < closestDist) { closestDist = d; match = pt; }
+                }
             }
             
             // No candidates means the point is off-screen; leave badge exactly where it is.
-            // When candidates exist, always use the closest one - the function-pair / function-ID
-            // filter already scopes the set to the correct significant point, so no distance cap
-            // is needed. This allows badges to follow their linked point even when a parameter
-            // change moves the intersection by more than the old zoom-drift tolerance.
+            // Intersections and intercepts can use the closest filtered candidate directly.
+            // Turning points get an extra guard below to avoid rebinding to a different
+            // extrema/inflection when the original point has left sampled viewport coverage.
             if (!match) return;
+
+            // Turning-point markers often have many nearby candidates on the same function.
+            // If the original point left the sampled viewport, avoid jumping to a distant
+            // extrema/inflection by requiring either an ID match or a close-by relink.
+            if (badge.significantPointType === 'turningPoint' &&
+                !usedExactTurningPointIdMatch &&
+                closestDist > turningPointRelinkToleranceSquared) {
+                return;
+            }
             
             badge.worldX = match.x;
             badge.worldY = match.y;
+            if (badge.significantPointType === 'turningPoint') {
+                badge.significantPointId = match.id || badge.significantPointId || null;
+            }
             if (badge.badgeType === 'inflection') {
                 badge.isStationaryInflection = match.isStationaryInflection === true;
             }
@@ -45912,7 +45952,8 @@ class Graphiti {
             turningPoint.type,
             turningPoint.tValue, // Pass tValue for parametric functions
             {
-                isStationaryInflection: turningPoint.isStationaryInflection === true
+                isStationaryInflection: turningPoint.isStationaryInflection === true,
+                significantPointId: turningPoint.id || null
             }
         );
     }
@@ -45971,6 +46012,9 @@ class Graphiti {
             customText: null,
             badgeType: type, // 'maximum', 'minimum', etc.
             significantPointType: 'turningPoint', // Mark for position updates
+            significantPointId: options.significantPointId || null,
+            snapRefX: snappedX,
+            snapRefY: snappedY,
             isStationaryInflection: type === 'inflection' && options.isStationaryInflection === true,
             tValue: tValue, // Store t parameter for parametric functions
             screenX: 0, // Will be updated during rendering

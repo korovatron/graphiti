@@ -4335,6 +4335,92 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.turningX, 1, `rectangle zoom fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
 }
 
+async function assertTurningPointBadgesDoNotRelinkToDistantCandidates(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.showTurningPoints = true;
+        graphiti.input.persistentBadges = [];
+        graphiti.turningPoints = [];
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -6,
+            maxY: 6,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=sin(x)',
+            points: [{ x: -1, y: -0.84 }, { x: 0, y: 0 }, { x: 1, y: 0.84 }],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func);
+
+        const badgeId = graphiti.addTurningPointBadge(0, 0, func, 'minimum');
+        const badge = graphiti.input.persistentBadges.find(candidate => candidate.id === badgeId);
+        badge.snapRefX = 0;
+        badge.snapRefY = 0;
+        badge.significantPointType = 'turningPoint';
+        badge.badgeType = 'minimum';
+
+        graphiti.turningPoints = [
+            { x: 4, y: -1, type: 'minimum', func, id: 'tp_far_min' },
+            { x: 2, y: 1, type: 'maximum', func, id: 'tp_far_max' },
+            { x: 3, y: 0, type: 'inflection', func, id: 'tp_far_infl' }
+        ];
+        graphiti.updateBadgesFromSignificantPoints();
+
+        const afterFarCandidates = {
+            x: badge.worldX,
+            y: badge.worldY,
+            significantPointId: badge.significantPointId || null
+        };
+
+        graphiti.turningPoints = [
+            { x: 0.01, y: -0.01, type: 'minimum', func, id: 'tp_near_min' }
+        ];
+        graphiti.updateBadgesFromSignificantPoints();
+
+        return {
+            afterFarCandidates,
+            afterNearCandidate: {
+                x: badge.worldX,
+                y: badge.worldY,
+                significantPointId: badge.significantPointId || null
+            }
+        };
+    });
+
+    assert(
+        approxEqual(result.afterFarCandidates.x, 0, 1e-9) && approxEqual(result.afterFarCandidates.y, 0, 1e-9),
+        `turning badge should stay anchored when only distant turning-point candidates are available: ${JSON.stringify(result)}`
+    );
+    assert(
+        approxEqual(result.afterNearCandidate.x, 0.01, 0.001) && approxEqual(result.afterNearCandidate.y, -0.01, 0.001),
+        `turning badge should relink when a nearby same-type turning point candidate appears: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.afterNearCandidate.significantPointId,
+        'tp_near_min',
+        `turning badge should store the matched significant-point id after relink: ${JSON.stringify(result)}`
+    );
+}
+
 async function assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page) {
     await page.setViewportSize({ width: 390, height: 844 });
     try {
@@ -4582,6 +4668,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertQuadraticImplicitViewportDrawBreaksDiscriminantGap(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
+        await assertTurningPointBadgesDoNotRelinkToDistantCandidates(page);
         await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
