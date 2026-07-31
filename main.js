@@ -28363,20 +28363,35 @@ class Graphiti {
         }
         const stageHeight = Math.max(120, previewHeight);
         previewStage.style.height = `${stageHeight}px`;
+        const previewSurfaceWidth = Math.max(1, previewWidth);
+        const previewSurfaceHeight = Math.max(1, previewHeight);
+        const surfaceOffsetX = Math.max(0, (stageWidth - previewSurfaceWidth) / 2);
+        const surfaceOffsetY = Math.max(0, (stageHeight - previewSurfaceHeight) / 2);
+        const scaleX = previewSurfaceWidth / sourceWidth;
+        const scaleY = previewSurfaceHeight / sourceHeight;
+
+        previewFrame.style.left = `${surfaceOffsetX + frame.x * scaleX}px`;
+        previewFrame.style.top = `${surfaceOffsetY + frame.y * scaleY}px`;
+        previewFrame.style.width = `${frame.width * scaleX}px`;
+        previewFrame.style.height = `${frame.height * scaleY}px`;
 
         // SVG mode: show a true SVG preview that reflects current export options.
         if (format === 'svg') {
             previewCanvas.classList.add('export-hidden');
-            previewFrame.classList.add('export-hidden');
             previewSvg.classList.remove('export-hidden');
+            previewFrame.classList.remove('export-hidden');
 
-            previewSvg.style.width = `${previewWidth}px`;
-            previewSvg.style.height = `${previewHeight}px`;
+            previewSvg.style.width = `${previewSurfaceWidth}px`;
+            previewSvg.style.height = `${previewSurfaceHeight}px`;
+            previewFrame.style.boxShadow = '0 0 0 9999px rgba(0, 0, 0, 0.38)';
 
             try {
                 const svgOptions = this.getExportOptionsFromModal();
-                svgOptions.previewStrokeScale = Math.min(previewWidth / sourceWidth, previewHeight / sourceHeight);
-                const svgString = this.buildSVGExport(svgOptions);
+                svgOptions.previewStrokeScale = Math.min(previewSurfaceWidth / sourceWidth, previewSurfaceHeight / sourceHeight);
+                const svgString = this.buildSVGExport({
+                    ...svgOptions,
+                    frameShape: 'original'
+                });
 
                 if (svgString) {
                     const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
@@ -28394,7 +28409,7 @@ class Graphiti {
             }
 
             if (previewCaption) {
-                previewCaption.textContent = `Live SVG preview - ${frame.ratioLabel} (${frame.width}x${frame.height})`;
+                previewCaption.textContent = `Live SVG preview - ${frame.ratioLabel} crop (${frame.width}x${frame.height})`;
             }
 
             return;
@@ -28403,19 +28418,18 @@ class Graphiti {
         previewSvg.classList.add('export-hidden');
         previewCanvas.classList.remove('export-hidden');
         previewFrame.classList.remove('export-hidden');
+        previewFrame.style.boxShadow = 'none';
 
         if (this.exportPreviewSvgUrl) {
             URL.revokeObjectURL(this.exportPreviewSvgUrl);
             this.exportPreviewSvgUrl = null;
         }
 
-        previewCanvas.style.width = `${previewWidth}px`;
-        previewCanvas.style.height = `${previewHeight}px`;
+        previewCanvas.style.width = `${previewSurfaceWidth}px`;
+        previewCanvas.style.height = `${previewSurfaceHeight}px`;
 
-        const previewCanvasWidth = Math.max(1, previewWidth);
-        const previewCanvasHeight = Math.max(1, previewHeight);
-        const canvasOffsetX = Math.max(0, (stageWidth - previewCanvasWidth) / 2);
-        const canvasOffsetY = Math.max(0, (stageHeight - previewCanvasHeight) / 2);
+        const previewCanvasWidth = previewSurfaceWidth;
+        const previewCanvasHeight = previewSurfaceHeight;
 
         const dpr = window.devicePixelRatio || 1;
         const pixelWidth = Math.max(1, Math.round(previewCanvasWidth * dpr));
@@ -28454,14 +28468,6 @@ class Graphiti {
             ctx.strokeRect(frameX, frameY, frameW, frameH);
             ctx.restore();
         }
-
-        const scaleX = previewCanvasWidth / sourceWidth;
-        const scaleY = previewCanvasHeight / sourceHeight;
-
-        previewFrame.style.left = `${canvasOffsetX + frame.x * scaleX}px`;
-        previewFrame.style.top = `${canvasOffsetY + frame.y * scaleY}px`;
-        previewFrame.style.width = `${frame.width * scaleX}px`;
-        previewFrame.style.height = `${frame.height * scaleY}px`;
 
         if (previewCaption) {
             previewCaption.textContent = `${frame.ratioLabel} - centred crop (${frame.width}x${frame.height})`;
