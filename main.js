@@ -45406,8 +45406,8 @@ class Graphiti {
         const func2 = intersection.func2;
         const func1Type = func1 && func1.expression ? this.detectFunctionType(func1.expression) : 'unknown';
         const func2Type = func2 && func2.expression ? this.detectFunctionType(func2.expression) : 'unknown';
-        const func1IsImplicit = !func1 || !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality' || func1Type === 'parametric';
-        const func2IsImplicit = !func2 || !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality' || func2Type === 'parametric';
+        const func1IsImplicit = !func1 || !func1.expression || func1Type === 'implicit' || func1Type === 'implicit-inequality';
+        const func2IsImplicit = !func2 || !func2.expression || func2Type === 'implicit' || func2Type === 'implicit-inequality';
 
         if (!func1IsImplicit && !func2IsImplicit) {
             return true;

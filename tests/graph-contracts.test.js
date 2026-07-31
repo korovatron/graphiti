@@ -2988,6 +2988,67 @@ async function assertAsymptoticNearMissIntersectionBadgesAreRejected(page) {
     assert(approxEqual(result.acceptedBadge.y, 1, 1e-5), `true intersection badge y should be 1: ${JSON.stringify(result)}`);
 }
 
+async function assertParametricIntersectionTapCreatesBadge(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.showIntersections = true;
+        graphiti.input.touch.active = false;
+        graphiti.input.persistentBadges = [];
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const parametricFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '(cos(t), sin(t))',
+            points: [],
+            enabled: true,
+            mode: 'cartesian',
+            color: '#0057FF'
+        };
+
+        const explicitFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=0',
+            points: [],
+            enabled: true,
+            mode: 'cartesian',
+            color: '#00C853'
+        };
+
+        graphiti.cartesianFunctions.push(parametricFunc, explicitFunc);
+
+        const tappedIntersection = {
+            x: 1,
+            y: 0,
+            func1: parametricFunc,
+            func2: explicitFunc,
+            func1Id: parametricFunc.id,
+            func2Id: explicitFunc.id
+        };
+
+        graphiti.handleIntersectionTap(tappedIntersection, 0, 0);
+
+        const badge = graphiti.input.persistentBadges[0] || null;
+        return {
+            badgeCount: graphiti.input.persistentBadges.length,
+            badgeType: badge ? badge.badgeType : null,
+            badgeX: badge ? badge.worldX : null,
+            badgeY: badge ? badge.worldY : null,
+            func1Id: badge ? badge.func1Id : null,
+            func2Id: badge ? badge.func2Id : null
+        };
+    });
+
+    assert.strictEqual(result.badgeCount, 1, `parametric intersection tap should create a badge: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.badgeType, 'intersection', `parametric intersection badge should be typed as intersection: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.badgeX, 1, 1e-9), `parametric intersection badge should stay at tapped x: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.badgeY, 0, 1e-9), `parametric intersection badge should stay at tapped y: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.func1Id, 1, `parametric intersection badge should keep func1 id: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.func2Id, 2, `parametric intersection badge should keep func2 id: ${JSON.stringify(result)}`);
+}
+
 async function assertMixedIntersectionFreezeWaitsForImplicitRefresh(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -3150,10 +3211,111 @@ async function assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page) {
     assert.deepStrictEqual(result.drawnFrozen, expectedMarkers, `pan redraw should draw complete frozen marker cache: ${JSON.stringify(result)}`);
 }
 
+async function assertActiveZoomDrawKeepsFrozenSignificantMarkers(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        const originalVisibility = {
+            showIntersections: graphiti.showIntersections,
+            showTurningPoints: graphiti.showTurningPoints,
+            showIntercepts: graphiti.showIntercepts
+        };
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = true;
+        graphiti.showIntercepts = true;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -6,
+            maxY: 6,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: 'y=x^2',
+            points: [{ x: -1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 1 }],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'cartesian'
+        };
+        graphiti.cartesianFunctions.push(func);
+
+        graphiti.intercepts = [{ x: 0, y: 0, type: 'x-intercept', functionId: func.id }];
+        graphiti.turningPoints = [{ x: 0, y: 0, type: 'minimum', func }];
+        graphiti.frozenInterceptBadges = [];
+        graphiti.frozenTurningPointBadges = [];
+        graphiti.interceptsPendingViewportRefresh = false;
+        graphiti.turningPointsPendingViewportRefresh = false;
+        graphiti.isViewportChanging = false;
+
+        const drawCalls = {
+            frozenIntercept: 0,
+            liveIntercept: 0,
+            frozenTurning: 0,
+            liveTurning: 0
+        };
+
+        const originals = {
+            drawFrozenInterceptBadges: graphiti.drawFrozenInterceptBadges.bind(graphiti),
+            drawInterceptMarkers: graphiti.drawInterceptMarkers.bind(graphiti),
+            drawFrozenTurningPointBadges: graphiti.drawFrozenTurningPointBadges.bind(graphiti),
+            drawTurningPointMarkers: graphiti.drawTurningPointMarkers.bind(graphiti),
+            scheduleZoomViewportSettle: graphiti.scheduleZoomViewportSettle.bind(graphiti)
+        };
+
+        graphiti.drawFrozenInterceptBadges = () => { drawCalls.frozenIntercept++; };
+        graphiti.drawInterceptMarkers = () => { drawCalls.liveIntercept++; };
+        graphiti.drawFrozenTurningPointBadges = () => { drawCalls.frozenTurning++; };
+        graphiti.drawTurningPointMarkers = () => { drawCalls.liveTurning++; };
+        graphiti.scheduleZoomViewportSettle = () => {};
+
+        try {
+            graphiti.zoomIn({ skipCoverageRefresh: true });
+            return {
+                isViewportChanging: graphiti.isViewportChanging,
+                frozenIntercepts: graphiti.frozenInterceptBadges.map(point => ({ x: point.x, y: point.y, type: point.type })),
+                frozenTurningPoints: graphiti.frozenTurningPointBadges.map(point => ({ x: point.x, y: point.y, type: point.type })),
+                drawCalls
+            };
+        } finally {
+            Object.assign(graphiti, originals);
+            graphiti.showIntersections = originalVisibility.showIntersections;
+            graphiti.showTurningPoints = originalVisibility.showTurningPoints;
+            graphiti.showIntercepts = originalVisibility.showIntercepts;
+            graphiti.isViewportChanging = false;
+            if (graphiti.zoomSettleTimer) {
+                clearTimeout(graphiti.zoomSettleTimer);
+                graphiti.zoomSettleTimer = null;
+            }
+        }
+    });
+
+    assert.strictEqual(result.isViewportChanging, true, `zoom interaction should mark viewport changing on active frame: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.frozenIntercepts, [{ x: 0, y: 0, type: 'x-intercept' }], `active zoom should freeze intercept markers before settle: ${JSON.stringify(result)}`);
+    assert.deepStrictEqual(result.frozenTurningPoints, [{ x: 0, y: 0, type: 'minimum' }], `active zoom should freeze turning-point markers before settle: ${JSON.stringify(result)}`);
+    assert(result.drawCalls.frozenIntercept > 0, `active zoom frame should draw frozen intercept markers: ${JSON.stringify(result)}`);
+    assert(result.drawCalls.frozenTurning > 0, `active zoom frame should draw frozen turning-point markers: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.drawCalls.liveIntercept, 0, `active zoom frame should not draw live intercept markers: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.drawCalls.liveTurning, 0, `active zoom frame should not draw live turning-point markers: ${JSON.stringify(result)}`);
+}
+
 async function assertPanDuringRefreshRestoresLastIntersectionSnapshot(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
+        graphiti.showIntersections = true;
         graphiti.cartesianFunctions = [
             { id: 1, expression: 'x=1', points: [{ x: 1, y: -1 }, { x: 1, y: 2 }], enabled: true, mode: 'cartesian', color: '#4A90E2' },
             { id: 2, expression: 'y=1', points: [{ x: -1, y: 1 }, { x: 3, y: 1 }], enabled: true, mode: 'cartesian', color: '#D0021B' },
@@ -4652,9 +4814,11 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertNearAxisExplicitIntersectionsAreNotSnappedToAxis(page);
         await assertIntersectionHitTestChoosesNearestMarker(page);
         await assertAsymptoticNearMissIntersectionBadgesAreRejected(page);
+        await assertParametricIntersectionTapCreatesBadge(page);
         await assertMixedIntersectionFreezeWaitsForImplicitRefresh(page);
         await assertSecondPanPreservesFrozenImplicitMarkers(page);
         await assertPanRedrawBeforeSettleKeepsFrozenImplicitMarkers(page);
+        await assertActiveZoomDrawKeepsFrozenSignificantMarkers(page);
         await assertViewportChangeSkipsImplicitIntersectionWorkWhenIntersectionsHidden(page);
         await assertIdenticalImplicitEquationsReuseGeometry(page);
         await assertPanDuringRefreshRestoresLastIntersectionSnapshot(page);
