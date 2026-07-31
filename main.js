@@ -46000,13 +46000,13 @@ class Graphiti {
         
         switch (type) {
             case 'maximum':
-                badgeColor = '#FFD700'; // Gold for maximum (matches marker)
+                badgeColor = '#B57A00'; // Dark amber for maximum for better light-theme contrast
                 break;
             case 'minimum':
                 badgeColor = '#8A2BE2'; // Blue violet for minimum (matches marker)
                 break;
             case 'radialMaximum':
-                badgeColor = '#FFD700';
+                badgeColor = '#B57A00';
                 break;
             case 'radialMinimum':
                 badgeColor = '#8A2BE2';
@@ -47645,6 +47645,46 @@ class Graphiti {
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
+
+    getDarkerShade(color, factor = 0.7) {
+        if (!color || typeof color !== 'string') {
+            return '#000000';
+        }
+
+        // Support #RRGGBB and #RGB inputs.
+        if (color.startsWith('#')) {
+            let hex = color.slice(1);
+            if (hex.length === 3) {
+                hex = hex.split('').map(ch => ch + ch).join('');
+            }
+            if (hex.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(hex)) {
+                return color;
+            }
+
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            const darken = value => Math.max(0, Math.min(255, Math.round(value * factor)));
+            const toHex = value => value.toString(16).padStart(2, '0').toUpperCase();
+            return `#${toHex(darken(r))}${toHex(darken(g))}${toHex(darken(b))}`;
+        }
+
+        // Support rgb(...) and rgba(...) colour strings.
+        const rgbMatch = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
+        if (rgbMatch) {
+            const r = Math.max(0, Math.min(255, parseInt(rgbMatch[1], 10)));
+            const g = Math.max(0, Math.min(255, parseInt(rgbMatch[2], 10)));
+            const b = Math.max(0, Math.min(255, parseInt(rgbMatch[3], 10)));
+            const a = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : null;
+            const darken = value => Math.max(0, Math.min(255, Math.round(value * factor)));
+            if (a !== null && Number.isFinite(a)) {
+                return `rgba(${darken(r)}, ${darken(g)}, ${darken(b)}, ${a})`;
+            }
+            return `rgb(${darken(r)}, ${darken(g)}, ${darken(b)})`;
+        }
+
+        return color;
+    }
     
     getContrastingColor(hex) {
         if (hex && hex.toUpperCase() === '#B91C1C') {
@@ -48273,6 +48313,7 @@ class Graphiti {
 
         let outerCircleColor = color;
         let innerDotColor = '#FFFFFF';
+        const darkerBadgeOutline = this.getDarkerShade(color, 0.62);
         let circleStrokeColor = '#FFFFFF';
 
         // Reverse marker colours in light mode only:
@@ -48495,7 +48536,8 @@ class Graphiti {
         const totalWidth = textWidth + 2 * padding + closeButtonSize + closeButtonMargin + 4; // Extra padding on right
         
         this.ctx.fillStyle = color; // Use function color for solid background
-        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = darkerBadgeOutline;
+        this.ctx.lineWidth = this.getLineWidth(1.4);
         this.ctx.beginPath();
         this.ctx.roundRect(
             labelX - padding, 
@@ -48505,6 +48547,7 @@ class Graphiti {
             3
         );
         this.ctx.fill();
+        this.ctx.stroke();
         
         // Text - position inside the background rectangle with proper alignment
         this.ctx.fillStyle = this.getContrastingTextColor(color); // Dynamic text color for optimal contrast
