@@ -27030,7 +27030,7 @@ class Graphiti {
                     
                     // During panning, just redraw existing points without recalculating.
                     // Recalculation is deferred until pointer release.
-                    this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.freezeCurrentSignificantMarkersForViewportChange();
                     this.isViewportChanging = true;
                     
                     // Redraw the entire canvas to ensure proper clearing and avoid ghost artifacts
@@ -27643,26 +27643,8 @@ class Graphiti {
         this.input.zoomRect.endX = canvasX;
         this.input.zoomRect.endY = canvasY;
         
-        // Freeze intercepts, turning points, and intersections for display during zoom
-        if (this.showIntercepts && this.intercepts.length > 0) {
-            this.frozenInterceptBadges = this.intercepts.map(intercept => ({
-                x: intercept.x,
-                y: intercept.y,
-                type: intercept.type,
-                functionColor: '#808080'
-            }));
-        }
-        
-        if (this.showTurningPoints && this.turningPoints.length > 0) {
-            this.frozenTurningPointBadges = this.turningPoints.map(turningPoint => ({
-                x: turningPoint.x,
-                y: turningPoint.y,
-                type: turningPoint.type,
-                func: turningPoint.func
-            }));
-        }
-        
-        this.freezeCurrentIntersectionMarkersForViewportChange();
+        // Freeze significant markers for display during zoom drag.
+        this.freezeCurrentSignificantMarkersForViewportChange();
         
         // Set viewport changing flag to use cached paths during drag
         this.isViewportChanging = true;
@@ -27944,7 +27926,7 @@ class Graphiti {
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
-                    this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.freezeCurrentSignificantMarkersForViewportChange();
                     this.isViewportChanging = true;
                     this.draw();
                 }
@@ -27971,7 +27953,7 @@ class Graphiti {
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
-                    this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.freezeCurrentSignificantMarkersForViewportChange();
                     this.isViewportChanging = true;
                     this.draw();
                 }
@@ -28005,7 +27987,7 @@ class Graphiti {
                     
                     // Don't recalculate functions during pinch for performance - just redraw existing points
                     // The buffered points provide coverage, and functions recalculate when pinch stops
-                    this.freezeCurrentIntersectionMarkersForViewportChange();
+                    this.freezeCurrentSignificantMarkersForViewportChange();
                     this.isViewportChanging = true;
                     this.draw();
                 }
@@ -31456,7 +31438,7 @@ class Graphiti {
             
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
-            this.freezeCurrentIntersectionMarkersForViewportChange();
+            this.freezeCurrentSignificantMarkersForViewportChange();
             this.isViewportChanging = true;
             this.draw();
             this.scheduleZoomViewportSettle(options);
@@ -31488,7 +31470,7 @@ class Graphiti {
             
             // Don't recalculate functions during zoom for performance - just redraw existing points
             // The buffered points provide coverage, and functions recalculate when zooming stops
-            this.freezeCurrentIntersectionMarkersForViewportChange();
+            this.freezeCurrentSignificantMarkersForViewportChange();
             this.isViewportChanging = true;
             this.draw();
             this.scheduleZoomViewportSettle(options);
@@ -35453,6 +35435,60 @@ class Graphiti {
         }
 
         return markers;
+    }
+
+    freezeCurrentInterceptMarkersForViewportChange(enabledFunctionIds = null) {
+        if (!this.showIntercepts) {
+            return;
+        }
+
+        const enabledIds = enabledFunctionIds || new Set(
+            this.getCurrentFunctions()
+                .filter(func => func && func.enabled)
+                .map(func => func.id)
+        );
+
+        this.frozenInterceptBadges = (this.intercepts || [])
+            .filter(intercept => !intercept.functionId || enabledIds.has(intercept.functionId))
+            .map(intercept => ({
+                x: intercept.x,
+                y: intercept.y,
+                type: intercept.type,
+                functionColor: '#808080'
+            }));
+    }
+
+    freezeCurrentTurningPointMarkersForViewportChange(enabledFunctionIds = null) {
+        if (!this.showTurningPoints) {
+            return;
+        }
+
+        const enabledIds = enabledFunctionIds || new Set(
+            this.getCurrentFunctions()
+                .filter(func => func && func.enabled)
+                .map(func => func.id)
+        );
+
+        this.frozenTurningPointBadges = (this.turningPoints || [])
+            .filter(turningPoint => !turningPoint.func || enabledIds.has(turningPoint.func.id))
+            .map(turningPoint => ({
+                x: turningPoint.x,
+                y: turningPoint.y,
+                type: turningPoint.type,
+                func: turningPoint.func
+            }));
+    }
+
+    freezeCurrentSignificantMarkersForViewportChange() {
+        const enabledFunctionIds = new Set(
+            this.getCurrentFunctions()
+                .filter(func => func && func.enabled)
+                .map(func => func.id)
+        );
+
+        this.freezeCurrentInterceptMarkersForViewportChange(enabledFunctionIds);
+        this.freezeCurrentTurningPointMarkersForViewportChange(enabledFunctionIds);
+        this.freezeCurrentIntersectionMarkersForViewportChange();
     }
 
     freezeCurrentIntersectionMarkersForViewportChange() {
