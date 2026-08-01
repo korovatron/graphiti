@@ -7496,6 +7496,13 @@ class Graphiti {
             return false;
         }
 
+        // In polar mode, fast-path implicit render modes are sampled as explicit
+        // geometry and should follow explicit intersection scheduling to avoid
+        // delayed/missed markers. Keep Cartesian behaviour unchanged.
+        if (this.plotMode === 'polar' && this.isExplicitImplicitFastPath(func)) {
+            return false;
+        }
+
         const functionType = this.detectFunctionType(func.expression);
         return functionType === 'implicit' || functionType === 'implicit-inequality' || functionType === 'parametric';
     }
@@ -36942,6 +36949,12 @@ class Graphiti {
         }
 
         const functionType = this.detectFunctionType(func.expression);
+        if (this.plotMode === 'polar' || func.mode === 'polar') {
+            // Polar intercept candidates are produced in Cartesian space from polar
+            // sampling/refinement and should not be filtered by Cartesian equation
+            // residual checks that assume x/y-only expressions.
+            return true;
+        }
         try {
             if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                 const equation = functionType === 'implicit-inequality'
@@ -37046,7 +37059,9 @@ class Graphiti {
         const enabledFunctions = this.getActiveEnabledFunctions().filter(f => {
             // Filter for enabled functions with valid expressions and points
             // Use displayPoints (stable buffer) if available, otherwise fall back to points
-            const pointsToCheck = f.displayPoints || f.points;
+            const pointsToCheck = (Array.isArray(f.displayPoints) && f.displayPoints.length > 0)
+                ? f.displayPoints
+                : f.points;
             if (!pointsToCheck || pointsToCheck.length === 0) {
                 return false;
             }
@@ -37255,7 +37270,9 @@ class Graphiti {
         const maxInterceptsToSearch = 100; // Maximum to search for (prevent infinite loops)
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
-        const points = func.displayPoints || func.points;
+        const points = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+            ? func.displayPoints
+            : func.points;
         
         // Check if it's an implicit function or implicit inequality
         const funcType = this.detectFunctionType(func.expression);
@@ -37692,7 +37709,9 @@ class Graphiti {
         const maxInterceptsToSearch = 100; // Maximum to search for (prevent infinite loops)
         
         // Use displayPoints for implicit functions (double-buffering), fall back to points
-        const points = func.displayPoints || func.points;
+        const points = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+            ? func.displayPoints
+            : func.points;
         const funcType = this.detectFunctionType(func.expression);
         const isAffineExplicit = func.implicitRenderMode === 'affine-explicit';
         const isImplicit = !isAffineExplicit && (funcType === 'implicit' || funcType === 'implicit-inequality');
@@ -38541,11 +38560,258 @@ class Graphiti {
 
         return this.evaluatePolarPointAtTheta(compiledExpression, (a + b) / 2);
     }
+
+    getPolarInterceptExpressionCandidates(func, functionType) {
+        if (!func || !func.expression) {
+            return [];
+        }
+
+        const affinePolarExplicitExpression =
+            func.implicitRenderMode === 'affine-polar-explicit' && typeof func.affinePolarExplicitExpression === 'string'
+                ? func.affinePolarExplicitExpression.trim()
+                : '';
+        const cachedPolarBranchExpressions = [
+            ...(Array.isArray(func.quadraticPolarExplicitExpressions) ? func.quadraticPolarExplicitExpressions : []),
+            ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : [])
+        ]
+            .filter(expression => typeof expression === 'string' && expression.trim())
+            .map(expression => expression.trim());
+
+        if (cachedPolarBranchExpressions.length > 0) {
+            return cachedPolarBranchExpressions;
+        }
+        if (affinePolarExplicitExpression.length > 0) {
+            return [affinePolarExplicitExpression];
+        }
+
+        if (functionType === 'polar-inequality') {
+            const inequality = this.parsePolarInequality(func.expression);
+            if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                return [];
+            }
+            return [inequality.rightSide.trim()];
+        }
+
+        if (functionType === 'polar') {
+            let processedExpression = this.convertFromLatex(func.expression).trim();
+            if (processedExpression.toLowerCase().startsWith('r=')) {
+                processedExpression = processedExpression.substring(2).trim();
+            }
+            if (processedExpression.length > 0) {
+                return [processedExpression];
+            }
+        }
+
+        return [];
+    }
+
+    getPolarInterceptCompiledExpressions(func, functionType) {
+        const candidates = this.getPolarInterceptExpressionCandidates(func, functionType);
+        if (candidates.length === 0) {
+            return [];
+        }
+
+        const compiledExpressions = [];
+        for (let expression of candidates) {
+            expression = expression.toLowerCase();
+            expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+            try {
+                compiledExpressions.push(this.getCompiledExpression(expression));
+            } catch {
+                // Ignore invalid branch expressions and continue with remaining candidates.
+            }
+        }
+
+        return compiledExpressions;
+    }
+
+    addPolarAxisInterceptCandidate(intercepts, candidate, minDistance) {
+        if (!candidate || !Number.isFinite(candidate.x) || !Number.isFinite(candidate.y) || !candidate.type) {
+            return;
+        }
+
+        const isDuplicate = intercepts.some(existing =>
+            existing && existing.functionId === candidate.functionId &&
+            existing.type === candidate.type &&
+            Math.abs(existing.x - candidate.x) < minDistance &&
+            Math.abs(existing.y - candidate.y) < minDistance
+        );
+
+        if (!isDuplicate) {
+            intercepts.push(candidate);
+        }
+    }
+
+    findPolarAxisInterceptsFromCompiled(func, compiledExpressions, minDistance) {
+        if (!func || !Array.isArray(compiledExpressions) || compiledExpressions.length === 0) {
+            return [];
+        }
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        const thetaSpan = thetaMax - thetaMin;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || !Number.isFinite(thetaSpan) || thetaSpan <= 0) {
+            return [];
+        }
+
+        const axisScale = Math.max(1e-6, Math.min(
+            Math.abs(this.viewport.maxX - this.viewport.minX),
+            Math.abs(this.viewport.maxY - this.viewport.minY)
+        ));
+        const axisTolerance = Math.max(1e-4, axisScale * 0.0025);
+        const sampleCount = Math.max(720, Math.min(6000, Math.ceil(Math.abs(thetaSpan) * 180 / Math.PI)));
+        const step = thetaSpan / sampleCount;
+        const intercepts = [];
+        const axisTouchTolerance = Math.max(1e-4, Math.min(axisTolerance, axisScale * 0.0012));
+
+        const addAxisAngleProbeIntercepts = (compiledExpression) => {
+            const twoPi = 2 * Math.PI;
+            const baseAxisAngles = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+            const probeWindowHalfWidth = Math.max(step * 3, thetaSpan / 5000, 1e-4);
+            const probeSteps = 6;
+            const axisConfigs = [
+                { axis: 'x', typePositive: 'x-axis-positive', typeNegative: 'x-axis-negative' },
+                { axis: 'y', typePositive: 'y-axis-positive', typeNegative: 'y-axis-negative' }
+            ];
+
+            for (const baseAngle of baseAxisAngles) {
+                const kStart = Math.ceil((thetaMin - baseAngle - probeWindowHalfWidth) / twoPi);
+                const kEnd = Math.floor((thetaMax - baseAngle + probeWindowHalfWidth) / twoPi);
+
+                for (let k = kStart; k <= kEnd; k++) {
+                    const thetaAtAxis = baseAngle + k * twoPi;
+                    if (thetaAtAxis < thetaMin - probeWindowHalfWidth || thetaAtAxis > thetaMax + probeWindowHalfWidth) {
+                        continue;
+                    }
+
+                    for (const config of axisConfigs) {
+                        let bestPoint = null;
+                        let bestAxisValue = Infinity;
+
+                        const maybeUpdateBestAtTheta = (thetaSample) => {
+                            if (thetaSample < thetaMin || thetaSample > thetaMax) {
+                                return;
+                            }
+
+                            const point = this.evaluatePolarPointAtTheta(compiledExpression, thetaSample);
+                            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                                return;
+                            }
+
+                            const axisValue = config.axis === 'x' ? point.y : point.x;
+                            const absAxisValue = Math.abs(axisValue);
+                            if (absAxisValue < bestAxisValue) {
+                                bestAxisValue = absAxisValue;
+                                bestPoint = point;
+                            }
+                        };
+
+                        maybeUpdateBestAtTheta(thetaAtAxis);
+                        for (let stepIndex = 1; stepIndex <= probeSteps; stepIndex++) {
+                            const offset = (probeWindowHalfWidth * stepIndex) / probeSteps;
+                            maybeUpdateBestAtTheta(thetaAtAxis - offset);
+                            maybeUpdateBestAtTheta(thetaAtAxis + offset);
+                        }
+
+                        if (!bestPoint || !Number.isFinite(bestAxisValue) || bestAxisValue > axisTouchTolerance) {
+                            continue;
+                        }
+
+                        const alignedX = config.axis === 'y' ? 0 : bestPoint.x;
+                        const alignedY = config.axis === 'x' ? 0 : bestPoint.y;
+                        const axisCoordinate = config.axis === 'x' ? alignedX : alignedY;
+                        const type = axisCoordinate > 0 ? config.typePositive : config.typeNegative;
+
+                        this.addPolarAxisInterceptCandidate(intercepts, {
+                            x: alignedX,
+                            y: alignedY,
+                            type,
+                            functionId: func.id,
+                            color: func.color
+                        }, minDistance);
+                    }
+                }
+            }
+        };
+
+        for (const compiledExpression of compiledExpressions) {
+            let prevTheta = thetaMin;
+            let prevPoint = this.evaluatePolarPointAtTheta(compiledExpression, prevTheta);
+
+            for (let i = 1; i <= sampleCount; i++) {
+                const currentTheta = thetaMin + i * step;
+                const currentPoint = this.evaluatePolarPointAtTheta(compiledExpression, currentTheta);
+
+                if (!prevPoint || !currentPoint) {
+                    prevTheta = currentTheta;
+                    prevPoint = currentPoint;
+                    continue;
+                }
+
+                const candidateConfigs = [
+                    { axis: 'x', typePositive: 'x-axis-positive', typeNegative: 'x-axis-negative' },
+                    { axis: 'y', typePositive: 'y-axis-positive', typeNegative: 'y-axis-negative' }
+                ];
+
+                for (const config of candidateConfigs) {
+                    const prevAxisValue = config.axis === 'x' ? prevPoint.y : prevPoint.x;
+                    const currentAxisValue = config.axis === 'x' ? currentPoint.y : currentPoint.x;
+                    const signChange = prevAxisValue * currentAxisValue <= 0 && !(prevAxisValue === 0 && currentAxisValue === 0);
+
+                    let axisPoint = null;
+                    if (signChange) {
+                        axisPoint = this.refinePolarAxisCrossing(compiledExpression, prevTheta, currentTheta, config.axis);
+                    }
+
+                    if (!axisPoint && Math.abs(prevAxisValue) <= axisTolerance) {
+                        axisPoint = prevPoint;
+                    }
+                    if (!axisPoint && Math.abs(currentAxisValue) <= axisTolerance) {
+                        axisPoint = currentPoint;
+                    }
+
+                    if (!axisPoint || !Number.isFinite(axisPoint.x) || !Number.isFinite(axisPoint.y)) {
+                        continue;
+                    }
+
+                    const alignedX = config.axis === 'y' ? 0 : axisPoint.x;
+                    const alignedY = config.axis === 'x' ? 0 : axisPoint.y;
+                    const axisCoordinate = config.axis === 'x' ? alignedX : alignedY;
+                    const type = axisCoordinate > 0 ? config.typePositive : config.typeNegative;
+
+                    this.addPolarAxisInterceptCandidate(intercepts, {
+                        x: alignedX,
+                        y: alignedY,
+                        type,
+                        functionId: func.id,
+                        color: func.color
+                    }, minDistance);
+                }
+
+                prevTheta = currentTheta;
+                prevPoint = currentPoint;
+            }
+
+            // Axis-angle probes catch tangential touches that can miss sign-change detection.
+            addAxisAngleProbeIntercepts(compiledExpression);
+        }
+
+        return intercepts;
+    }
     
     findPolarAxisIntercepts() {
         const intercepts = [];
+        const minDistance = 0.15;
         const enabledFunctions = this.getCurrentFunctions().filter(f => {
-            if (!f.enabled || !f.points || f.points.length === 0) {
+            if (!f.enabled) {
+                return false;
+            }
+            const pointsToCheck = (Array.isArray(f.displayPoints) && f.displayPoints.length > 0)
+                ? f.displayPoints
+                : f.points;
+            if (!pointsToCheck || pointsToCheck.length === 0) {
                 return false;
             }
             if (!f.expression || !f.expression.trim() || this.getCachedRegex('operatorEnd').test(f.expression.trim())) {
@@ -38562,15 +38828,21 @@ class Graphiti {
         // For each function, find where it crosses the Cartesian axes
         // (positive x-axis at θ=0°, positive y-axis at θ=90°, negative x-axis at θ=180°, negative y-axis at θ=270°)
         for (const func of enabledFunctions) {
-            let compiledPolarExpression = null;
-            try {
-                const processedPolarExpression = this.getProcessedPolarExpression(func);
-                compiledPolarExpression = this.getCompiledExpression(processedPolarExpression);
-            } catch {
-                compiledPolarExpression = null;
+            const functionType = this.detectFunctionType(func.expression);
+            const compiledPolarExpressions = this.getPolarInterceptCompiledExpressions(func, functionType);
+
+            if (compiledPolarExpressions.length > 0) {
+                const analyticIntercepts = this.findPolarAxisInterceptsFromCompiled(func, compiledPolarExpressions, minDistance);
+                for (const intercept of analyticIntercepts) {
+                    this.addPolarAxisInterceptCandidate(intercepts, intercept, minDistance);
+                }
             }
 
-            const points = func.points;
+            const compiledPolarExpression = compiledPolarExpressions.length > 0 ? compiledPolarExpressions[0] : null;
+
+            const points = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+                ? func.displayPoints
+                : (func.points || []);
             
             // Look for crossings near each axis angle
             // We check where the curve crosses horizontal line (y=0) and vertical line (x=0) in Cartesian coords
@@ -38610,14 +38882,14 @@ class Graphiti {
                     
                     // Determine which side of x-axis (positive or negative x)
                     const type = x > 0 ? 'x-axis-positive' : 'x-axis-negative';
-                    
-                    intercepts.push({
+
+                    this.addPolarAxisInterceptCandidate(intercepts, {
                         x: x,
                         y: y,
                         type: type,
                         functionId: func.id,
                         color: func.color
-                    });
+                    }, minDistance);
                 }
                 
                 // Check for y-axis crossing (x changes sign or is very close to zero)
@@ -38647,14 +38919,14 @@ class Graphiti {
                     
                     // Determine which side of y-axis (positive or negative y)
                     const type = y > 0 ? 'y-axis-positive' : 'y-axis-negative';
-                    
-                    intercepts.push({
+
+                    this.addPolarAxisInterceptCandidate(intercepts, {
                         x: x,
                         y: y,
                         type: type,
                         functionId: func.id,
                         color: func.color
-                    });
+                    }, minDistance);
                 }
             }
         }

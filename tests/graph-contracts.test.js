@@ -2238,6 +2238,28 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(explicitRoseFunc);
         await graphiti.plotFunction(explicitRoseFunc);
 
+        const explicitLimaconFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r=4+2*sin(theta)',
+            points: [],
+            color: '#2E7D32',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(explicitLimaconFunc);
+        await graphiti.plotFunction(explicitLimaconFunc);
+
+        const implicitLimaconFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-2*sin(theta)=4',
+            points: [],
+            color: '#C62828',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(implicitLimaconFunc);
+        await graphiti.plotFunction(implicitLimaconFunc);
+
         const implicitRoseAffineFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-2*cos(3*theta)=0',
@@ -2404,6 +2426,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         const quadraticFastPathAnimationArcCount = getAnimationArcCountForFunction(quadraticFastPathFunc, 0);
         const monomialCubeFastPathAnimationArcCount = getAnimationArcCountForFunction(monomialCubeFastPathFunc, 0);
         const productFactorsFastPathAnimationArcCount = getAnimationArcCountForFunction(productFactorsFastPathFunc, 0);
+
+        graphiti.showIntercepts = true;
+        const polarAxisIntercepts = graphiti.findAxisIntercepts();
+        graphiti.showIntercepts = false;
+
+        const countAxisInterceptsForFunction = (functionId) =>
+            polarAxisIntercepts.filter(intercept =>
+                intercept && intercept.functionId === functionId &&
+                (intercept.type === 'x-axis-positive' || intercept.type === 'x-axis-negative' ||
+                    intercept.type === 'y-axis-positive' || intercept.type === 'y-axis-negative')
+            ).length;
         const explicitRoseAnimationAfterPiA = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.2);
         const explicitRoseAnimationAfterPiB = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.4);
         let explicitRosePostPiMotion = null;
@@ -2450,13 +2483,15 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 detectedType: graphiti.detectFunctionType(affineFastPathFunc.expression),
                 renderMode: affineFastPathFunc.implicitRenderMode || null,
                 finitePointCount: affineFastPathFinitePointCount,
-                animationArcCount: affineFastPathAnimationArcCount
+                animationArcCount: affineFastPathAnimationArcCount,
+                axisInterceptCount: countAxisInterceptsForFunction(affineFastPathFunc.id)
             },
             quadraticFastPath: {
                 detectedType: graphiti.detectFunctionType(quadraticFastPathFunc.expression),
                 renderMode: quadraticFastPathFunc.implicitRenderMode || null,
                 finitePointCount: quadraticFastPathFinitePointCount,
                 animationArcCount: quadraticFastPathAnimationArcCount,
+                axisInterceptCount: countAxisInterceptsForFunction(quadraticFastPathFunc.id),
                 branchCount: Array.isArray(quadraticFastPathFunc.quadraticPolarExplicitExpressions)
                     ? quadraticFastPathFunc.quadraticPolarExplicitExpressions.length
                     : 0
@@ -2466,6 +2501,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 renderMode: monomialCubeFastPathFunc.implicitRenderMode || null,
                 finitePointCount: monomialCubeFastPathFinitePointCount,
                 animationArcCount: monomialCubeFastPathAnimationArcCount,
+                axisInterceptCount: countAxisInterceptsForFunction(monomialCubeFastPathFunc.id),
                 branchCount: Array.isArray(monomialCubeFastPathFunc.monomialPolarExplicitExpressions)
                     ? monomialCubeFastPathFunc.monomialPolarExplicitExpressions.length
                     : 0,
@@ -2476,6 +2512,10 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 renderMode: productFactorsFastPathFunc.implicitRenderMode || null,
                 finitePointCount: productFactorsFastPathFinitePointCount,
                 animationArcCount: productFactorsFastPathAnimationArcCount,
+                axisInterceptCount: countAxisInterceptsForFunction(productFactorsFastPathFunc.id),
+                treatedAsMathematicalImplicit: typeof graphiti.isMathematicallyImplicitFunction === 'function'
+                    ? graphiti.isMathematicallyImplicitFunction(productFactorsFastPathFunc)
+                    : null,
                 factorCount: Array.isArray(productFactorsFastPathFunc.productImplicitFactorExpressions)
                     ? productFactorsFastPathFunc.productImplicitFactorExpressions.length
                     : 0,
@@ -2487,6 +2527,11 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 arcCountAfterPiA: explicitRoseAnimationAfterPiA.arcCount,
                 arcCountAfterPiB: explicitRoseAnimationAfterPiB.arcCount,
                 postPiMotion: explicitRosePostPiMotion
+            },
+            equivalentLimacons: {
+                explicitInterceptCount: countAxisInterceptsForFunction(explicitLimaconFunc.id),
+                implicitInterceptCount: countAxisInterceptsForFunction(implicitLimaconFunc.id),
+                implicitRenderMode: implicitLimaconFunc.implicitRenderMode || null
             },
             implicitRoseAffine: {
                 detectedType: graphiti.detectFunctionType(implicitRoseAffineFunc.expression),
@@ -2542,6 +2587,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert(result.quadraticFastPath.branchCount >= 2, `quadratic implicit polar fast-path should expose both explicit branches: ${JSON.stringify(result.quadraticFastPath)}`);
     assert(result.quadraticFastPath.finitePointCount > 80, `quadratic implicit polar fast-path should produce substantial finite points: ${JSON.stringify(result.quadraticFastPath)}`);
     assert(result.quadraticFastPath.animationArcCount >= 3, `quadratic implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.quadraticFastPath)}`);
+    assert(result.quadraticFastPath.axisInterceptCount >= 2, `quadratic implicit polar fast-path should report axis intercepts: ${JSON.stringify(result.quadraticFastPath)}`);
 
     assert.strictEqual(result.monomialCubeFastPath.detectedType, 'implicit', `monomial cube implicit polar expression should remain implicit in classification: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert.strictEqual(result.monomialCubeFastPath.renderMode, 'monomial-polar-explicit', `monomial cube implicit polar expression should activate monomial fast-path: ${JSON.stringify(result.monomialCubeFastPath)}`);
@@ -2549,14 +2595,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.monomialCubeFastPath.branchCount, 1, `monomial cube implicit polar fast-path should expose one real explicit branch: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert(result.monomialCubeFastPath.finitePointCount > 80, `monomial cube implicit polar fast-path should produce substantial finite points: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert(result.monomialCubeFastPath.animationArcCount >= 3, `monomial cube implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.monomialCubeFastPath)}`);
+    assert(result.monomialCubeFastPath.axisInterceptCount >= 2, `monomial cube implicit polar fast-path should report axis intercepts: ${JSON.stringify(result.monomialCubeFastPath)}`);
 
     assert.strictEqual(result.productFactorsFastPath.detectedType, 'implicit', `product implicit polar expression should remain implicit in classification: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert.strictEqual(result.productFactorsFastPath.renderMode, 'product-factors', `product implicit polar expression should activate product-factors mode: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert.strictEqual(result.productFactorsFastPath.treatedAsMathematicalImplicit, false, `product implicit polar fast-path should be scheduled as explicit for intersections: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert(result.productFactorsFastPath.factorCount >= 2, `product implicit polar expression should expose at least two factors: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert(result.productFactorsFastPath.factorRenderModes.includes('affine-polar-explicit'), `product implicit polar should include affine factor fast-path: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert(result.productFactorsFastPath.factorRenderModes.includes('quadratic-polar-explicit'), `product implicit polar should include quadratic factor fast-path: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert(result.productFactorsFastPath.finitePointCount > 120, `product implicit polar factor merge should produce substantial finite points: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert(result.productFactorsFastPath.animationArcCount >= 3, `product implicit polar factor merge should draw animation marker arcs: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert(result.productFactorsFastPath.axisInterceptCount >= 1, `product implicit polar factor merge should report axis intercepts: ${JSON.stringify(result.productFactorsFastPath)}`);
 
     assert(result.explicitRoseAnimation.arcCountAfterPiA >= 3, `explicit rose should still draw marker arcs after pi (first sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
     assert(result.explicitRoseAnimation.arcCountAfterPiB >= 3, `explicit rose should still draw marker arcs after pi (second sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
@@ -2564,6 +2613,10 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         Number.isFinite(result.explicitRoseAnimation.postPiMotion) && result.explicitRoseAnimation.postPiMotion > 0.5,
         `explicit rose marker should continue moving after pi instead of freezing: ${JSON.stringify(result.explicitRoseAnimation)}`
     );
+
+    assert.strictEqual(result.equivalentLimacons.implicitRenderMode, 'affine-polar-explicit', `rearranged limacon should use affine polar fast-path: ${JSON.stringify(result.equivalentLimacons)}`);
+    assert.strictEqual(result.equivalentLimacons.explicitInterceptCount, 4, `explicit limacon should report 4 axis intercepts: ${JSON.stringify(result.equivalentLimacons)}`);
+    assert.strictEqual(result.equivalentLimacons.implicitInterceptCount, 4, `rearranged implicit limacon should report the same 4 axis intercepts: ${JSON.stringify(result.equivalentLimacons)}`);
 
     assert.strictEqual(result.implicitRoseAffine.detectedType, 'implicit', `implicit affine rose should remain implicit in type detection: ${JSON.stringify(result.implicitRoseAffine)}`);
     assert.strictEqual(result.implicitRoseAffine.renderMode, 'affine-polar-explicit', `implicit affine rose should activate affine polar fast-path: ${JSON.stringify(result.implicitRoseAffine)}`);
