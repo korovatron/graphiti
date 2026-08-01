@@ -5472,6 +5472,7 @@ class Graphiti {
         const startTime = performance.now();
         try {
             const suppressDraw = !!options.suppressDraw;
+            const skipProductFactorFastPath = !!options.skipProductFactorFastPath;
             const calculationId = ++this.implicitCalculationId;
             this.currentImplicitCalculations.set(func.id, calculationId);
             this.activeImplicitCalculations.add(func.id);
@@ -5498,6 +5499,27 @@ class Graphiti {
             };
 
             if (!isInequality) {
+                if (!skipProductFactorFastPath) {
+                    const productHandled = await this.plotImplicitPolarProductFactorsAsComponents(
+                        func,
+                        equation,
+                        highResForIntersections,
+                        immediate
+                    );
+                    if (productHandled) {
+                        if (!suppressDraw) {
+                            this.draw();
+                        }
+                        this.activeImplicitCalculations.delete(func.id);
+
+                        if (this.performance.enabled) {
+                            const elapsed = performance.now() - startTime;
+                            this.performance.plotTimes.set(func.id, elapsed);
+                        }
+                        return;
+                    }
+                }
+
                 const affinePolarModel = this.tryBuildAffinePolarImplicitModel(equation);
                 if (affinePolarModel) {
                     const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
@@ -5644,6 +5666,132 @@ class Graphiti {
             console.error('Error plotting implicit polar function:', error);
             this.activeImplicitCalculations.delete(func.id);
         }
+    }
+
+    async plotImplicitPolarProductFactorsAsComponents(func, equation, highResForIntersections = false, immediate = false) {
+        const factorExpressions = this.extractZeroProductFactorExpressions(equation);
+        if (!Array.isArray(factorExpressions) || factorExpressions.length < 2) {
+            return false;
+        }
+
+        const factorResults = [];
+        for (let index = 0; index < factorExpressions.length; index++) {
+            const factorExpression = factorExpressions[index];
+            const factorFunc = {
+                ...func,
+                id: `${func.id}:polar-factor:${index}`,
+                expression: `${factorExpression}=0`,
+                points: [],
+                displayPoints: [],
+                holes: [],
+                productImplicitVerticalComponents: []
+            };
+
+            await this.plotImplicitPolarFunction(factorFunc, highResForIntersections, immediate, {
+                skipProductFactorFastPath: true,
+                suppressDraw: true
+            });
+
+            const finitePointCount = Array.isArray(factorFunc.points)
+                ? factorFunc.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
+                : 0;
+            if (finitePointCount === 0) {
+                return false;
+            }
+
+            factorResults.push(factorFunc);
+        }
+
+        const mergedPoints = [];
+        const appendBreak = () => {
+            if (mergedPoints.length > 0) {
+                mergedPoints.push({ x: NaN, y: NaN, connected: false });
+            }
+        };
+
+        for (const factorFunc of factorResults) {
+            appendBreak();
+            let factorRunStarted = false;
+            for (const point of factorFunc.points || []) {
+                if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                    mergedPoints.push({ x: NaN, y: NaN, connected: false });
+                    factorRunStarted = false;
+                    continue;
+                }
+
+                mergedPoints.push({
+                    ...point,
+                    connected: factorRunStarted && point.connected !== false
+                });
+                factorRunStarted = true;
+            }
+        }
+
+        const vertical = [];
+        const horizontal = [];
+        const oblique = [];
+        const holes = [];
+        const verticalComponents = [];
+        const addUniqueNumber = (target, value, tolerance = 1e-6) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            const snapped = Math.abs(value - Math.round(value)) < 1e-10 ? Math.round(value) : value;
+            if (!target.some(existing => Math.abs(existing - snapped) <= tolerance)) {
+                target.push(snapped);
+            }
+        };
+        const addUniqueLine = (line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return;
+            }
+            if (!oblique.some(existing =>
+                Math.abs(existing.m - line.m) <= Math.max(1e-8, Math.abs(existing.m) * 1e-6) &&
+                Math.abs(existing.b - line.b) <= Math.max(1e-8, Math.abs(existing.b) * 1e-6)
+            )) {
+                oblique.push({ ...line });
+            }
+        };
+
+        for (const factorFunc of factorResults) {
+            const asymptoteData = factorFunc.asymptoteData || { vertical: [], horizontal: [], oblique: [] };
+            for (const value of Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : []) {
+                addUniqueNumber(vertical, value);
+            }
+            for (const value of Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : []) {
+                addUniqueNumber(horizontal, value);
+            }
+            for (const line of Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : []) {
+                addUniqueLine(line);
+            }
+            for (const hole of Array.isArray(factorFunc.holes) ? factorFunc.holes : []) {
+                if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                    continue;
+                }
+                if (!holes.some(existing => Math.abs(existing.x - hole.x) <= 1e-5 && Math.abs(existing.y - hole.y) <= 1e-5)) {
+                    holes.push({ ...hole });
+                }
+            }
+            for (const x of Array.isArray(factorFunc.productImplicitVerticalComponents) ? factorFunc.productImplicitVerticalComponents : []) {
+                addUniqueNumber(verticalComponents, x);
+            }
+        }
+
+        vertical.sort((a, b) => a - b);
+        horizontal.sort((a, b) => a - b);
+        oblique.sort((a, b) => a.m - b.m);
+        holes.sort((a, b) => a.x - b.x || a.y - b.y);
+        verticalComponents.sort((a, b) => a - b);
+
+        this.updateFunctionAsymptoteData(func, vertical, horizontal, oblique, null);
+        func.holes = holes;
+        func.productImplicitFactorExpressions = factorExpressions.slice();
+        func.productImplicitFactorRenderModes = factorResults.map(factorFunc => factorFunc.implicitRenderMode || null);
+        func.productImplicitVerticalComponents = verticalComponents.slice();
+        func.implicitRenderMode = 'product-factors';
+        this.applyImplicitFunctionPoints(func, mergedPoints);
+        this.updateFunctionAsymptoteInfo(func);
+        return true;
     }
 
     tryBuildAffinePolarImplicitModel(equation) {
@@ -9341,12 +9489,24 @@ class Graphiti {
         };
         collectFactors(parsed);
 
+        const isPolarEquation = equation && equation.coordinateSystem === 'polar';
         const factorExpressions = factors
-            .filter(node => node && !this.isConstantMathNode(node) && (
-                this.extractBivariatePolynomialCoefficients(node, 8) ||
-                this.classifyImplicitYExplicitShape({ leftExpression: node.toString(), rightExpression: '0' }) ||
-                (!node.toString().includes('/') && this.tryBuildAffineImplicitModel({ leftExpression: node.toString(), rightExpression: '0' }))
-            ))
+            .filter(node => {
+                if (!node || this.isConstantMathNode(node)) {
+                    return false;
+                }
+
+                const expressionText = node.toString();
+                if (isPolarEquation && this.isPolarImplicitExpression(expressionText)) {
+                    return true;
+                }
+
+                return !!(
+                    this.extractBivariatePolynomialCoefficients(node, 8) ||
+                    this.classifyImplicitYExplicitShape({ leftExpression: expressionText, rightExpression: '0' }) ||
+                    (!expressionText.includes('/') && this.tryBuildAffineImplicitModel({ leftExpression: expressionText, rightExpression: '0' }))
+                );
+            })
             .map(node => node.toString())
             .filter(expression => expression && expression.trim());
 

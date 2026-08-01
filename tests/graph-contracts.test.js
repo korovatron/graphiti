@@ -2216,6 +2216,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(monomialCubeFastPathFunc);
         await graphiti.plotFunction(monomialCubeFastPathFunc);
 
+        const productFactorsFastPathFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '(r-(1+cos(t)))*(r^2-(2+cos(t)))=0',
+            points: [],
+            color: '#AD1457',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(productFactorsFastPathFunc);
+        await graphiti.plotFunction(productFactorsFastPathFunc);
+
         const explicitRoseFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r=2*cos(3*theta)',
@@ -2274,6 +2285,9 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
         const monomialCubeFastPathFinitePointCount = (monomialCubeFastPathFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const productFactorsFastPathFinitePointCount = (productFactorsFastPathFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
         const clippedAngles = clippedEquationFinitePoints.map(point => {
@@ -2389,6 +2403,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         const affineFastPathAnimationArcCount = getAnimationArcCountForFunction(affineFastPathFunc, 0);
         const quadraticFastPathAnimationArcCount = getAnimationArcCountForFunction(quadraticFastPathFunc, 0);
         const monomialCubeFastPathAnimationArcCount = getAnimationArcCountForFunction(monomialCubeFastPathFunc, 0);
+        const productFactorsFastPathAnimationArcCount = getAnimationArcCountForFunction(productFactorsFastPathFunc, 0);
         const explicitRoseAnimationAfterPiA = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.2);
         const explicitRoseAnimationAfterPiB = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.4);
         let explicitRosePostPiMotion = null;
@@ -2456,6 +2471,18 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                     : 0,
                 power: monomialCubeFastPathFunc.monomialPolarPower
             },
+            productFactorsFastPath: {
+                detectedType: graphiti.detectFunctionType(productFactorsFastPathFunc.expression),
+                renderMode: productFactorsFastPathFunc.implicitRenderMode || null,
+                finitePointCount: productFactorsFastPathFinitePointCount,
+                animationArcCount: productFactorsFastPathAnimationArcCount,
+                factorCount: Array.isArray(productFactorsFastPathFunc.productImplicitFactorExpressions)
+                    ? productFactorsFastPathFunc.productImplicitFactorExpressions.length
+                    : 0,
+                factorRenderModes: Array.isArray(productFactorsFastPathFunc.productImplicitFactorRenderModes)
+                    ? productFactorsFastPathFunc.productImplicitFactorRenderModes.slice()
+                    : []
+            },
             explicitRoseAnimation: {
                 arcCountAfterPiA: explicitRoseAnimationAfterPiA.arcCount,
                 arcCountAfterPiB: explicitRoseAnimationAfterPiB.arcCount,
@@ -2522,6 +2549,14 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.monomialCubeFastPath.branchCount, 1, `monomial cube implicit polar fast-path should expose one real explicit branch: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert(result.monomialCubeFastPath.finitePointCount > 80, `monomial cube implicit polar fast-path should produce substantial finite points: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert(result.monomialCubeFastPath.animationArcCount >= 3, `monomial cube implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.monomialCubeFastPath)}`);
+
+    assert.strictEqual(result.productFactorsFastPath.detectedType, 'implicit', `product implicit polar expression should remain implicit in classification: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert.strictEqual(result.productFactorsFastPath.renderMode, 'product-factors', `product implicit polar expression should activate product-factors mode: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert(result.productFactorsFastPath.factorCount >= 2, `product implicit polar expression should expose at least two factors: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert(result.productFactorsFastPath.factorRenderModes.includes('affine-polar-explicit'), `product implicit polar should include affine factor fast-path: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert(result.productFactorsFastPath.factorRenderModes.includes('quadratic-polar-explicit'), `product implicit polar should include quadratic factor fast-path: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert(result.productFactorsFastPath.finitePointCount > 120, `product implicit polar factor merge should produce substantial finite points: ${JSON.stringify(result.productFactorsFastPath)}`);
+    assert(result.productFactorsFastPath.animationArcCount >= 3, `product implicit polar factor merge should draw animation marker arcs: ${JSON.stringify(result.productFactorsFastPath)}`);
 
     assert(result.explicitRoseAnimation.arcCountAfterPiA >= 3, `explicit rose should still draw marker arcs after pi (first sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
     assert(result.explicitRoseAnimation.arcCountAfterPiB >= 3, `explicit rose should still draw marker arcs after pi (second sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
