@@ -2005,6 +2005,136 @@ async function assertPolarStationaryPointsAreNamedRadialExtrema(page) {
     }
 }
 
+async function assertImplicitPolarMarchingPlotsAndShades(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.plotNegativeR = true;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntercepts = false;
+        graphiti.input.persistentBadges = [];
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.polarViewport, {
+            minX: -3,
+            maxX: 3,
+            minY: -3,
+            maxY: 3,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 120
+        });
+        Object.assign(graphiti.viewport, graphiti.polarViewport);
+
+        const equationFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-(1+cos(t))=0',
+            points: [],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(equationFunc);
+        await graphiti.plotFunction(equationFunc);
+
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = Math.PI / 2;
+
+        const clippedEquationFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-(1+cos(t))=0',
+            points: [],
+            color: '#00C853',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(clippedEquationFunc);
+        await graphiti.plotFunction(clippedEquationFunc);
+
+        const inequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-(1+cos(t))<0',
+            points: [],
+            color: '#D0021B',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(inequalityFunc);
+        await graphiti.plotFunction(inequalityFunc);
+
+        const equationFinitePointCount = (equationFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const inequalityFinitePointCount = (inequalityFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const clippedEquationFinitePoints = (clippedEquationFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        );
+        const clippedAngles = clippedEquationFinitePoints.map(point => {
+            let theta = Math.atan2(point.y, point.x);
+            if (theta < 0) {
+                theta += 2 * Math.PI;
+            }
+            return theta;
+        });
+        const clippedAnglesRespectRange = clippedAngles.every(theta => theta >= -1e-6 && theta <= (Math.PI / 2) + 1e-6);
+
+        return {
+            equation: {
+                detectedType: graphiti.detectFunctionType(equationFunc.expression),
+                renderMode: equationFunc.implicitRenderMode || null,
+                finitePointCount: equationFinitePointCount,
+                hasGridData: !!equationFunc.gridData
+            },
+            clippedEquation: {
+                detectedType: graphiti.detectFunctionType(clippedEquationFunc.expression),
+                renderMode: clippedEquationFunc.implicitRenderMode || null,
+                finitePointCount: clippedEquationFinitePoints.length,
+                anglesRespectRange: clippedAnglesRespectRange,
+                hasGridData: !!clippedEquationFunc.gridData
+            },
+            inequality: {
+                detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
+                renderMode: inequalityFunc.implicitRenderMode || null,
+                finitePointCount: inequalityFinitePointCount,
+                hasGridData: !!inequalityFunc.gridData
+            }
+        };
+    });
+
+    assert.strictEqual(result.equation.detectedType, 'implicit', `implicit polar equation should be detected as implicit: ${JSON.stringify(result.equation)}`);
+    assert(
+        typeof result.equation.renderMode === 'string' && result.equation.renderMode.startsWith('marching-polar'),
+        `implicit polar equation should use marching-polar render mode: ${JSON.stringify(result.equation)}`
+    );
+    assert(result.equation.finitePointCount > 50, `implicit polar equation should produce finite points: ${JSON.stringify(result.equation)}`);
+
+    assert.strictEqual(result.clippedEquation.detectedType, 'implicit', `theta-clipped implicit polar equation should stay implicit: ${JSON.stringify(result.clippedEquation)}`);
+    assert(
+        typeof result.clippedEquation.renderMode === 'string' && result.clippedEquation.renderMode.startsWith('marching-polar'),
+        `theta-clipped implicit polar equation should use marching-polar render mode: ${JSON.stringify(result.clippedEquation)}`
+    );
+    assert(result.clippedEquation.finitePointCount > 10, `theta-clipped implicit polar equation should produce finite points: ${JSON.stringify(result.clippedEquation)}`);
+    assert.strictEqual(result.clippedEquation.anglesRespectRange, true, `implicit polar equation should respect theta min/max clipping: ${JSON.stringify(result.clippedEquation)}`);
+
+    assert.strictEqual(result.inequality.detectedType, 'implicit-inequality', `implicit polar inequality should be detected as implicit-inequality: ${JSON.stringify(result.inequality)}`);
+    assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
+    assert(result.inequality.finitePointCount > 10, `implicit polar inequality boundary should produce finite points: ${JSON.stringify(result.inequality)}`);
+    assert.strictEqual(result.inequality.hasGridData, true, `implicit polar inequality should produce grid data for shading: ${JSON.stringify(result.inequality)}`);
+}
+
 async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
     const result = await page.evaluate(() => {
         const graphiti = window.graphiti;
@@ -4804,6 +4934,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertInverseCubeRootImplicitPlotsAsCubic(page);
         await assertPolarStationaryPointsAreNamedRadialExtrema(page);
+        await assertImplicitPolarMarchingPlotsAndShades(page);
         await assertImplicitVerticalTangentsAreNotTurningMarkers(page);
         await assertImplicitInflectionPointsAreDetected(page);
         await assertExplicitCartesianInflectionPointsAreDetected(page);

@@ -3364,6 +3364,42 @@ class Graphiti {
                         // Test that the right side is a valid expression
                         processedExpression = inequality.rightSide;
                         math.evaluate(processedExpression, this.getEvaluationScope({ t: 1, theta: 1 }));
+                    } else if ((functionType === 'implicit' || functionType === 'implicit-inequality') &&
+                        this.isPolarImplicitExpression(func.expression)) {
+                        let equation;
+                        if (functionType === 'implicit-inequality') {
+                            equation = this.parseImplicitInequality(func.expression);
+                        } else {
+                            equation = this.parseImplicitEquation(func.expression);
+                        }
+
+                        if (!equation) {
+                            throw new Error('Invalid implicit polar equation/inequality format');
+                        }
+
+                        const polarEquation = {
+                            ...equation,
+                            coordinateSystem: 'polar'
+                        };
+
+                        this.validateParameterOnlyDenominators(
+                            `(${polarEquation.leftExpression})-(${polarEquation.rightExpression})`,
+                            ['r', 'theta', 't']
+                        );
+
+                        const testPoints = [[1, 0], [1, 1], [2, -1], [-1, 2], [0.5, 0.5], [0, 1], [0, -1]];
+                        let validEvaluation = false;
+                        for (const [testX, testY] of testPoints) {
+                            const testValue = this.evaluateImplicitEquation(polarEquation, testX, testY);
+                            if (testValue !== null && isFinite(testValue)) {
+                                validEvaluation = true;
+                                break;
+                            }
+                        }
+
+                        if (!validEvaluation) {
+                            throw new Error('Cannot evaluate implicit polar equation/inequality at any test point');
+                        }
                     } else {
                         // For regular polar functions, test with theta/t variable - remove "r=" prefix if present
                         processedExpression = this.convertFromLatex(func.expression);
@@ -4204,8 +4240,16 @@ class Graphiti {
         
         // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
+            const functionType = this.detectFunctionType(func.expression);
             this.clearFunctionAsymptoteData(func);
-            this.plotPolarFunction(func);
+            if ((functionType === 'implicit' || functionType === 'implicit-inequality') &&
+                this.isPolarImplicitExpression(func.expression)) {
+                await this.plotImplicitPolarFunction(func, false, this.isStartup);
+            } else if (functionType === 'implicit' || functionType === 'implicit-inequality') {
+                await this.plotImplicitFunction(func, false, this.isStartup);
+            } else {
+                this.plotPolarFunction(func);
+            }
             if (this.performance.enabled) {
                 const elapsed = performance.now() - startTime;
                 this.performance.plotTimes.set(func.id, elapsed);
@@ -5208,6 +5252,12 @@ class Graphiti {
             this.plotPolarRay(func);
             return;
         }
+
+        if ((functionType === 'implicit' || functionType === 'implicit-inequality') &&
+            this.isPolarImplicitExpression(func.expression)) {
+            this.plotImplicitPolarFunction(func);
+            return;
+        }
         
         // Check if this is a polar inequality (r > f(θ) or r < f(θ))
         if (functionType === 'polar-inequality') {
@@ -5410,6 +5460,131 @@ class Graphiti {
             console.error('Error parsing polar function:', error);
             // Silent error for better UX during typing - no alert popup
             func.points = [];
+        }
+    }
+
+    async plotImplicitPolarFunction(func, highResForIntersections = false, immediate = false, options = {}) {
+        const startTime = performance.now();
+        try {
+            const suppressDraw = !!options.suppressDraw;
+            const calculationId = ++this.implicitCalculationId;
+            this.currentImplicitCalculations.set(func.id, calculationId);
+            this.activeImplicitCalculations.add(func.id);
+
+            const functionType = this.detectFunctionType(func.expression);
+            const isInequality = functionType === 'implicit-inequality';
+
+            let baseEquation;
+            if (isInequality) {
+                baseEquation = this.parseImplicitInequality(func.expression);
+            } else {
+                baseEquation = this.parseImplicitEquation(func.expression);
+            }
+
+            if (!baseEquation) {
+                console.warn('Could not parse implicit polar equation/inequality:', func.expression);
+                this.activeImplicitCalculations.delete(func.id);
+                return;
+            }
+
+            const equation = {
+                ...baseEquation,
+                coordinateSystem: 'polar'
+            };
+
+            if (this.isCalculationCancelled(func.id, calculationId)) {
+                this.activeImplicitCalculations.delete(func.id);
+                return;
+            }
+
+            let points = [];
+            let implicitRenderMode = 'marching-polar';
+
+            if (highResForIntersections) {
+                const result = await this.marchingSquaresHighResAsync(equation, immediate, func.id, calculationId);
+                if (!result) {
+                    console.warn('High-res implicit polar marching returned undefined');
+                    this.activeImplicitCalculations.delete(func.id);
+                    return;
+                }
+                points = result.points || result;
+                implicitRenderMode = 'marching-polar-highres';
+                if (isInequality && result.gridData) {
+                    func.gridData = result.gridData;
+                    this.invalidateInequalityIntersectionCache();
+                    this.implicitShadingCache.delete(func.id);
+                }
+            } else if (isInequality) {
+                const result = await this.marchingSquaresAdaptiveAsync(equation, immediate, func.id, calculationId);
+                if (!result) {
+                    console.warn('Adaptive implicit polar marching returned undefined');
+                    this.activeImplicitCalculations.delete(func.id);
+                    return;
+                }
+                points = result.points || result;
+                implicitRenderMode = 'marching-polar-adaptive';
+                if (result.gridData) {
+                    func.gridData = result.gridData;
+                    this.invalidateInequalityIntersectionCache();
+                    this.implicitShadingCache.delete(func.id);
+                }
+            } else {
+                if (!immediate) {
+                    const coarseResult = await this.marchingSquaresAsync(equation, true, func.id, calculationId, 0.45);
+                    if (!coarseResult) {
+                        console.warn('Coarse implicit polar marching returned undefined');
+                        this.activeImplicitCalculations.delete(func.id);
+                        return;
+                    }
+
+                    if (this.isCalculationCancelled(func.id, calculationId)) {
+                        this.activeImplicitCalculations.delete(func.id);
+                        return;
+                    }
+
+                    this.applyImplicitFunctionPoints(func, coarseResult.points || coarseResult);
+                    if (!suppressDraw) {
+                        this.draw();
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 0));
+
+                    if (this.isCalculationCancelled(func.id, calculationId)) {
+                        this.activeImplicitCalculations.delete(func.id);
+                        return;
+                    }
+                }
+
+                const result = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId, 1.0);
+                if (!result) {
+                    console.warn('Standard implicit polar marching returned undefined');
+                    this.activeImplicitCalculations.delete(func.id);
+                    return;
+                }
+                points = result.points || result;
+                implicitRenderMode = 'marching-polar-standard';
+            }
+
+            if (this.isCalculationCancelled(func.id, calculationId)) {
+                this.activeImplicitCalculations.delete(func.id);
+                return;
+            }
+
+            func.implicitRenderMode = implicitRenderMode;
+            this.applyImplicitFunctionPoints(func, points);
+            if (!suppressDraw) {
+                this.draw();
+            }
+
+            this.activeImplicitCalculations.delete(func.id);
+
+            if (this.performance.enabled) {
+                const elapsed = performance.now() - startTime;
+                this.performance.plotTimes.set(func.id, elapsed);
+            }
+        } catch (error) {
+            console.error('Error plotting implicit polar function:', error);
+            this.activeImplicitCalculations.delete(func.id);
         }
     }
     
@@ -6262,6 +6437,11 @@ class Graphiti {
     detectFunctionType(expression) {
         // Convert from LaTeX first since we now store LaTeX format
         const clean = this.convertFromLatex(expression).trim();
+        const cleanLower = clean.toLowerCase();
+        const hasPolarR = /\br\b/.test(cleanLower);
+        const hasPolarTheta = /\btheta\b|θ/.test(cleanLower);
+        const hasPolarT = /\bt\b/.test(cleanLower);
+        const hasPolarImplicitVariables = hasPolarR || hasPolarTheta || (hasPolarR && hasPolarT);
         
         // Check for parametric format: (x_expr, y_expr) where x and y are functions of t
         // Use the same parsing logic as parseParametricEquation to handle nested parentheses
@@ -6298,6 +6478,9 @@ class Graphiti {
             // In polar mode, check for r > f(θ) or r < f(θ) format
             if (this.plotMode === 'polar' && /^r\s*[><≥≤]/.test(clean)) {
                 return 'polar-inequality';
+            }
+            if (this.plotMode === 'polar' && hasPolarImplicitVariables) {
+                return 'implicit-inequality';
             }
             // Check if it's y > f(x) or y < f(x) format (explicit inequality)
             if (/^y\s*[><≥≤]/.test(clean)) {
@@ -6337,6 +6520,12 @@ class Graphiti {
             if (/^r\s*=/.test(clean)) {
                 return 'polar';
             }
+
+            // Implicit polar equation fallback: includes r/theta variables but is not
+            // explicit r=f(theta) and not a theta=constant ray.
+            if (hasPolarImplicitVariables) {
+                return 'implicit';
+            }
         }
         
         // Has equals sign - analyze the equation
@@ -6364,6 +6553,18 @@ class Graphiti {
         }
         
         return 'explicit'; // Default fallback (could be parametric or other)
+    }
+
+    isPolarImplicitExpression(expression) {
+        if (!expression) {
+            return false;
+        }
+
+        const clean = this.convertFromLatex(String(expression)).toLowerCase();
+        const hasR = /\br\b/.test(clean);
+        const hasTheta = /\btheta\b|θ/.test(clean);
+        const hasT = /\bt\b/.test(clean);
+        return hasR || hasTheta || (hasR && hasT);
     }
 
     isExplicitImplicitFastPath(func) {
@@ -7112,6 +7313,7 @@ class Graphiti {
 
     drawImplicitInequalityComposite(offscreenCtx, func) {
         if (!func.gridData) return;
+        const isImplicitPolar = !!(func && typeof func.implicitRenderMode === 'string' && func.implicitRenderMode.startsWith('marching-polar'));
         
         // Extract operator from expression
         const clean = this.convertFromLatex(func.expression).trim();
@@ -7139,6 +7341,14 @@ class Graphiti {
         if (func.gridData.adaptiveCells) {
             for (const cell of func.gridData.adaptiveCells) {
                 const { worldX, worldY, worldWidth, worldHeight, value } = cell;
+
+                if (isImplicitPolar) {
+                    const cellCentreX = worldX + worldWidth * 0.5;
+                    const cellCentreY = worldY + worldHeight * 0.5;
+                    if (!this.isWorldPointWithinPolarThetaRange(cellCentreX, cellCentreY)) {
+                        continue;
+                    }
+                }
                 
                 // Check if inequality is satisfied
                 let satisfiesInequality = false;
@@ -7171,6 +7381,16 @@ class Graphiti {
             for (let i = 0; i < width - 1; i++) {
                 for (let j = 0; j < height - 1; j++) {
                     const value = values[i][j];
+                    const worldX = minX + i * cellWidth;
+                    const worldY = minY + j * cellHeight;
+
+                    if (isImplicitPolar) {
+                        const cellCentreX = worldX + cellWidth * 0.5;
+                        const cellCentreY = worldY + cellHeight * 0.5;
+                        if (!this.isWorldPointWithinPolarThetaRange(cellCentreX, cellCentreY)) {
+                            continue;
+                        }
+                    }
                     
                     // Check if inequality is satisfied
                     let satisfiesInequality = false;
@@ -7185,10 +7405,6 @@ class Graphiti {
                     }
                     
                     if (satisfiesInequality) {
-                        // Convert grid position to world coordinates
-                        const worldX = minX + i * cellWidth;
-                        const worldY = minY + j * cellHeight;
-                        
                         // Convert to screen coordinates
                         const topLeft = this.worldToScreen(worldX, worldY);
                         const bottomRight = this.worldToScreen(worldX + cellWidth, worldY + cellHeight);
@@ -13600,33 +13816,13 @@ class Graphiti {
         // At wide zoom (viewport > 50), localized contour optimization is too aggressive
         // The curves are small, so just use high-res contour grid for smoothness
         const useFullContourGrid = viewportSize > 50;
+        const isPolarImplicitEquation = equation && equation.coordinateSystem === 'polar';
         
         // Detect vertical asymptotes in the boundary equation
-        const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
-        
-        // Compile expressions once (respect angle mode for trig functions)
-        let leftExpressionForEval = equation.leftExpression;
-        let rightExpressionForEval = equation.rightExpression;
-        if (this.angleMode === 'degrees') {
-            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
-            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
-        }
-        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
-        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
-        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
-        
-        // Helper to evaluate grid point
-        const evalPoint = (x, y) => {
-            scope.x = x;
-            scope.y = y;
-            try {
-                const leftValue = leftCompiled.evaluate(scope);
-                const rightValue = rightCompiled.evaluate(scope);
-                return (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
-            } catch (error) {
-                return 0;
-            }
-        };
+        const verticalAsymptotes = isPolarImplicitEquation
+            ? []
+            : this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
+        const evalPoint = this.buildImplicitPointEvaluator(equation);
         
         // Phase 1: Create coarse grid
         const coarseGrid = [];
@@ -13635,7 +13831,8 @@ class Graphiti {
             for (let j = 0; j <= coarseResolution; j++) {
                 const x = this.viewport.minX + i * coarseStepX;
                 const y = this.viewport.minY + j * coarseStepY;
-                coarseGrid[i][j] = evalPoint(x, y);
+                const value = evalPoint(x, y);
+                coarseGrid[i][j] = value === null ? (isPolarImplicitEquation ? null : 0) : value;
             }
             
             // Check cancellation periodically
@@ -13687,7 +13884,8 @@ class Graphiti {
                         for (let fj = 0; fj < refineFactor; fj++) {
                             const worldX = cellStartX + fi * fineStepX;
                             const worldY = cellStartY + fj * fineStepY;
-                            const value = evalPoint(worldX, worldY);
+                            const sampleValue = evalPoint(worldX, worldY);
+                            const value = sampleValue === null ? (isPolarImplicitEquation ? null : 0) : sampleValue;
                             
                             adaptiveCells.push({
                                 worldX,
@@ -13782,7 +13980,8 @@ class Graphiti {
                 for (let j = 0; j <= contourResolution; j++) {
                     const x = this.viewport.minX + i * contourStepX;
                     const y = this.viewport.minY + j * contourStepY;
-                    contourGrid[i][j] = evalPoint(x, y);
+                    const value = evalPoint(x, y);
+                    contourGrid[i][j] = value === null ? (isPolarImplicitEquation ? null : 0) : value;
                     contourEvals++;
                     
                     // Check cancellation periodically
@@ -13839,7 +14038,8 @@ class Graphiti {
                 const [i, j] = regionKey.split(',').map(Number);
                 const x = this.viewport.minX + i * contourStepX;
                 const y = this.viewport.minY + j * contourStepY;
-                contourGrid[i][j] = evalPoint(x, y);
+                const value = evalPoint(x, y);
+                contourGrid[i][j] = value === null ? (isPolarImplicitEquation ? null : 0) : value;
                 contourEvals++;
                 
                 // Check cancellation periodically
@@ -13919,23 +14119,13 @@ class Graphiti {
         const segments = [];
         const segmentBudget = this.getImplicitSegmentBudget();
         let reachedSegmentBudget = false;
+        const isPolarImplicitEquation = equation && equation.coordinateSystem === 'polar';
         
         // Detect vertical asymptotes in the boundary equation
-        const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
-        
-        // Compile expressions once for performance (respect angle mode for trig functions)
-        // Expressions are already processed by parseImplicitEquation
-        let leftExpressionForEval = equation.leftExpression;
-        let rightExpressionForEval = equation.rightExpression;
-        if (this.angleMode === 'degrees') {
-            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
-            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
-        }
-        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
-        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
-        
-        // Create scope once and reuse it
-        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        const verticalAsymptotes = isPolarImplicitEquation
+            ? []
+            : this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
+        const evalPoint = this.buildImplicitPointEvaluator(equation);
         
         // Create grid of function values
         const grid = [];
@@ -13944,17 +14134,9 @@ class Graphiti {
             for (let j = 0; j <= resolution; j++) {
                 const x = this.viewport.minX + i * stepX;
                 const y = this.viewport.minY + j * stepY;
-                
-                // Update scope and evaluate using compiled expressions
-                scope.x = x;
-                scope.y = y;
-                try {
-                    const leftValue = leftCompiled.evaluate(scope);
-                    const rightValue = rightCompiled.evaluate(scope);
-                    grid[i][j] = (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
-                } catch (error) {
-                    grid[i][j] = 0;
-                }
+
+                const value = evalPoint(x, y);
+                grid[i][j] = value === null ? 0 : value;
             }
         }
         
@@ -20323,33 +20505,13 @@ class Graphiti {
         // Use extended viewport if provided, otherwise use current viewport
         const viewport = extendedViewport || this.viewport;
         const visible = visibleViewport || this.viewport;
+        const isPolarImplicitEquation = equation && equation.coordinateSystem === 'polar';
         
         // Detect vertical asymptotes in the boundary equation
-        const verticalAsymptotes = this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
-        
-        // Compile expressions once for performance (respect angle mode for trig functions)
-        let leftExpressionForEval = equation.leftExpression;
-        let rightExpressionForEval = equation.rightExpression;
-        if (this.angleMode === 'degrees') {
-            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
-            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
-        }
-        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
-        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
-        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
-        
-        // Helper to evaluate grid point
-        const evalPoint = (x, y) => {
-            scope.x = x;
-            scope.y = y;
-            try {
-                const leftValue = leftCompiled.evaluate(scope);
-                const rightValue = rightCompiled.evaluate(scope);
-                return (leftValue !== null && rightValue !== null) ? (leftValue - rightValue) : 0;
-            } catch (error) {
-                return 0;
-            }
-        };
+        const verticalAsymptotes = isPolarImplicitEquation
+            ? []
+            : this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
+        const evalPoint = this.buildImplicitPointEvaluator(equation);
         
         // Optimization strategy depends on VISIBLE viewport size (not extended)
         // At wide zoom (>40 units), curves are tiny and alignment-sensitive,
@@ -20372,7 +20534,8 @@ class Graphiti {
                 for (let j = 0; j <= resolution; j++) {
                     const x = viewport.minX + i * stepX;
                     const y = viewport.minY + j * stepY;
-                    grid[i][j] = evalPoint(x, y);
+                    const value = evalPoint(x, y);
+                    grid[i][j] = value === null ? (isPolarImplicitEquation ? null : 0) : value;
                 }
             }
 
@@ -20393,6 +20556,10 @@ class Graphiti {
                         grid[i+1][j+1],
                         grid[i][j+1]
                     ];
+
+                    if (!corners.every(value => Number.isFinite(value))) {
+                        continue;
+                    }
 
                     let config = 0;
                     for (let k = 0; k < 4; k++) {
@@ -20442,7 +20609,8 @@ class Graphiti {
             for (let j = 0; j <= coarseResolution; j++) {
                 const x = viewport.minX + i * coarseStepX;
                 const y = viewport.minY + j * coarseStepY;
-                coarseGrid[i][j] = evalPoint(x, y);
+                const value = evalPoint(x, y);
+                coarseGrid[i][j] = value === null ? (isPolarImplicitEquation ? null : 0) : value;
             }
             if (i % 10 === 0 && functionId && calculationId && this.isCalculationCancelled(functionId, calculationId)) {
                 return { points: [], gridData: null };
@@ -20520,7 +20688,8 @@ class Graphiti {
             const [i, j] = regionKey.split(',').map(Number);
             const x = viewport.minX + i * stepX;
             const y = viewport.minY + j * stepY;
-            grid[i][j] = evalPoint(x, y);
+            const value = evalPoint(x, y);
+            grid[i][j] = value === null ? (isPolarImplicitEquation ? null : 0) : value;
         }
         
         const segments = [];
@@ -21821,22 +21990,117 @@ class Graphiti {
 
     evaluateImplicitEquation(equation, x, y) {
         try {
-            // Evaluate left side - right side
-            const scope = this.getEvaluationScope({ x: x, y: y, pi: Math.PI, e: Math.E });
-            
-            // Use existing infrastructure but with x,y scope
-            const leftValue = this.evaluateMathExpression(equation.leftExpression, scope);
-            const rightValue = this.evaluateMathExpression(equation.rightExpression, scope);
-            
-            if (leftValue === null || rightValue === null) {
-                return null;
-            }
-            
-            return leftValue - rightValue; // We want this to be ≈ 0
+            return this.buildImplicitPointEvaluator(equation)(x, y);
             
         } catch (error) {
             return null;
         }
+    }
+
+    normalizeAngleRadians(theta) {
+        if (!Number.isFinite(theta)) {
+            return NaN;
+        }
+
+        const twoPi = 2 * Math.PI;
+        let value = theta % twoPi;
+        if (value < 0) {
+            value += twoPi;
+        }
+        return value;
+    }
+
+    isAngleWithinRangeRadians(theta, rangeStart, rangeEnd) {
+        if (!Number.isFinite(theta) || !Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) {
+            return false;
+        }
+
+        const twoPi = 2 * Math.PI;
+        const epsilon = 1e-9;
+        const span = Math.abs(rangeEnd - rangeStart);
+        if (span >= (twoPi - epsilon)) {
+            return true;
+        }
+
+        const t = this.normalizeAngleRadians(theta);
+        const start = this.normalizeAngleRadians(rangeStart);
+        const end = this.normalizeAngleRadians(rangeEnd);
+
+        if (!Number.isFinite(t) || !Number.isFinite(start) || !Number.isFinite(end)) {
+            return false;
+        }
+
+        if (start <= end) {
+            return t >= (start - epsilon) && t <= (end + epsilon);
+        }
+
+        // Wrapped interval, e.g. [5.8, 0.7]
+        return t >= (start - epsilon) || t <= (end + epsilon);
+    }
+
+    isWorldPointWithinPolarThetaRange(x, y) {
+        const theta = Math.atan2(y, x);
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax)) {
+            return true;
+        }
+
+        const minRadians = this.angleMode === 'degrees' ? (thetaMin * Math.PI / 180) : thetaMin;
+        const maxRadians = this.angleMode === 'degrees' ? (thetaMax * Math.PI / 180) : thetaMax;
+        return this.isAngleWithinRangeRadians(theta, minRadians, maxRadians);
+    }
+
+    buildImplicitPointEvaluator(equation) {
+        let leftExpressionForEval = equation.leftExpression;
+        let rightExpressionForEval = equation.rightExpression;
+        if (this.angleMode === 'degrees') {
+            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
+        }
+
+        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
+        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
+        const scope = this.getEvaluationScope({
+            x: 0,
+            y: 0,
+            r: 0,
+            theta: 0,
+            t: 0,
+            pi: Math.PI,
+            e: Math.E
+        });
+
+        return (x, y) => {
+            scope.x = x;
+            scope.y = y;
+
+            if (equation && equation.coordinateSystem === 'polar' && !this.isWorldPointWithinPolarThetaRange(x, y)) {
+                return null;
+            }
+
+            const r = Math.hypot(x, y);
+            const thetaRadians = Math.atan2(y, x);
+            const thetaValue = this.angleMode === 'degrees'
+                ? thetaRadians * 180 / Math.PI
+                : thetaRadians;
+
+            scope.r = r;
+            scope.theta = thetaValue;
+            scope.t = thetaValue;
+
+            try {
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                if (leftValue === null || rightValue === null || !isFinite(leftValue) || !isFinite(rightValue)) {
+                    return null;
+                }
+                return leftValue - rightValue;
+            } catch (error) {
+                return null;
+            }
+        };
     }
 
     evaluateMathExpression(expression, scope) {
