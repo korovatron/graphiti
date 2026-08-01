@@ -2630,6 +2630,28 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(thetaEqualsRFunc);
         await graphiti.plotFunction(thetaEqualsRFunc);
 
+        const explicitAssignmentImplicitPolarFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r=2r^2*cos(theta)',
+            points: [],
+            color: '#5E35B1',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(explicitAssignmentImplicitPolarFunc);
+        await graphiti.plotFunctionWithValidation(explicitAssignmentImplicitPolarFunc);
+
+        const radialDenominatorOriginHoleFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r=theta/r',
+            points: [],
+            color: '#00897B',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(radialDenominatorOriginHoleFunc);
+        await graphiti.plotFunctionWithValidation(radialDenominatorOriginHoleFunc);
+
         const affineFastPathFunc = {
             id: graphiti.nextFunctionId++,
             expression: '2*r+cos(t)-1=0',
@@ -2821,6 +2843,12 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         );
         const thetaEqualsRFinitePointCount = (thetaEqualsRFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const explicitAssignmentImplicitPolarFinitePointCount = (explicitAssignmentImplicitPolarFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const radialDenominatorOriginHoleFinitePointCount = (radialDenominatorOriginHoleFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
         const thetaEqualsRHasUpperHalf = (thetaEqualsRFunc.points || []).some(point =>
@@ -3069,6 +3097,38 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 hasUpperHalf: thetaEqualsRHasUpperHalf,
                 hasLowerHalf: thetaEqualsRHasLowerHalf
             },
+            explicitAssignmentImplicitPolar: {
+                detectedType: graphiti.detectFunctionType(explicitAssignmentImplicitPolarFunc.expression),
+                renderMode: explicitAssignmentImplicitPolarFunc.implicitRenderMode || null,
+                finitePointCount: explicitAssignmentImplicitPolarFinitePointCount,
+                validationError: explicitAssignmentImplicitPolarFunc.validationError
+            },
+            radialDenominatorOriginHole: (() => {
+                const holes = Array.isArray(radialDenominatorOriginHoleFunc.holes) ? radialDenominatorOriginHoleFunc.holes : [];
+                const holeDisplay = graphiti.buildHoleDisplayLatex(radialDenominatorOriginHoleFunc);
+                const displayPoints = Array.isArray(radialDenominatorOriginHoleFunc.displayPoints)
+                    ? radialDenominatorOriginHoleFunc.displayPoints
+                    : (radialDenominatorOriginHoleFunc.points || []);
+                const finiteDisplayPoints = displayPoints.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+                const nearestHoleDistance = holes.length > 0
+                    ? Math.min(...holes
+                        .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+                        .map(hole => Math.hypot(hole.x, hole.y)))
+                    : Infinity;
+                const nearestDisplayRadius = finiteDisplayPoints.length > 0
+                    ? Math.min(...finiteDisplayPoints.map(point => Math.hypot(point.x, point.y)))
+                    : Infinity;
+                return {
+                    detectedType: graphiti.detectFunctionType(radialDenominatorOriginHoleFunc.expression),
+                    renderMode: radialDenominatorOriginHoleFunc.implicitRenderMode || null,
+                    finitePointCount: radialDenominatorOriginHoleFinitePointCount,
+                    validationError: radialDenominatorOriginHoleFunc.validationError,
+                    holeCount: holes.length,
+                    nearestHoleDistance,
+                    nearestDisplayRadius,
+                    firstHoleDisplay: Array.isArray(holeDisplay) && holeDisplay.length > 0 ? holeDisplay[0] : ''
+                };
+            })(),
             affineFastPath: {
                 detectedType: graphiti.detectFunctionType(affineFastPathFunc.expression),
                 renderMode: affineFastPathFunc.implicitRenderMode || null,
@@ -3260,6 +3320,24 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert(result.thetaEqualsR.finitePointCount > 10, `theta=r should produce visible implicit polar points: ${JSON.stringify(result.thetaEqualsR)}`);
     assert.strictEqual(result.thetaEqualsR.hasUpperHalf, true, `theta=r should include upper-half points for 0..2pi: ${JSON.stringify(result.thetaEqualsR)}`);
     assert.strictEqual(result.thetaEqualsR.hasLowerHalf, true, `theta=r should include lower-half points for 0..2pi: ${JSON.stringify(result.thetaEqualsR)}`);
+
+    assert.strictEqual(result.explicitAssignmentImplicitPolar.detectedType, 'implicit', `r=<expr containing r> should be treated as implicit polar, not explicit polar: ${JSON.stringify(result.explicitAssignmentImplicitPolar)}`);
+    assert.strictEqual(result.explicitAssignmentImplicitPolar.validationError, null, `r=<expr containing r> should validate cleanly on the implicit polar path: ${JSON.stringify(result.explicitAssignmentImplicitPolar)}`);
+    assert(
+        result.explicitAssignmentImplicitPolar.renderMode === 'monomial-polar-explicit' ||
+        result.explicitAssignmentImplicitPolar.renderMode === 'quadratic-polar-explicit' ||
+        (typeof result.explicitAssignmentImplicitPolar.renderMode === 'string' && result.explicitAssignmentImplicitPolar.renderMode.startsWith('marching-polar')),
+        `r=<expr containing r> should render through the implicit polar pipeline: ${JSON.stringify(result.explicitAssignmentImplicitPolar)}`
+    );
+    assert(result.explicitAssignmentImplicitPolar.finitePointCount > 10, `r=<expr containing r> should produce visible implicit polar points: ${JSON.stringify(result.explicitAssignmentImplicitPolar)}`);
+
+    assert.strictEqual(result.radialDenominatorOriginHole.detectedType, 'implicit', `r=theta/r should stay implicit in polar classification: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert.strictEqual(result.radialDenominatorOriginHole.validationError, null, `r=theta/r should validate cleanly on the implicit polar path: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert(result.radialDenominatorOriginHole.finitePointCount > 10, `r=theta/r should still produce visible implicit polar points: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert(result.radialDenominatorOriginHole.holeCount >= 1, `r=theta/r should expose a removable origin hole in metadata: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert(result.radialDenominatorOriginHole.nearestHoleDistance < 1e-6, `r=theta/r should place its removable hole at the origin: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert(result.radialDenominatorOriginHole.nearestDisplayRadius < 0.02, `r=theta/r should draw display-only approach points close to the removable origin hole so the visible gap stays tight: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert(result.radialDenominatorOriginHole.firstHoleDisplay.includes('\\left(0') && result.radialDenominatorOriginHole.firstHoleDisplay.includes(', 0\\right)'), `r=theta/r should list the origin hole in the panel metadata: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
 
     assert.strictEqual(result.affineFastPath.detectedType, 'implicit', `affine implicit polar expression should remain implicit in classification: ${JSON.stringify(result.affineFastPath)}`);
     assert.strictEqual(result.affineFastPath.renderMode, 'affine-polar-explicit', `affine implicit polar expression should activate affine fast-path: ${JSON.stringify(result.affineFastPath)}`);

@@ -8122,8 +8122,14 @@ class Graphiti {
                 }
             }
             
-            // Check for r = f(θ) format (polar function)
+            // Check for r = f(θ) format (polar function). If the right-hand side
+            // also contains r, this is an implicit polar relation rather than an
+            // explicit polar function.
             if (/^r\s*=/.test(clean)) {
+                const rightSide = clean.substring(clean.indexOf('=') + 1).trim().toLowerCase();
+                if (/\br\b/.test(rightSide)) {
+                    return 'implicit';
+                }
                 return 'polar';
             }
 
@@ -10812,6 +10818,9 @@ class Graphiti {
             ? this.polarSettings.thetaMax
             : thetaMin + (2 * Math.PI);
         const domainExclusionsTheta = [];
+        const radialDomainExclusions = Array.isArray(metadata.domainExclusions)
+            ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
         const addThetaExclusion = (value) => {
             if (!Number.isFinite(value)) {
                 return;
@@ -10823,6 +10832,14 @@ class Graphiti {
                 domainExclusionsTheta.push(value);
             }
         };
+        const addRadialExclusion = (value) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            if (!radialDomainExclusions.some(existing => Math.abs(existing - value) <= 1e-6)) {
+                radialDomainExclusions.push(value);
+            }
+        };
 
         for (const denominator of denominators) {
             if (typeof denominator !== 'string' || !denominator.trim()) {
@@ -10831,6 +10848,13 @@ class Graphiti {
 
             // Theta-only denominator factors define removable exclusions in polar angle.
             if (/\br\b/i.test(denominator)) {
+                if (!/\btheta\b|\bt\b|θ/i.test(denominator)) {
+                    const radialAsXExpression = denominator.replace(/\br\b/gi, 'x');
+                    const roots = this.findExpressionRealRoots(radialAsXExpression);
+                    for (const root of roots) {
+                        addRadialExclusion(root);
+                    }
+                }
                 continue;
             }
             if (!/\btheta\b|\bt\b|θ/i.test(denominator)) {
@@ -10848,6 +10872,8 @@ class Graphiti {
         }
 
         domainExclusionsTheta.sort((a, b) => a - b);
+        radialDomainExclusions.sort((a, b) => a - b);
+        metadata.domainExclusions = radialDomainExclusions;
         metadata.domainExclusionsTheta = domainExclusionsTheta;
         return clearedEquation;
     }
@@ -10953,15 +10979,111 @@ class Graphiti {
         }
 
         const filteredPoints = this.filterDenominatorClearedPoints(func.points, equation);
+        const adjustedPoints = this.addPolarDenominatorClearedApproachPoints(filteredPoints, equation);
         func.points = filteredPoints;
-        func.displayPoints = filteredPoints;
+        func.displayPoints = adjustedPoints;
+        func._denominatorClearedDisplayPoints = adjustedPoints;
         this.pruneDenominatorClearedHoles(func, equation);
         func.implicitDenominatorCleared = true;
+    }
+
+    addPolarDenominatorClearedApproachPoints(points, equation) {
+        const metadata = equation && equation.denominatorClearedFromEquation;
+        if (!metadata || metadata.coordinateSystem !== 'polar' || !Array.isArray(points) || points.length === 0) {
+            return points;
+        }
+
+        const radialExclusions = Array.isArray(metadata.domainExclusions)
+            ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        const denominators = Array.isArray(metadata.denominators)
+            ? metadata.denominators.filter(value => typeof value === 'string' && value.trim())
+            : [];
+        const hasPureRadialZeroExclusion = radialExclusions.some(value => Math.abs(value) <= 1e-8) &&
+            denominators.some(denominator => {
+                const normalised = denominator.replace(/\s+/g, '').toLowerCase();
+                return normalised === 'r' || normalised === '(r)';
+            });
+        if (!hasPureRadialZeroExclusion) {
+            return points;
+        }
+
+        const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax));
+        const worldUnitsPerPixelX = Math.abs(this.viewport.maxX - this.viewport.minX) / Math.max(1, this.viewport.width || 1);
+        const worldUnitsPerPixelY = Math.abs(this.viewport.maxY - this.viewport.minY) / Math.max(1, this.viewport.height || 1);
+        const worldUnitsPerPixel = Math.max(worldUnitsPerPixelX, worldUnitsPerPixelY, 1e-6);
+        const segmentOriginThreshold = Math.max(0.08, Math.sqrt(thetaStep) * 1.5, worldUnitsPerPixel * 20);
+        const holeRadiusPixels = Math.max(this.getLineWidth(5), 5);
+        const approachRadius = Math.max(worldUnitsPerPixel * holeRadiusPixels * 0.4, worldUnitsPerPixel * 1.25);
+
+        const finiteSegments = [];
+        let currentSegment = [];
+        const flushSegment = () => {
+            if (currentSegment.length > 0) {
+                finiteSegments.push(currentSegment);
+                currentSegment = [];
+            }
+        };
+
+        for (const point of points) {
+            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                currentSegment.push(point);
+            } else {
+                flushSegment();
+            }
+        }
+        flushSegment();
+
+        if (finiteSegments.length === 0) {
+            return points;
+        }
+
+        const buildApproachPoint = (point, connected) => {
+            const radius = Math.hypot(point.x, point.y);
+            if (!Number.isFinite(radius) || radius <= approachRadius || radius > segmentOriginThreshold) {
+                return null;
+            }
+
+            const scale = approachRadius / radius;
+
+            return {
+                ...point,
+                x: point.x * scale,
+                y: point.y * scale,
+                connected,
+                removableHoleApproach: true
+            };
+        };
+
+        const adjusted = [];
+        finiteSegments.forEach((segment, index) => {
+            const firstPoint = segment[0];
+            const lastPoint = segment[segment.length - 1];
+            const firstApproach = buildApproachPoint(firstPoint, false);
+            const lastApproach = buildApproachPoint(lastPoint, true);
+
+            if (index > 0) {
+                adjusted.push({ x: NaN, y: NaN, connected: false });
+            }
+            if (firstApproach) {
+                adjusted.push(firstApproach);
+            }
+            adjusted.push(...segment.map(point => ({ ...point })));
+            if (lastApproach) {
+                adjusted.push(lastApproach);
+            }
+        });
+
+        return adjusted;
     }
 
     pruneDenominatorClearedHoles(func, equation) {
         const metadata = equation && equation.denominatorClearedFromEquation;
         if (!func || !metadata || !Array.isArray(func.holes) || func.holes.length === 0) {
+            return;
+        }
+
+        if (metadata.coordinateSystem === 'polar') {
             return;
         }
 
@@ -11096,7 +11218,22 @@ class Graphiti {
         const thetaExclusions = Array.isArray(metadata.domainExclusionsTheta)
             ? metadata.domainExclusionsTheta.filter(value => Number.isFinite(value))
             : [];
-        if (thetaExclusions.length === 0 || !Array.isArray(explicitExpressions) || explicitExpressions.length === 0) {
+        const radialExclusions = Array.isArray(metadata.domainExclusions)
+            ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        const denominators = Array.isArray(metadata.denominators)
+            ? metadata.denominators.filter(value => typeof value === 'string' && value.trim())
+            : [];
+        const hasPureRadialZeroExclusion = radialExclusions.some(value => Math.abs(value) <= 1e-8) &&
+            denominators.some(denominator => {
+                const normalised = denominator.replace(/\s+/g, '').toLowerCase();
+                return normalised === 'r' || normalised === '(r)';
+            });
+
+        if (thetaExclusions.length === 0 && !hasPureRadialZeroExclusion) {
+            return;
+        }
+        if (!Array.isArray(explicitExpressions) || explicitExpressions.length === 0) {
             return;
         }
 
@@ -11111,6 +11248,7 @@ class Graphiti {
             }
         };
 
+        const compiledExpressions = [];
         for (const expressionRaw of explicitExpressions) {
             if (typeof expressionRaw !== 'string' || !expressionRaw.trim()) {
                 continue;
@@ -11126,6 +11264,7 @@ class Graphiti {
             } catch {
                 continue;
             }
+            compiledExpressions.push(compiled);
 
             for (const thetaValue of thetaExclusions) {
                 scope.theta = thetaValue;
@@ -11151,6 +11290,48 @@ class Graphiti {
                 }
 
                 addHole(r * Math.cos(adjustedTheta), r * Math.sin(adjustedTheta));
+            }
+        }
+
+        if (hasPureRadialZeroExclusion) {
+            const nearOriginTolerance = Math.max(0.02, Math.max(
+                Math.abs(this.viewport.maxX - this.viewport.minX),
+                Math.abs(this.viewport.maxY - this.viewport.minY)
+            ) * 0.01);
+            const thetaMin = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+            const thetaMax = Number.isFinite(this.polarSettings.thetaMax) && this.polarSettings.thetaMax > thetaMin
+                ? this.polarSettings.thetaMax
+                : thetaMin + (2 * Math.PI);
+            const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
+            const sampleCount = Math.max(16, Math.min(256, Math.ceil((thetaMax - thetaMin) / thetaStep)));
+            let approachesOrigin = false;
+
+            for (const compiled of compiledExpressions) {
+                for (let index = 0; index <= sampleCount; index++) {
+                    const thetaValue = thetaMin + ((thetaMax - thetaMin) * index / sampleCount);
+                    scope.theta = thetaValue;
+                    scope.t = thetaValue;
+
+                    let rValue;
+                    try {
+                        rValue = compiled.evaluate(scope);
+                    } catch {
+                        continue;
+                    }
+
+                    if (Number.isFinite(rValue) && Math.abs(rValue) <= nearOriginTolerance) {
+                        approachesOrigin = true;
+                        break;
+                    }
+                }
+
+                if (approachesOrigin) {
+                    break;
+                }
+            }
+
+            if (approachesOrigin) {
+                addHole(0, 0);
             }
         }
 
@@ -15274,6 +15455,10 @@ class Graphiti {
         // Double-buffering: calculate into working buffer, then atomically swap.
         func.calculatingPoints = points;
         func.displayPoints = func.calculatingPoints;
+        if (Array.isArray(func._denominatorClearedDisplayPoints) && func._denominatorClearedDisplayPoints.length > 0) {
+            func.displayPoints = func._denominatorClearedDisplayPoints;
+            delete func._denominatorClearedDisplayPoints;
+        }
         func.calculatingPoints = null;
 
         // Keep legacy readers in sync.
@@ -46414,7 +46599,10 @@ class Graphiti {
     }
     
     drawFunction(func) {
-        if (!func.points || func.points.length < 2) return;
+        const pointsToUse = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+            ? func.displayPoints
+            : func.points;
+        if (!Array.isArray(pointsToUse) || pointsToUse.length < 2) return;
         
         // Check if this is an inequality
         const functionType = this.detectFunctionType(func.expression);
@@ -46433,9 +46621,9 @@ class Graphiti {
                     if (inequalityCount === 1) {
                         // For polar inequalities, shade the region
                         if (inequality.operator === '>' || inequality.operator === '>=') {
-                            this.fillOutsidePolarCurve(func.points, func.color, func.inequality);
+                            this.fillOutsidePolarCurve(pointsToUse, func.color, func.inequality);
                         } else if (inequality.operator === '<' || inequality.operator === '<=') {
-                            this.fillInsidePolarCurve(func.points, func.color, func.inequality);
+                            this.fillInsidePolarCurve(pointsToUse, func.color, func.inequality);
                         }
                     }
                     
@@ -46448,9 +46636,9 @@ class Graphiti {
                     if (inequalityCount === 1) {
                         if (func.implicitPolarInequalityFastPath) {
                             if (func.implicitPolarInequalityFastPath.fillMode === 'outside') {
-                                this.fillOutsidePolarCurve(func.points, func.color, func.inequality);
+                                this.fillOutsidePolarCurve(pointsToUse, func.color, func.inequality);
                             } else {
-                                this.fillInsidePolarCurve(func.points, func.color, func.inequality);
+                                this.fillInsidePolarCurve(pointsToUse, func.color, func.inequality);
                             }
                         } else if (func.gridData) {
                             this.drawImplicitInequality(func);
@@ -46467,9 +46655,9 @@ class Graphiti {
                     if (inequalityCount === 1) {
                         // Render shading based on operator
                         if (inequality.operator === '>' || inequality.operator === '>=') {
-                            this.fillAboveCurve(func.points, func.color);
+                            this.fillAboveCurve(pointsToUse, func.color);
                         } else if (inequality.operator === '<' || inequality.operator === '<=') {
-                            this.fillBelowCurve(func.points, func.color);
+                            this.fillBelowCurve(pointsToUse, func.color);
                         }
                     }
                     
@@ -46603,8 +46791,8 @@ class Graphiti {
 
         const activeExplicitStep = this.getAdaptiveExplicitDecimationStep(func, isInequality);
 
-        for (let i = 0; i < func.points.length; i++) {
-            const point = func.points[i];
+        for (let i = 0; i < pointsToUse.length; i++) {
+            const point = pointsToUse[i];
 
             // Skip NaN points (discontinuities)
             if (!isFinite(point.x) || !isFinite(point.y)) {
@@ -46617,7 +46805,7 @@ class Graphiti {
                 continue;
             }
 
-            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && point.quadraticBranchEndpoint !== true && point.monomialBranchEndpoint !== true && i < func.points.length - 1) {
+            if (activeExplicitStep > 1 && i % activeExplicitStep !== 0 && point.connected !== false && point.quadraticBranchEndpoint !== true && point.monomialBranchEndpoint !== true && i < pointsToUse.length - 1) {
                 continue;
             }
 
