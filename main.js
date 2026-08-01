@@ -46599,7 +46599,9 @@ class Graphiti {
     }
     
     drawFunction(func) {
-        const pointsToUse = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+        const shouldUseDisplayPoints = Array.isArray(func.displayPoints) && func.displayPoints.length > 0 &&
+            func.displayPoints.some(point => point && point.removableHoleApproach === true);
+        const pointsToUse = shouldUseDisplayPoints
             ? func.displayPoints
             : func.points;
         if (!Array.isArray(pointsToUse) || pointsToUse.length < 2) return;
