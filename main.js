@@ -5492,6 +5492,25 @@ class Graphiti {
                 coordinateSystem: 'polar'
             };
 
+            if (!isInequality) {
+                const affinePolarModel = this.tryBuildAffinePolarImplicitModel(equation);
+                if (affinePolarModel) {
+                    const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
+                    if (handled) {
+                        if (!suppressDraw) {
+                            this.draw();
+                        }
+                        this.activeImplicitCalculations.delete(func.id);
+
+                        if (this.performance.enabled) {
+                            const elapsed = performance.now() - startTime;
+                            this.performance.plotTimes.set(func.id, elapsed);
+                        }
+                        return;
+                    }
+                }
+            }
+
             if (this.isCalculationCancelled(func.id, calculationId)) {
                 this.activeImplicitCalculations.delete(func.id);
                 return;
@@ -5586,6 +5605,170 @@ class Graphiti {
             console.error('Error plotting implicit polar function:', error);
             this.activeImplicitCalculations.delete(func.id);
         }
+    }
+
+    tryBuildAffinePolarImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '((' + equation.leftExpression + ')-(' + equation.rightExpression + '))';
+        if (/\bx\b|\by\b/i.test(combinedExpression)) {
+            return null;
+        }
+
+        const replaceRSymbol = (expression, replacement) => expression.replace(/\br\b/g, '(' + replacement + ')');
+
+        const bExpression = replaceRSymbol(combinedExpression, '0');
+        const aExpression = '((' + replaceRSymbol(combinedExpression, '1') + ')-(' + bExpression + '))';
+
+        let combinedForEval = combinedExpression;
+        let aForEval = aExpression;
+        let bForEval = bExpression;
+        if (this.angleMode === 'degrees') {
+            combinedForEval = this.convertTrigToDegreeModeImplicitCartesian(combinedForEval);
+            aForEval = this.convertTrigToDegreeModeImplicitCartesian(aForEval);
+            bForEval = this.convertTrigToDegreeModeImplicitCartesian(bForEval);
+        }
+
+        let combinedCompiled;
+        let aCompiled;
+        let bCompiled;
+        try {
+            combinedCompiled = this.getCompiledExpression(combinedForEval);
+            aCompiled = this.getCompiledExpression(aForEval);
+            bCompiled = this.getCompiledExpression(bForEval);
+        } catch {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ r: 0, t: 0, theta: 0, pi: Math.PI, e: Math.E });
+        const evaluateCombined = (theta, rValue) => {
+            scope.r = rValue;
+            scope.t = theta;
+            scope.theta = theta;
+            try {
+                const value = combinedCompiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return null;
+        }
+
+        const thetaSpan = thetaMax - thetaMin;
+        const sampleCount = Math.max(18, Math.min(64, Math.ceil(thetaSpan / Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax)))));
+
+        let validSamples = 0;
+        let maxSecondDifference = 0;
+        let maxMagnitude = 0;
+        let maxSlopeMagnitude = 0;
+
+        for (let i = 0; i <= sampleCount; i++) {
+            const theta = thetaMin + (thetaSpan * i / sampleCount);
+            const f0 = evaluateCombined(theta, 0);
+            const f1 = evaluateCombined(theta, 1);
+            const f2 = evaluateCombined(theta, 2);
+            const f3 = evaluateCombined(theta, 3);
+            if (f0 === null || f1 === null || f2 === null || f3 === null) {
+                continue;
+            }
+
+            const secondDifference0 = f2 - (2 * f1) + f0;
+            const secondDifference1 = f3 - (2 * f2) + f1;
+            const slopeMagnitude = Math.abs(f1 - f0);
+            maxSecondDifference = Math.max(maxSecondDifference, Math.abs(secondDifference0), Math.abs(secondDifference1));
+            maxSlopeMagnitude = Math.max(maxSlopeMagnitude, slopeMagnitude);
+            maxMagnitude = Math.max(maxMagnitude, Math.abs(f0), Math.abs(f1), Math.abs(f2), Math.abs(f3));
+            validSamples++;
+        }
+
+        if (validSamples < 8) {
+            return null;
+        }
+
+        const linearityTolerance = Math.max(1e-7, maxMagnitude * 1e-7);
+        if (maxSecondDifference > linearityTolerance) {
+            return null;
+        }
+
+        const slopeTolerance = Math.max(1e-7, maxSlopeMagnitude * 1e-8);
+        if (maxSlopeMagnitude <= slopeTolerance) {
+            return null;
+        }
+
+        let explicitExpression = '-(' + bExpression + ')/(' + aExpression + ')';
+        try {
+            const simplifiedExplicit = this.cleanMath.simplify(explicitExpression).toString();
+            if (simplifiedExplicit) {
+                explicitExpression = simplifiedExplicit;
+            }
+        } catch {
+            // Keep generated expression if symbolic simplification fails.
+        }
+
+        return {
+            explicitExpression,
+            aCompiled,
+            bCompiled
+        };
+    }
+
+    async plotImplicitPolarAffineAsExplicit(func, affinePolarModel) {
+        if (!func || !affinePolarModel || !affinePolarModel.explicitExpression) {
+            return false;
+        }
+
+        const handled = this.plotCachedPolarExplicitProxy(func, affinePolarModel.explicitExpression, {
+            clearAsymptoteData: true
+        });
+        if (!handled) {
+            return false;
+        }
+
+        func.implicitRenderMode = 'affine-polar-explicit';
+        func.affinePolarExplicitExpression = affinePolarModel.explicitExpression;
+        return true;
+    }
+
+    plotCachedPolarExplicitProxy(func, explicitExpression, options = {}) {
+        if (!func || typeof explicitExpression !== 'string' || !explicitExpression.trim()) {
+            return false;
+        }
+
+        const clearAsymptoteData = options.clearAsymptoteData !== false;
+
+        const proxyFunc = {
+            ...func,
+            expression: 'r=' + explicitExpression,
+            points: [],
+            displayPoints: []
+        };
+
+        this.plotPolarFunction(proxyFunc);
+
+        if (!Array.isArray(proxyFunc.points) || proxyFunc.points.length === 0) {
+            return false;
+        }
+
+        const finitePointCount = proxyFunc.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length;
+        if (finitePointCount === 0) {
+            return false;
+        }
+
+        func.points = proxyFunc.points;
+        func.displayPoints = Array.isArray(proxyFunc.displayPoints)
+            ? proxyFunc.displayPoints
+            : func.points;
+        if (clearAsymptoteData) {
+            this.clearFunctionAsymptoteData(func);
+        }
+        return true;
     }
     
     plotPolarInequality(func) {
@@ -6423,6 +6606,16 @@ class Graphiti {
         const polarFunctions = this.polarFunctions.filter(func => func.enabled);
         
         polarFunctions.forEach(func => {
+            if (func.implicitRenderMode === 'affine-polar-explicit' &&
+                typeof func.affinePolarExplicitExpression === 'string' &&
+                func.affinePolarExplicitExpression.trim()) {
+                const handled = this.plotCachedPolarExplicitProxy(func, func.affinePolarExplicitExpression, {
+                    clearAsymptoteData: false
+                });
+                if (handled) {
+                    return;
+                }
+            }
             this.plotFunction(func);
         });
         
@@ -6573,6 +6766,7 @@ class Graphiti {
 
     isExplicitImplicitFastPath(func) {
         return !!func && (
+            func.implicitRenderMode === 'affine-polar-explicit' ||
             func.implicitRenderMode === 'affine-explicit' ||
             func.implicitRenderMode === 'monomial-explicit' ||
             func.implicitRenderMode === 'monomial-x-explicit' ||
@@ -17444,6 +17638,7 @@ class Graphiti {
         delete func.envelopeData;
         delete func.holes;
         delete func.affineExplicitExpression;
+        delete func.affinePolarExplicitExpression;
         delete func.affineVerticalComponents;
         delete func._viewportCoverageSampleRange;
         delete func.monomialYExplicitExpressions;
@@ -18090,6 +18285,7 @@ class Graphiti {
 
         const convertedExpression = this.convertFromLatex(expression);
         const functionType = this.detectFunctionType(expression);
+        const func = (funcOrExpression && typeof funcOrExpression === 'object') ? funcOrExpression : null;
         if (this.plotMode === 'polar' && functionType === 'polar') {
             return this.classifyPolarFunctionShape(expression);
         }
@@ -18105,6 +18301,32 @@ class Graphiti {
         }
         if (this.plotMode === 'polar' && functionType === 'explicit' && !convertedExpression.includes('=')) {
             return this.classifyPolarFunctionShape(`r=${expression}`);
+        }
+        if (this.plotMode === 'polar' && (functionType === 'implicit' || functionType === 'implicit-inequality')) {
+            if (func && typeof func.affinePolarExplicitExpression === 'string' && func.affinePolarExplicitExpression.trim()) {
+                const proxyShape = this.classifyPolarFunctionShape(`r=${func.affinePolarExplicitExpression}`);
+                if (proxyShape) {
+                    return proxyShape;
+                }
+            }
+
+            // Classification fallback for implicit-polar forms that are affine in r.
+            let equation = null;
+            if (functionType === 'implicit-inequality') {
+                equation = this.parseImplicitInequality(expression);
+            } else {
+                equation = this.parseImplicitEquation(expression);
+            }
+
+            if (equation) {
+                const affinePolarModel = this.tryBuildAffinePolarImplicitModel({ ...equation, coordinateSystem: 'polar' });
+                if (affinePolarModel && typeof affinePolarModel.explicitExpression === 'string' && affinePolarModel.explicitExpression.trim()) {
+                    const proxyShape = this.classifyPolarFunctionShape(`r=${affinePolarModel.explicitExpression}`);
+                    if (proxyShape) {
+                        return proxyShape;
+                    }
+                }
+            }
         }
         if (functionType === 'parametric') {
             return this.classifyParametricFunctionShape(expression);
@@ -19462,6 +19684,12 @@ class Graphiti {
             }
             if (candidate.type === 'ParenthesisNode') {
                 return collect(candidate.content, sign);
+            }
+            if (candidate.type === 'OperatorNode' && candidate.op === '/' && candidate.args.length === 2) {
+                const denominator = this.evaluatePolarShapeConstant(candidate.args[1]);
+                return denominator !== null && Math.abs(denominator) > 1e-12
+                    ? collect(candidate.args[0], sign / denominator)
+                    : false;
             }
             if (candidate.type === 'OperatorNode' && candidate.op === '+' && candidate.args.length === 2) {
                 return collect(candidate.args[0], sign) && collect(candidate.args[1], sign);
@@ -49508,53 +49736,114 @@ class Graphiti {
             }
             
             try {
-                // Evaluate r at current theta
-                let r;
-                if (func.expression.includes('theta=') || func.expression.includes('θ=')) {
-                    // For theta = constant functions, skip drawing point (it's a line)
+                const functionType = this.detectFunctionType(func.expression);
+                if (functionType === 'theta-constant') {
+                    // Rays are guides rather than curve points for animation markers.
                     return;
-                } else {
-                    // Check if this is an inequality (r > f(theta), r < f(theta), etc.)
-                    const inequality = this.parsePolarInequality(func.expression);
+                }
+
+                let markerPoint = null;
+                const affinePolarExplicitExpression =
+                    func.implicitRenderMode === 'affine-polar-explicit' && typeof func.affinePolarExplicitExpression === 'string'
+                        ? func.affinePolarExplicitExpression.trim()
+                        : '';
+                const shouldUseLivePolarEvaluation =
+                    functionType === 'polar' ||
+                    functionType === 'polar-inequality' ||
+                    functionType === 'explicit' ||
+                    affinePolarExplicitExpression.length > 0;
+
+                // Explicit polar functions should evaluate against the live animation theta so
+                // closed curves that intentionally stop plotting early can still retrace later.
+                if (shouldUseLivePolarEvaluation) {
                     let processedExpression;
-                    
-                    if (inequality && inequality.leftSide.toLowerCase() === 'r') {
-                        // Polar inequality: extract the boundary function
+                    if (affinePolarExplicitExpression.length > 0) {
+                        processedExpression = affinePolarExplicitExpression.toLowerCase();
+                    } else if (functionType === 'polar-inequality') {
+                        const inequality = this.parsePolarInequality(func.expression);
+                        if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                            return;
+                        }
                         processedExpression = inequality.rightSide.toLowerCase();
                     } else {
-                        // Standard r = f(theta) function
                         processedExpression = this.convertFromLatex(func.expression).trim();
                         if (processedExpression.toLowerCase().startsWith('r=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
                         processedExpression = processedExpression.toLowerCase();
                     }
-                    
-                    // Add implicit multiplication
+
                     processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
                     processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
-                    
-                    const scope = this.getEvaluationScope({ 
-                        theta: thetaRad, 
+
+                    const scope = this.getEvaluationScope({
+                        theta: thetaRad,
                         t: thetaRad,
                         pi: Math.PI,
                         e: Math.E
                     });
                     const compiled = this.getCompiledExpression(processedExpression);
                     const result = compiled.evaluate(scope);
-                    r = typeof result === 'number' ? result : (result.re !== undefined ? result.re : NaN);
+                    let r = typeof result === 'number' ? result : (result && result.re !== undefined ? result.re : NaN);
+                    if (!Number.isFinite(r)) {
+                        return;
+                    }
+
+                    let adjustedTheta = thetaRad;
+                    if (r < 0) {
+                        if (this.polarSettings.plotNegativeR) {
+                            r = Math.abs(r);
+                            adjustedTheta += Math.PI;
+                        } else {
+                            return;
+                        }
+                    }
+
+                    markerPoint = {
+                        x: r * Math.cos(adjustedTheta),
+                        y: r * Math.sin(adjustedTheta)
+                    };
+                } else {
+                    const pointsToUse = Array.isArray(func.displayPoints) && func.displayPoints.length > 0
+                        ? func.displayPoints
+                        : (Array.isArray(func.points) ? func.points : []);
+                    if (pointsToUse.length === 0) {
+                        return;
+                    }
+
+                    let minThetaDistance = Infinity;
+                    for (const point of pointsToUse) {
+                        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                            continue;
+                        }
+
+                        let pointThetaRad;
+                        if (Number.isFinite(point.theta)) {
+                            pointThetaRad = this.angleMode === 'degrees'
+                                ? point.theta * Math.PI / 180
+                                : point.theta;
+                        } else {
+                            pointThetaRad = this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+                        }
+
+                        if (!Number.isFinite(pointThetaRad)) {
+                            continue;
+                        }
+
+                        const thetaDistance = Math.abs(pointThetaRad - thetaRad);
+                        if (thetaDistance < minThetaDistance) {
+                            minThetaDistance = thetaDistance;
+                            markerPoint = point;
+                        }
+                    }
+
+                    if (!markerPoint) {
+                        return;
+                    }
                 }
-                
-                if (isNaN(r) || !isFinite(r)) {
-                    return;
-                }
-                
-                // Convert polar to cartesian
-                const x = r * Math.cos(thetaRad);
-                const y = r * Math.sin(thetaRad);
                 
                 // Convert to screen coordinates
-                const screenPos = this.worldToScreen(x, y);
+                const screenPos = this.worldToScreen(markerPoint.x, markerPoint.y);
                 
                 // Create pulsating effect using timestamp
                 const pulseSpeed = 3; // Speed of pulsation

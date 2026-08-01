@@ -591,6 +591,7 @@ async function assertShapeClassification(page) {
             { expression: 'theta=pi/2', expected: 'polar ray' },
             { expression: 'r=2*cos(theta)', expected: 'circle' },
             { expression: 'r=1+cos(theta)', expected: 'cardioid' },
+            { expression: '2*r+cos(t)-1=0', expected: 'cardioid' },
             { expression: 'r<1+cos(theta)', expected: 'cardioid' },
             { expression: '1+cos(theta)', expected: 'cardioid' },
             { expression: 'r=1+alpha*cos(theta+1)', expected: 'cardioid' },
@@ -1678,6 +1679,41 @@ async function assertShapeClassification(page) {
     assert.strictEqual(polarInequalityDomResult.title, 'Boundary', 'polar inequality metadata title should render as Boundary');
     assert.strictEqual(polarInequalityDomResult.renderedLabel, 'cardioid', 'polar inequality boundary label should render text');
     assert.strictEqual(polarInequalityDomResult.visible, true, 'polar inequality boundary row should be visible');
+
+    const implicitPolarDomResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('2*r+cos(t)-1=0');
+        const func = graphiti.polarFunctions[0];
+        await graphiti.plotFunction(func);
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const item = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = item ? item.querySelector('.shape-info-container') : null;
+        const shapeTitle = shapeContainer ? shapeContainer.querySelector('.shape-info-title') : null;
+        const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
+
+        return {
+            title: shapeTitle ? shapeTitle.textContent : null,
+            renderedLabel: shapeValue ? shapeValue.textContent : null,
+            visible: shapeContainer ? shapeContainer.classList.contains('visible') : false,
+            renderMode: func.implicitRenderMode || null
+        };
+    });
+
+    assert.strictEqual(implicitPolarDomResult.title, 'Shape', 'implicit polar equation metadata title should remain Shape');
+    assert.strictEqual(implicitPolarDomResult.renderedLabel, 'cardioid', 'implicit polar shape label should match affine explicit equivalent');
+    assert.strictEqual(implicitPolarDomResult.visible, true, 'implicit polar shape row should be visible');
+    assert.strictEqual(implicitPolarDomResult.renderMode, 'affine-polar-explicit', 'implicit polar metadata test should hit affine polar fast-path');
 }
 
 async function assertStrictImplicitInequalityVerticalComponentsAreDashed(page) {
@@ -2076,6 +2112,39 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(thetaEqualsRFunc);
         await graphiti.plotFunction(thetaEqualsRFunc);
 
+        const affineFastPathFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '2*r+cos(t)-1=0',
+            points: [],
+            color: '#7B1FA2',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(affineFastPathFunc);
+        await graphiti.plotFunction(affineFastPathFunc);
+
+        const explicitRoseFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r=2*cos(3*theta)',
+            points: [],
+            color: '#1565C0',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(explicitRoseFunc);
+        await graphiti.plotFunction(explicitRoseFunc);
+
+        const implicitRoseAffineFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-2*cos(3*theta)=0',
+            points: [],
+            color: '#00897B',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(implicitRoseAffineFunc);
+        await graphiti.plotFunction(implicitRoseAffineFunc);
+
         const inequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-(1+cos(t))<0',
@@ -2105,6 +2174,9 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         const thetaEqualsRHasLowerHalf = (thetaEqualsRFunc.points || []).some(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.y < -0.05
         );
+        const affineFastPathFinitePointCount = (affineFastPathFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
         const clippedAngles = clippedEquationFinitePoints.map(point => {
             let theta = Math.atan2(point.y, point.x);
             if (theta < 0) {
@@ -2114,11 +2186,134 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         });
         const clippedAnglesRespectRange = clippedAngles.every(theta => theta >= -1e-6 && theta <= (Math.PI / 2) + 1e-6);
 
+        const getAnimationArcCountForFunction = (func, thetaRad) => {
+            const originalCtx = graphiti.ctx;
+            const originalFunctions = graphiti.polarFunctions;
+            const originalTheta = graphiti.polarAnimation.currentTheta;
+            const originalIsAnimating = graphiti.polarAnimation.isAnimating;
+            const originalIsPaused = graphiti.polarAnimation.isPaused;
+
+            const recordedArcs = [];
+            const recordingContext = {
+                save() {},
+                restore() {},
+                beginPath() {},
+                fill() {},
+                createRadialGradient() {
+                    return {
+                        addColorStop() {}
+                    };
+                },
+                arc(x, y, r) {
+                    recordedArcs.push({ x, y, r });
+                },
+                set fillStyle(value) {
+                    this._fillStyle = value;
+                },
+                get fillStyle() {
+                    return this._fillStyle;
+                }
+            };
+
+            graphiti.ctx = recordingContext;
+            graphiti.polarFunctions = [func];
+            graphiti.polarAnimation.currentTheta = thetaRad;
+            graphiti.polarAnimation.isAnimating = true;
+            graphiti.polarAnimation.isPaused = false;
+
+            try {
+                graphiti.drawPolarAnimationPoint();
+            } finally {
+                graphiti.ctx = originalCtx;
+                graphiti.polarFunctions = originalFunctions;
+                graphiti.polarAnimation.currentTheta = originalTheta;
+                graphiti.polarAnimation.isAnimating = originalIsAnimating;
+                graphiti.polarAnimation.isPaused = originalIsPaused;
+            }
+
+            return recordedArcs.length;
+        };
+
+        const getAnimationArcSummaryForFunction = (func, thetaRad) => {
+            const originalCtx = graphiti.ctx;
+            const originalFunctions = graphiti.polarFunctions;
+            const originalTheta = graphiti.polarAnimation.currentTheta;
+            const originalIsAnimating = graphiti.polarAnimation.isAnimating;
+            const originalIsPaused = graphiti.polarAnimation.isPaused;
+
+            const recordedArcs = [];
+            const recordingContext = {
+                save() {},
+                restore() {},
+                beginPath() {},
+                fill() {},
+                createRadialGradient() {
+                    return {
+                        addColorStop() {}
+                    };
+                },
+                arc(x, y, r) {
+                    recordedArcs.push({ x, y, r });
+                },
+                set fillStyle(value) {
+                    this._fillStyle = value;
+                },
+                get fillStyle() {
+                    return this._fillStyle;
+                }
+            };
+
+            graphiti.ctx = recordingContext;
+            graphiti.polarFunctions = [func];
+            graphiti.polarAnimation.currentTheta = thetaRad;
+            graphiti.polarAnimation.isAnimating = true;
+            graphiti.polarAnimation.isPaused = false;
+
+            try {
+                graphiti.drawPolarAnimationPoint();
+            } finally {
+                graphiti.ctx = originalCtx;
+                graphiti.polarFunctions = originalFunctions;
+                graphiti.polarAnimation.currentTheta = originalTheta;
+                graphiti.polarAnimation.isAnimating = originalIsAnimating;
+                graphiti.polarAnimation.isPaused = originalIsPaused;
+            }
+
+            const firstArc = recordedArcs.length > 0 ? recordedArcs[0] : null;
+            return {
+                arcCount: recordedArcs.length,
+                center: firstArc ? { x: firstArc.x, y: firstArc.y } : null
+            };
+        };
+
+        const implicitEquationAnimationArcCount = getAnimationArcCountForFunction(equationFunc, 0);
+        const affineFastPathAnimationArcCount = getAnimationArcCountForFunction(affineFastPathFunc, 0);
+        const explicitRoseAnimationAfterPiA = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.2);
+        const explicitRoseAnimationAfterPiB = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.4);
+        let explicitRosePostPiMotion = null;
+        if (explicitRoseAnimationAfterPiA.center && explicitRoseAnimationAfterPiB.center) {
+            explicitRosePostPiMotion = Math.hypot(
+                explicitRoseAnimationAfterPiB.center.x - explicitRoseAnimationAfterPiA.center.x,
+                explicitRoseAnimationAfterPiB.center.y - explicitRoseAnimationAfterPiA.center.y
+            );
+        }
+
+        const implicitRoseAnimationAfterPiA = getAnimationArcSummaryForFunction(implicitRoseAffineFunc, Math.PI + 0.2);
+        const implicitRoseAnimationAfterPiB = getAnimationArcSummaryForFunction(implicitRoseAffineFunc, Math.PI + 0.4);
+        let implicitRosePostPiMotion = null;
+        if (implicitRoseAnimationAfterPiA.center && implicitRoseAnimationAfterPiB.center) {
+            implicitRosePostPiMotion = Math.hypot(
+                implicitRoseAnimationAfterPiB.center.x - implicitRoseAnimationAfterPiA.center.x,
+                implicitRoseAnimationAfterPiB.center.y - implicitRoseAnimationAfterPiA.center.y
+            );
+        }
+
         return {
             equation: {
                 detectedType: graphiti.detectFunctionType(equationFunc.expression),
                 renderMode: equationFunc.implicitRenderMode || null,
                 finitePointCount: equationFinitePointCount,
+                animationArcCount: implicitEquationAnimationArcCount,
                 hasGridData: !!equationFunc.gridData
             },
             clippedEquation: {
@@ -2135,6 +2330,24 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 hasUpperHalf: thetaEqualsRHasUpperHalf,
                 hasLowerHalf: thetaEqualsRHasLowerHalf
             },
+            affineFastPath: {
+                detectedType: graphiti.detectFunctionType(affineFastPathFunc.expression),
+                renderMode: affineFastPathFunc.implicitRenderMode || null,
+                finitePointCount: affineFastPathFinitePointCount,
+                animationArcCount: affineFastPathAnimationArcCount
+            },
+            explicitRoseAnimation: {
+                arcCountAfterPiA: explicitRoseAnimationAfterPiA.arcCount,
+                arcCountAfterPiB: explicitRoseAnimationAfterPiB.arcCount,
+                postPiMotion: explicitRosePostPiMotion
+            },
+            implicitRoseAffine: {
+                detectedType: graphiti.detectFunctionType(implicitRoseAffineFunc.expression),
+                renderMode: implicitRoseAffineFunc.implicitRenderMode || null,
+                arcCountAfterPiA: implicitRoseAnimationAfterPiA.arcCount,
+                arcCountAfterPiB: implicitRoseAnimationAfterPiB.arcCount,
+                postPiMotion: implicitRosePostPiMotion
+            },
             inequality: {
                 detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
                 renderMode: inequalityFunc.implicitRenderMode || null,
@@ -2146,27 +2359,52 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
 
     assert.strictEqual(result.equation.detectedType, 'implicit', `implicit polar equation should be detected as implicit: ${JSON.stringify(result.equation)}`);
     assert(
-        typeof result.equation.renderMode === 'string' && result.equation.renderMode.startsWith('marching-polar'),
-        `implicit polar equation should use marching-polar render mode: ${JSON.stringify(result.equation)}`
+        result.equation.renderMode === 'affine-polar-explicit' ||
+        (typeof result.equation.renderMode === 'string' && result.equation.renderMode.startsWith('marching-polar')),
+        `implicit polar equation should use affine fast-path or marching fallback: ${JSON.stringify(result.equation)}`
     );
     assert(result.equation.finitePointCount > 50, `implicit polar equation should produce finite points: ${JSON.stringify(result.equation)}`);
+    assert(result.equation.animationArcCount >= 3, `implicit polar equation should draw animation marker arcs: ${JSON.stringify(result.equation)}`);
 
     assert.strictEqual(result.clippedEquation.detectedType, 'implicit', `theta-clipped implicit polar equation should stay implicit: ${JSON.stringify(result.clippedEquation)}`);
     assert(
-        typeof result.clippedEquation.renderMode === 'string' && result.clippedEquation.renderMode.startsWith('marching-polar'),
-        `theta-clipped implicit polar equation should use marching-polar render mode: ${JSON.stringify(result.clippedEquation)}`
+        result.clippedEquation.renderMode === 'affine-polar-explicit' ||
+        (typeof result.clippedEquation.renderMode === 'string' && result.clippedEquation.renderMode.startsWith('marching-polar')),
+        `theta-clipped implicit polar equation should use affine fast-path or marching fallback: ${JSON.stringify(result.clippedEquation)}`
     );
     assert(result.clippedEquation.finitePointCount > 10, `theta-clipped implicit polar equation should produce finite points: ${JSON.stringify(result.clippedEquation)}`);
     assert.strictEqual(result.clippedEquation.anglesRespectRange, true, `implicit polar equation should respect theta min/max clipping: ${JSON.stringify(result.clippedEquation)}`);
 
     assert.strictEqual(result.thetaEqualsR.detectedType, 'implicit', `theta=r should be treated as implicit polar, not a ray: ${JSON.stringify(result.thetaEqualsR)}`);
     assert(
-        typeof result.thetaEqualsR.renderMode === 'string' && result.thetaEqualsR.renderMode.startsWith('marching-polar'),
-        `theta=r should use implicit polar marching render mode: ${JSON.stringify(result.thetaEqualsR)}`
+        result.thetaEqualsR.renderMode === 'affine-polar-explicit' ||
+        (typeof result.thetaEqualsR.renderMode === 'string' && result.thetaEqualsR.renderMode.startsWith('marching-polar')),
+        `theta=r should use affine fast-path or marching fallback: ${JSON.stringify(result.thetaEqualsR)}`
     );
     assert(result.thetaEqualsR.finitePointCount > 10, `theta=r should produce visible implicit polar points: ${JSON.stringify(result.thetaEqualsR)}`);
     assert.strictEqual(result.thetaEqualsR.hasUpperHalf, true, `theta=r should include upper-half points for 0..2pi: ${JSON.stringify(result.thetaEqualsR)}`);
     assert.strictEqual(result.thetaEqualsR.hasLowerHalf, true, `theta=r should include lower-half points for 0..2pi: ${JSON.stringify(result.thetaEqualsR)}`);
+
+    assert.strictEqual(result.affineFastPath.detectedType, 'implicit', `affine implicit polar expression should remain implicit in classification: ${JSON.stringify(result.affineFastPath)}`);
+    assert.strictEqual(result.affineFastPath.renderMode, 'affine-polar-explicit', `affine implicit polar expression should activate affine fast-path: ${JSON.stringify(result.affineFastPath)}`);
+    assert(result.affineFastPath.finitePointCount > 30, `affine implicit polar fast-path should produce visible points: ${JSON.stringify(result.affineFastPath)}`);
+    assert(result.affineFastPath.animationArcCount >= 3, `affine implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.affineFastPath)}`);
+
+    assert(result.explicitRoseAnimation.arcCountAfterPiA >= 3, `explicit rose should still draw marker arcs after pi (first sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
+    assert(result.explicitRoseAnimation.arcCountAfterPiB >= 3, `explicit rose should still draw marker arcs after pi (second sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
+    assert(
+        Number.isFinite(result.explicitRoseAnimation.postPiMotion) && result.explicitRoseAnimation.postPiMotion > 0.5,
+        `explicit rose marker should continue moving after pi instead of freezing: ${JSON.stringify(result.explicitRoseAnimation)}`
+    );
+
+    assert.strictEqual(result.implicitRoseAffine.detectedType, 'implicit', `implicit affine rose should remain implicit in type detection: ${JSON.stringify(result.implicitRoseAffine)}`);
+    assert.strictEqual(result.implicitRoseAffine.renderMode, 'affine-polar-explicit', `implicit affine rose should activate affine polar fast-path: ${JSON.stringify(result.implicitRoseAffine)}`);
+    assert(result.implicitRoseAffine.arcCountAfterPiA >= 3, `implicit affine rose should still draw marker arcs after pi (first sample): ${JSON.stringify(result.implicitRoseAffine)}`);
+    assert(result.implicitRoseAffine.arcCountAfterPiB >= 3, `implicit affine rose should still draw marker arcs after pi (second sample): ${JSON.stringify(result.implicitRoseAffine)}`);
+    assert(
+        Number.isFinite(result.implicitRoseAffine.postPiMotion) && result.implicitRoseAffine.postPiMotion > 0.5,
+        `implicit affine rose marker should continue moving after pi instead of freezing: ${JSON.stringify(result.implicitRoseAffine)}`
+    );
 
     assert.strictEqual(result.inequality.detectedType, 'implicit-inequality', `implicit polar inequality should be detected as implicit-inequality: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
