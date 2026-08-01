@@ -1832,6 +1832,15 @@ class Graphiti {
                 description: 'Explicit Functions Demo',
                 viewport: { minX: -6, maxX: 6, minY: -3, maxY: 4 }
             },
+            'implicit-polar': {
+                expressions: [
+                    'r-\\frac{\\theta}{r}=0',
+                    '2r+\\cos\\left(\\theta\\right)-1=0',
+                    '\\frac{r-\\left(2+\\cos\\left(\\theta\\right)\\right)}{\\theta-\\frac{\\pi}{3}}=0'
+                ],
+                description: 'Implicit Polar Demo',
+                viewport: { minX: -3, maxX: 3, minY: -3, maxY: 3 }
+            },
             'curvilinear-asymptote': {
                 expressions: [
                     'y=\\frac{x^3-x+4}{x-1}'                            // Rational curve with parabolic asymptote
@@ -1978,6 +1987,23 @@ class Graphiti {
         
         const demoSet = demoSets[demoSetId];
         if (!demoSet) return;
+
+        // Keep current demo sets deterministic by always resetting the polar
+        // theta window to the default implementation range.
+        this.polarSettings.thetaMin = 0;
+        this.polarSettings.thetaMax = 2 * Math.PI;
+        this.polarSettings.thetaMinLatex = '0';
+        this.polarSettings.thetaMaxLatex = '2\\pi';
+        this.polarAnimation.storedThetaMax = 2 * Math.PI;
+
+        const thetaMinInput = document.getElementById('theta-min');
+        const thetaMaxInput = document.getElementById('theta-max');
+        if (thetaMinInput) {
+            this.setRangeValue(thetaMinInput, '0');
+        }
+        if (thetaMaxInput) {
+            this.setRangeValue(thetaMaxInput, '2\\pi');
+        }
         
         // Check if any expression contains trig functions - if so, switch to radian mode
         const hasTrigFunctions = demoSet.expressions.some(expr => {
@@ -5381,20 +5407,6 @@ class Graphiti {
             const compiledExpression = this.getCompiledExpression(processedExpression);
 
             const polarRayAsymptotes = this.detectPolarRayAsymptotes(compiledExpression, this.polarSettings.thetaMin, this.polarSettings.thetaMax);
-            if (polarRayAsymptotes.length > 0) {
-                this.updateFunctionAsymptoteData(
-                    func,
-                    [],
-                    [],
-                    [],
-                    null,
-                    {
-                        polarRays: polarRayAsymptotes.map(value => ({ value, source: 'numeric' }))
-                    },
-                    [],
-                    polarRayAsymptotes
-                );
-            }
             
             const points = [];
             const thetaMin = this.polarSettings.thetaMin;
@@ -5492,6 +5504,37 @@ class Graphiti {
             this.compactPolarOriginGaps(points);
             if (!func._skipPolarRangeClosure) {
                 this.closePolarRangeIfNeeded(points, thetaMin, thetaMax, thetaStep, polarRayAsymptotes);
+            }
+
+            if (polarRayAsymptotes.length > 0) {
+                const inferredLineAsymptotes = this.inferCartesianAsymptotesFromPolarSingularRays(compiledExpression, polarRayAsymptotes, thetaStep);
+                const consumedRays = Array.isArray(inferredLineAsymptotes.consumedRays)
+                    ? inferredLineAsymptotes.consumedRays
+                    : [];
+                const displayPolarRays = polarRayAsymptotes.filter(theta =>
+                    !consumedRays.some(consumed => Math.abs(consumed - theta) <= Math.max(1e-6, Math.abs(thetaStep) * 2))
+                );
+
+                const hasInferredLines =
+                    inferredLineAsymptotes.vertical.length > 0 ||
+                    inferredLineAsymptotes.horizontal.length > 0 ||
+                    inferredLineAsymptotes.oblique.length > 0;
+
+                this.updateFunctionAsymptoteData(
+                    func,
+                    inferredLineAsymptotes.vertical,
+                    inferredLineAsymptotes.horizontal,
+                    inferredLineAsymptotes.oblique,
+                    null,
+                    {
+                        vertical: inferredLineAsymptotes.vertical.map(value => ({ value, source: 'derived-polar-ray' })),
+                        horizontal: inferredLineAsymptotes.horizontal.map(value => ({ value, source: 'derived-polar-ray' })),
+                        oblique: inferredLineAsymptotes.oblique.map(line => ({ m: line.m, b: line.b, source: 'derived-polar-ray' })),
+                        polarRays: displayPolarRays.map(value => ({ value, source: hasInferredLines ? 'supplemental' : 'numeric' }))
+                    },
+                    [],
+                    displayPolarRays
+                );
             }
             
             func.points = points;
@@ -5746,6 +5789,13 @@ class Graphiti {
             return NaN;
         };
 
+        // Some polar reciprocals (for example r = sec(theta)) are exact Cartesian
+        // straight lines. Their singular theta values are parameter artefacts, not
+        // geometric asymptote rays, so suppress ray metadata for these loci.
+        if (this.isExplicitPolarLocusApproximatelyLine(compiledExpression, thetaMin, thetaMax, evaluateAt)) {
+            return [];
+        }
+
         const thetaValues = new Array(sampleCount + 1);
         const radii = new Array(sampleCount + 1);
         for (let index = 0; index <= sampleCount; index++) {
@@ -5815,6 +5865,415 @@ class Graphiti {
 
         validated.sort((left, right) => left - right);
         return validated;
+    }
+
+    inferCartesianAsymptotesFromPolarSingularRays(compiledExpression, polarRayAsymptotes, thetaStep) {
+        const result = {
+            vertical: [],
+            horizontal: [],
+            oblique: [],
+            consumedRays: []
+        };
+
+        const inferredRayMap = [];
+
+        if (!compiledExpression || !Array.isArray(polarRayAsymptotes) || polarRayAsymptotes.length === 0) {
+            return result;
+        }
+
+        const viewportWidth = Math.abs((this.viewport?.maxX ?? 0) - (this.viewport?.minX ?? 0));
+        const viewportHeight = Math.abs((this.viewport?.maxY ?? 0) - (this.viewport?.minY ?? 0));
+        const viewportDiagonal = Math.max(1, Math.hypot(viewportWidth, viewportHeight));
+        const viewportRadius = Math.max(1, Math.hypot(
+            Math.max(Math.abs(this.viewport?.minX ?? 0), Math.abs(this.viewport?.maxX ?? 0)),
+            Math.max(Math.abs(this.viewport?.minY ?? 0), Math.abs(this.viewport?.maxY ?? 0))
+        ));
+        const thetaStepRadians = this.angleMode === 'degrees' ? Math.abs(thetaStep) * Math.PI / 180 : Math.abs(thetaStep);
+        const minSampleCount = 8;
+        const originDistanceTolerance = Math.max(0.2, viewportDiagonal * 0.035);
+        const sampleRadiusCap = Math.max(30, viewportRadius * 12);
+
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const evaluateR = (thetaRadians) => {
+            scope.theta = thetaRadians;
+            scope.t = thetaRadians;
+            try {
+                const value = compiledExpression.evaluate(scope);
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+                if (value && typeof value.re === 'number' && Number.isFinite(value.re)) {
+                    return value.re;
+                }
+            } catch {
+                return NaN;
+            }
+            return NaN;
+        };
+
+        const tryAddVertical = (x, thetaRay) => {
+            if (!Number.isFinite(x)) {
+                return;
+            }
+            const duplicate = result.vertical.some(existing => Math.abs(existing - x) <= Math.max(1e-5, Math.abs(existing) * 1e-5));
+            if (!duplicate) {
+                result.vertical.push(x);
+                result.consumedRays.push(thetaRay);
+            }
+        };
+
+        const tryAddHorizontal = (y, thetaRay) => {
+            if (!Number.isFinite(y)) {
+                return;
+            }
+            const duplicate = result.horizontal.some(existing => Math.abs(existing - y) <= Math.max(1e-5, Math.abs(existing) * 1e-5));
+            if (!duplicate) {
+                result.horizontal.push(y);
+                result.consumedRays.push(thetaRay);
+            }
+        };
+
+        const tryAddOblique = (m, b, thetaRay) => {
+            if (!Number.isFinite(m) || !Number.isFinite(b)) {
+                return;
+            }
+            const nearDuplicate = result.oblique.find(line => {
+                const slopeTolerance = Math.max(0.006, Math.abs(line.m) * 0.004);
+                const interceptTolerance = Math.max(0.06, Math.abs(line.b) * 0.02);
+                return Math.abs(line.m - m) <= slopeTolerance && Math.abs(line.b - b) <= interceptTolerance;
+            });
+
+            if (nearDuplicate) {
+                nearDuplicate.m = (nearDuplicate.m + m) / 2;
+                nearDuplicate.b = (nearDuplicate.b + b) / 2;
+                nearDuplicate.direction = 0;
+
+                const mapping = inferredRayMap.find(entry => entry && entry.line === nearDuplicate);
+                if (mapping) {
+                    mapping.rays.push(thetaRay);
+                }
+                return;
+            }
+
+            const newLine = { m, b, direction: 0 };
+            result.oblique.push(newLine);
+            inferredRayMap.push({ line: newLine, rays: [thetaRay] });
+        };
+
+        for (const thetaRay of polarRayAsymptotes) {
+            if (!Number.isFinite(thetaRay)) {
+                continue;
+            }
+
+            const candidates = [];
+            const rayThetaRadians = this.angleMode === 'degrees' ? thetaRay * Math.PI / 180 : thetaRay;
+            const probeDeltas = [0.2, 0.12, 0.08, 0.05, 0.03]
+                .map(delta => Math.max(1e-4, delta));
+
+            for (const direction of [-1, 1]) {
+                for (const delta of probeDeltas) {
+                    const thetaProbe = rayThetaRadians + (direction * delta);
+                    const r = evaluateR(thetaProbe);
+                    if (!Number.isFinite(r) || Math.abs(r) > sampleRadiusCap) {
+                        continue;
+                    }
+
+                    const x = r * Math.cos(thetaProbe);
+                    const y = r * Math.sin(thetaProbe);
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                        continue;
+                    }
+
+                    candidates.push({ x, y });
+                }
+            }
+
+            if (candidates.length < minSampleCount) {
+                continue;
+            }
+
+            let meanX = 0;
+            let meanY = 0;
+            for (const point of candidates) {
+                meanX += point.x;
+                meanY += point.y;
+            }
+            meanX /= candidates.length;
+            meanY /= candidates.length;
+
+            let sxx = 0;
+            let syy = 0;
+            let sxy = 0;
+            for (const point of candidates) {
+                const dx = point.x - meanX;
+                const dy = point.y - meanY;
+                sxx += dx * dx;
+                syy += dy * dy;
+                sxy += dx * dy;
+            }
+            sxx /= candidates.length;
+            syy /= candidates.length;
+            sxy /= candidates.length;
+
+            const trace = sxx + syy;
+            const discriminant = Math.max(0, ((sxx - syy) * (sxx - syy)) + (4 * sxy * sxy));
+            const sqrtDiscriminant = Math.sqrt(discriminant);
+            const majorVariance = Math.max(0, (trace + sqrtDiscriminant) * 0.5);
+            const minorVariance = Math.max(0, (trace - sqrtDiscriminant) * 0.5);
+
+            const majorSpread = Math.sqrt(majorVariance);
+            const orthogonalSpread = Math.sqrt(minorVariance);
+            if (!Number.isFinite(majorSpread) || !Number.isFinite(orthogonalSpread)) {
+                continue;
+            }
+            if (majorSpread < Math.max(0.7, viewportDiagonal * 0.06)) {
+                continue;
+            }
+
+            const residualTolerance = Math.max(0.05, viewportDiagonal * 0.006, majorSpread * 0.03);
+            if (orthogonalSpread > residualTolerance) {
+                continue;
+            }
+
+            // Total least-squares line normal from the minor principal axis.
+            let normalX = sxy;
+            let normalY = minorVariance - sxx;
+            if (Math.abs(normalX) + Math.abs(normalY) <= 1e-12) {
+                normalX = 1;
+                normalY = 0;
+            }
+
+            const normalNorm = Math.hypot(normalX, normalY);
+            if (!Number.isFinite(normalNorm) || normalNorm <= 1e-12) {
+                continue;
+            }
+
+            normalX /= normalNorm;
+            normalY /= normalNorm;
+            const c = (normalX * meanX) + (normalY * meanY);
+            const distanceFromOrigin = Math.abs(c);
+            if (!Number.isFinite(distanceFromOrigin) || distanceFromOrigin < originDistanceTolerance) {
+                continue;
+            }
+
+            if (Math.abs(normalY) <= 1e-5) {
+                tryAddVertical(c / normalX, thetaRay);
+                continue;
+            }
+
+            const slope = -normalX / normalY;
+            const intercept = c / normalY;
+            if (Math.abs(slope) <= 1e-5) {
+                tryAddHorizontal(intercept, thetaRay);
+            } else {
+                tryAddOblique(slope, intercept, thetaRay);
+            }
+        }
+
+        result.vertical.sort((a, b) => a - b);
+        result.horizontal.sort((a, b) => a - b);
+
+        if (result.oblique.length > 1) {
+            const merged = [];
+            for (const line of result.oblique) {
+                const existing = merged.find(candidate => {
+                    const slopeTolerance = Math.max(0.008, Math.abs(candidate.m) * 0.005);
+                    const interceptTolerance = Math.max(0.1, Math.abs(candidate.b) * 0.03);
+                    return Math.abs(candidate.m - line.m) <= slopeTolerance &&
+                        Math.abs(candidate.b - line.b) <= interceptTolerance;
+                });
+
+                if (!existing) {
+                    merged.push({ ...line });
+                } else {
+                    existing.m = (existing.m + line.m) / 2;
+                    existing.b = (existing.b + line.b) / 2;
+                    existing.direction = 0;
+                }
+            }
+            result.oblique = merged;
+        }
+
+        if (result.oblique.length > 1) {
+            const viewportMinX = Number.isFinite(this.viewport?.minX) ? this.viewport.minX : -10;
+            const viewportMaxX = Number.isFinite(this.viewport?.maxX) ? this.viewport.maxX : 10;
+            const pixelScale = Math.max(1, Number.isFinite(this.viewport?.scale) ? this.viewport.scale : 1);
+            const mergedByViewport = [];
+
+            for (const line of result.oblique) {
+                const existing = mergedByViewport.find(candidate => {
+                    const leftDelta = Math.abs(((candidate.m * viewportMinX) + candidate.b) - ((line.m * viewportMinX) + line.b));
+                    const rightDelta = Math.abs(((candidate.m * viewportMaxX) + candidate.b) - ((line.m * viewportMaxX) + line.b));
+                    const maxWorldDelta = Math.max(leftDelta, rightDelta);
+                    const maxPixelDelta = maxWorldDelta * pixelScale;
+                    return maxPixelDelta <= 4.5;
+                });
+
+                if (!existing) {
+                    mergedByViewport.push({ ...line });
+                } else {
+                    existing.m = (existing.m + line.m) / 2;
+                    existing.b = (existing.b + line.b) / 2;
+                    existing.direction = 0;
+                }
+            }
+
+            result.oblique = mergedByViewport;
+        }
+
+        if (result.oblique.length === 2) {
+            const first = result.oblique[0];
+            const second = result.oblique[1];
+            if (first && second) {
+                const slopeClose = Math.abs(first.m - second.m) <= 0.03;
+                const interceptClose = Math.abs(first.b - second.b) <= 0.08;
+                if (slopeClose && interceptClose) {
+                    result.oblique = [{
+                        m: (first.m + second.m) / 2,
+                        b: (first.b + second.b) / 2,
+                        direction: 0
+                    }];
+                }
+            }
+        }
+
+        // For ranges that include many singular rays, only promote theta-ray
+        // asymptotes to Cartesian line metadata when all rays agree on one
+        // geometric line. Periodic families that map to multiple distinct lines
+        // should remain represented as theta families.
+        if (polarRayAsymptotes.length > 2) {
+            const inferredLineCount = result.vertical.length + result.horizontal.length + result.oblique.length;
+            if (inferredLineCount !== 1) {
+                return {
+                    vertical: [],
+                    horizontal: [],
+                    oblique: [],
+                    consumedRays: []
+                };
+            }
+        }
+
+        const consumed = [];
+        for (const mapping of inferredRayMap) {
+            if (!mapping || !Array.isArray(mapping.rays)) {
+                continue;
+            }
+            const matched = result.oblique.some(line =>
+                Math.abs(line.m - mapping.line.m) <= Math.max(0.008, Math.abs(line.m) * 0.005) &&
+                Math.abs(line.b - mapping.line.b) <= Math.max(0.1, Math.abs(line.b) * 0.03)
+            );
+            if (!matched) {
+                continue;
+            }
+            for (const ray of mapping.rays) {
+                if (Number.isFinite(ray) && !consumed.some(existing => Math.abs(existing - ray) <= 1e-8)) {
+                    consumed.push(ray);
+                }
+            }
+        }
+
+        if (consumed.length < 2) {
+            return {
+                vertical: [],
+                horizontal: [],
+                oblique: [],
+                consumedRays: []
+            };
+        }
+
+        result.consumedRays = consumed;
+
+        return result;
+    }
+
+    isExplicitPolarLocusApproximatelyLine(compiledExpression, thetaMin, thetaMax, evaluateAt) {
+        if (!compiledExpression || !Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || typeof evaluateAt !== 'function') {
+            return false;
+        }
+
+        const thetaRange = thetaMax - thetaMin;
+        if (!Number.isFinite(thetaRange) || thetaRange <= 0) {
+            return false;
+        }
+
+        const viewportWidth = Math.abs(this.viewport.maxX - this.viewport.minX);
+        const viewportHeight = Math.abs(this.viewport.maxY - this.viewport.minY);
+        const viewportSpan = Math.max(1, Math.hypot(viewportWidth, viewportHeight));
+        const viewportRadius = Math.max(1, Math.hypot(
+            Math.max(Math.abs(this.viewport.minX), Math.abs(this.viewport.maxX)),
+            Math.max(Math.abs(this.viewport.minY), Math.abs(this.viewport.maxY))
+        ));
+        const radiusCap = Math.max(30, viewportRadius * 6);
+
+        const sampleCount = Math.max(360, Math.min(1800, Math.ceil(Math.abs(thetaRange) / (this.angleMode === 'degrees' ? 0.5 : 0.01))));
+        const step = thetaRange / sampleCount;
+        if (!Number.isFinite(step) || step <= 0) {
+            return false;
+        }
+
+        const samples = [];
+        for (let index = 0; index <= sampleCount; index++) {
+            const thetaValue = thetaMin + (index * step);
+            const r = evaluateAt(thetaValue);
+            if (!Number.isFinite(r)) {
+                continue;
+            }
+            if (Math.abs(r) > radiusCap) {
+                continue;
+            }
+
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            const x = r * Math.cos(thetaForEval);
+            const y = r * Math.sin(thetaForEval);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                continue;
+            }
+
+            samples.push({ x, y });
+        }
+
+        if (samples.length < 40) {
+            return false;
+        }
+
+        let meanX = 0;
+        let meanY = 0;
+        for (const sample of samples) {
+            meanX += sample.x;
+            meanY += sample.y;
+        }
+        meanX /= samples.length;
+        meanY /= samples.length;
+
+        let sxx = 0;
+        let syy = 0;
+        let sxy = 0;
+        for (const sample of samples) {
+            const dx = sample.x - meanX;
+            const dy = sample.y - meanY;
+            sxx += dx * dx;
+            syy += dy * dy;
+            sxy += dx * dy;
+        }
+
+        sxx /= samples.length;
+        syy /= samples.length;
+        sxy /= samples.length;
+
+        const trace = sxx + syy;
+        const discriminant = Math.max(0, ((sxx - syy) * (sxx - syy)) + (4 * sxy * sxy));
+        const sqrtDiscriminant = Math.sqrt(discriminant);
+        const majorVariance = Math.max(0, (trace + sqrtDiscriminant) * 0.5);
+        const minorVariance = Math.max(0, (trace - sqrtDiscriminant) * 0.5);
+
+        const majorSpread = Math.sqrt(majorVariance);
+        const orthogonalSpread = Math.sqrt(minorVariance);
+        if (!Number.isFinite(majorSpread) || !Number.isFinite(orthogonalSpread) || majorSpread <= Math.max(0.2, viewportSpan * 0.01)) {
+            return false;
+        }
+
+        const residualTolerance = Math.max(1e-4, viewportSpan * 0.0015, majorSpread * 0.004);
+        return orthogonalSpread <= residualTolerance;
     }
 
     refinePolarRayAsymptoteCandidate(compiledExpression, thetaCandidate, step) {
@@ -19386,9 +19845,24 @@ class Graphiti {
                 return null;
             }
 
+            const snapNearInteger = (value, tolerance) => {
+                if (!Number.isFinite(value)) {
+                    return value;
+                }
+                const rounded = Math.round(value);
+                return Math.abs(value - rounded) <= tolerance ? rounded : value;
+            };
+
             const roundedSlope = Math.round(line.m);
-            const snappedSlope = Math.abs(line.m - roundedSlope) < 1e-5 ? roundedSlope : line.m;
-            const snappedIntercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
+            const snappedSlope = snapNearInteger(
+                line.m,
+                Math.max(1e-5, Math.abs(line.m) * 3e-4)
+            );
+            let snappedIntercept = Math.abs(line.b) < 0.18 ? 0 : line.b;
+            snappedIntercept = snapNearInteger(
+                snappedIntercept,
+                Math.max(0.01, Math.abs(snappedIntercept) * 0.004)
+            );
             return {
                 m: snappedSlope,
                 b: snappedIntercept,
@@ -19405,6 +19879,36 @@ class Graphiti {
             if (!duplicate) {
                 oblique.push(line);
             }
+        }
+
+        // Final oblique consolidation in screen-space: collapse visually identical
+        // lines that can still arise from independent one-sided/as-ray inferences.
+        if (oblique.length > 1) {
+            const viewportMinX = Number.isFinite(this.viewport?.minX) ? this.viewport.minX : -10;
+            const viewportMaxX = Number.isFinite(this.viewport?.maxX) ? this.viewport.maxX : 10;
+            const pixelScale = Math.max(1, Number.isFinite(this.viewport?.scale) ? this.viewport.scale : 1);
+
+            const mergedOblique = [];
+            for (const line of oblique) {
+                const existing = mergedOblique.find(candidate => {
+                    const leftDelta = Math.abs(((candidate.m * viewportMinX) + candidate.b) - ((line.m * viewportMinX) + line.b));
+                    const rightDelta = Math.abs(((candidate.m * viewportMaxX) + candidate.b) - ((line.m * viewportMaxX) + line.b));
+                    const maxWorldDelta = Math.max(leftDelta, rightDelta);
+                    const maxPixelDelta = maxWorldDelta * pixelScale;
+                    return maxPixelDelta <= 2.5;
+                });
+
+                if (!existing) {
+                    mergedOblique.push({ ...line });
+                } else {
+                    existing.m = (existing.m + line.m) / 2;
+                    existing.b = (existing.b + line.b) / 2;
+                    existing.direction = 0;
+                }
+            }
+
+            oblique.length = 0;
+            oblique.push(...mergedOblique);
         }
 
         const normalizeCurvedAsymptote = (curve) => {
@@ -20263,9 +20767,12 @@ class Graphiti {
         if (this.plotMode === 'polar' && (functionType === 'implicit' || functionType === 'implicit-inequality')) {
             if (func && func.implicitRenderMode === 'product-factors' && Array.isArray(func.productImplicitFactorExpressions) && func.productImplicitFactorExpressions.length > 0) {
                 const factorShapes = func.productImplicitFactorExpressions
-                    .map(factorExpression => this.classifyImplicitPolarFactorShape(factorExpression))
+                    .map(factorExpression => this.classifyImplicitPolarFactorShape(factorExpression));
+                const classifiedFactorShapes = factorShapes
                     .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
-                const combinedShape = this.combinePolarFactorShapes(factorShapes);
+                const combinedShape = this.combinePolarFactorShapes(classifiedFactorShapes, {
+                    unclassifiedComponentCount: factorShapes.length - classifiedFactorShapes.length
+                });
                 if (combinedShape) {
                     return combinedShape;
                 }
@@ -20287,7 +20794,22 @@ class Graphiti {
             }
 
             if (equation) {
-                const affinePolarModel = this.tryBuildAffinePolarImplicitModel({ ...equation, coordinateSystem: 'polar' });
+                const polarEquation = { ...equation, coordinateSystem: 'polar' };
+                const factorExpressions = this.extractZeroProductFactorExpressions(polarEquation);
+                if (Array.isArray(factorExpressions) && factorExpressions.length > 1) {
+                    const factorShapes = factorExpressions
+                        .map(factorExpression => this.classifyImplicitPolarFactorShape(factorExpression));
+                    const classifiedFactorShapes = factorShapes
+                        .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
+                    const combinedShape = this.combinePolarFactorShapes(classifiedFactorShapes, {
+                        unclassifiedComponentCount: factorShapes.length - classifiedFactorShapes.length
+                    });
+                    if (combinedShape) {
+                        return combinedShape;
+                    }
+                }
+
+                const affinePolarModel = this.tryBuildAffinePolarImplicitModel(polarEquation);
                 if (affinePolarModel && typeof affinePolarModel.explicitExpression === 'string' && affinePolarModel.explicitExpression.trim()) {
                     const proxyShape = this.classifyPolarFunctionShape(`r=${affinePolarModel.explicitExpression}`);
                     if (proxyShape) {
@@ -20354,9 +20876,12 @@ class Graphiti {
         const quadraticModel = this.tryBuildQuadraticPolarImplicitModel(polarEquation);
         if (quadraticModel && Array.isArray(quadraticModel.branchExpressions) && quadraticModel.branchExpressions.length > 0) {
             const branchShapes = quadraticModel.branchExpressions
-                .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`))
+                .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`));
+            const classifiedBranchShapes = branchShapes
                 .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
-            const combinedBranchShape = this.combinePolarFactorShapes(branchShapes);
+            const combinedBranchShape = this.combinePolarFactorShapes(classifiedBranchShapes, {
+                unclassifiedComponentCount: branchShapes.length - classifiedBranchShapes.length
+            });
             if (combinedBranchShape) {
                 return combinedBranchShape;
             }
@@ -20365,9 +20890,12 @@ class Graphiti {
         const monomialModel = this.tryBuildMonomialPolarImplicitModel(polarEquation);
         if (monomialModel && Array.isArray(monomialModel.branchExpressions) && monomialModel.branchExpressions.length > 0) {
             const branchShapes = monomialModel.branchExpressions
-                .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`))
+                .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`));
+            const classifiedBranchShapes = branchShapes
                 .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
-            const combinedBranchShape = this.combinePolarFactorShapes(branchShapes);
+            const combinedBranchShape = this.combinePolarFactorShapes(classifiedBranchShapes, {
+                unclassifiedComponentCount: branchShapes.length - classifiedBranchShapes.length
+            });
             if (combinedBranchShape) {
                 return combinedBranchShape;
             }
@@ -20381,10 +20909,14 @@ class Graphiti {
         return null;
     }
 
-    combinePolarFactorShapes(shapes) {
+    combinePolarFactorShapes(shapes, options = {}) {
         if (!Array.isArray(shapes) || shapes.length === 0) {
             return null;
         }
+
+        const unclassifiedComponentCount = Number.isFinite(options.unclassifiedComponentCount)
+            ? Math.max(0, Math.floor(options.unclassifiedComponentCount))
+            : 0;
 
         const uniqueShapes = [];
         for (const shape of shapes) {
@@ -20407,7 +20939,18 @@ class Graphiti {
         }
 
         if (uniqueShapes.length === 1) {
+            if (unclassifiedComponentCount > 0 && uniqueShapes[0].label !== 'implicit curve') {
+                return {
+                    label: `${uniqueShapes[0].label} + implicit curve`,
+                    confidence: 'partial',
+                    components: [...uniqueShapes.map(shape => ({ ...shape })), { label: 'implicit curve', confidence: 'unknown' }]
+                };
+            }
             return uniqueShapes[0];
+        }
+
+        if (unclassifiedComponentCount > 0 && !uniqueShapes.some(shape => shape.label === 'implicit curve')) {
+            uniqueShapes.push({ label: 'implicit curve', confidence: 'unknown' });
         }
 
         const confidences = uniqueShapes.map(shape => shape.confidence || 'unknown');
@@ -20415,7 +20958,7 @@ class Graphiti {
             ? 'exact'
             : (confidences.every(confidence => confidence === 'parameter')
                 ? 'parameter'
-                : 'structural');
+                : (unclassifiedComponentCount > 0 ? 'partial' : 'structural'));
 
         return {
             label: uniqueShapes.map(shape => shape.label).join(' + '),
@@ -35480,14 +36023,14 @@ class Graphiti {
                 }
             });
         } else {
-            // No saved Polar functions - add default r=1+cos(θ)
+            // No saved Polar functions - add default implicit polar example
             addedDefaultFunctions = true;
             const id = this.nextFunctionId++;
             const color = this.functionColors[0];
             
             const func = {
                 id: id,
-                expression: 'r=1+\\cos(\\theta)',
+                expression: '\\frac{r-\\left(1+\\cos\\left(\\theta\\right)\\right)}{\\theta-\\frac{\\pi}{3}}=0',
                 points: [],
                 color: color,
                 enabled: true,
@@ -47385,9 +47928,6 @@ class Graphiti {
                     context.stroke();
                 }
             }
-
-            context.restore();
-            return;
         }
 
         if (vertical.length > 0) {
@@ -53149,6 +53689,13 @@ class Graphiti {
         this.viewport.maxX = smartViewport.maxX;
         this.viewport.minY = smartViewport.minY;
         this.viewport.maxY = smartViewport.maxY;
+
+        // Polar rendering uses independent x/y world ranges in worldToScreen, so
+        // startup resets must always re-square to avoid circle distortion.
+        if (this.plotMode === 'polar') {
+            this.enforceSquareAspectRatio();
+            return;
+        }
 
         const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
         if (!hasRegularTrig) {

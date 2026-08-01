@@ -592,6 +592,7 @@ async function assertShapeClassification(page) {
             { expression: 'r=2*cos(theta)', expected: 'circle' },
             { expression: 'r=1+cos(theta)', expected: 'cardioid' },
             { expression: '2*r+cos(t)-1=0', expected: 'cardioid' },
+            { expression: '(r-(1+cos(theta)))*(r^2-(2+cos(theta)))=0', expected: 'cardioid + implicit curve' },
             { expression: 'r<1+cos(theta)', expected: 'cardioid' },
             { expression: '1+cos(theta)', expected: 'cardioid' },
             { expression: 'r=1+alpha*cos(theta+1)', expected: 'cardioid' },
@@ -2196,11 +2197,50 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             ? boundedFunc.asymptoteData.polarRays.slice()
             : [];
 
+        const lineExpr = 'r=\\frac{1}{\\cos\\left(\\theta\\right)}';
+        graphiti.addFunction(lineExpr);
+        const lineFunc = graphiti.polarFunctions[2];
+        await graphiti.plotFunction(lineFunc);
+
+        const lineRays = lineFunc.asymptoteData && Array.isArray(lineFunc.asymptoteData.polarRays)
+            ? lineFunc.asymptoteData.polarRays.slice()
+            : [];
+        const lineDisplay = graphiti.buildAsymptoteDisplayLatex(lineFunc);
+
+        const shiftedExpr = 'r=\\frac{1}{\\cos\\left(\\theta\\right)-\\sin\\left(\\theta\\right)}+1';
+        graphiti.addFunction(shiftedExpr);
+        const shiftedFunc = graphiti.polarFunctions[3];
+        await graphiti.plotFunction(shiftedFunc);
+
+        const shiftedRays = shiftedFunc.asymptoteData && Array.isArray(shiftedFunc.asymptoteData.polarRays)
+            ? shiftedFunc.asymptoteData.polarRays.slice()
+            : [];
+        const shiftedOblique = shiftedFunc.asymptoteData && Array.isArray(shiftedFunc.asymptoteData.oblique)
+            ? shiftedFunc.asymptoteData.oblique.slice()
+            : [];
+        const shiftedDisplay = graphiti.buildAsymptoteDisplayLatex(shiftedFunc);
+
+        graphiti.polarSettings.thetaMin = -2 * Math.PI;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '-2\\pi';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+        await graphiti.plotFunction(shiftedFunc);
+
+        const shiftedWideRangeRays = shiftedFunc.asymptoteData && Array.isArray(shiftedFunc.asymptoteData.polarRays)
+            ? shiftedFunc.asymptoteData.polarRays.slice()
+            : [];
+        const shiftedWideRangeOblique = shiftedFunc.asymptoteData && Array.isArray(shiftedFunc.asymptoteData.oblique)
+            ? shiftedFunc.asymptoteData.oblique.slice()
+            : [];
+        const shiftedWideRangeDisplay = graphiti.buildAsymptoteDisplayLatex(shiftedFunc);
+
         graphiti.polarSettings.thetaMax = 8 * Math.PI;
         graphiti.polarSettings.thetaMaxLatex = '8\\pi';
-        const periodicExpr = 'r=\\frac{1}{\\cos(\\theta)-\\sin(\\theta)}';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        const periodicExpr = 'r=\\frac{1}{\\cos\\left(2\\theta\\right)}';
         graphiti.addFunction(periodicExpr);
-        const periodicFunc = graphiti.polarFunctions[2];
+        const periodicFunc = graphiti.polarFunctions[4];
         await graphiti.plotFunction(periodicFunc);
 
         const periodicRays = periodicFunc.asymptoteData && Array.isArray(periodicFunc.asymptoteData.polarRays)
@@ -2216,12 +2256,21 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             asymptoticBridgeSegments,
             asymptoticConnectedStraddleCount,
             boundedRays,
+            lineRays,
+            lineDisplay,
+            shiftedRays,
+            shiftedOblique,
+            shiftedDisplay,
+            shiftedWideRangeRays,
+            shiftedWideRangeOblique,
+            shiftedWideRangeDisplay,
             periodicRays,
             periodicDisplay,
             periodicThetaEquationCount: periodicThetaEquations.length,
             periodicGeneralEquation,
             asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
-            boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
+            boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
+            lineFinitePoints: (lineFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
         };
     });
 
@@ -2237,6 +2286,56 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.boundedRays.length,
         0,
         `removable polar singularity should not publish asymptote rays: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.lineRays.length,
+        0,
+        `straight-line polar reciprocal should not publish misleading singular-ray asymptotes: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.lineDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `straight-line polar reciprocal should not render theta asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.shiftedOblique.some(line => approxEqual(line.m, 1, 0.06) && approxEqual(line.b, -1, 0.12)),
+        `shifted reciprocal polar form should infer Cartesian asymptote y=x-1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.shiftedRays.length,
+        0,
+        `shifted reciprocal polar form should prefer Cartesian asymptote metadata over singular theta rays: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.shiftedDisplay.some(equation => /^y\s*=/.test(equation)),
+        `shifted reciprocal polar form should render Cartesian asymptote equation: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.shiftedDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `shifted reciprocal polar form should not render theta-ray-only asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.shiftedDisplay.includes('y = x - 1'),
+        `shifted reciprocal polar form should normalise to exact y = x - 1 in default theta range: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.shiftedWideRangeOblique.some(line => approxEqual(line.m, 1, 0.06) && approxEqual(line.b, -1, 0.12)),
+        `shifted reciprocal polar form should keep Cartesian asymptote y=x-1 for wider theta ranges: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.shiftedWideRangeRays.length,
+        0,
+        `shifted reciprocal polar form should not revert to theta asymptotes when theta range changes: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.shiftedWideRangeDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `shifted reciprocal polar form should keep line-equation asymptote metadata across theta ranges: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.shiftedWideRangeDisplay.includes('y = x - 1'),
+        `shifted reciprocal polar form should normalise to exact y = x - 1 in wide theta range: ${JSON.stringify(result)}`
     );
     assert.strictEqual(
         result.asymptoticBridgeSegments,
@@ -2268,6 +2367,10 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     assert(
         result.boundedFinitePoints > 80,
         `bounded polar equivalent should remain well sampled: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.lineFinitePoints > 80,
+        `straight-line reciprocal polar form should remain well sampled: ${JSON.stringify(result)}`
     );
 }
 
