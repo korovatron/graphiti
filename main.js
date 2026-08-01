@@ -5961,6 +5961,22 @@ class Graphiti {
                 coordinateSystem: 'polar'
             };
 
+            if (isInequality) {
+                const fastPathHandled = await this.tryPlotImplicitPolarInequalityFastPath(func, equation);
+                if (fastPathHandled) {
+                    if (!suppressDraw) {
+                        this.draw();
+                    }
+                    this.activeImplicitCalculations.delete(func.id);
+
+                    if (this.performance.enabled) {
+                        const elapsed = performance.now() - startTime;
+                        this.performance.plotTimes.set(func.id, elapsed);
+                    }
+                    return;
+                }
+            }
+
             if (!isInequality) {
                 if (!skipProductFactorFastPath) {
                     const productHandled = await this.plotImplicitPolarProductFactorsAsComponents(
@@ -6682,7 +6698,9 @@ class Graphiti {
             return {
                 power,
                 radicandExpression,
-                branchExpressions
+                branchExpressions,
+                aCompiled,
+                bCompiled
             };
         }
 
@@ -6741,6 +6759,112 @@ class Graphiti {
         func.monomialPolarRadicandExpression = monomialPolarModel.radicandExpression;
         func.monomialPolarPower = monomialPolarModel.power;
         return true;
+    }
+
+    getStablePolarModelCoefficientSign(compiledExpression) {
+        if (!compiledExpression) {
+            return 0;
+        }
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return 0;
+        }
+
+        const thetaSpan = thetaMax - thetaMin;
+        const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
+        const sampleCount = Math.max(12, Math.min(48, Math.ceil(thetaSpan / thetaStep)));
+        const scope = this.getEvaluationScope({ t: 0, theta: 0, pi: Math.PI, e: Math.E });
+        let sign = 0;
+
+        for (let index = 0; index <= sampleCount; index++) {
+            const theta = thetaMin + (thetaSpan * index / sampleCount);
+            scope.t = theta;
+            scope.theta = theta;
+
+            let value;
+            try {
+                value = compiledExpression.evaluate(scope);
+            } catch {
+                continue;
+            }
+
+            if (!Number.isFinite(value) || Math.abs(value) <= 1e-7) {
+                continue;
+            }
+
+            const valueSign = Math.sign(value);
+            if (sign === 0) {
+                sign = valueSign;
+                continue;
+            }
+
+            if (valueSign !== sign) {
+                return 0;
+            }
+        }
+
+        return sign;
+    }
+
+    async tryPlotImplicitPolarInequalityFastPath(func, equation) {
+        if (!func || !equation) {
+            return false;
+        }
+
+        delete func.implicitPolarInequalityFastPath;
+
+        const inequality = this.parseInequality(func.expression);
+        if (!inequality) {
+            return false;
+        }
+
+        const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(equation);
+        const fastPathEquations = denominatorClearedEquation
+            ? [denominatorClearedEquation, equation]
+            : [equation];
+
+        for (const candidateEquation of fastPathEquations) {
+            const monomialPolarModel = this.tryBuildMonomialPolarImplicitModel(candidateEquation);
+            if (!monomialPolarModel || monomialPolarModel.power !== 2 || !monomialPolarModel.aCompiled) {
+                continue;
+            }
+
+            const coefficientSign = this.getStablePolarModelCoefficientSign(monomialPolarModel.aCompiled);
+            if (coefficientSign === 0) {
+                continue;
+            }
+
+            this.applyDenominatorClearedDomainExclusions(monomialPolarModel, candidateEquation);
+            const handled = await this.plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel);
+            if (!handled) {
+                continue;
+            }
+
+            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+            this.addPolarDenominatorClearedHolesForExpressions(func, monomialPolarModel.branchExpressions, candidateEquation);
+            this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, monomialPolarModel.branchExpressions);
+            this.applyImplicitFunctionPoints(func, func.points || []);
+
+            const isLessThan = inequality.operator === '<' || inequality.operator === '<=';
+            const fillMode = (isLessThan && coefficientSign > 0) || (!isLessThan && coefficientSign < 0)
+                ? 'inside'
+                : 'outside';
+
+            func.implicitRenderMode = 'quadratic-polar-inequality-fastpath';
+            func.implicitPolarInequalityFastPath = {
+                fillMode,
+                operator: inequality.operator
+            };
+
+            delete func.gridData;
+            this.invalidateInequalityIntersectionCache();
+            this.implicitShadingCache.delete(func.id);
+            return true;
+        }
+
+        return false;
     }
 
     plotCachedPolarExplicitProxy(func, explicitExpression, options = {}) {
@@ -8750,25 +8874,37 @@ class Graphiti {
         
         // Fill with white on the off-screen canvas
         offscreenCtx.fillStyle = 'white';
-        
-        // For polar inequalities r < f(θ), fill from origin to the boundary curve
-        offscreenCtx.beginPath();
-        
-        // Start at origin
         const origin = this.worldToScreen(0, 0);
-        offscreenCtx.moveTo(origin.x, origin.y);
-        
-        // Trace the boundary curve
-        for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            if (isFinite(point.x) && isFinite(point.y)) {
+
+        // For polar inequalities r < f(θ), fill each connected lobe from the origin
+        // separately so disjoint branches do not get bridged by a large triangle.
+        offscreenCtx.beginPath();
+
+        let currentSegment = [];
+        const flushSegment = () => {
+            if (currentSegment.length < 2) {
+                currentSegment = [];
+                return;
+            }
+
+            offscreenCtx.moveTo(origin.x, origin.y);
+            for (const point of currentSegment) {
                 const screenPos = this.worldToScreen(point.x, point.y);
                 offscreenCtx.lineTo(screenPos.x, screenPos.y);
             }
+            offscreenCtx.closePath();
+            currentSegment = [];
+        };
+
+        for (const point of points) {
+            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                currentSegment.push(point);
+            } else {
+                flushSegment();
+            }
         }
-        
-        // Close path back to origin
-        offscreenCtx.closePath();
+        flushSegment();
+
         offscreenCtx.fill();
     }
 
@@ -8785,25 +8921,65 @@ class Graphiti {
         
         // Create outer rectangle (viewport boundary)
         offscreenCtx.rect(0, 0, viewportWidth, viewportHeight);
-        
-        // Trace the boundary curve in reverse to create a "hole"
-        for (let i = points.length - 1; i >= 0; i--) {
-            const point = points[i];
-            if (isFinite(point.x) && isFinite(point.y)) {
-                const screenPos = this.worldToScreen(point.x, point.y);
-                if (i === points.length - 1) {
+
+        const segments = [];
+        let currentSegment = [];
+        for (const point of points) {
+            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                currentSegment.push(point);
+            } else if (currentSegment.length > 0) {
+                segments.push(currentSegment);
+                currentSegment = [];
+            }
+        }
+        if (currentSegment.length > 0) {
+            segments.push(currentSegment);
+        }
+
+        // Trace each boundary segment in reverse to create separate "holes".
+        for (const segment of segments) {
+            if (segment.length < 2) {
+                continue;
+            }
+
+            for (let i = segment.length - 1; i >= 0; i--) {
+                const screenPos = this.worldToScreen(segment[i].x, segment[i].y);
+                if (i === segment.length - 1) {
                     offscreenCtx.moveTo(screenPos.x, screenPos.y);
                 } else {
                     offscreenCtx.lineTo(screenPos.x, screenPos.y);
                 }
             }
+            offscreenCtx.closePath();
         }
-        
-        offscreenCtx.closePath();
+
         offscreenCtx.fill('evenodd'); // Use even-odd rule to create the hole
     }
 
+    drawImplicitPolarFastPathInequalityComposite(offscreenCtx, func) {
+        const fastPathMeta = func && func.implicitPolarInequalityFastPath;
+        if (!offscreenCtx || !fastPathMeta || !Array.isArray(func.points) || func.points.length < 2) {
+            return false;
+        }
+
+        if (fastPathMeta.fillMode === 'inside') {
+            this.fillInsidePolarCurveComposite(offscreenCtx, func.points);
+            return true;
+        }
+
+        if (fastPathMeta.fillMode === 'outside') {
+            this.fillOutsidePolarCurveComposite(offscreenCtx, func.points, this.viewport.width, this.viewport.height);
+            return true;
+        }
+
+        return false;
+    }
+
     drawImplicitInequalityComposite(offscreenCtx, func) {
+        if (this.drawImplicitPolarFastPathInequalityComposite(offscreenCtx, func)) {
+            return;
+        }
+
         if (!func.gridData) return;
         const isImplicitPolar = !!(func && typeof func.implicitRenderMode === 'string' && func.implicitRenderMode.startsWith('marching-polar'));
         
@@ -8934,6 +9110,9 @@ class Graphiti {
         // Check if all inequalities have data before attempting to render
         const allHaveData = inequalities.every(({ func, functionType }) => {
             if (functionType === 'implicit-inequality') {
+                if (func.implicitPolarInequalityFastPath) {
+                    return Array.isArray(func.points) && func.points.some(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+                }
                 return func.gridData && func.gridData.adaptiveCells && func.gridData.adaptiveCells.length > 0;
             } else {
                 return func.points && func.points.length > 0;
@@ -9078,11 +9257,11 @@ class Graphiti {
                     }
                 }
             } else if (functionType === 'implicit-inequality') {
-                if (func.gridData) {
+                if (func.implicitPolarInequalityFastPath || func.gridData) {
                     // For implicit inequalities, check if the satisfied region is bounded
                     // by analyzing the grid data to see if satisfied cells reach the viewport edges
                     
-                    if (func.gridData.adaptiveCells) {
+                    if (func.gridData && func.gridData.adaptiveCells) {
                         // Extract operator to determine which cells satisfy the inequality
                         const clean = this.convertFromLatex(func.expression).trim();
                         let operator = null;
@@ -9257,6 +9436,57 @@ class Graphiti {
     }
 
     drawImplicitInequality(func) {
+        if (func.implicitPolarInequalityFastPath) {
+            const pointsToUse = func.displayPoints || func.points;
+            if (!Array.isArray(pointsToUse) || pointsToUse.length < 2) {
+                return;
+            }
+
+            const viewportKey = `${this.viewport.minX},${this.viewport.minY},${this.viewport.maxX},${this.viewport.maxY}`;
+            let hashAccumulator = 2166136261;
+            const sampleCount = Math.min(32, pointsToUse.length);
+            const sampleStep = Math.max(1, Math.floor(pointsToUse.length / Math.max(1, sampleCount)));
+            for (let i = 0; i < pointsToUse.length; i += sampleStep) {
+                const point = pointsToUse[i];
+                const qx = Number.isFinite(point.x) ? Math.round(point.x * 1000) : 2147483647;
+                const qy = Number.isFinite(point.y) ? Math.round(point.y * 1000) : 2147483647;
+                const qc = point.connected ? 1 : 0;
+                hashAccumulator ^= qx;
+                hashAccumulator = Math.imul(hashAccumulator, 16777619);
+                hashAccumulator ^= qy;
+                hashAccumulator = Math.imul(hashAccumulator, 16777619);
+                hashAccumulator ^= qc;
+                hashAccumulator = Math.imul(hashAccumulator, 16777619);
+            }
+            const pointsHash = `${pointsToUse.length}:${hashAccumulator >>> 0}`;
+
+            const cached = this.implicitShadingCache.get(func.id);
+            if (cached && cached.viewport === viewportKey && cached.pointsHash === pointsHash) {
+                this.ctx.drawImage(cached.canvas, 0, 0);
+                this.drawFunctionAsymptotes(func);
+                return;
+            }
+
+            const offscreenCanvas = document.createElement('canvas');
+            offscreenCanvas.width = this.viewport.width;
+            offscreenCanvas.height = this.viewport.height;
+            const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+            offscreenCtx.fillStyle = this.addAlphaToColor(func.color, 0.25);
+
+            if (!this.drawImplicitPolarFastPathInequalityComposite(offscreenCtx, func)) {
+                return;
+            }
+
+            this.implicitShadingCache.set(func.id, {
+                canvas: offscreenCanvas,
+                viewport: viewportKey,
+                pointsHash
+            });
+
+            this.ctx.drawImage(offscreenCanvas, 0, 0);
+            return;
+        }
+
         if (!func.gridData) return;
         
         // Implicit inequality shading - always use canvas scaling for performance
@@ -31207,18 +31437,38 @@ class Graphiti {
             const origin = this.worldToScreen(0, 0);
             if (!origin || !Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return '';
 
-            let d = `M ${svgNum(origin.x)} ${svgNum(origin.y)}`;
-            let pointCount = 0;
-            for (const p of points) {
-                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-                const s = this.worldToScreen(p.x, p.y);
-                if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
-                d += ` L ${svgNum(s.x)} ${svgNum(s.y)}`;
-                pointCount++;
-            }
+            let d = '';
+            let currentSegment = [];
+            let segmentCount = 0;
+            const flushSegment = () => {
+                if (currentSegment.length < 2) {
+                    currentSegment = [];
+                    return;
+                }
 
-            if (pointCount < 2) return '';
-            d += ' Z';
+                d += ` M ${svgNum(origin.x)} ${svgNum(origin.y)}`;
+                for (const point of currentSegment) {
+                    const screen = this.worldToScreen(point.x, point.y);
+                    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                        continue;
+                    }
+                    d += ` L ${svgNum(screen.x)} ${svgNum(screen.y)}`;
+                }
+                d += ' Z';
+                segmentCount++;
+                currentSegment = [];
+            };
+
+            for (const point of points) {
+                if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                    currentSegment.push(point);
+                } else {
+                    flushSegment();
+                }
+            }
+            flushSegment();
+
+            if (segmentCount === 0) return '';
             return d;
         };
 
@@ -31226,23 +31476,49 @@ class Graphiti {
             if (!Array.isArray(points) || points.length < 2) return '';
 
             let d = `M 0 0 L ${svgNum(width)} 0 L ${svgNum(width)} ${svgNum(height)} L 0 ${svgNum(height)} Z`;
-            const finitePoints = [];
 
-            for (const p of points) {
-                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-                const s = this.worldToScreen(p.x, p.y);
-                if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) continue;
-                finitePoints.push(s);
+            const segments = [];
+            let currentSegment = [];
+            for (const point of points) {
+                if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                    currentSegment.push(point);
+                } else if (currentSegment.length > 0) {
+                    segments.push(currentSegment);
+                    currentSegment = [];
+                }
+            }
+            if (currentSegment.length > 0) {
+                segments.push(currentSegment);
             }
 
-            if (finitePoints.length < 2) return '';
+            if (segments.every(segment => segment.length < 2)) return '';
 
-            const first = finitePoints[finitePoints.length - 1];
-            d += ` M ${svgNum(first.x)} ${svgNum(first.y)}`;
-            for (let i = finitePoints.length - 2; i >= 0; i--) {
-                d += ` L ${svgNum(finitePoints[i].x)} ${svgNum(finitePoints[i].y)}`;
+            for (const segment of segments) {
+                if (segment.length < 2) {
+                    continue;
+                }
+
+                const screenPoints = [];
+                for (const point of segment) {
+                    const screen = this.worldToScreen(point.x, point.y);
+                    if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                        continue;
+                    }
+                    screenPoints.push(screen);
+                }
+
+                if (screenPoints.length < 2) {
+                    continue;
+                }
+
+                const first = screenPoints[screenPoints.length - 1];
+                d += ` M ${svgNum(first.x)} ${svgNum(first.y)}`;
+                for (let i = screenPoints.length - 2; i >= 0; i--) {
+                    d += ` L ${svgNum(screenPoints[i].x)} ${svgNum(screenPoints[i].y)}`;
+                }
+                d += ' Z';
             }
-            d += ' Z';
+
             return d;
         };
 
@@ -31926,10 +32202,22 @@ class Graphiti {
                     }
                 } else if (rawFunctionType === 'implicit-inequality') {
                     const inequality = inequalityMeta;
-                    if (inequality && func.gridData) {
-                        const fillPath = buildImplicitInequalityFillPath(func, inequality.operator);
-                        if (fillPath) {
-                            pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18"');
+                    if (inequality) {
+                        if (func.implicitPolarInequalityFastPath) {
+                            const fillPath = func.implicitPolarInequalityFastPath.fillMode === 'inside'
+                                ? buildPolarInsideFillPath(points)
+                                : buildPolarOutsideFillPath(points);
+                            if (fillPath) {
+                                const extraAttributes = func.implicitPolarInequalityFastPath.fillMode === 'outside'
+                                    ? 'fill-opacity="0.18" fill-rule="evenodd"'
+                                    : 'fill-opacity="0.18"';
+                                pushPath(fillPath, 'none', 0, stroke, extraAttributes);
+                            }
+                        } else if (func.gridData) {
+                            const fillPath = buildImplicitInequalityFillPath(func, inequality.operator);
+                            if (fillPath) {
+                                pushPath(fillPath, 'none', 0, stroke, 'fill-opacity="0.18"');
+                            }
                         }
                     }
                 }
@@ -45067,13 +45355,13 @@ class Graphiti {
         // Draw functions from current mode only
         this.getActiveEnabledFunctions().forEach(func => {
             const functionType = this.detectFunctionType(func.expression);
-            const isExplicitFastPath = this.isExplicitImplicitFastPath(func);
+            const isExplicitFastPath = this.isExplicitImplicitFastPath(func) || !!func.implicitPolarInequalityFastPath;
             if ((functionType === 'implicit' || functionType === 'implicit-inequality') && !isExplicitFastPath) {
                 // Draw implicit functions/inequalities using displayPoints (stable during calculations)
                 const pointsToCheck = func.displayPoints || func.points;
                 // For implicit inequalities, draw even if no boundary points (may need full-viewport shading)
                 if ((pointsToCheck && pointsToCheck.length > 0) || 
-                    (functionType === 'implicit-inequality' && func.gridData)) {
+                    (functionType === 'implicit-inequality' && (func.gridData || func.implicitPolarInequalityFastPath))) {
                     this.drawImplicitFunction(func);
                 }
             } else {
@@ -46157,8 +46445,16 @@ class Graphiti {
             } else if (functionType === 'implicit-inequality') {
                 const inequality = this.parseInequality(func.expression);
                 if (inequality) {
-                    if (inequalityCount === 1 && func.gridData) {
-                        this.drawImplicitInequality(func);
+                    if (inequalityCount === 1) {
+                        if (func.implicitPolarInequalityFastPath) {
+                            if (func.implicitPolarInequalityFastPath.fillMode === 'outside') {
+                                this.fillOutsidePolarCurve(func.points, func.color, func.inequality);
+                            } else {
+                                this.fillInsidePolarCurve(func.points, func.color, func.inequality);
+                            }
+                        } else if (func.gridData) {
+                            this.drawImplicitInequality(func);
+                        }
                     }
 
                     func._inequalityIsStrict = (inequality.operator === '>' || inequality.operator === '<');
@@ -46931,7 +47227,7 @@ class Graphiti {
         // For implicit inequalities with gridData but no points (boundary outside viewport),
         // we still need to draw the shading, so don't return early
         if (!pointsToUse || pointsToUse.length === 0) {
-            if (!(isInequality && func.gridData)) {
+            if (!(isInequality && (func.gridData || func.implicitPolarInequalityFastPath))) {
                 this.drawFunctionAsymptotes(func);
                 return; // Only return if not an inequality with gridData
             }
@@ -46941,7 +47237,7 @@ class Graphiti {
         const inequalityCount = this.countEnabledInequalities();
         
         // For implicit inequalities, render shading first if grid data is available (only if single inequality)
-        if (isInequality && func.gridData && inequalityCount === 1) {
+        if (isInequality && (func.gridData || func.implicitPolarInequalityFastPath) && inequalityCount === 1) {
             this.drawImplicitInequality(func);
         }
         
@@ -53664,6 +53960,13 @@ class Graphiti {
         // Final safeguard: ensure implicit multiplication before exp()
         // e.g., 2exp(x) -> 2*exp(x), xexp(x) -> x*exp(x), )exp(x) -> )*exp(x)
         expression = this.applyFunctionImplicitMultiplication(expression, 'exp(');
+
+        // Comparison operators should never participate in implicit multiplication.
+        // MathLive inputs such as \leq\sin(theta) can pick up a stray '*' during
+        // later function-multiplication passes, which turns a valid inequality into
+        // an invalid token sequence like "≤*sin(...)".
+        expression = expression.replace(/([=<>≥≤])\*/g, '$1');
+        expression = expression.replace(/\*([=<>≥≤])/g, '$1');
         
         // Convert log10_ marker to log(x, 10)
         expression = expression.replace(/log10_\(([^)]+)\)/g, 'log($1, 10)');

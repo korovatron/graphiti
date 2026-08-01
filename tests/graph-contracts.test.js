@@ -2762,10 +2762,59 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(inequalityFunc);
         await graphiti.plotFunction(inequalityFunc);
 
+        const quadraticInequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r^2/(theta-pi/3)<sin(theta)',
+            points: [],
+            color: '#1565C0',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(quadraticInequalityFunc);
+        await graphiti.plotFunction(quadraticInequalityFunc);
+
+        const quadraticNonStrictInequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '\\frac{r^2}{\\theta-\\frac{\\pi}{3}}\\leq\\sin\\left(\\theta\\right)',
+            points: [],
+            color: '#3949AB',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(quadraticNonStrictInequalityFunc);
+        await graphiti.plotFunctionWithValidation(quadraticNonStrictInequalityFunc);
+
+        quadraticNonStrictInequalityFunc.enabled = false;
+        inequalityFunc.enabled = false;
+        graphiti.draw();
+
+        const displayCtx = graphiti.canvas.getContext('2d', { alpha: true });
+        const samplePixelRGBA = (worldX, worldY) => {
+            const screen = graphiti.worldToScreen(worldX, worldY);
+            const sampleX = Math.max(0, Math.min(graphiti.canvas.width - 1, Math.round(screen.x)));
+            const sampleY = Math.max(0, Math.min(graphiti.canvas.height - 1, Math.round(screen.y)));
+            return Array.from(displayCtx.getImageData(sampleX, sampleY, 1, 1).data);
+        };
+
+        quadraticInequalityFunc.enabled = true;
+        quadraticNonStrictInequalityFunc.enabled = true;
+        graphiti.draw();
+        const multiInequalityInsideRGBA = samplePixelRGBA(-0.45, 0.45);
+        const multiInequalityOutsideRGBA = samplePixelRGBA(1.6, 1.0);
+
+        quadraticNonStrictInequalityFunc.enabled = false;
+        graphiti.draw();
+
         const equationFinitePointCount = (equationFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
         const inequalityFinitePointCount = (inequalityFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const quadraticInequalityFinitePointCount = (quadraticInequalityFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const quadraticNonStrictInequalityFinitePointCount = (quadraticNonStrictInequalityFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
         const clippedEquationFinitePoints = (clippedEquationFunc.points || []).filter(point =>
@@ -3153,6 +3202,33 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 renderMode: inequalityFunc.implicitRenderMode || null,
                 finitePointCount: inequalityFinitePointCount,
                 hasGridData: !!inequalityFunc.gridData
+            },
+            quadraticInequality: {
+                detectedType: graphiti.detectFunctionType(quadraticInequalityFunc.expression),
+                renderMode: quadraticInequalityFunc.implicitRenderMode || null,
+                finitePointCount: quadraticInequalityFinitePointCount,
+                hasGridData: !!quadraticInequalityFunc.gridData,
+                fillMode: quadraticInequalityFunc.implicitPolarInequalityFastPath
+                    ? quadraticInequalityFunc.implicitPolarInequalityFastPath.fillMode
+                    : null,
+                upperLeftRGBA: samplePixelRGBA(-0.45, 0.45),
+                lowerRightRGBA: samplePixelRGBA(0.45, -0.45),
+                exteriorRGBA: samplePixelRGBA(1.6, 1.0)
+            },
+            quadraticNonStrictInequality: {
+                detectedType: graphiti.detectFunctionType(quadraticNonStrictInequalityFunc.expression),
+                renderMode: quadraticNonStrictInequalityFunc.implicitRenderMode || null,
+                finitePointCount: quadraticNonStrictInequalityFinitePointCount,
+                hasGridData: !!quadraticNonStrictInequalityFunc.gridData,
+                fillMode: quadraticNonStrictInequalityFunc.implicitPolarInequalityFastPath
+                    ? quadraticNonStrictInequalityFunc.implicitPolarInequalityFastPath.fillMode
+                    : null,
+                validationError: quadraticNonStrictInequalityFunc.validationError,
+                converted: graphiti.convertFromLatex(quadraticNonStrictInequalityFunc.expression)
+            },
+            quadraticInequalityIntersection: {
+                insideRGBA: multiInequalityInsideRGBA,
+                outsideRGBA: multiInequalityOutsideRGBA
             }
         };
     });
@@ -3261,6 +3337,30 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
     assert(result.inequality.finitePointCount > 10, `implicit polar inequality boundary should produce finite points: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.hasGridData, true, `implicit polar inequality should produce grid data for shading: ${JSON.stringify(result.inequality)}`);
+
+    assert.strictEqual(result.quadraticInequality.detectedType, 'implicit-inequality', `quadratic rational polar inequality should stay implicit-inequality in classification: ${JSON.stringify(result.quadraticInequality)}`);
+    assert.strictEqual(result.quadraticInequality.renderMode, 'quadratic-polar-inequality-fastpath', `quadratic rational polar inequality should use the explicit even-power fast-path: ${JSON.stringify(result.quadraticInequality)}`);
+    assert(result.quadraticInequality.finitePointCount > 80, `quadratic rational polar inequality fast-path should produce a substantial closed boundary: ${JSON.stringify(result.quadraticInequality)}`);
+    assert.strictEqual(result.quadraticInequality.hasGridData, false, `quadratic rational polar inequality fast-path should not fall back to adaptive shading grid: ${JSON.stringify(result.quadraticInequality)}`);
+    assert.strictEqual(result.quadraticInequality.fillMode, 'inside', `quadratic rational polar inequality should shade inside the paired lobes: ${JSON.stringify(result.quadraticInequality)}`);
+    const upperLeftBrightness = result.quadraticInequality.upperLeftRGBA[0] + result.quadraticInequality.upperLeftRGBA[1] + result.quadraticInequality.upperLeftRGBA[2];
+    const lowerRightBrightness = result.quadraticInequality.lowerRightRGBA[0] + result.quadraticInequality.lowerRightRGBA[1] + result.quadraticInequality.lowerRightRGBA[2];
+    const exteriorBrightness = result.quadraticInequality.exteriorRGBA[0] + result.quadraticInequality.exteriorRGBA[1] + result.quadraticInequality.exteriorRGBA[2];
+    assert(upperLeftBrightness > exteriorBrightness, `quadratic rational polar inequality should tint the upper-left lobe more strongly than an exterior point: ${JSON.stringify(result.quadraticInequality)}`);
+    assert(lowerRightBrightness > exteriorBrightness, `quadratic rational polar inequality should tint the lower-right lobe more strongly than an exterior point: ${JSON.stringify(result.quadraticInequality)}`);
+    assert(result.quadraticInequality.upperLeftRGBA[3] === 255 && result.quadraticInequality.lowerRightRGBA[3] === 255, `quadratic rational polar inequality should render through the visible canvas layer: ${JSON.stringify(result.quadraticInequality)}`);
+
+    assert.strictEqual(result.quadraticNonStrictInequality.detectedType, 'implicit-inequality', `quadratic non-strict polar inequality should stay implicit-inequality in classification: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+    assert.strictEqual(result.quadraticNonStrictInequality.renderMode, 'quadratic-polar-inequality-fastpath', `quadratic non-strict polar inequality should use the explicit even-power fast-path: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+    assert(result.quadraticNonStrictInequality.finitePointCount > 80, `quadratic non-strict polar inequality should produce a substantial closed boundary: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+    assert.strictEqual(result.quadraticNonStrictInequality.hasGridData, false, `quadratic non-strict polar inequality fast-path should not fall back to adaptive shading grid: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+    assert.strictEqual(result.quadraticNonStrictInequality.fillMode, 'inside', `quadratic non-strict polar inequality should shade inside the paired lobes: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+    assert.strictEqual(result.quadraticNonStrictInequality.validationError, null, `quadratic non-strict polar inequality should validate cleanly from MathLive LaTeX: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+    assert(!result.quadraticNonStrictInequality.converted.includes('≤*'), `quadratic non-strict polar inequality conversion should not inject a stray multiplication after ≤: ${JSON.stringify(result.quadraticNonStrictInequality)}`);
+
+    const multiIntersectionInsideBrightness = result.quadraticInequalityIntersection.insideRGBA[0] + result.quadraticInequalityIntersection.insideRGBA[1] + result.quadraticInequalityIntersection.insideRGBA[2];
+    const multiIntersectionOutsideBrightness = result.quadraticInequalityIntersection.outsideRGBA[0] + result.quadraticInequalityIntersection.outsideRGBA[1] + result.quadraticInequalityIntersection.outsideRGBA[2];
+    assert(multiIntersectionInsideBrightness > multiIntersectionOutsideBrightness, `multiple implicit polar fast-path inequalities should shade their intersection region: ${JSON.stringify(result.quadraticInequalityIntersection)}`);
 }
 
 async function assertImplicitVerticalTangentsAreNotTurningMarkers(page) {
