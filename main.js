@@ -276,6 +276,9 @@ class Graphiti {
             'quadraticYVerticalComponents',
             'quadraticPolarExplicitExpressions',
             'quadraticPolarDiscriminantExpression',
+            'monomialPolarExplicitExpressions',
+            'monomialPolarRadicandExpression',
+            'monomialPolarPower',
             'productImplicitFactorExpressions',
             'productImplicitFactorRenderModes',
             'productImplicitVerticalComponents',
@@ -5528,6 +5531,23 @@ class Graphiti {
                         return;
                     }
                 }
+
+                const monomialPolarModel = this.tryBuildMonomialPolarImplicitModel(equation);
+                if (monomialPolarModel) {
+                    const handled = await this.plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel);
+                    if (handled) {
+                        if (!suppressDraw) {
+                            this.draw();
+                        }
+                        this.activeImplicitCalculations.delete(func.id);
+
+                        if (this.performance.enabled) {
+                            const elapsed = performance.now() - startTime;
+                            this.performance.plotTimes.set(func.id, elapsed);
+                        }
+                        return;
+                    }
+                }
             }
 
             if (this.isCalculationCancelled(func.id, calculationId)) {
@@ -5868,6 +5888,146 @@ class Graphiti {
         };
     }
 
+    tryBuildMonomialPolarImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '((' + equation.leftExpression + ')-(' + equation.rightExpression + '))';
+        if (/\bx\b|\by\b/i.test(combinedExpression)) {
+            return null;
+        }
+
+        const replaceRSymbol = (expression, replacement) => expression.replace(/\br\b/g, '(' + replacement + ')');
+        const simplifyGeneratedExpression = (expression) => {
+            try {
+                const simplified = this.cleanMath.simplify(expression).toString();
+                return simplified || expression;
+            } catch {
+                return expression;
+            }
+        };
+
+        const bExpressionRaw = replaceRSymbol(combinedExpression, '0');
+        const aExpressionRaw = '((' + replaceRSymbol(combinedExpression, '1') + ')-(' + bExpressionRaw + '))';
+        const bExpression = simplifyGeneratedExpression(bExpressionRaw);
+        const aExpression = simplifyGeneratedExpression(aExpressionRaw);
+
+        let combinedForEval = combinedExpression;
+        let aForEval = aExpression;
+        let bForEval = bExpression;
+        if (this.angleMode === 'degrees') {
+            combinedForEval = this.convertTrigToDegreeModeImplicitCartesian(combinedForEval);
+            aForEval = this.convertTrigToDegreeModeImplicitCartesian(aForEval);
+            bForEval = this.convertTrigToDegreeModeImplicitCartesian(bForEval);
+        }
+
+        let combinedCompiled;
+        let aCompiled;
+        let bCompiled;
+        try {
+            combinedCompiled = this.getCompiledExpression(combinedForEval);
+            aCompiled = this.getCompiledExpression(aForEval);
+            bCompiled = this.getCompiledExpression(bForEval);
+        } catch {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ r: 0, t: 0, theta: 0, pi: Math.PI, e: Math.E });
+        const evaluateCombined = (theta, rValue) => {
+            scope.t = theta;
+            scope.theta = theta;
+            scope.r = rValue;
+            try {
+                const value = combinedCompiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return null;
+        }
+
+        const thetaSpan = thetaMax - thetaMin;
+        const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
+        const sampleCount = Math.max(18, Math.min(64, Math.ceil(thetaSpan / thetaStep)));
+        const rSamples = [-2, -1, -0.5, 0, 0.5, 1, 2, 3];
+
+        for (const power of [2, 3]) {
+            let validSamples = 0;
+            let maxResidual = 0;
+            let maxMagnitude = 0;
+            let maxCoefficientMagnitude = 0;
+
+            for (let i = 0; i <= sampleCount; i++) {
+                const theta = thetaMin + (thetaSpan * i / sampleCount);
+                const bValue = evaluateCombined(theta, 0);
+                const f1 = evaluateCombined(theta, 1);
+                if (bValue === null || f1 === null) {
+                    continue;
+                }
+
+                const aValue = f1 - bValue;
+                let sampleSetValid = true;
+                let localResidual = 0;
+                let localMagnitude = Math.max(Math.abs(bValue), Math.abs(f1));
+                for (const rValue of rSamples) {
+                    const actual = evaluateCombined(theta, rValue);
+                    if (actual === null) {
+                        sampleSetValid = false;
+                        break;
+                    }
+
+                    const expected = bValue + (aValue * Math.pow(rValue, power));
+                    localResidual = Math.max(localResidual, Math.abs(actual - expected));
+                    localMagnitude = Math.max(localMagnitude, Math.abs(actual), Math.abs(expected));
+                }
+
+                if (!sampleSetValid) {
+                    continue;
+                }
+
+                maxResidual = Math.max(maxResidual, localResidual);
+                maxMagnitude = Math.max(maxMagnitude, localMagnitude);
+                maxCoefficientMagnitude = Math.max(maxCoefficientMagnitude, Math.abs(aValue));
+                validSamples++;
+            }
+
+            if (validSamples < 8) {
+                continue;
+            }
+
+            const residualTolerance = Math.max(1e-6, maxMagnitude * 1e-7);
+            const coefficientTolerance = Math.max(1e-7, maxMagnitude * 1e-8);
+            if (maxResidual > residualTolerance || maxCoefficientMagnitude <= coefficientTolerance) {
+                continue;
+            }
+
+            let radicandExpression = '-(' + bExpression + ')/(' + aExpression + ')';
+            radicandExpression = simplifyGeneratedExpression(radicandExpression);
+            const branchExpressions = power === 2
+                ? [
+                    simplifyGeneratedExpression('sqrt(' + radicandExpression + ')'),
+                    simplifyGeneratedExpression('-sqrt(' + radicandExpression + ')')
+                ]
+                : [
+                    simplifyGeneratedExpression('sign(' + radicandExpression + ')*abs(' + radicandExpression + ')^(1/3)')
+                ];
+
+            return {
+                power,
+                radicandExpression,
+                branchExpressions
+            };
+        }
+
+        return null;
+    }
+
     async plotImplicitPolarAffineAsExplicit(func, affinePolarModel) {
         if (!func || !affinePolarModel || !affinePolarModel.explicitExpression) {
             return false;
@@ -5900,6 +6060,25 @@ class Graphiti {
         func.implicitRenderMode = 'quadratic-polar-explicit';
         func.quadraticPolarExplicitExpressions = quadraticPolarModel.branchExpressions.slice();
         func.quadraticPolarDiscriminantExpression = quadraticPolarModel.discriminantExpression;
+        return true;
+    }
+
+    async plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel) {
+        if (!func || !monomialPolarModel || !Array.isArray(monomialPolarModel.branchExpressions) || monomialPolarModel.branchExpressions.length === 0) {
+            return false;
+        }
+
+        const handled = this.plotCachedPolarQuadraticExplicitProxy(func, monomialPolarModel.branchExpressions, {
+            clearAsymptoteData: true
+        });
+        if (!handled) {
+            return false;
+        }
+
+        func.implicitRenderMode = 'monomial-polar-explicit';
+        func.monomialPolarExplicitExpressions = monomialPolarModel.branchExpressions.slice();
+        func.monomialPolarRadicandExpression = monomialPolarModel.radicandExpression;
+        func.monomialPolarPower = monomialPolarModel.power;
         return true;
     }
 
@@ -6844,6 +7023,17 @@ class Graphiti {
                     return;
                 }
             }
+
+            if (func.implicitRenderMode === 'monomial-polar-explicit' &&
+                Array.isArray(func.monomialPolarExplicitExpressions) &&
+                func.monomialPolarExplicitExpressions.length > 0) {
+                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.monomialPolarExplicitExpressions, {
+                    clearAsymptoteData: false
+                });
+                if (handled) {
+                    return;
+                }
+            }
             this.plotFunction(func);
         });
         
@@ -6996,6 +7186,7 @@ class Graphiti {
         return !!func && (
             func.implicitRenderMode === 'affine-polar-explicit' ||
             func.implicitRenderMode === 'quadratic-polar-explicit' ||
+            func.implicitRenderMode === 'monomial-polar-explicit' ||
             func.implicitRenderMode === 'affine-explicit' ||
             func.implicitRenderMode === 'monomial-explicit' ||
             func.implicitRenderMode === 'monomial-x-explicit' ||
@@ -17887,6 +18078,9 @@ class Graphiti {
         delete func.quadraticYVerticalComponents;
         delete func.quadraticPolarExplicitExpressions;
         delete func.quadraticPolarDiscriminantExpression;
+        delete func.monomialPolarExplicitExpressions;
+        delete func.monomialPolarRadicandExpression;
+        delete func.monomialPolarPower;
         delete func._useExplicitCurveRenderCache;
 
         this.updateFunctionAsymptoteInfo(func);
@@ -49922,62 +50116,113 @@ class Graphiti {
                     func.implicitRenderMode === 'affine-polar-explicit' && typeof func.affinePolarExplicitExpression === 'string'
                         ? func.affinePolarExplicitExpression.trim()
                         : '';
+                const cachedPolarBranchExpressions = [
+                    ...(Array.isArray(func.quadraticPolarExplicitExpressions) ? func.quadraticPolarExplicitExpressions : []),
+                    ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : [])
+                ]
+                    .filter(expression => typeof expression === 'string' && expression.trim())
+                    .map(expression => expression.trim());
                 const shouldUseLivePolarEvaluation =
                     functionType === 'polar' ||
                     functionType === 'polar-inequality' ||
                     functionType === 'explicit' ||
-                    affinePolarExplicitExpression.length > 0;
+                    affinePolarExplicitExpression.length > 0 ||
+                    cachedPolarBranchExpressions.length > 0;
 
                 // Explicit polar functions should evaluate against the live animation theta so
                 // closed curves that intentionally stop plotting early can still retrace later.
                 if (shouldUseLivePolarEvaluation) {
-                    let processedExpression;
-                    if (affinePolarExplicitExpression.length > 0) {
-                        processedExpression = affinePolarExplicitExpression.toLowerCase();
+                    let processedExpressions;
+                    if (cachedPolarBranchExpressions.length > 0) {
+                        processedExpressions = cachedPolarBranchExpressions.map(expression => expression.toLowerCase());
+                    } else if (affinePolarExplicitExpression.length > 0) {
+                        processedExpressions = [affinePolarExplicitExpression.toLowerCase()];
                     } else if (functionType === 'polar-inequality') {
                         const inequality = this.parsePolarInequality(func.expression);
                         if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
                             return;
                         }
-                        processedExpression = inequality.rightSide.toLowerCase();
+                        processedExpressions = [inequality.rightSide.toLowerCase()];
                     } else {
-                        processedExpression = this.convertFromLatex(func.expression).trim();
+                        let processedExpression = this.convertFromLatex(func.expression).trim();
                         if (processedExpression.toLowerCase().startsWith('r=')) {
                             processedExpression = processedExpression.substring(2).trim();
                         }
-                        processedExpression = processedExpression.toLowerCase();
+                        processedExpressions = [processedExpression.toLowerCase()];
                     }
 
-                    processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
-                    processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
-
+                    const evaluatedMarkerPoints = [];
                     const scope = this.getEvaluationScope({
                         theta: thetaRad,
                         t: thetaRad,
                         pi: Math.PI,
                         e: Math.E
                     });
-                    const compiled = this.getCompiledExpression(processedExpression);
-                    const result = compiled.evaluate(scope);
-                    let r = typeof result === 'number' ? result : (result && result.re !== undefined ? result.re : NaN);
-                    if (!Number.isFinite(r)) {
+
+                    for (let processedExpression of processedExpressions) {
+                        processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                        processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+                        const compiled = this.getCompiledExpression(processedExpression);
+                        const result = compiled.evaluate(scope);
+                        let r = typeof result === 'number' ? result : (result && result.re !== undefined ? result.re : NaN);
+                        if (!Number.isFinite(r)) {
+                            continue;
+                        }
+
+                        let adjustedTheta = thetaRad;
+                        if (r < 0) {
+                            if (this.polarSettings.plotNegativeR) {
+                                r = Math.abs(r);
+                                adjustedTheta += Math.PI;
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        evaluatedMarkerPoints.push({
+                            x: r * Math.cos(adjustedTheta),
+                            y: r * Math.sin(adjustedTheta)
+                        });
+                    }
+
+                    if (evaluatedMarkerPoints.length === 0) {
                         return;
                     }
 
-                    let adjustedTheta = thetaRad;
-                    if (r < 0) {
-                        if (this.polarSettings.plotNegativeR) {
-                            r = Math.abs(r);
-                            adjustedTheta += Math.PI;
-                        } else {
-                            return;
-                        }
-                    }
+                    markerPoint = evaluatedMarkerPoints[0];
+                    for (let markerIndex = 1; markerIndex < evaluatedMarkerPoints.length; markerIndex++) {
+                        const extraPoint = evaluatedMarkerPoints[markerIndex];
+                        const extraScreenPos = this.worldToScreen(extraPoint.x, extraPoint.y);
+                        const pulseSpeed = 3;
+                        const minRadius = 4;
+                        const maxRadius = 8;
+                        const pulseRadius = minRadius + (maxRadius - minRadius) *
+                            (0.5 + 0.5 * Math.sin(Date.now() * pulseSpeed / 1000));
 
-                    markerPoint = {
-                        x: r * Math.cos(adjustedTheta),
-                        y: r * Math.sin(adjustedTheta)
-                    };
+                        const extraGradient = this.ctx.createRadialGradient(
+                            extraScreenPos.x, extraScreenPos.y, 0,
+                            extraScreenPos.x, extraScreenPos.y, pulseRadius * 2
+                        );
+                        extraGradient.addColorStop(0, func.color);
+                        extraGradient.addColorStop(0.5, func.color + '88');
+                        extraGradient.addColorStop(1, func.color + '00');
+
+                        this.ctx.fillStyle = extraGradient;
+                        this.ctx.beginPath();
+                        this.ctx.arc(extraScreenPos.x, extraScreenPos.y, pulseRadius * 2, 0, Math.PI * 2);
+                        this.ctx.fill();
+
+                        this.ctx.fillStyle = func.color;
+                        this.ctx.beginPath();
+                        this.ctx.arc(extraScreenPos.x, extraScreenPos.y, pulseRadius, 0, Math.PI * 2);
+                        this.ctx.fill();
+
+                        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                        this.ctx.beginPath();
+                        this.ctx.arc(extraScreenPos.x, extraScreenPos.y, pulseRadius * 0.4, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
                 } else {
                     const pointsToUse = Array.isArray(func.displayPoints) && func.displayPoints.length > 0
                         ? func.displayPoints
