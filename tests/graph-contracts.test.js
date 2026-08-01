@@ -1811,6 +1811,77 @@ async function assertStrictImplicitInequalityVerticalComponentsAreDashed(page) {
     assert.strictEqual(result.verticalOverlayCallCount, 0, 'single-variable implicit inequality boundary should not be double-stroked by the vertical component overlay');
 }
 
+async function assertPolarThetaRangeErrorRecovery(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+
+        const thetaMinInput = document.getElementById('theta-min');
+        const thetaMaxInput = document.getElementById('theta-max');
+        if (!thetaMinInput || !thetaMaxInput) {
+            return { missingInputs: true };
+        }
+
+        const waitForUi = async () => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        };
+
+        graphiti.setRangeValue(thetaMinInput, '0');
+        graphiti.setRangeValue(thetaMaxInput, '2\\pi');
+        thetaMinInput.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+        thetaMaxInput.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+        await waitForUi();
+
+        graphiti.addFunction('r=theta');
+        await graphiti.plotFunction(graphiti.polarFunctions[0]);
+
+        // Force invalid equal range.
+        graphiti.setRangeValue(thetaMinInput, '2\\pi');
+        thetaMinInput.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+        await waitForUi();
+
+        const bothErroredWhenEqual =
+            thetaMinInput.classList.contains('input-error') &&
+            thetaMaxInput.classList.contains('input-error');
+
+        // Correct back to a valid range via the same edited field.
+        graphiti.setRangeValue(thetaMinInput, '0');
+        thetaMinInput.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+        await waitForUi();
+
+        const thetaFunc = graphiti.polarFunctions[0];
+        const finitePointCount = (thetaFunc && Array.isArray(thetaFunc.points)
+            ? thetaFunc.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
+            : 0);
+
+        return {
+            missingInputs: false,
+            bothErroredWhenEqual,
+            minErroredAfterFix: thetaMinInput.classList.contains('input-error'),
+            maxErroredAfterFix: thetaMaxInput.classList.contains('input-error'),
+            thetaMin: graphiti.polarSettings.thetaMin,
+            thetaMax: graphiti.polarSettings.thetaMax,
+            finitePointCount
+        };
+    });
+
+    assert.strictEqual(result.missingInputs, false, `polar theta recovery test requires theta range inputs: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.bothErroredWhenEqual, true, `equal polar theta range should flag both inputs: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.minErroredAfterFix, false, `theta min input error should clear after valid correction: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.maxErroredAfterFix, false, `theta max input error should clear after valid correction: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.thetaMin, 0, 1e-9), `theta min should recover to 0 after correction: ${JSON.stringify(result)}`);
+    assert(approxEqual(result.thetaMax, 2 * Math.PI, 1e-9), `theta max should remain at 2pi after correction: ${JSON.stringify(result)}`);
+    assert(result.finitePointCount > 100, `polar replot should recover with substantial finite points after correction: ${JSON.stringify(result)}`);
+}
+
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     const cases = [
         '\\frac13y^2x=0',
@@ -5207,6 +5278,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertEmptyMathLivePlaceholdersAreRestored(page);
         await assertLegacyDerivativeCacheEntriesDoNotSuppressTurningPoints(page);
         await assertShapeClassification(page);
+        await assertPolarThetaRangeErrorRecovery(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertInverseCubeRootImplicitPlotsAsCubic(page);

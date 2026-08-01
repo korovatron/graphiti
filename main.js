@@ -25661,125 +25661,69 @@ class Graphiti {
         const thetaMinInput = document.getElementById('theta-min');
         const thetaMaxInput = document.getElementById('theta-max');
         const negativeRToggle = document.getElementById('negative-r-toggle');
+
+        const stopPolarAnimationForRangeEdit = () => {
+            if (!this.polarAnimation.isAnimating && !this.polarAnimation.isPaused) {
+                return;
+            }
+
+            this.stopPolarAnimation();
+            const playIcon = document.getElementById('play-icon');
+            const pauseIcon = document.getElementById('pause-icon');
+            const playPauseText = document.getElementById('play-pause-text');
+            const polarStopButton = document.getElementById('polar-stop-animation');
+            if (playIcon && pauseIcon && playPauseText) {
+                playIcon.style.display = 'block';
+                pauseIcon.style.display = 'none';
+                playPauseText.textContent = 'Play';
+            }
+            if (polarStopButton) {
+                polarStopButton.style.opacity = '0.6';
+                polarStopButton.style.background = '#1a2a3f';
+            }
+
+            // Reset stored animation state so new range is used on next play.
+            this.polarAnimation.storedThetaMax = 0;
+            this.polarAnimation.currentTheta = 0;
+        };
+
+        const handlePolarRangeInput = () => {
+            if (!thetaMinInput || !thetaMaxInput) {
+                return;
+            }
+
+            stopPolarAnimationForRangeEdit();
+
+            const thetaMin = this.getRangeValue(thetaMinInput);
+            const thetaMax = this.getRangeValue(thetaMaxInput);
+            const hasValidMin = Number.isFinite(thetaMin);
+            const hasValidMax = Number.isFinite(thetaMax);
+            const hasLogicalRange = hasValidMin && hasValidMax && thetaMin < thetaMax;
+
+            const minHasError = !hasValidMin || (hasValidMax && thetaMin >= thetaMax);
+            const maxHasError = !hasValidMax || (hasValidMin && thetaMin >= thetaMax);
+            this.setInputError(thetaMinInput, minHasError);
+            this.setInputError(thetaMaxInput, maxHasError);
+
+            if (!hasLogicalRange) {
+                return;
+            }
+
+            this.polarSettings.thetaMinLatex = thetaMinInput.getValue();
+            this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
+            this.polarSettings.thetaMin = thetaMin;
+            this.polarSettings.thetaMax = thetaMax;
+
+            this.saveViewportBounds();
+            this.replotAllFunctions();
+        };
         
         if (thetaMinInput) {
-            thetaMinInput.addEventListener('input', () => {
-                // Stop animation when changing theta range
-                if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
-                    this.stopPolarAnimation();
-                    // Update UI to show stopped state
-                    const playIcon = document.getElementById('play-icon');
-                    const pauseIcon = document.getElementById('pause-icon');
-                    const playPauseText = document.getElementById('play-pause-text');
-                    const polarStopButton = document.getElementById('polar-stop-animation');
-                    if (playIcon && pauseIcon && playPauseText) {
-                        playIcon.style.display = 'block';
-                        pauseIcon.style.display = 'none';
-                        playPauseText.textContent = 'Play';
-                    }
-                    if (polarStopButton) {
-                        polarStopButton.style.opacity = '0.6';
-                        polarStopButton.style.background = '#1a2a3f';
-                    }
-                    // Reset stored animation state so new range is used on next play
-                    this.polarAnimation.storedThetaMax = 0;
-                    this.polarAnimation.currentTheta = 0;
-                }
-                
-                // Validate theta ranges
-                const thetaMin = this.getRangeValue(thetaMinInput);
-                const thetaMax = this.getRangeValue(thetaMaxInput);
-                
-                console.log('[ThetaMin] Input event - thetaMin:', thetaMin, 'thetaMax:', thetaMax, 'latex:', thetaMinInput.getValue());
-                
-                // Check for NaN
-                if (isNaN(thetaMin)) {
-                    console.log('[ThetaMin] Setting error (NaN)');
-                    this.setInputError(thetaMinInput, true);
-                } else {
-                    // Store both the LaTeX string (for display) and numeric value (for calculations)
-                    this.polarSettings.thetaMinLatex = thetaMinInput.getValue();
-                    this.polarSettings.thetaMin = thetaMin;
-                    
-                    // Only clear thetaMin error if it's valid AND logical constraints pass
-                    if (isNaN(thetaMax) || thetaMin < thetaMax) {
-                        console.log('[ThetaMin] Clearing error (valid)');
-                        this.setInputError(thetaMinInput, false);
-                    } else {
-                        console.log('[ThetaMin] NOT clearing error (logical constraint)');
-                    }
-                }
-                
-                // Check logical constraint: min >= max
-                if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin >= thetaMax) {
-                    console.log('[ThetaMin] Setting errors (min >= max)');
-                    this.setInputError(thetaMinInput, true);
-                    this.setInputError(thetaMaxInput, true);
-                }
-                
-                this.saveViewportBounds();
-                this.replotAllFunctions();
-            });
+            thetaMinInput.addEventListener('input', handlePolarRangeInput);
         }
         
         if (thetaMaxInput) {
-            thetaMaxInput.addEventListener('input', () => {
-                // Stop animation when changing theta range
-                if (this.polarAnimation.isAnimating || this.polarAnimation.isPaused) {
-                    this.stopPolarAnimation();
-                    // Update UI to show stopped state
-                    const playIcon = document.getElementById('play-icon');
-                    const pauseIcon = document.getElementById('pause-icon');
-                    const playPauseText = document.getElementById('play-pause-text');
-                    const polarStopButton = document.getElementById('polar-stop-animation');
-                    if (playIcon && pauseIcon && playPauseText) {
-                        playIcon.style.display = 'block';
-                        pauseIcon.style.display = 'none';
-                        playPauseText.textContent = 'Play';
-                    }
-                    if (polarStopButton) {
-                        polarStopButton.style.opacity = '0.6';
-                        polarStopButton.style.background = '#1a2a3f';
-                    }
-                    // Reset stored animation state so new range is used on next play
-                    this.polarAnimation.storedThetaMax = 0;
-                    this.polarAnimation.currentTheta = 0;
-                }
-                
-                // Validate theta ranges
-                const thetaMin = this.getRangeValue(thetaMinInput);
-                const thetaMax = this.getRangeValue(thetaMaxInput);
-                
-                console.log('[ThetaMax] Input event - thetaMin:', thetaMin, 'thetaMax:', thetaMax, 'latex:', thetaMaxInput.getValue());
-                
-                // Check for NaN
-                if (isNaN(thetaMax)) {
-                    console.log('[ThetaMax] Setting error (NaN)');
-                    this.setInputError(thetaMaxInput, true);
-                } else {
-                    // Store both the LaTeX string (for display) and numeric value (for calculations)
-                    this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
-                    this.polarSettings.thetaMax = thetaMax;
-                    
-                    // Only clear thetaMax error if it's valid AND logical constraints pass
-                    if (isNaN(thetaMin) || thetaMin < thetaMax) {
-                        console.log('[ThetaMax] Clearing error (valid)');
-                        this.setInputError(thetaMaxInput, false);
-                    } else {
-                        console.log('[ThetaMax] NOT clearing error (logical constraint)');
-                    }
-                }
-                
-                // Check logical constraint: min >= max
-                if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin >= thetaMax) {
-                    console.log('[ThetaMax] Setting errors (min >= max)');
-                    this.setInputError(thetaMinInput, true);
-                    this.setInputError(thetaMaxInput, true);
-                }
-                
-                this.saveViewportBounds();
-                this.replotAllFunctions();
-            });
+            thetaMaxInput.addEventListener('input', handlePolarRangeInput);
         }
         
 
