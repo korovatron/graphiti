@@ -6500,18 +6500,22 @@ class Graphiti {
             // Check for theta = constant (polar ray)
             const thetaMatch = clean.match(/^(θ|theta|t)\s*=\s*(.+)$/i);
             if (thetaMatch) {
-                // Check if right side is a constant expression (no theta or t variable)
+                // Check if right side is a constant expression.
+                // Variables such as r, x, y, theta, or standalone t indicate
+                // an implicit relation, not a theta-constant ray.
                 const rightSide = thetaMatch[2].trim().toLowerCase();
                 
                 // Check if there's 'theta' in the right side
-                const hasTheta = /theta/.test(rightSide);
+                const hasTheta = /theta|θ/.test(rightSide);
                 
                 // Check if there's a standalone 't' (not part of another word)
                 // First remove 'theta' to avoid matching 't' inside it
-                const withoutTheta = rightSide.replace(/theta/g, '');
+                const withoutTheta = rightSide.replace(/theta|θ/g, '');
                 const hasT = /\bt\b/.test(withoutTheta);
+                const hasR = /\br\b/.test(rightSide);
+                const hasCartesian = /\bx\b|\by\b/.test(rightSide);
                 
-                if (!hasT && !hasTheta) {
+                if (!hasT && !hasTheta && !hasR && !hasCartesian) {
                     return 'theta-constant';
                 }
             }
@@ -21027,8 +21031,13 @@ class Graphiti {
                 return null;
             }
             
-            const leftSide = parts[0].trim();
-            const rightSide = parts[1].trim();
+            let leftSide = parts[0].trim();
+            let rightSide = parts[1].trim();
+
+            if (this.plotMode === 'polar') {
+                leftSide = leftSide.replace(/θ/g, 'theta').replace(/\btheta\b/gi, 't');
+                rightSide = rightSide.replace(/θ/g, 'theta').replace(/\btheta\b/gi, 't');
+            }
             
             // Process expressions for math.js (handle implicit multiplication, etc.)
             const leftProcessed = this.processImplicitExpression(leftSide);
@@ -21079,8 +21088,13 @@ class Graphiti {
                 return null;
             }
             
-            const leftSide = parts[0].trim();
-            const rightSide = parts[1].trim();
+            let leftSide = parts[0].trim();
+            let rightSide = parts[1].trim();
+
+            if (this.plotMode === 'polar') {
+                leftSide = leftSide.replace(/θ/g, 'theta').replace(/\btheta\b/gi, 't');
+                rightSide = rightSide.replace(/θ/g, 'theta').replace(/\btheta\b/gi, 't');
+            }
             
             // Process expressions for math.js
             const leftProcessed = this.processImplicitExpression(leftSide);
@@ -22052,6 +22066,37 @@ class Graphiti {
         return this.isAngleWithinRangeRadians(theta, minRadians, maxRadians);
     }
 
+    liftPolarAngleToConfiguredRangeRadians(thetaRadians) {
+        if (!Number.isFinite(thetaRadians)) {
+            return thetaRadians;
+        }
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return thetaRadians;
+        }
+
+        const twoPi = 2 * Math.PI;
+        const minRadians = this.angleMode === 'degrees' ? (thetaMin * Math.PI / 180) : thetaMin;
+        const maxRadians = this.angleMode === 'degrees' ? (thetaMax * Math.PI / 180) : thetaMax;
+
+        const normalized = this.normalizeAngleRadians(thetaRadians);
+        if (!Number.isFinite(normalized)) {
+            return thetaRadians;
+        }
+
+        // Choose the equivalent angle theta + 2pi*k that lies in the configured
+        // linear range when possible. This matches explicit polar traversal semantics.
+        const k = Math.ceil((minRadians - normalized) / twoPi);
+        const lifted = normalized + (k * twoPi);
+        if (lifted >= (minRadians - 1e-9) && lifted <= (maxRadians + 1e-9)) {
+            return lifted;
+        }
+
+        return thetaRadians;
+    }
+
     buildImplicitPointEvaluator(equation) {
         let leftExpressionForEval = equation.leftExpression;
         let rightExpressionForEval = equation.rightExpression;
@@ -22082,9 +22127,12 @@ class Graphiti {
 
             const r = Math.hypot(x, y);
             const thetaRadians = Math.atan2(y, x);
-            const thetaValue = this.angleMode === 'degrees'
-                ? thetaRadians * 180 / Math.PI
+            const liftedThetaRadians = (equation && equation.coordinateSystem === 'polar')
+                ? this.liftPolarAngleToConfiguredRangeRadians(thetaRadians)
                 : thetaRadians;
+            const thetaValue = this.angleMode === 'degrees'
+                ? liftedThetaRadians * 180 / Math.PI
+                : liftedThetaRadians;
 
             scope.r = r;
             scope.theta = thetaValue;

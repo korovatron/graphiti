@@ -2062,6 +2062,20 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(clippedEquationFunc);
         await graphiti.plotFunction(clippedEquationFunc);
 
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+
+        const thetaEqualsRFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'theta=r',
+            points: [],
+            color: '#F5A623',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(thetaEqualsRFunc);
+        await graphiti.plotFunction(thetaEqualsRFunc);
+
         const inequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-(1+cos(t))<0',
@@ -2081,6 +2095,15 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         ).length;
         const clippedEquationFinitePoints = (clippedEquationFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        );
+        const thetaEqualsRFinitePointCount = (thetaEqualsRFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const thetaEqualsRHasUpperHalf = (thetaEqualsRFunc.points || []).some(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.y > 0.05
+        );
+        const thetaEqualsRHasLowerHalf = (thetaEqualsRFunc.points || []).some(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.y < -0.05
         );
         const clippedAngles = clippedEquationFinitePoints.map(point => {
             let theta = Math.atan2(point.y, point.x);
@@ -2105,6 +2128,13 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 anglesRespectRange: clippedAnglesRespectRange,
                 hasGridData: !!clippedEquationFunc.gridData
             },
+            thetaEqualsR: {
+                detectedType: graphiti.detectFunctionType(thetaEqualsRFunc.expression),
+                renderMode: thetaEqualsRFunc.implicitRenderMode || null,
+                finitePointCount: thetaEqualsRFinitePointCount,
+                hasUpperHalf: thetaEqualsRHasUpperHalf,
+                hasLowerHalf: thetaEqualsRHasLowerHalf
+            },
             inequality: {
                 detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
                 renderMode: inequalityFunc.implicitRenderMode || null,
@@ -2128,6 +2158,15 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     );
     assert(result.clippedEquation.finitePointCount > 10, `theta-clipped implicit polar equation should produce finite points: ${JSON.stringify(result.clippedEquation)}`);
     assert.strictEqual(result.clippedEquation.anglesRespectRange, true, `implicit polar equation should respect theta min/max clipping: ${JSON.stringify(result.clippedEquation)}`);
+
+    assert.strictEqual(result.thetaEqualsR.detectedType, 'implicit', `theta=r should be treated as implicit polar, not a ray: ${JSON.stringify(result.thetaEqualsR)}`);
+    assert(
+        typeof result.thetaEqualsR.renderMode === 'string' && result.thetaEqualsR.renderMode.startsWith('marching-polar'),
+        `theta=r should use implicit polar marching render mode: ${JSON.stringify(result.thetaEqualsR)}`
+    );
+    assert(result.thetaEqualsR.finitePointCount > 10, `theta=r should produce visible implicit polar points: ${JSON.stringify(result.thetaEqualsR)}`);
+    assert.strictEqual(result.thetaEqualsR.hasUpperHalf, true, `theta=r should include upper-half points for 0..2pi: ${JSON.stringify(result.thetaEqualsR)}`);
+    assert.strictEqual(result.thetaEqualsR.hasLowerHalf, true, `theta=r should include lower-half points for 0..2pi: ${JSON.stringify(result.thetaEqualsR)}`);
 
     assert.strictEqual(result.inequality.detectedType, 'implicit-inequality', `implicit polar inequality should be detected as implicit-inequality: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
