@@ -5416,6 +5416,7 @@ class Graphiti {
             let startY = null;
             let startTheta = null;
             let hasValidStart = false;
+            const shouldAutoStopOnLoopCompletion = !func || func._disablePolarLoopAutoStop !== true;
             const completionThreshold = 0.01; // Distance threshold to detect curve completion
             let minThetaForCompletion = thetaMin + Math.PI / 4; // Don't check for completion too early
             const minThetaRange = Math.PI; // Require at least π radians of travel before checking completion
@@ -5462,7 +5463,7 @@ class Graphiti {
                         // Check if we've returned to starting position (curve completed)
                         // Only check after we've moved significantly in theta AND significantly away from start
                         // This prevents false completion detection when both ends of theta range map to same point
-                        if (hasValidStart && theta > minThetaForCompletion && (theta - startTheta) >= minThetaRange) {
+                        if (shouldAutoStopOnLoopCompletion && hasValidStart && theta > minThetaForCompletion && (theta - startTheta) >= minThetaRange) {
                             const distanceFromStart = Math.sqrt((x - startX) ** 2 + (y - startY) ** 2);
                             const radiusScale = Math.abs(r) || 1;
                             
@@ -6713,7 +6714,7 @@ class Graphiti {
         }
 
         const handled = this.plotCachedPolarExplicitProxy(func, affinePolarModel.explicitExpression, {
-            clearAsymptoteData: true
+            clearAsymptoteData: false
         });
         if (!handled) {
             return false;
@@ -6730,7 +6731,7 @@ class Graphiti {
         }
 
         const handled = this.plotCachedPolarQuadraticExplicitProxy(func, quadraticPolarModel.branchExpressions, {
-            clearAsymptoteData: true
+            clearAsymptoteData: false
         });
         if (!handled) {
             return false;
@@ -6748,7 +6749,7 @@ class Graphiti {
         }
 
         const handled = this.plotCachedPolarQuadraticExplicitProxy(func, monomialPolarModel.branchExpressions, {
-            clearAsymptoteData: true
+            clearAsymptoteData: false
         });
         if (!handled) {
             return false;
@@ -6877,6 +6878,8 @@ class Graphiti {
         const proxyFunc = {
             ...func,
             expression: 'r=' + explicitExpression,
+            // Implicit-polar proxies can be non-periodic in theta; avoid early loop closure.
+            _disablePolarLoopAutoStop: true,
             points: [],
             displayPoints: []
         };
@@ -6890,6 +6893,20 @@ class Graphiti {
         const finitePointCount = proxyFunc.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length;
         if (finitePointCount === 0) {
             return false;
+        }
+
+        const proxyAsymptoteData = proxyFunc.asymptoteData;
+        if (proxyAsymptoteData) {
+            this.updateFunctionAsymptoteData(
+                func,
+                Array.isArray(proxyAsymptoteData.vertical) ? proxyAsymptoteData.vertical.slice() : [],
+                Array.isArray(proxyAsymptoteData.horizontal) ? proxyAsymptoteData.horizontal.slice() : [],
+                Array.isArray(proxyAsymptoteData.oblique) ? proxyAsymptoteData.oblique.map(line => ({ ...line })) : [],
+                null,
+                null,
+                Array.isArray(proxyAsymptoteData.curved) ? proxyAsymptoteData.curved.map(curve => ({ ...curve })) : [],
+                Array.isArray(proxyAsymptoteData.polarRays) ? proxyAsymptoteData.polarRays.slice() : []
+            );
         }
 
         func.points = proxyFunc.points;
@@ -6910,6 +6927,15 @@ class Graphiti {
         const clearAsymptoteData = options.clearAsymptoteData !== false;
         const mergedPoints = [];
         let hasFinitePoints = false;
+        const mergedPolarRays = [];
+        const addUniquePolarRay = (value) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            if (!mergedPolarRays.some(existing => Math.abs(existing - value) <= 1e-6)) {
+                mergedPolarRays.push(value);
+            }
+        };
         const branchJoinTolerance = Math.max(0.08, Math.hypot(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY) * 0.0025);
 
         const getFirstFinitePoint = (points) => {
@@ -6945,11 +6971,20 @@ class Graphiti {
             const proxyFunc = {
                 ...func,
                 expression: 'r=' + branchExpression,
+                // Branch proxies come from implicit-polar transforms and should span the full theta range.
+                _disablePolarLoopAutoStop: true,
                 _skipPolarRangeClosure: true,
                 points: [],
                 displayPoints: []
             };
             this.plotPolarFunction(proxyFunc);
+
+            const proxyAsymptoteData = proxyFunc.asymptoteData;
+            if (proxyAsymptoteData && Array.isArray(proxyAsymptoteData.polarRays)) {
+                for (const theta of proxyAsymptoteData.polarRays) {
+                    addUniquePolarRay(theta);
+                }
+            }
 
             const branchPoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
             const finiteBranchPoints = branchPoints.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
@@ -6983,9 +7018,16 @@ class Graphiti {
         }
 
         this.compactPolarOriginGaps(mergedPoints);
-        this.closePolarRangeIfNeeded(mergedPoints, func.polarSettings?.thetaMin ?? this.polarSettings.thetaMin, func.polarSettings?.thetaMax ?? this.polarSettings.thetaMax, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax), func.asymptoteData?.polarRays || []);
+        this.closePolarRangeIfNeeded(
+            mergedPoints,
+            func.polarSettings?.thetaMin ?? this.polarSettings.thetaMin,
+            func.polarSettings?.thetaMax ?? this.polarSettings.thetaMax,
+            this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax),
+            mergedPolarRays
+        );
         func.points = mergedPoints;
         func.displayPoints = mergedPoints;
+        this.updateFunctionAsymptoteData(func, [], [], [], null, null, [], mergedPolarRays);
         if (clearAsymptoteData) {
             this.clearFunctionAsymptoteData(func);
         }
@@ -22583,7 +22625,9 @@ class Graphiti {
         for (const hole of sorted) {
             if (isPolarDisplay) {
                 const rValue = Math.hypot(hole.x, hole.y);
-                const thetaValue = this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(hole.y, hole.x));
+                const thetaValue = rValue <= 1e-9
+                    ? this.getCanonicalPolarThetaForOriginHoleRadians()
+                    : this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(hole.y, hole.x));
                 const rLatex = this.formatAsymptoteCoefficientLatex(rValue);
                 const thetaLatex = this.formatAsymptoteCoefficientLatex(thetaValue);
                 coordinates.push(`\\left(${rLatex}, ${thetaLatex}\\right)`);
@@ -22595,6 +22639,46 @@ class Graphiti {
         }
 
         return coordinates;
+    }
+
+    getCanonicalPolarThetaForOriginHoleRadians() {
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return 0;
+        }
+
+        const minRadians = this.angleMode === 'degrees' ? (thetaMin * Math.PI / 180) : thetaMin;
+        const maxRadians = this.angleMode === 'degrees' ? (thetaMax * Math.PI / 180) : thetaMax;
+        const twoPi = 2 * Math.PI;
+
+        const kMin = Math.ceil((minRadians - 0) / twoPi);
+        const kMax = Math.floor((maxRadians - 0) / twoPi);
+        if (kMin > kMax) {
+            return this.liftPolarAngleToConfiguredRangeRadians(0);
+        }
+
+        let bestTheta = null;
+        for (let k = kMin; k <= kMax; k++) {
+            const candidate = k * twoPi;
+            if (bestTheta === null) {
+                bestTheta = candidate;
+                continue;
+            }
+
+            const absCandidate = Math.abs(candidate);
+            const absBest = Math.abs(bestTheta);
+            if (absCandidate < absBest - 1e-12) {
+                bestTheta = candidate;
+                continue;
+            }
+
+            if (Math.abs(absCandidate - absBest) <= 1e-12 && candidate < bestTheta) {
+                bestTheta = candidate;
+            }
+        }
+
+        return bestTheta === null ? this.liftPolarAngleToConfiguredRangeRadians(0) : bestTheta;
     }
 
     formatPeriodicVerticalAsymptoteLatex(values) {
@@ -22642,30 +22726,41 @@ class Graphiti {
             return null;
         }
 
-        const sorted = values.slice().sort((a, b) => a - b).filter(value => Number.isFinite(value));
+        const sorted = values
+            .filter(value => Number.isFinite(value))
+            .sort((a, b) => a - b)
+            .filter((value, index, array) => index === 0 || Math.abs(value - array[index - 1]) > 1e-7);
         if (sorted.length < 2) {
             return null;
         }
 
         const differences = [];
         for (let i = 1; i < sorted.length; i++) {
-            differences.push(sorted[i] - sorted[i - 1]);
+            const delta = sorted[i] - sorted[i - 1];
+            if (Number.isFinite(delta) && delta > 1e-12) {
+                differences.push(delta);
+            }
         }
-
-        const averageDifference = differences.reduce((sum, value) => sum + value, 0) / differences.length;
-        if (!Number.isFinite(averageDifference) || Math.abs(averageDifference) < 1e-12) {
+        if (differences.length === 0) {
             return null;
         }
 
-        // Polar ray singularities are detected numerically, so use a looser
-        // spacing tolerance than cartesian symbolic periodic forms.
-        const spacingTolerance = Math.max(0.01, Math.abs(averageDifference) * 5e-3);
-        const consistent = differences.every(difference => Math.abs(difference - averageDifference) <= spacingTolerance);
-        if (!consistent) {
+        // Use the minimum observed spacing as the base period candidate and
+        // allow missing intermediate rays by accepting integer multiples.
+        const period = Math.min(...differences);
+        if (!Number.isFinite(period) || period <= 1e-12) {
             return null;
         }
 
-        const period = Math.abs(averageDifference);
+        const spacingTolerance = Math.max(0.01, Math.abs(period) * 5e-3);
+        const allMultiplesOfPeriod = differences.every(difference => {
+            const multiple = Math.max(1, Math.round(difference / period));
+            return Math.abs(difference - (multiple * period)) <= Math.max(spacingTolerance, spacingTolerance * multiple);
+        });
+        if (!allMultiplesOfPeriod) {
+            return null;
+        }
+
         const offset = this.modPositive(sorted[0], period);
         const periodLatex = this.formatAsymptoteCoefficientLatex(period);
         if (!periodLatex) {
@@ -40277,10 +40372,66 @@ class Graphiti {
         }
     }
 
+    isPolarAxisInterceptOnRenderedCurve(func, candidate) {
+        if (!func || !candidate || !Number.isFinite(candidate.x) || !Number.isFinite(candidate.y)) {
+            return false;
+        }
+
+        const points = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+            ? func.displayPoints
+            : (Array.isArray(func.points) ? func.points : []);
+        if (!Array.isArray(points) || points.length < 2) {
+            return false;
+        }
+
+        const viewportSpanX = Math.abs((this.viewport?.maxX ?? 0) - (this.viewport?.minX ?? 0));
+        const viewportSpanY = Math.abs((this.viewport?.maxY ?? 0) - (this.viewport?.minY ?? 0));
+        const curveDistanceTolerance = Math.max(0.01, Math.min(viewportSpanX, viewportSpanY) * 0.004);
+
+        const pointToSegmentDistance = (px, py, ax, ay, bx, by) => {
+            const dx = bx - ax;
+            const dy = by - ay;
+            const segmentLengthSq = (dx * dx) + (dy * dy);
+            if (!Number.isFinite(segmentLengthSq) || segmentLengthSq <= 1e-14) {
+                return Math.hypot(px - ax, py - ay);
+            }
+
+            const t = ((px - ax) * dx + (py - ay) * dy) / segmentLengthSq;
+            const clampedT = Math.max(0, Math.min(1, t));
+            const nearestX = ax + (clampedT * dx);
+            const nearestY = ay + (clampedT * dy);
+            return Math.hypot(px - nearestX, py - nearestY);
+        };
+
+        for (let index = 0; index < points.length - 1; index++) {
+            const p1 = points[index];
+            const p2 = points[index + 1];
+            if (!p1 || !p2) {
+                continue;
+            }
+            if (!Number.isFinite(p1.x) || !Number.isFinite(p1.y) || !Number.isFinite(p2.x) || !Number.isFinite(p2.y)) {
+                continue;
+            }
+            if (p2.connected === false) {
+                continue;
+            }
+
+            const distance = pointToSegmentDistance(candidate.x, candidate.y, p1.x, p1.y, p2.x, p2.y);
+            if (Number.isFinite(distance) && distance <= curveDistanceTolerance) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     findPolarAxisInterceptsFromCompiled(func, compiledExpressions, minDistance) {
         if (!func || !Array.isArray(compiledExpressions) || compiledExpressions.length === 0) {
             return [];
         }
+
+        const shouldRunAxisAngleProbes = !(this.isExplicitImplicitFastPath(func) &&
+            func.implicitRenderMode !== 'affine-polar-explicit');
 
         const thetaMin = this.polarSettings.thetaMin;
         const thetaMax = this.polarSettings.thetaMax;
@@ -40427,8 +40578,11 @@ class Graphiti {
                 prevPoint = currentPoint;
             }
 
-            // Axis-angle probes catch tangential touches that can miss sign-change detection.
-            addAxisAngleProbeIntercepts(compiledExpression);
+            // Axis-angle probes can over-detect for transformed non-affine implicit
+            // fast-path branches, so keep them for explicit/affine cases only.
+            if (shouldRunAxisAngleProbes) {
+                addAxisAngleProbeIntercepts(compiledExpression);
+            }
         }
 
         return intercepts;
@@ -40467,6 +40621,9 @@ class Graphiti {
             if (compiledPolarExpressions.length > 0) {
                 const analyticIntercepts = this.findPolarAxisInterceptsFromCompiled(func, compiledPolarExpressions, minDistance);
                 for (const intercept of analyticIntercepts) {
+                    if (!this.isPolarAxisInterceptOnRenderedCurve(func, intercept)) {
+                        continue;
+                    }
                     this.addPolarAxisInterceptCandidate(intercepts, intercept, minDistance);
                 }
             }
@@ -40482,6 +40639,12 @@ class Graphiti {
             for (let i = 0; i < points.length - 1; i++) {
                 const p1 = points[i];
                 const p2 = points[i + 1];
+
+                // A `connected:false` endpoint marks the start of a new segment; do
+                // not infer axis crossings across deliberate discontinuity breaks.
+                if (p2 && p2.connected === false) {
+                    continue;
+                }
                 
                 // Skip invalid points or discontinuities
                 if (!isFinite(p1.x) || !isFinite(p1.y) || !isFinite(p2.x) || !isFinite(p2.y)) {
@@ -40516,13 +40679,16 @@ class Graphiti {
                     // Determine which side of x-axis (positive or negative x)
                     const type = x > 0 ? 'x-axis-positive' : 'x-axis-negative';
 
-                    this.addPolarAxisInterceptCandidate(intercepts, {
+                    const candidate = {
                         x: x,
                         y: y,
                         type: type,
                         functionId: func.id,
                         color: func.color
-                    }, minDistance);
+                    };
+                    if (this.isPolarAxisInterceptOnRenderedCurve(func, candidate)) {
+                        this.addPolarAxisInterceptCandidate(intercepts, candidate, minDistance);
+                    }
                 }
                 
                 // Check for y-axis crossing (x changes sign or is very close to zero)
@@ -40553,13 +40719,16 @@ class Graphiti {
                     // Determine which side of y-axis (positive or negative y)
                     const type = y > 0 ? 'y-axis-positive' : 'y-axis-negative';
 
-                    this.addPolarAxisInterceptCandidate(intercepts, {
+                    const candidate = {
                         x: x,
                         y: y,
                         type: type,
                         functionId: func.id,
                         color: func.color
-                    }, minDistance);
+                    };
+                    if (this.isPolarAxisInterceptOnRenderedCurve(func, candidate)) {
+                        this.addPolarAxisInterceptCandidate(intercepts, candidate, minDistance);
+                    }
                 }
             }
         }
@@ -47174,6 +47343,33 @@ class Graphiti {
                 }
 
                 for (const theta of uniqueAngles) {
+                    const nearHorizontalAxis = Math.abs(Math.sin(theta)) <= 1e-6;
+                    const nearVerticalAxis = Math.abs(Math.cos(theta)) <= 1e-6;
+
+                    // Axis-coincident polar asymptotes should mirror the visibility of
+                    // cartesian axis-aligned asymptotes.
+                    if (nearHorizontalAxis) {
+                        const axisY = this.worldToScreen(0, 0).y;
+                        if (Number.isFinite(axisY)) {
+                            context.beginPath();
+                            context.moveTo(0, axisY);
+                            context.lineTo(this.viewport.width, axisY);
+                            context.stroke();
+                        }
+                        continue;
+                    }
+
+                    if (nearVerticalAxis) {
+                        const axisX = this.worldToScreen(0, 0).x;
+                        if (Number.isFinite(axisX)) {
+                            context.beginPath();
+                            context.moveTo(axisX, 0);
+                            context.lineTo(axisX, this.viewport.height);
+                            context.stroke();
+                        }
+                        continue;
+                    }
+
                     const segment = this.getPolarAsymptoteViewportSegment(theta);
                     if (!segment) {
                         continue;

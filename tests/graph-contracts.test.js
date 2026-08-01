@@ -2773,6 +2773,35 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(rationalThetaOffsetPolarFunc);
         await graphiti.plotFunction(rationalThetaOffsetPolarFunc);
 
+        graphiti.polarSettings.thetaMin = -2 * Math.PI;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        const nonPeriodicImplicitPolarRange4PiFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r*sin(theta)+sin(theta)/r-theta=0',
+            points: [],
+            color: '#00897B',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(nonPeriodicImplicitPolarRange4PiFunc);
+        await graphiti.plotFunction(nonPeriodicImplicitPolarRange4PiFunc);
+
+        graphiti.polarSettings.thetaMin = -2 * Math.PI;
+        graphiti.polarSettings.thetaMax = 3 * Math.PI;
+        const nonPeriodicImplicitPolarRange5PiFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r*sin(theta)+sin(theta)/r-theta=0',
+            points: [],
+            color: '#00796B',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(nonPeriodicImplicitPolarRange5PiFunc);
+        await graphiti.plotFunction(nonPeriodicImplicitPolarRange5PiFunc);
+
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+
         const inequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-(1+cos(t))<0',
@@ -3257,6 +3286,27 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                     shapeLabel: shape && shape.label ? shape.label : null
                 };
             })(),
+            nonPeriodicImplicitPolarRangeCoverage: (() => {
+                const summarize = (func) => {
+                    const finite = (func.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+                    const finiteTheta = finite
+                        .map(point => point.theta)
+                        .filter(theta => Number.isFinite(theta));
+                    return {
+                        detectedType: graphiti.detectFunctionType(func.expression),
+                        renderMode: func.implicitRenderMode || null,
+                        finitePointCount: finite.length,
+                        maxTheta: finiteTheta.length > 0 ? Math.max(...finiteTheta) : null,
+                        hasUpperBranch: finite.some(point => point.y > 0.75),
+                        hasLowerBranch: finite.some(point => point.y < -0.75)
+                    };
+                };
+
+                return {
+                    range4Pi: summarize(nonPeriodicImplicitPolarRange4PiFunc),
+                    range5Pi: summarize(nonPeriodicImplicitPolarRange5PiFunc)
+                };
+            })(),
             inequality: {
                 detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
                 renderMode: inequalityFunc.implicitRenderMode || null,
@@ -3408,6 +3458,19 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.rationalThetaOffsetPolar.renderMode, 'affine-polar-explicit', `theta-offset rational implicit polar form should stay on affine fast-path: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
     assert(result.rationalThetaOffsetPolar.holeCount >= 1, `theta-offset rational implicit polar form should expose removable hole metadata at the excluded theta: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
     assert(result.rationalThetaOffsetPolar.nearestHoleDistance < 0.2, `theta-offset rational implicit polar hole should sit at the expected origin point: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
+
+    assert.strictEqual(result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.detectedType, 'implicit', `non-periodic implicit polar expression should remain implicit at 4pi span: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert.strictEqual(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.detectedType, 'implicit', `non-periodic implicit polar expression should remain implicit at 5pi span: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert.strictEqual(result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.renderMode, 'quadratic-polar-explicit', `non-periodic implicit polar expression should use quadratic fast-path at 4pi span: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert.strictEqual(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.renderMode, 'quadratic-polar-explicit', `non-periodic implicit polar expression should use quadratic fast-path at 5pi span: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert(result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.finitePointCount > 120, `non-periodic implicit polar expression should produce substantial points at 4pi span: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.finitePointCount > 120, `non-periodic implicit polar expression should produce substantial points at 5pi span: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert(Number.isFinite(result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.maxTheta) && result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.maxTheta >= Math.PI - 0.2, `4pi span should preserve expected finite branch coverage: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert(Number.isFinite(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.maxTheta) && result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.maxTheta >= (3 * Math.PI) - 0.25, `5pi span should keep sampling through its extended theta max: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert(Number.isFinite(result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.maxTheta) && Number.isFinite(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.maxTheta) && result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.maxTheta >= result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.maxTheta + (2 * Math.PI) - 0.35, `extended theta range should materially increase sampled branch coverage: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.finitePointCount >= result.nonPeriodicImplicitPolarRangeCoverage.range4Pi.finitePointCount * 0.55, `5pi span should not collapse to a tiny subset of the 4pi branches: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert.strictEqual(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.hasUpperBranch, true, `5pi span should preserve visible upper branch geometry: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
+    assert.strictEqual(result.nonPeriodicImplicitPolarRangeCoverage.range5Pi.hasLowerBranch, true, `5pi span should preserve visible lower branch geometry: ${JSON.stringify(result.nonPeriodicImplicitPolarRangeCoverage)}`);
     assert.strictEqual(result.rationalThetaOffsetPolar.shapeLabel, 'modulated Archimedean spiral', `theta-offset rational implicit polar form should use the precise modulated-spiral label: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
     assert.notStrictEqual(result.rationalThetaOffsetPolar.shapeLabel, 'limacon - inner loop', `theta-offset rational implicit polar form should not be classified as limacon-inner-loop: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
 
