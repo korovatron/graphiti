@@ -2282,6 +2282,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(productRoseCircleFunc);
         await graphiti.plotFunction(productRoseCircleFunc);
 
+        const rationalHolePolarFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '(r-(2+cos(theta)))/(theta-pi/3)=0',
+            points: [],
+            color: '#3949AB',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(rationalHolePolarFunc);
+        await graphiti.plotFunction(rationalHolePolarFunc);
+
         const inequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-(1+cos(t))<0',
@@ -2640,6 +2651,28 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                     return shape && shape.label ? shape.label : null;
                 })()
             },
+            rationalHolePolar: (() => {
+                const holes = Array.isArray(rationalHolePolarFunc.holes) ? rationalHolePolarFunc.holes : [];
+                const holeDisplay = graphiti.buildHoleDisplayLatex(rationalHolePolarFunc);
+                const expectedTheta = Math.PI / 3;
+                const expectedR = 2 + Math.cos(expectedTheta);
+                const expectedPoint = {
+                    x: expectedR * Math.cos(expectedTheta),
+                    y: expectedR * Math.sin(expectedTheta)
+                };
+                const nearestHoleDistance = holes.length > 0
+                    ? Math.min(...holes
+                        .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+                        .map(hole => Math.hypot(hole.x - expectedPoint.x, hole.y - expectedPoint.y)))
+                    : Infinity;
+
+                return {
+                    renderMode: rationalHolePolarFunc.implicitRenderMode || null,
+                    holeCount: holes.length,
+                    nearestHoleDistance,
+                    firstHoleDisplay: Array.isArray(holeDisplay) && holeDisplay.length > 0 ? holeDisplay[0] : ''
+                };
+            })(),
             inequality: {
                 detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
                 renderMode: inequalityFunc.implicitRenderMode || null,
@@ -2737,6 +2770,11 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.productRoseCircle.renderMode, 'product-factors', `product rose+circle should use product-factors render mode: ${JSON.stringify(result.productRoseCircle)}`);
     assert.strictEqual(result.productRoseCircle.factorCount, 2, `product rose+circle should expose both factors: ${JSON.stringify(result.productRoseCircle)}`);
     assert.strictEqual(result.productRoseCircle.shapeLabel, 'rose curve - 3 petals + circle', `product rose+circle should classify both components: ${JSON.stringify(result.productRoseCircle)}`);
+
+    assert.strictEqual(result.rationalHolePolar.renderMode, 'affine-polar-explicit', `implicit polar rational-hole form should stay on affine fast-path: ${JSON.stringify(result.rationalHolePolar)}`);
+    assert(result.rationalHolePolar.holeCount >= 1, `implicit polar rational-hole form should expose removable hole metadata: ${JSON.stringify(result.rationalHolePolar)}`);
+    assert(result.rationalHolePolar.nearestHoleDistance < 0.25, `implicit polar rational-hole form should place a hole near the expected removable point: ${JSON.stringify(result.rationalHolePolar)}`);
+    assert(result.rationalHolePolar.firstHoleDisplay.includes('\\left(') && result.rationalHolePolar.firstHoleDisplay.includes('\\pi'), `implicit polar hole metadata should display polar coordinates and pi fractions: ${JSON.stringify(result.rationalHolePolar)}`);
 
     assert.strictEqual(result.inequality.detectedType, 'implicit-inequality', `implicit polar inequality should be detected as implicit-inequality: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);

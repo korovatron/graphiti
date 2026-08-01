@@ -4250,7 +4250,11 @@ class Graphiti {
         // Route to appropriate plotting method based on mode and function type
         if (this.plotMode === 'polar') {
             const functionType = this.detectFunctionType(func.expression);
-            this.clearFunctionAsymptoteData(func);
+            const preservePolarFastPathMetadata = this.isExplicitImplicitFastPath(func) &&
+                (this.isViewportChanging || func._preserveFastPathMetadataDuringViewportRefresh);
+            if (!preservePolarFastPathMetadata) {
+                this.clearFunctionAsymptoteData(func);
+            }
             if ((functionType === 'implicit' || functionType === 'implicit-inequality') &&
                 this.isPolarImplicitExpression(func.expression)) {
                 await this.plotImplicitPolarFunction(func, false, this.isStartup);
@@ -5524,54 +5528,73 @@ class Graphiti {
                     }
                 }
 
-                const affinePolarModel = this.tryBuildAffinePolarImplicitModel(equation);
-                if (affinePolarModel) {
-                    const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
-                    if (handled) {
-                        if (!suppressDraw) {
-                            this.draw();
-                        }
-                        this.activeImplicitCalculations.delete(func.id);
+                const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(equation);
+                const fastPathEquations = denominatorClearedEquation
+                    ? [denominatorClearedEquation, equation]
+                    : [equation];
 
-                        if (this.performance.enabled) {
-                            const elapsed = performance.now() - startTime;
-                            this.performance.plotTimes.set(func.id, elapsed);
+                for (const candidateEquation of fastPathEquations) {
+                    const affinePolarModel = this.tryBuildAffinePolarImplicitModel(candidateEquation);
+                    if (affinePolarModel) {
+                        this.applyDenominatorClearedDomainExclusions(affinePolarModel, candidateEquation);
+                        const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            this.addPolarDenominatorClearedHolesForExpressions(func, [affinePolarModel.explicitExpression], candidateEquation);
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!suppressDraw) {
+                                this.draw();
+                            }
+                            this.activeImplicitCalculations.delete(func.id);
+
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
                         }
-                        return;
                     }
-                }
 
-                const quadraticPolarModel = this.tryBuildQuadraticPolarImplicitModel(equation);
-                if (quadraticPolarModel) {
-                    const handled = await this.plotImplicitPolarQuadraticAsExplicit(func, quadraticPolarModel);
-                    if (handled) {
-                        if (!suppressDraw) {
-                            this.draw();
-                        }
-                        this.activeImplicitCalculations.delete(func.id);
+                    const quadraticPolarModel = this.tryBuildQuadraticPolarImplicitModel(candidateEquation);
+                    if (quadraticPolarModel) {
+                        this.applyDenominatorClearedDomainExclusions(quadraticPolarModel, candidateEquation);
+                        const handled = await this.plotImplicitPolarQuadraticAsExplicit(func, quadraticPolarModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            this.addPolarDenominatorClearedHolesForExpressions(func, quadraticPolarModel.branchExpressions, candidateEquation);
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!suppressDraw) {
+                                this.draw();
+                            }
+                            this.activeImplicitCalculations.delete(func.id);
 
-                        if (this.performance.enabled) {
-                            const elapsed = performance.now() - startTime;
-                            this.performance.plotTimes.set(func.id, elapsed);
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
                         }
-                        return;
                     }
-                }
 
-                const monomialPolarModel = this.tryBuildMonomialPolarImplicitModel(equation);
-                if (monomialPolarModel) {
-                    const handled = await this.plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel);
-                    if (handled) {
-                        if (!suppressDraw) {
-                            this.draw();
-                        }
-                        this.activeImplicitCalculations.delete(func.id);
+                    const monomialPolarModel = this.tryBuildMonomialPolarImplicitModel(candidateEquation);
+                    if (monomialPolarModel) {
+                        this.applyDenominatorClearedDomainExclusions(monomialPolarModel, candidateEquation);
+                        const handled = await this.plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel);
+                        if (handled) {
+                            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+                            this.addPolarDenominatorClearedHolesForExpressions(func, monomialPolarModel.branchExpressions, candidateEquation);
+                            this.applyImplicitFunctionPoints(func, func.points || []);
+                            if (!suppressDraw) {
+                                this.draw();
+                            }
+                            this.activeImplicitCalculations.delete(func.id);
 
-                        if (this.performance.enabled) {
-                            const elapsed = performance.now() - startTime;
-                            this.performance.plotTimes.set(func.id, elapsed);
+                            if (this.performance.enabled) {
+                                const elapsed = performance.now() - startTime;
+                                this.performance.plotTimes.set(func.id, elapsed);
+                            }
+                            return;
                         }
-                        return;
                     }
                 }
             }
@@ -9886,6 +9909,7 @@ class Graphiti {
             leftExpression: clearedLeft,
             rightExpression: clearedRight,
             denominatorClearedFromEquation: {
+                coordinateSystem: equation.coordinateSystem === 'polar' ? 'polar' : 'cartesian',
                 leftExpression: equation.leftExpression,
                 rightExpression: equation.rightExpression,
                 denominators,
@@ -9893,6 +9917,65 @@ class Graphiti {
                 pointFilterRequired
             }
         };
+    }
+
+    buildPolarDenominatorClearedImplicitEquation(equation) {
+        const clearedEquation = this.buildDenominatorClearedImplicitEquation(equation);
+        if (!clearedEquation || !clearedEquation.denominatorClearedFromEquation) {
+            return clearedEquation;
+        }
+
+        const metadata = clearedEquation.denominatorClearedFromEquation;
+        metadata.coordinateSystem = 'polar';
+        const denominators = Array.isArray(metadata.denominators) ? metadata.denominators : [];
+        if (denominators.length === 0) {
+            metadata.domainExclusionsTheta = [];
+            return clearedEquation;
+        }
+
+        const thetaMin = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+        const thetaMax = Number.isFinite(this.polarSettings.thetaMax) && this.polarSettings.thetaMax > thetaMin
+            ? this.polarSettings.thetaMax
+            : thetaMin + (2 * Math.PI);
+        const domainExclusionsTheta = [];
+        const addThetaExclusion = (value) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            if (value < thetaMin - 1e-8 || value > thetaMax + 1e-8) {
+                return;
+            }
+            if (!domainExclusionsTheta.some(existing => Math.abs(existing - value) <= 1e-6)) {
+                domainExclusionsTheta.push(value);
+            }
+        };
+
+        for (const denominator of denominators) {
+            if (typeof denominator !== 'string' || !denominator.trim()) {
+                continue;
+            }
+
+            // Theta-only denominator factors define removable exclusions in polar angle.
+            if (/\br\b/i.test(denominator)) {
+                continue;
+            }
+            if (!/\btheta\b|\bt\b|θ/i.test(denominator)) {
+                continue;
+            }
+
+            const thetaAsXExpression = denominator
+                .replace(/θ/g, 'x')
+                .replace(/\btheta\b/gi, 'x')
+                .replace(/\bt\b/g, 'x');
+            const roots = this.findExpressionRealRoots(thetaAsXExpression, thetaMin, thetaMax);
+            for (const root of roots) {
+                addThetaExclusion(root);
+            }
+        }
+
+        domainExclusionsTheta.sort((a, b) => a - b);
+        metadata.domainExclusionsTheta = domainExclusionsTheta;
+        return clearedEquation;
     }
 
     isDenominatorClearedPointFilterRequired(clearedLeft, clearedRight, denominators = []) {
@@ -10044,10 +10127,12 @@ class Graphiti {
             return points;
         }
 
-        // If denominator clearing introduced no real-domain exclusions,
-        // the transformed equation is equivalent in the real plane and
-        // residual-based point pruning only removes valid marching samples.
-        if (!Array.isArray(metadata.domainExclusions) || metadata.domainExclusions.length === 0) {
+        const coordinateSystem = metadata.coordinateSystem === 'polar' ? 'polar' : 'cartesian';
+        const hasDomainExclusions = Array.isArray(metadata.domainExclusions) && metadata.domainExclusions.length > 0;
+        const hasThetaExclusions = Array.isArray(metadata.domainExclusionsTheta) && metadata.domainExclusionsTheta.length > 0;
+
+        // For Cartesian marching samples, avoid residual pruning when no exclusions were introduced.
+        if (coordinateSystem !== 'polar' && !hasDomainExclusions) {
             return points;
         }
 
@@ -10060,8 +10145,10 @@ class Graphiti {
             return points;
         }
 
-        const scope = this.getEvaluationScope({ x: 0, y: 0, pi: Math.PI, e: Math.E });
+        const scope = this.getEvaluationScope({ x: 0, y: 0, r: 0, theta: 0, t: 0, pi: Math.PI, e: Math.E });
         const filteredPoints = [];
+        const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax));
+        const thetaExclusionTolerance = Math.max(thetaStep * 0.6, 1e-4);
         for (const point of points) {
             if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                 filteredPoints.push({ x: NaN, y: NaN, connected: false });
@@ -10075,6 +10162,27 @@ class Graphiti {
 
             scope.x = point.x;
             scope.y = point.y;
+
+            if (coordinateSystem === 'polar') {
+                let thetaValue = Number.isFinite(point.theta)
+                    ? point.theta
+                    : this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+                if (!Number.isFinite(thetaValue)) {
+                    filteredPoints.push({ x: NaN, y: NaN, connected: false });
+                    continue;
+                }
+
+                if (hasThetaExclusions && metadata.domainExclusionsTheta.some(exclusion => Math.abs(exclusion - thetaValue) <= thetaExclusionTolerance)) {
+                    filteredPoints.push({ x: NaN, y: NaN, connected: false });
+                    continue;
+                }
+
+                const radiusValue = Math.hypot(point.x, point.y);
+                scope.r = radiusValue;
+                scope.theta = thetaValue;
+                scope.t = thetaValue;
+            }
+
             let keepPoint = false;
             try {
                 const leftValue = leftCompiled.evaluate(scope);
@@ -10096,6 +10204,77 @@ class Graphiti {
         }
 
         return filteredPoints;
+    }
+
+    addPolarDenominatorClearedHolesForExpressions(func, explicitExpressions, equation) {
+        const metadata = equation && equation.denominatorClearedFromEquation;
+        if (!func || !metadata || metadata.coordinateSystem !== 'polar') {
+            return;
+        }
+
+        const thetaExclusions = Array.isArray(metadata.domainExclusionsTheta)
+            ? metadata.domainExclusionsTheta.filter(value => Number.isFinite(value))
+            : [];
+        if (thetaExclusions.length === 0 || !Array.isArray(explicitExpressions) || explicitExpressions.length === 0) {
+            return;
+        }
+
+        const holes = Array.isArray(func.holes) ? func.holes.map(hole => ({ ...hole })) : [];
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const addHole = (x, y) => {
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return;
+            }
+            if (!holes.some(existing => Math.abs(existing.x - x) <= 1e-5 && Math.abs(existing.y - y) <= 1e-5)) {
+                holes.push({ x, y });
+            }
+        };
+
+        for (const expressionRaw of explicitExpressions) {
+            if (typeof expressionRaw !== 'string' || !expressionRaw.trim()) {
+                continue;
+            }
+
+            let expression = expressionRaw.toLowerCase();
+            expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+            let compiled;
+            try {
+                compiled = this.getCompiledExpression(expression);
+            } catch {
+                continue;
+            }
+
+            for (const thetaValue of thetaExclusions) {
+                scope.theta = thetaValue;
+                scope.t = thetaValue;
+                let r;
+                try {
+                    r = compiled.evaluate(scope);
+                } catch {
+                    continue;
+                }
+
+                if (!Number.isFinite(r)) {
+                    continue;
+                }
+
+                let adjustedTheta = thetaValue;
+                if (r < 0) {
+                    if (!this.polarSettings.plotNegativeR) {
+                        continue;
+                    }
+                    r = Math.abs(r);
+                    adjustedTheta += Math.PI;
+                }
+
+                addHole(r * Math.cos(adjustedTheta), r * Math.sin(adjustedTheta));
+            }
+        }
+
+        func.holes = holes;
+        this.updateFunctionAsymptoteInfo(func);
     }
 
     findExpressionRealRoots(expression, rangeMin = -256, rangeMax = 256) {
@@ -21296,16 +21475,25 @@ class Graphiti {
             return [];
         }
 
+        const isPolarDisplay = this.plotMode === 'polar' || (func && func.mode === 'polar');
         const sorted = holes
             .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
             .slice()
-            .sort((a, b) => a.x - b.x);
+            .sort((a, b) => a.x - b.x || a.y - b.y);
 
         const coordinates = [];
         for (const hole of sorted) {
-            const xLatex = this.formatAsymptoteCoefficientLatex(hole.x);
-            const yLatex = this.formatAsymptoteCoefficientLatex(hole.y);
-            coordinates.push(`\\left(${xLatex}, ${yLatex}\\right)`);
+            if (isPolarDisplay) {
+                const rValue = Math.hypot(hole.x, hole.y);
+                const thetaValue = this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(hole.y, hole.x));
+                const rLatex = this.formatAsymptoteCoefficientLatex(rValue);
+                const thetaLatex = this.formatAsymptoteCoefficientLatex(thetaValue);
+                coordinates.push(`\\left(${rLatex}, ${thetaLatex}\\right)`);
+            } else {
+                const xLatex = this.formatAsymptoteCoefficientLatex(hole.x);
+                const yLatex = this.formatAsymptoteCoefficientLatex(hole.y);
+                coordinates.push(`\\left(${xLatex}, ${yLatex}\\right)`);
+            }
         }
 
         return coordinates;
