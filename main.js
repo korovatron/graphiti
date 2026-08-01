@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.64';
+const VERSION = '1.3.65';
 
 class Graphiti {
     constructor() {
@@ -5432,7 +5432,9 @@ class Graphiti {
             let startY = null;
             let startTheta = null;
             let hasValidStart = false;
-            const shouldAutoStopOnLoopCompletion = !func || func._disablePolarLoopAutoStop !== true;
+            const shouldAutoStopOnLoopCompletion =
+                (!func || func._disablePolarLoopAutoStop !== true) &&
+                polarRayAsymptotes.length === 0;
             const completionThreshold = 0.01; // Distance threshold to detect curve completion
             let minThetaForCompletion = thetaMin + Math.PI / 4; // Don't check for completion too early
             const minThetaRange = Math.PI; // Require at least π radians of travel before checking completion

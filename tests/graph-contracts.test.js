@@ -1824,6 +1824,7 @@ async function assertPolarThetaRangeErrorRecovery(page) {
         graphiti.polarSettings.thetaMax = 2 * Math.PI;
         graphiti.polarSettings.thetaMinLatex = '0';
         graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+        graphiti.polarSettings.plotNegativeR = true;
 
         const thetaMinInput = document.getElementById('theta-min');
         const thetaMaxInput = document.getElementById('theta-max');
@@ -2118,6 +2119,12 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             ? asymptoticFunc.asymptoteData.vertical.slice()
             : [];
         const asymptoticDisplay = graphiti.buildAsymptoteDisplayLatex(asymptoticFunc);
+        const asymptoticMaxTheta = (() => {
+            const finiteTheta = (asymptoticFunc.points || [])
+                .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.theta))
+                .map(point => point.theta);
+            return finiteTheta.length > 0 ? Math.max(...finiteTheta) : null;
+        })();
         const asymptoticConnectedStraddleCount = (() => {
             const points = Array.isArray(asymptoticFunc.points) ? asymptoticFunc.points : [];
             const rays = asymptoticRays.filter(Number.isFinite);
@@ -2257,6 +2264,7 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             asymptoticRays,
             asymptoticVertical,
             asymptoticDisplay,
+            asymptoticMaxTheta,
             asymptoticBridgeSegments,
             asymptoticConnectedStraddleCount,
             boundedRays,
@@ -2295,6 +2303,10 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.asymptoticDisplay.some(equation => /\\theta\s*=/.test(equation)),
         false,
         `explicit polar reciprocal should not render theta-only asymptote metadata once line asymptote is inferred: ${JSON.stringify(result)}`
+    );
+    assert(
+        Number.isFinite(result.asymptoticMaxTheta) && result.asymptoticMaxTheta >= (2 * Math.PI) - 0.1,
+        `explicit polar reciprocal should remain plotted across full theta range with negative r enabled: ${JSON.stringify(result)}`
     );
     assert.strictEqual(
         result.boundedRays.length,
