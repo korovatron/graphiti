@@ -2196,12 +2196,30 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             ? boundedFunc.asymptoteData.polarRays.slice()
             : [];
 
+        graphiti.polarSettings.thetaMax = 8 * Math.PI;
+        graphiti.polarSettings.thetaMaxLatex = '8\\pi';
+        const periodicExpr = 'r=\\frac{1}{\\cos(\\theta)-\\sin(\\theta)}';
+        graphiti.addFunction(periodicExpr);
+        const periodicFunc = graphiti.polarFunctions[2];
+        await graphiti.plotFunction(periodicFunc);
+
+        const periodicRays = periodicFunc.asymptoteData && Array.isArray(periodicFunc.asymptoteData.polarRays)
+            ? periodicFunc.asymptoteData.polarRays.slice()
+            : [];
+        const periodicDisplay = graphiti.buildAsymptoteDisplayLatex(periodicFunc);
+        const periodicThetaEquations = periodicDisplay.filter(equation => /\\theta\s*=/.test(equation));
+        const periodicGeneralEquation = periodicThetaEquations.find(equation => /\bn\b/.test(equation)) || null;
+
         return {
             asymptoticRays,
             asymptoticDisplay,
             asymptoticBridgeSegments,
             asymptoticConnectedStraddleCount,
             boundedRays,
+            periodicRays,
+            periodicDisplay,
+            periodicThetaEquationCount: periodicThetaEquations.length,
+            periodicGeneralEquation,
             asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
         };
@@ -2229,6 +2247,19 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.asymptoticConnectedStraddleCount,
         0,
         `polar asymptote plotting should split any segment that straddles a detected asymptote theta: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.periodicRays.length >= 4,
+        `periodic polar reciprocal should detect multiple asymptote rays in extended theta range: ${JSON.stringify(result)}`
+    );
+    assert(
+        typeof result.periodicGeneralEquation === 'string' && /\\theta\s*=/.test(result.periodicGeneralEquation),
+        `periodic polar asymptotes should display in general form with n, matching cartesian style: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.periodicThetaEquationCount,
+        1,
+        `periodic polar asymptote metadata should show one general theta equation instead of enumerating each instance: ${JSON.stringify(result)}`
     );
     assert(
         result.asymptoticFinitePoints > 80,

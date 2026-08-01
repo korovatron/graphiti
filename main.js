@@ -19171,9 +19171,13 @@ class Graphiti {
         const obliqueLines = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
         const curvedAsymptotes = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
         const polarRays = Array.isArray(asymptoteData.polarRays) ? asymptoteData.polarRays.slice().sort((a, b) => a - b) : [];
-
-        for (const theta of polarRays) {
-            equations.push(`\\theta = ${this.formatAsymptoteCoefficientLatex(theta)}`);
+        const periodicPolarRayEquation = this.formatPeriodicPolarRayAsymptoteLatex(polarRays);
+        if (periodicPolarRayEquation) {
+            equations.push(periodicPolarRayEquation);
+        } else {
+            for (const theta of polarRays) {
+                equations.push(`\\theta = ${this.formatAsymptoteCoefficientLatex(theta)}`);
+            }
         }
 
         const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
@@ -21981,6 +21985,49 @@ class Graphiti {
 
         const offsetLatex = this.formatAsymptoteCoefficientLatex(offset);
         return `x = ${offsetLatex} + ${periodLatex} n`;
+    }
+
+    formatPeriodicPolarRayAsymptoteLatex(values) {
+        if (!Array.isArray(values) || values.length < 2) {
+            return null;
+        }
+
+        const sorted = values.slice().sort((a, b) => a - b).filter(value => Number.isFinite(value));
+        if (sorted.length < 2) {
+            return null;
+        }
+
+        const differences = [];
+        for (let i = 1; i < sorted.length; i++) {
+            differences.push(sorted[i] - sorted[i - 1]);
+        }
+
+        const averageDifference = differences.reduce((sum, value) => sum + value, 0) / differences.length;
+        if (!Number.isFinite(averageDifference) || Math.abs(averageDifference) < 1e-12) {
+            return null;
+        }
+
+        // Polar ray singularities are detected numerically, so use a looser
+        // spacing tolerance than cartesian symbolic periodic forms.
+        const spacingTolerance = Math.max(0.01, Math.abs(averageDifference) * 5e-3);
+        const consistent = differences.every(difference => Math.abs(difference - averageDifference) <= spacingTolerance);
+        if (!consistent) {
+            return null;
+        }
+
+        const period = Math.abs(averageDifference);
+        const offset = this.modPositive(sorted[0], period);
+        const periodLatex = this.formatAsymptoteCoefficientLatex(period);
+        if (!periodLatex) {
+            return null;
+        }
+
+        if (Math.abs(offset) < 1e-6 || Math.abs(offset - period) < 1e-6) {
+            return `\\theta = ${periodLatex} n`;
+        }
+
+        const offsetLatex = this.formatAsymptoteCoefficientLatex(offset);
+        return `\\theta = ${offsetLatex} + ${periodLatex} n`;
     }
 
     modPositive(value, modulus) {
