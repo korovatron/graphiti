@@ -1882,6 +1882,216 @@ async function assertPolarThetaRangeErrorRecovery(page) {
     assert(result.finitePointCount > 100, `polar replot should recover with substantial finite points after correction: ${JSON.stringify(result)}`);
 }
 
+async function assertPolarThetaRangeRestoreUsesSavedMaxUnlessInterrupted(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const staleBounds = {
+            thetaMin: '0',
+            thetaMax: String(4 * Math.PI),
+            thetaMinLatex: '0',
+            thetaMaxLatex: '4\\pi',
+            angleMode: 'radians',
+            storedThetaMax: String(2 * Math.PI)
+        };
+
+        localStorage.setItem('graphiti_polar_bounds', JSON.stringify(staleBounds));
+        graphiti.loadAndApplyViewportBounds();
+
+        graphiti.addFunction('r=theta');
+        await graphiti.plotFunction(graphiti.polarFunctions[0]);
+
+        const staleCaseMaxRadius = graphiti.polarFunctions[0].points
+            .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+            .reduce((maxRadius, point) => {
+                const radius = Math.hypot(point.x, point.y);
+                return Number.isFinite(radius) && radius > maxRadius ? radius : maxRadius;
+            }, 0);
+
+        const staleCase = {
+            thetaMax: graphiti.polarSettings.thetaMax,
+            thetaMaxLatex: graphiti.polarSettings.thetaMaxLatex,
+            maxRadius: staleCaseMaxRadius
+        };
+
+        // Simulate an interrupted animation save where thetaMax is mid-run but
+        // storedThetaMax preserves the original larger user range.
+        const interruptedBounds = {
+            thetaMin: '0',
+            thetaMax: String(2 * Math.PI),
+            thetaMinLatex: '0',
+            thetaMaxLatex: '2\\pi',
+            angleMode: 'radians',
+            storedThetaMax: String(4 * Math.PI)
+        };
+
+        localStorage.setItem('graphiti_polar_bounds', JSON.stringify(interruptedBounds));
+        graphiti.loadAndApplyViewportBounds();
+
+        return {
+            staleCase,
+            interruptedCaseThetaMax: graphiti.polarSettings.thetaMax
+        };
+    });
+
+    assert(
+        approxEqual(result.staleCase.thetaMax, 4 * Math.PI, 1e-9),
+        `stale smaller storedThetaMax must not override saved thetaMax: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.staleCase.thetaMaxLatex,
+        '4\\pi',
+        `theta max latex should remain aligned with restored saved range: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.staleCase.maxRadius > 10,
+        `first polar plot after restore should reflect 4pi range (expected max radius > 10): ${JSON.stringify(result)}`
+    );
+    assert(
+        approxEqual(result.interruptedCaseThetaMax, 4 * Math.PI, 1e-9),
+        `larger storedThetaMax should still restore interrupted animation range: ${JSON.stringify(result)}`
+    );
+}
+
+async function assertImplicitPolarAnimationReplotStaysConsistent(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.showTurningPoints = true;
+        graphiti.polarSettings.plotNegativeR = true;
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+
+        const expression = '\\frac{r-2\\cos\\left(\\theta\\right)}{\\theta-\\frac{\\pi}{2}}=1';
+        graphiti.addFunction(expression);
+        const func = graphiti.polarFunctions[0];
+        await graphiti.plotFunction(func);
+
+        const equation = graphiti.parseImplicitEquation(expression);
+        const polarEquation = equation ? { ...equation, coordinateSystem: 'polar' } : null;
+
+        const finitePoints = () => (Array.isArray(func.points)
+            ? func.points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+            : []);
+
+        const computeMaxResidual = () => {
+            if (!polarEquation) {
+                return NaN;
+            }
+
+            let maxResidual = 0;
+            for (const point of finitePoints()) {
+                const value = graphiti.evaluateImplicitEquation(polarEquation, point.x, point.y);
+                if (!Number.isFinite(value)) {
+                    continue;
+                }
+                const residual = Math.abs(value);
+                if (residual > maxResidual) {
+                    maxResidual = residual;
+                }
+            }
+            return maxResidual;
+        };
+
+        const nearestDistanceToCurvePixels = (x, y) => {
+            const points = Array.isArray(func.displayPoints) && func.displayPoints.length > 0
+                ? func.displayPoints
+                : (Array.isArray(func.points) ? func.points : []);
+            if (points.length < 2) {
+                return Infinity;
+            }
+
+            const target = graphiti.worldToScreen(x, y);
+            let best = Infinity;
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                if (!p1 || !p2 || !Number.isFinite(p1.x) || !Number.isFinite(p1.y) || !Number.isFinite(p2.x) || !Number.isFinite(p2.y)) {
+                    continue;
+                }
+                if (p2.connected === false) {
+                    continue;
+                }
+
+                const nearest = graphiti.closestPointOnSegment(p1.x, p1.y, p2.x, p2.y, target.x, target.y);
+                if (nearest && Number.isFinite(nearest.distance) && nearest.distance < best) {
+                    best = nearest.distance;
+                }
+            }
+
+            return best;
+        };
+
+        const collectRadialTurningDistances = () => {
+            const points = graphiti.findTurningPoints().filter(point =>
+                point && point.func && point.func.id === func.id &&
+                (point.type === 'radialMinimum' || point.type === 'radialMaximum' || point.type === 'polarStationary')
+            );
+
+            return points.map(point => ({
+                type: point.type,
+                distancePx: nearestDistanceToCurvePixels(point.x, point.y)
+            }));
+        };
+
+        const residualBefore = computeMaxResidual();
+        const finitePointCountBefore = finitePoints().length;
+        const turningDistancesBefore = collectRadialTurningDistances();
+
+        graphiti.replotAllPolarFunctions();
+
+        const residualAfterReplot = computeMaxResidual();
+        const finitePointCountAfterReplot = finitePoints().length;
+        const turningDistancesAfter = collectRadialTurningDistances();
+
+        return {
+            residualBefore,
+            residualAfterReplot,
+            finitePointCountBefore,
+            finitePointCountAfterReplot,
+            turningDistancesBefore,
+            turningDistancesAfter
+        };
+    });
+
+    assert(
+        Number.isFinite(result.residualAfterReplot),
+        `implicit polar replot residual should be finite: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.residualAfterReplot <= 5e-3,
+        `implicit polar cached replot should preserve denominator-cleared filtering (residual too large): ${JSON.stringify(result)}`
+    );
+    assert(
+        Math.abs(result.finitePointCountAfterReplot - result.finitePointCountBefore) <= 40,
+        `implicit polar cached replot should keep similar visible geometry density: ${JSON.stringify(result)}`
+    );
+
+    for (const turningPoint of result.turningDistancesBefore) {
+        assert(
+            Number.isFinite(turningPoint.distancePx) && turningPoint.distancePx <= 20,
+            `polar turning point badge should stay near rendered curve before replot: ${JSON.stringify(result)}`
+        );
+    }
+    for (const turningPoint of result.turningDistancesAfter) {
+        assert(
+            Number.isFinite(turningPoint.distancePx) && turningPoint.distancePx <= 20,
+            `polar turning point badge should stay near rendered curve after replot: ${JSON.stringify(result)}`
+        );
+    }
+}
+
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     const cases = [
         '\\frac13y^2x=0',
@@ -2293,6 +2503,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(rationalHolePolarFunc);
         await graphiti.plotFunction(rationalHolePolarFunc);
 
+        const rationalThetaOffsetPolarFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '(r-2*cos(theta))/(theta-pi/2)=1',
+            points: [],
+            color: '#8E24AA',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(rationalThetaOffsetPolarFunc);
+        await graphiti.plotFunction(rationalThetaOffsetPolarFunc);
+
         const inequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-(1+cos(t))<0',
@@ -2673,6 +2894,23 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                     firstHoleDisplay: Array.isArray(holeDisplay) && holeDisplay.length > 0 ? holeDisplay[0] : ''
                 };
             })(),
+            rationalThetaOffsetPolar: (() => {
+                const holes = Array.isArray(rationalThetaOffsetPolarFunc.holes) ? rationalThetaOffsetPolarFunc.holes : [];
+                const shape = graphiti.classifyFunctionShape(rationalThetaOffsetPolarFunc);
+                const expectedPoint = { x: 0, y: 0 };
+                const nearestHoleDistance = holes.length > 0
+                    ? Math.min(...holes
+                        .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+                        .map(hole => Math.hypot(hole.x - expectedPoint.x, hole.y - expectedPoint.y)))
+                    : Infinity;
+
+                return {
+                    renderMode: rationalThetaOffsetPolarFunc.implicitRenderMode || null,
+                    holeCount: holes.length,
+                    nearestHoleDistance,
+                    shapeLabel: shape && shape.label ? shape.label : null
+                };
+            })(),
             inequality: {
                 detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
                 renderMode: inequalityFunc.implicitRenderMode || null,
@@ -2775,6 +3013,12 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert(result.rationalHolePolar.holeCount >= 1, `implicit polar rational-hole form should expose removable hole metadata: ${JSON.stringify(result.rationalHolePolar)}`);
     assert(result.rationalHolePolar.nearestHoleDistance < 0.25, `implicit polar rational-hole form should place a hole near the expected removable point: ${JSON.stringify(result.rationalHolePolar)}`);
     assert(result.rationalHolePolar.firstHoleDisplay.includes('\\left(') && result.rationalHolePolar.firstHoleDisplay.includes('\\pi'), `implicit polar hole metadata should display polar coordinates and pi fractions: ${JSON.stringify(result.rationalHolePolar)}`);
+
+    assert.strictEqual(result.rationalThetaOffsetPolar.renderMode, 'affine-polar-explicit', `theta-offset rational implicit polar form should stay on affine fast-path: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
+    assert(result.rationalThetaOffsetPolar.holeCount >= 1, `theta-offset rational implicit polar form should expose removable hole metadata at the excluded theta: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
+    assert(result.rationalThetaOffsetPolar.nearestHoleDistance < 0.2, `theta-offset rational implicit polar hole should sit at the expected origin point: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
+    assert.strictEqual(result.rationalThetaOffsetPolar.shapeLabel, 'modulated Archimedean spiral', `theta-offset rational implicit polar form should use the precise modulated-spiral label: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
+    assert.notStrictEqual(result.rationalThetaOffsetPolar.shapeLabel, 'limacon - inner loop', `theta-offset rational implicit polar form should not be classified as limacon-inner-loop: ${JSON.stringify(result.rationalThetaOffsetPolar)}`);
 
     assert.strictEqual(result.inequality.detectedType, 'implicit-inequality', `implicit polar inequality should be detected as implicit-inequality: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
@@ -5578,6 +5822,8 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertLegacyDerivativeCacheEntriesDoNotSuppressTurningPoints(page);
         await assertShapeClassification(page);
         await assertPolarThetaRangeErrorRecovery(page);
+        await assertPolarThetaRangeRestoreUsesSavedMaxUnlessInterrupted(page);
+        await assertImplicitPolarAnimationReplotStaysConsistent(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertInverseCubeRootImplicitPlotsAsCubic(page);

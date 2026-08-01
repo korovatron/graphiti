@@ -4141,22 +4141,22 @@ class Graphiti {
                     
                     if (!isNaN(thetaMin) && !isNaN(thetaMax) && thetaMin < thetaMax) {
                         this.polarSettings.thetaMin = thetaMin;
-                        
-                        // Restore storedThetaMax if available (preserves original range if animation was interrupted)
+
+                        // Restore storedThetaMax only when it plausibly reflects an interrupted
+                        // animation run. A stale smaller stored value can lag behind manual edits
+                        // and must not override the saved thetaMax.
+                        let restoredThetaMax = thetaMax;
                         if (bounds.storedThetaMax !== undefined && bounds.storedThetaMax !== 0) {
                             const storedMax = parseFloat(bounds.storedThetaMax);
                             if (!isNaN(storedMax) && storedMax > thetaMin) {
-                                // Use storedThetaMax as the actual thetaMax (original user-specified value)
-                                this.polarSettings.thetaMax = storedMax;
-                                this.polarAnimation.storedThetaMax = storedMax;
-                            } else {
-                                // Fallback to saved thetaMax if storedThetaMax is invalid
-                                this.polarSettings.thetaMax = thetaMax;
+                                const epsilon = 1e-9;
+                                if (storedMax >= (thetaMax - epsilon)) {
+                                    restoredThetaMax = storedMax;
+                                }
                             }
-                        } else {
-                            // No storedThetaMax saved (backward compatibility)
-                            this.polarSettings.thetaMax = thetaMax;
                         }
+                        this.polarSettings.thetaMax = restoredThetaMax;
+                        this.polarAnimation.storedThetaMax = restoredThetaMax;
                         
                         // Also restore polar viewport ranges if they exist
                         if (bounds.viewportMinX !== undefined && bounds.viewportMaxX !== undefined &&
@@ -5481,6 +5481,8 @@ class Graphiti {
         try {
             const suppressDraw = !!options.suppressDraw;
             const skipProductFactorFastPath = !!options.skipProductFactorFastPath;
+            // Reset per-function cached post-processing state; handled fast paths repopulate it.
+            delete func.polarFastPathPostProcess;
             const calculationId = ++this.implicitCalculationId;
             this.currentImplicitCalculations.set(func.id, calculationId);
             this.activeImplicitCalculations.add(func.id);
@@ -5541,6 +5543,7 @@ class Graphiti {
                         if (handled) {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, [affinePolarModel.explicitExpression], candidateEquation);
+                            this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, [affinePolarModel.explicitExpression]);
                             this.applyImplicitFunctionPoints(func, func.points || []);
                             if (!suppressDraw) {
                                 this.draw();
@@ -5562,6 +5565,7 @@ class Graphiti {
                         if (handled) {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, quadraticPolarModel.branchExpressions, candidateEquation);
+                            this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, quadraticPolarModel.branchExpressions);
                             this.applyImplicitFunctionPoints(func, func.points || []);
                             if (!suppressDraw) {
                                 this.draw();
@@ -5583,6 +5587,7 @@ class Graphiti {
                         if (handled) {
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, monomialPolarModel.branchExpressions, candidateEquation);
+                            this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, monomialPolarModel.branchExpressions);
                             this.applyImplicitFunctionPoints(func, func.points || []);
                             if (!suppressDraw) {
                                 this.draw();
@@ -7212,6 +7217,7 @@ class Graphiti {
                     clearAsymptoteData: false
                 });
                 if (handled) {
+                    this.reapplyImplicitPolarFastPathPostProcessing(func);
                     return;
                 }
             }
@@ -7223,6 +7229,7 @@ class Graphiti {
                     clearAsymptoteData: false
                 });
                 if (handled) {
+                    this.reapplyImplicitPolarFastPathPostProcessing(func);
                     return;
                 }
             }
@@ -7234,6 +7241,7 @@ class Graphiti {
                     clearAsymptoteData: false
                 });
                 if (handled) {
+                    this.reapplyImplicitPolarFastPathPostProcessing(func);
                     return;
                 }
             }
@@ -7250,6 +7258,7 @@ class Graphiti {
                         clearAsymptoteData: false
                     });
                     if (handled) {
+                        this.reapplyImplicitPolarFastPathPostProcessing(func);
                         if (cachedProductExpressions.length === 0) {
                             func.productPolarExplicitExpressions = expressionsToPlot.slice();
                         }
@@ -7262,6 +7271,78 @@ class Graphiti {
         
         // Redraw canvas
         this.draw();
+    }
+
+    cacheImplicitPolarFastPathPostProcess(func, equation, explicitExpressions = []) {
+        if (!func || !equation || !equation.denominatorClearedFromEquation) {
+            delete func.polarFastPathPostProcess;
+            return;
+        }
+
+        const metadata = equation.denominatorClearedFromEquation;
+        const domainExclusions = Array.isArray(metadata.domainExclusions)
+            ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        const thetaExclusions = Array.isArray(metadata.domainExclusionsTheta)
+            ? metadata.domainExclusionsTheta.filter(value => Number.isFinite(value))
+            : [];
+
+        // Skip per-frame post-processing if there are no exclusions and no residual pruning requirement.
+        if (domainExclusions.length === 0 && thetaExclusions.length === 0 && metadata.pointFilterRequired === false) {
+            delete func.polarFastPathPostProcess;
+            return;
+        }
+
+        const cachedEquation = {
+            leftExpression: equation.leftExpression,
+            rightExpression: equation.rightExpression,
+            denominatorClearedFromEquation: {
+                coordinateSystem: metadata.coordinateSystem || 'polar',
+                leftExpression: metadata.leftExpression,
+                rightExpression: metadata.rightExpression,
+                denominators: Array.isArray(metadata.denominators) ? metadata.denominators.slice() : [],
+                domainExclusions: domainExclusions.slice(),
+                domainExclusionsTheta: thetaExclusions.slice(),
+                pointFilterRequired: metadata.pointFilterRequired !== false
+            }
+        };
+
+        func.polarFastPathPostProcess = {
+            equations: [cachedEquation],
+            explicitExpressions: Array.isArray(explicitExpressions)
+                ? explicitExpressions.filter(expression => typeof expression === 'string' && expression.trim())
+                : []
+        };
+    }
+
+    reapplyImplicitPolarFastPathPostProcessing(func) {
+        if (!func || !func.expression || !Array.isArray(func.points) || func.points.length === 0) {
+            return;
+        }
+
+        const mode = func.implicitRenderMode;
+        const eligibleMode =
+            mode === 'affine-polar-explicit' ||
+            mode === 'quadratic-polar-explicit' ||
+            mode === 'monomial-polar-explicit' ||
+            mode === 'product-factors';
+        if (!eligibleMode) {
+            return;
+        }
+
+        const functionType = this.detectFunctionType(func.expression);
+        if (functionType !== 'implicit' && functionType !== 'implicit-inequality') {
+            return;
+        }
+
+        const postProcessState = func.polarFastPathPostProcess;
+        if (!postProcessState || !Array.isArray(postProcessState.equations) || postProcessState.equations.length === 0) {
+            return;
+        }
+
+        for (const candidateEquation of postProcessState.equations) {
+            this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
+        }
     }
 
     // ================================
@@ -20426,7 +20507,13 @@ class Graphiti {
             if (thetaTerms.length === 1 && trigTerms.length === 0 && constantTerms.length <= 1) {
                 return { label: 'Archimedean spiral', confidence: 'exact' };
             }
-            if (constantTerms.length === 1 && trigTerms.length === 1 && trigTerms[0].multiplier === 1) {
+            // Mixed theta + trig additive forms (e.g. r = theta + 2cos(theta)) are
+            // trig-modulated Archimedean spirals, not closed limacon/cardioid families.
+            if (thetaTerms.length >= 1 && trigTerms.length <= 1 && constantTerms.length <= 1) {
+                return { label: 'modulated Archimedean spiral', confidence: 'structural' };
+            }
+
+            if (thetaTerms.length === 0 && constantTerms.length === 1 && trigTerms.length === 1 && trigTerms[0].multiplier === 1) {
                 const a = Math.abs(constantTerms[0].coefficient);
                 const b = Math.abs(trigTerms[0].coefficient);
                 if (a <= 1e-9 || b <= 1e-9) {
@@ -26641,6 +26728,8 @@ class Graphiti {
             this.polarSettings.thetaMaxLatex = thetaMaxInput.getValue();
             this.polarSettings.thetaMin = thetaMin;
             this.polarSettings.thetaMax = thetaMax;
+            // Keep animation restore state aligned with user edits.
+            this.polarAnimation.storedThetaMax = thetaMax;
 
             this.saveViewportBounds();
             this.replotAllFunctions();
@@ -40061,6 +40150,14 @@ class Graphiti {
             }
             return collapsed;
         };
+
+        const filterPolarTurningPointsToRenderedCurve = (func, points) => {
+            if (!func || !Array.isArray(points) || points.length === 0) {
+                return [];
+            }
+
+            return points.filter(point => this.isPointNearRenderedFunctionCurve(func, point.x, point.y));
+        };
         
         for (const func of enabledFunctions) {
             try {
@@ -40207,7 +40304,8 @@ class Graphiti {
                     perFunctionTurningPoints.push(...expressionTurningPoints);
                 }
 
-                turningPoints.push(...collapseDuplicatePolarTurningPoints(perFunctionTurningPoints));
+                const collapsedPoints = collapseDuplicatePolarTurningPoints(perFunctionTurningPoints);
+                turningPoints.push(...filterPolarTurningPointsToRenderedCurve(func, collapsedPoints));
                 
             } catch (error) {
                 console.warn(`Could not find polar turning points for function ${func.expression}:`, error);
@@ -42410,6 +42508,7 @@ class Graphiti {
                 
                 // Convert theta to radians if in degree mode for coordinate conversion
                 const thetaForEval = this.angleMode === 'degrees' ? theta * Math.PI / 180 : theta;
+                const rawR = r;
                 
                 // Handle negative r values
                 let adjustedTheta = theta;
@@ -42433,11 +42532,22 @@ class Graphiti {
                 
                 // Only add if point is reasonable (not NaN, finite, etc.)
                 if (isFinite(x) && isFinite(y) && isFinite(r)) {
+                    let pointType = classifyPolarStationaryPoint(theta);
+                    // When a negative r branch is rendered using angle + pi, the visual
+                    // radial-distance extremum uses |r| and min/max labels should invert.
+                    if (this.polarSettings.plotNegativeR && rawR < 0) {
+                        if (pointType === 'radialMinimum') {
+                            pointType = 'radialMaximum';
+                        } else if (pointType === 'radialMaximum') {
+                            pointType = 'radialMinimum';
+                        }
+                    }
+
                     turningPoints.push({
                         x: x,
                         y: y,
                         func: func,
-                        type: classifyPolarStationaryPoint(theta),
+                        type: pointType,
                         theta: theta, // Store original theta
                         r: r,
                         derivative: derivativeStr
@@ -42450,6 +42560,44 @@ class Graphiti {
         }
         
         return collapseVisibleDuplicateStationaryPoints(turningPoints);
+    }
+
+    isPointNearRenderedFunctionCurve(func, worldX, worldY, maxScreenDistance = 16) {
+        if (!func || !Number.isFinite(worldX) || !Number.isFinite(worldY)) {
+            return false;
+        }
+
+        const pointsToUse = (Array.isArray(func.displayPoints) && func.displayPoints.length > 0)
+            ? func.displayPoints
+            : (Array.isArray(func.points) ? func.points : []);
+        if (pointsToUse.length < 2) {
+            return false;
+        }
+
+        const targetScreen = this.worldToScreen(worldX, worldY);
+        let bestDistance = Infinity;
+
+        for (let i = 0; i < pointsToUse.length - 1; i++) {
+            const p1 = pointsToUse[i];
+            const p2 = pointsToUse[i + 1];
+            if (!p1 || !p2 || !Number.isFinite(p1.x) || !Number.isFinite(p1.y) || !Number.isFinite(p2.x) || !Number.isFinite(p2.y)) {
+                continue;
+            }
+
+            if (p2.connected === false) {
+                continue;
+            }
+
+            const nearest = this.closestPointOnSegment(p1.x, p1.y, p2.x, p2.y, targetScreen.x, targetScreen.y);
+            if (nearest && Number.isFinite(nearest.distance)) {
+                bestDistance = Math.min(bestDistance, nearest.distance);
+                if (bestDistance <= maxScreenDistance) {
+                    return true;
+                }
+            }
+        }
+
+        return bestDistance <= maxScreenDistance;
     }
     
     findRootsInRange(expression, xMin, xMax, steps = 200) {
