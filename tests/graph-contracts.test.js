@@ -2437,6 +2437,67 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 (intercept.type === 'x-axis-positive' || intercept.type === 'x-axis-negative' ||
                     intercept.type === 'y-axis-positive' || intercept.type === 'y-axis-negative')
             ).length;
+
+        const implicitLimaconTraceProbe = (() => {
+            const probePoint = { x: 4, y: 0 };
+            const probeScreen = graphiti.worldToScreen(probePoint.x, probePoint.y);
+            const traced = graphiti.findClosestPolarPoint(implicitLimaconFunc, probeScreen.x, probeScreen.y, 24);
+            if (!traced) {
+                return {
+                    hasTheta: false,
+                    slopeFinite: false
+                };
+            }
+
+            const slopeData = graphiti.calculateSlopeAtPoint(
+                implicitLimaconFunc,
+                traced.worldX,
+                traced.worldY,
+                traced.theta,
+                null
+            );
+
+            return {
+                hasTheta: Number.isFinite(traced.theta),
+                slopeFinite: !!(slopeData && Number.isFinite(slopeData.slope))
+            };
+        })();
+
+        const implicitPolarDragConstraintProbe = (() => {
+            const savedDisplayPoints = implicitLimaconFunc.displayPoints;
+            implicitLimaconFunc.displayPoints = [];
+
+            const traced = graphiti.traceFunction(
+                implicitLimaconFunc,
+                123,
+                456,
+                0,
+                null,
+                0
+            );
+
+            implicitLimaconFunc.displayPoints = savedDisplayPoints;
+
+            if (!traced || !Number.isFinite(traced.x) || !Number.isFinite(traced.y) || !Number.isFinite(traced.theta)) {
+                return { staysOnCurve: false };
+            }
+
+            const compiled = graphiti.getPolarInterceptCompiledExpressions(
+                implicitLimaconFunc,
+                graphiti.detectFunctionType(implicitLimaconFunc.expression)
+            );
+            if (!Array.isArray(compiled) || compiled.length === 0) {
+                return { staysOnCurve: false };
+            }
+
+            const expectedPoint = graphiti.evaluatePolarPointAtTheta(compiled[0], traced.theta);
+            if (!expectedPoint || !Number.isFinite(expectedPoint.x) || !Number.isFinite(expectedPoint.y)) {
+                return { staysOnCurve: false };
+            }
+
+            const deviation = Math.hypot(traced.x - expectedPoint.x, traced.y - expectedPoint.y);
+            return { staysOnCurve: deviation <= 1e-3 };
+        })();
         const explicitRoseAnimationAfterPiA = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.2);
         const explicitRoseAnimationAfterPiB = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.4);
         let explicitRosePostPiMotion = null;
@@ -2531,7 +2592,10 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
             equivalentLimacons: {
                 explicitInterceptCount: countAxisInterceptsForFunction(explicitLimaconFunc.id),
                 implicitInterceptCount: countAxisInterceptsForFunction(implicitLimaconFunc.id),
-                implicitRenderMode: implicitLimaconFunc.implicitRenderMode || null
+                implicitRenderMode: implicitLimaconFunc.implicitRenderMode || null,
+                implicitTraceHasTheta: implicitLimaconTraceProbe.hasTheta,
+                implicitTraceSlopeFinite: implicitLimaconTraceProbe.slopeFinite,
+                implicitDragStaysOnCurve: implicitPolarDragConstraintProbe.staysOnCurve
             },
             implicitRoseAffine: {
                 detectedType: graphiti.detectFunctionType(implicitRoseAffineFunc.expression),
@@ -2617,6 +2681,9 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.equivalentLimacons.implicitRenderMode, 'affine-polar-explicit', `rearranged limacon should use affine polar fast-path: ${JSON.stringify(result.equivalentLimacons)}`);
     assert.strictEqual(result.equivalentLimacons.explicitInterceptCount, 4, `explicit limacon should report 4 axis intercepts: ${JSON.stringify(result.equivalentLimacons)}`);
     assert.strictEqual(result.equivalentLimacons.implicitInterceptCount, 4, `rearranged implicit limacon should report the same 4 axis intercepts: ${JSON.stringify(result.equivalentLimacons)}`);
+    assert.strictEqual(result.equivalentLimacons.implicitTraceHasTheta, true, `rearranged implicit limacon trace should preserve theta for badge cycling: ${JSON.stringify(result.equivalentLimacons)}`);
+    assert.strictEqual(result.equivalentLimacons.implicitTraceSlopeFinite, true, `rearranged implicit limacon trace should produce finite slope for tangent/normal transitions: ${JSON.stringify(result.equivalentLimacons)}`);
+    assert.strictEqual(result.equivalentLimacons.implicitDragStaysOnCurve, true, `rearranged implicit limacon drag should remain on-curve even with empty display buffer: ${JSON.stringify(result.equivalentLimacons)}`);
 
     assert.strictEqual(result.implicitRoseAffine.detectedType, 'implicit', `implicit affine rose should remain implicit in type detection: ${JSON.stringify(result.implicitRoseAffine)}`);
     assert.strictEqual(result.implicitRoseAffine.renderMode, 'affine-polar-explicit', `implicit affine rose should activate affine polar fast-path: ${JSON.stringify(result.implicitRoseAffine)}`);
