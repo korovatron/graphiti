@@ -2092,6 +2092,154 @@ async function assertImplicitPolarAnimationReplotStaysConsistent(page) {
     }
 }
 
+async function assertExplicitPolarSingularRayAsymptotes(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+
+        const asymptoticExpr = 'r=\\frac{1}{\\theta-\\frac{\\pi}{2}}';
+        graphiti.addFunction(asymptoticExpr);
+        const asymptoticFunc = graphiti.polarFunctions[0];
+        await graphiti.plotFunction(asymptoticFunc);
+
+        const asymptoticRays = asymptoticFunc.asymptoteData && Array.isArray(asymptoticFunc.asymptoteData.polarRays)
+            ? asymptoticFunc.asymptoteData.polarRays.slice()
+            : [];
+        const asymptoticDisplay = graphiti.buildAsymptoteDisplayLatex(asymptoticFunc);
+        const asymptoticConnectedStraddleCount = (() => {
+            const points = Array.isArray(asymptoticFunc.points) ? asymptoticFunc.points : [];
+            const rays = asymptoticRays.filter(Number.isFinite);
+            let count = 0;
+
+            for (let index = 1; index < points.length; index++) {
+                const previous = points[index - 1];
+                const current = points[index];
+                if (!previous || !current || previous.connected === false || current.connected === false) {
+                    continue;
+                }
+                if (!Number.isFinite(previous.x) || !Number.isFinite(previous.y) || !Number.isFinite(current.x) || !Number.isFinite(current.y)) {
+                    continue;
+                }
+                if (!Number.isFinite(previous.theta) || !Number.isFinite(current.theta)) {
+                    continue;
+                }
+
+                const minTheta = Math.min(previous.theta, current.theta);
+                const maxTheta = Math.max(previous.theta, current.theta);
+                if (rays.some(theta => {
+                    const prevOffset = previous.theta - theta;
+                    const currentOffset = current.theta - theta;
+                    return (prevOffset === 0 || currentOffset === 0 || (prevOffset * currentOffset) < 0) && maxTheta > minTheta;
+                })) {
+                    count++;
+                }
+            }
+
+            return count;
+        })();
+        const asymptoticBridgeSegments = (() => {
+            const points = Array.isArray(asymptoticFunc.points) ? asymptoticFunc.points : [];
+            let suspicious = 0;
+            const distanceToOriginFromSegment = (x1, y1, x2, y2) => {
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const lengthSq = (dx * dx) + (dy * dy);
+                if (!Number.isFinite(lengthSq) || lengthSq <= 1e-12) {
+                    return Math.hypot(x1, y1);
+                }
+                const t = Math.max(0, Math.min(1, -((x1 * dx) + (y1 * dy)) / lengthSq));
+                const px = x1 + (t * dx);
+                const py = y1 + (t * dy);
+                return Math.hypot(px, py);
+            };
+
+            for (let index = 1; index < points.length; index++) {
+                const previous = points[index - 1];
+                const current = points[index];
+                if (!previous || !current || current.connected === false || previous.connected === false) {
+                    continue;
+                }
+                if (!Number.isFinite(previous.x) || !Number.isFinite(previous.y) || !Number.isFinite(current.x) || !Number.isFinite(current.y)) {
+                    continue;
+                }
+
+                const previousRadius = Math.hypot(previous.x, previous.y);
+                const currentRadius = Math.hypot(current.x, current.y);
+                const segmentLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+                if (segmentLength < 3 || Math.min(previousRadius, currentRadius) < 1.5) {
+                    continue;
+                }
+
+                const nearestToOrigin = distanceToOriginFromSegment(previous.x, previous.y, current.x, current.y);
+                if (nearestToOrigin < 0.18) {
+                    suspicious++;
+                }
+            }
+
+            return suspicious;
+        })();
+
+        const boundedExpr = 'r=\\frac{\\theta-\\frac{\\pi}{2}}{\\theta-\\frac{\\pi}{2}}';
+        graphiti.addFunction(boundedExpr);
+        const boundedFunc = graphiti.polarFunctions[1];
+        await graphiti.plotFunction(boundedFunc);
+
+        const boundedRays = boundedFunc.asymptoteData && Array.isArray(boundedFunc.asymptoteData.polarRays)
+            ? boundedFunc.asymptoteData.polarRays.slice()
+            : [];
+
+        return {
+            asymptoticRays,
+            asymptoticDisplay,
+            asymptoticBridgeSegments,
+            asymptoticConnectedStraddleCount,
+            boundedRays,
+            asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
+            boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
+        };
+    });
+
+    assert(
+        result.asymptoticRays.some(theta => approxEqual(theta, Math.PI / 2, 0.06)),
+        `explicit polar reciprocal should detect singular theta ray near pi/2: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.asymptoticDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        `explicit polar singular rays should render theta-based asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.boundedRays.length,
+        0,
+        `removable polar singularity should not publish asymptote rays: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.asymptoticBridgeSegments,
+        0,
+        `polar asymptote rendering should not contain origin-bridging discontinuity segments: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.asymptoticConnectedStraddleCount,
+        0,
+        `polar asymptote plotting should split any segment that straddles a detected asymptote theta: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.asymptoticFinitePoints > 80,
+        `explicit polar asymptotic function should still plot substantial finite segments: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.boundedFinitePoints > 80,
+        `bounded polar equivalent should remain well sampled: ${JSON.stringify(result)}`
+    );
+}
+
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     const cases = [
         '\\frac13y^2x=0',
@@ -5824,6 +5972,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertPolarThetaRangeErrorRecovery(page);
         await assertPolarThetaRangeRestoreUsesSavedMaxUnlessInterrupted(page);
         await assertImplicitPolarAnimationReplotStaysConsistent(page);
+        await assertExplicitPolarSingularRayAsymptotes(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertInverseCubeRootImplicitPlotsAsCubic(page);

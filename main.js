@@ -5379,6 +5379,22 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
+
+            const polarRayAsymptotes = this.detectPolarRayAsymptotes(compiledExpression, this.polarSettings.thetaMin, this.polarSettings.thetaMax);
+            if (polarRayAsymptotes.length > 0) {
+                this.updateFunctionAsymptoteData(
+                    func,
+                    [],
+                    [],
+                    [],
+                    null,
+                    {
+                        polarRays: polarRayAsymptotes.map(value => ({ value, source: 'numeric' }))
+                    },
+                    [],
+                    polarRayAsymptotes
+                );
+            }
             
             const points = [];
             const thetaMin = this.polarSettings.thetaMin;
@@ -5467,6 +5483,10 @@ class Graphiti {
                     points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                 }
             }
+
+            if (polarRayAsymptotes.length > 0) {
+                this.breakPolarAsymptoteBridges(points, polarRayAsymptotes, thetaStep);
+            }
             
             func.points = points;
         } catch (error) {
@@ -5474,6 +5494,321 @@ class Graphiti {
             // Silent error for better UX during typing - no alert popup
             func.points = [];
         }
+    }
+
+    breakPolarAsymptoteBridges(points, polarRayAsymptotes, thetaStep) {
+        if (!Array.isArray(points) || points.length < 2 || !Array.isArray(polarRayAsymptotes) || polarRayAsymptotes.length === 0) {
+            return;
+        }
+
+        const viewportSpanX = Math.abs((this.viewport?.maxX ?? 0) - (this.viewport?.minX ?? 0));
+        const viewportSpanY = Math.abs((this.viewport?.maxY ?? 0) - (this.viewport?.minY ?? 0));
+        const viewportDiagonal = Math.hypot(viewportSpanX, viewportSpanY);
+        const bridgeLengthThreshold = Math.max(2.5, viewportDiagonal * 1.1);
+        const asymptoteWindow = Math.max(Math.abs(thetaStep) * 5, 1e-3);
+        const crossingTolerance = Math.max(Math.abs(thetaStep) * 0.5, 1e-6);
+
+        const angularDistance = (a, b) => {
+            const period = this.angleMode === 'degrees' ? 360 : (2 * Math.PI);
+            let distance = Math.abs(a - b) % period;
+            if (distance > period / 2) {
+                distance = period - distance;
+            }
+            return Math.abs(distance);
+        };
+
+        for (let index = 1; index < points.length; index++) {
+            const previous = points[index - 1];
+            const current = points[index];
+            if (!previous || !current) {
+                continue;
+            }
+            if (!Number.isFinite(previous.x) || !Number.isFinite(previous.y) || !Number.isFinite(current.x) || !Number.isFinite(current.y)) {
+                continue;
+            }
+            if (current.connected === false || previous.connected === false) {
+                continue;
+            }
+
+            const previousTheta = Number(previous.theta);
+            const currentTheta = Number(current.theta);
+            if (!Number.isFinite(previousTheta) || !Number.isFinite(currentTheta)) {
+                continue;
+            }
+
+            const minTheta = Math.min(previousTheta, currentTheta);
+            const maxTheta = Math.max(previousTheta, currentTheta);
+            const straddlesAsymptote = polarRayAsymptotes.some(thetaAsymptote =>
+                Number.isFinite(thetaAsymptote) &&
+                thetaAsymptote >= (minTheta - crossingTolerance) &&
+                thetaAsymptote <= (maxTheta + crossingTolerance)
+            );
+
+            if (straddlesAsymptote) {
+                // Hard-break the polyline at singular-theta crossings.
+                // Using NaN ensures no downstream decimation/draw step can reconnect across the pole.
+                current.x = NaN;
+                current.y = NaN;
+                current.connected = false;
+                continue;
+            }
+
+            const segmentLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+            if (!Number.isFinite(segmentLength)) {
+                current.x = NaN;
+                current.y = NaN;
+                current.connected = false;
+                continue;
+            }
+
+            const previousRadius = Math.hypot(previous.x, previous.y);
+            const currentRadius = Math.hypot(current.x, current.y);
+            const maxRadius = Math.max(previousRadius, currentRadius);
+            if (segmentLength > bridgeLengthThreshold * 2.5 && maxRadius > bridgeLengthThreshold * 0.8) {
+                current.x = NaN;
+                current.y = NaN;
+                current.connected = false;
+                continue;
+            }
+
+            if (segmentLength < bridgeLengthThreshold) {
+                continue;
+            }
+
+            const nearAsymptote = polarRayAsymptotes.some(thetaAsymptote => {
+                if (!Number.isFinite(thetaAsymptote)) {
+                    return false;
+                }
+                return angularDistance(previousTheta, thetaAsymptote) <= asymptoteWindow ||
+                    angularDistance(currentTheta, thetaAsymptote) <= asymptoteWindow;
+            });
+
+            if (nearAsymptote) {
+                current.x = NaN;
+                current.y = NaN;
+                current.connected = false;
+            }
+        }
+    }
+
+    detectPolarRayAsymptotes(compiledExpression, thetaMin, thetaMax) {
+        if (!compiledExpression || !Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return [];
+        }
+
+        const thetaRange = thetaMax - thetaMin;
+        const rangeRadians = this.angleMode === 'degrees' ? thetaRange * Math.PI / 180 : thetaRange;
+        if (!Number.isFinite(rangeRadians) || rangeRadians <= 0) {
+            return [];
+        }
+
+        const sampleCount = Math.max(480, Math.min(2400, Math.ceil(rangeRadians / 0.01)));
+        const step = thetaRange / sampleCount;
+        if (!Number.isFinite(step) || step <= 0) {
+            return [];
+        }
+
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const evaluateAt = (thetaValue) => {
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            scope.theta = thetaForEval;
+            scope.t = thetaForEval;
+            try {
+                const value = compiledExpression.evaluate(scope);
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+                if (value && typeof value.re === 'number' && Number.isFinite(value.re)) {
+                    return value.re;
+                }
+            } catch {
+                return NaN;
+            }
+            return NaN;
+        };
+
+        const thetaValues = new Array(sampleCount + 1);
+        const radii = new Array(sampleCount + 1);
+        for (let index = 0; index <= sampleCount; index++) {
+            const thetaValue = thetaMin + (index * step);
+            thetaValues[index] = thetaValue;
+            radii[index] = evaluateAt(thetaValue);
+        }
+
+        const viewportRadius = Math.hypot(
+            Math.max(Math.abs(this.viewport.minX), Math.abs(this.viewport.maxX)),
+            Math.max(Math.abs(this.viewport.minY), Math.abs(this.viewport.maxY))
+        );
+        const magnitudeThreshold = Math.max(8, viewportRadius * 1.8);
+        const rawCandidates = [];
+
+        for (let index = 1; index < sampleCount; index++) {
+            const current = radii[index];
+            if (!Number.isFinite(current)) {
+                let left = index - 1;
+                while (left >= 0 && !Number.isFinite(radii[left])) {
+                    left--;
+                }
+                let right = index + 1;
+                while (right <= sampleCount && !Number.isFinite(radii[right])) {
+                    right++;
+                }
+
+                if (left >= 0 && right <= sampleCount) {
+                    const leftMagnitude = Math.abs(radii[left]);
+                    const rightMagnitude = Math.abs(radii[right]);
+                    if (Math.max(leftMagnitude, rightMagnitude) >= magnitudeThreshold) {
+                        rawCandidates.push((thetaValues[left] + thetaValues[right]) * 0.5);
+                    }
+                }
+                continue;
+            }
+
+            const next = radii[index + 1];
+            if (!Number.isFinite(next)) {
+                continue;
+            }
+
+            const maxMagnitude = Math.max(Math.abs(current), Math.abs(next));
+            if (maxMagnitude < magnitudeThreshold) {
+                continue;
+            }
+
+            if (Math.abs(next - current) >= Math.max(12, maxMagnitude * 0.9)) {
+                rawCandidates.push((thetaValues[index] + thetaValues[index + 1]) * 0.5);
+            }
+        }
+
+        const validated = [];
+        const candidateTolerance = Math.max(step * 2, Math.abs(thetaRange) * 1e-5);
+        for (const thetaCandidate of rawCandidates) {
+            if (!Number.isFinite(thetaCandidate)) {
+                continue;
+            }
+            if (this.isValidPolarRayAsymptote(compiledExpression, thetaCandidate, step, magnitudeThreshold)) {
+                const refined = this.refinePolarRayAsymptoteCandidate(compiledExpression, thetaCandidate, step);
+                const duplicate = validated.some(existing => Math.abs(existing - refined) <= candidateTolerance);
+                if (!duplicate) {
+                    validated.push(refined);
+                }
+            }
+        }
+
+        validated.sort((left, right) => left - right);
+        return validated;
+    }
+
+    refinePolarRayAsymptoteCandidate(compiledExpression, thetaCandidate, step) {
+        if (!compiledExpression || !Number.isFinite(thetaCandidate) || !Number.isFinite(step) || step <= 0) {
+            return thetaCandidate;
+        }
+
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const evaluateAt = (thetaValue) => {
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            scope.theta = thetaForEval;
+            scope.t = thetaForEval;
+            try {
+                const value = compiledExpression.evaluate(scope);
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+                if (value && typeof value.re === 'number' && Number.isFinite(value.re)) {
+                    return value.re;
+                }
+            } catch {
+                return NaN;
+            }
+            return NaN;
+        };
+
+        const windowRadius = step * 6;
+        const sampleCount = 72;
+        let bestTheta = thetaCandidate;
+        let bestScore = Infinity;
+
+        for (let index = 0; index <= sampleCount; index++) {
+            const offsetRatio = (index / sampleCount) * 2 - 1;
+            const theta = thetaCandidate + (offsetRatio * windowRadius);
+            const value = evaluateAt(theta);
+
+            // Exact evaluation failure/overflow is a strong signal for a singular ray.
+            if (!Number.isFinite(value)) {
+                return theta;
+            }
+
+            // A true asymptote minimises |1/r| in a local neighbourhood.
+            const reciprocalMagnitude = Math.abs(1 / value);
+            if (Number.isFinite(reciprocalMagnitude) && reciprocalMagnitude < bestScore) {
+                bestScore = reciprocalMagnitude;
+                bestTheta = theta;
+            }
+        }
+
+        return bestTheta;
+    }
+
+    isValidPolarRayAsymptote(compiledExpression, thetaCandidate, step, magnitudeThreshold) {
+        if (!compiledExpression || !Number.isFinite(thetaCandidate) || !Number.isFinite(step) || step <= 0) {
+            return false;
+        }
+
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const evaluateAt = (thetaValue) => {
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            scope.theta = thetaForEval;
+            scope.t = thetaForEval;
+            try {
+                const value = compiledExpression.evaluate(scope);
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+                if (value && typeof value.re === 'number' && Number.isFinite(value.re)) {
+                    return value.re;
+                }
+            } catch {
+                return NaN;
+            }
+            return NaN;
+        };
+
+        const minDelta = Math.max(step * 0.5, this.angleMode === 'degrees' ? 0.03 : 8e-4);
+        const deltas = [minDelta * 4, minDelta * 2, minDelta];
+        for (const direction of [-1, 1]) {
+            const magnitudes = [];
+            let hasNonFiniteNearPole = false;
+            for (const delta of deltas) {
+                const value = evaluateAt(thetaCandidate + (direction * delta));
+                if (!Number.isFinite(value)) {
+                    hasNonFiniteNearPole = true;
+                    magnitudes.push(Infinity);
+                    continue;
+                }
+                magnitudes.push(Math.abs(value));
+            }
+
+            const nearMagnitude = magnitudes[magnitudes.length - 1];
+            const middleMagnitude = magnitudes.length > 1 ? magnitudes[1] : magnitudes[0];
+            const farMagnitude = magnitudes[0];
+            if (nearMagnitude === Infinity) {
+                if (Number.isFinite(middleMagnitude) && middleMagnitude >= magnitudeThreshold * 0.7) {
+                    return true;
+                }
+                continue;
+            }
+
+            if (!Number.isFinite(nearMagnitude) || nearMagnitude < magnitudeThreshold) {
+                continue;
+            }
+
+            const trendFromFar = Number.isFinite(farMagnitude) ? nearMagnitude >= farMagnitude * 1.2 : hasNonFiniteNearPole;
+            const trendFromMiddle = Number.isFinite(middleMagnitude) ? nearMagnitude >= middleMagnitude * 1.1 : hasNonFiniteNearPole;
+            if (trendFromFar && trendFromMiddle) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     async plotImplicitPolarFunction(func, highResForIntersections = false, immediate = false, options = {}) {
@@ -18330,7 +18665,7 @@ class Graphiti {
         return { lines, debug };
     }
 
-    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null, asymptoteSources = null, curvedAsymptotes = []) {
+    updateFunctionAsymptoteData(func, verticalAsymptotes = [], horizontalAsymptotes = [], obliqueAsymptotes = [], obliqueDebug = null, asymptoteSources = null, curvedAsymptotes = [], polarRayAsymptotes = []) {
         if (!func) {
             return;
         }
@@ -18353,6 +18688,7 @@ class Graphiti {
 
         const vertical = uniqueSorted(verticalAsymptotes);
         const horizontal = uniqueSorted(horizontalAsymptotes);
+        const polarRays = uniqueSorted(polarRayAsymptotes);
         const normalizeObliqueLine = (line) => {
             if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
                 return null;
@@ -18496,14 +18832,27 @@ class Graphiti {
             source: 'algebraic'
         }));
 
+        const sourceForPolarRay = (value) => {
+            if (!asymptoteSources || !Array.isArray(asymptoteSources.polarRays)) return 'numeric';
+            const match = asymptoteSources.polarRays.find(item => Math.abs((item.value ?? NaN) - value) <= 1e-7);
+            return match && match.source ? match.source : 'numeric';
+        };
+
+        const polarRayEquationDetails = polarRays.map(theta => ({
+            equation: 'theta=' + formatEquationValue(theta),
+            source: sourceForPolarRay(theta)
+        }));
+
         func.horizontalAsymptotes = horizontal;
         func.obliqueAsymptotes = oblique;
         func.curvedAsymptotes = curved;
+        func.polarRayAsymptotes = polarRays;
         func.asymptoteData = {
             vertical,
             horizontal,
             oblique,
             curved,
+            polarRays,
             debug: {
                 oblique: obliqueDebug
             },
@@ -18511,13 +18860,15 @@ class Graphiti {
                 vertical: verticalEquationDetails.map(item => item.equation),
                 horizontal: horizontalEquationDetails.map(item => item.equation),
                 oblique: obliqueEquationDetails.map(item => item.equation),
-                curved: curvedEquationDetails.map(item => item.equation)
+                curved: curvedEquationDetails.map(item => item.equation),
+                polarRays: polarRayEquationDetails.map(item => item.equation)
             },
             equationsDetailed: {
                 vertical: verticalEquationDetails,
                 horizontal: horizontalEquationDetails,
                 oblique: obliqueEquationDetails,
-                curved: curvedEquationDetails
+                curved: curvedEquationDetails,
+                polarRays: polarRayEquationDetails
             }
         };
 
@@ -18533,6 +18884,7 @@ class Graphiti {
         delete func.horizontalAsymptotes;
         delete func.obliqueAsymptotes;
         delete func.curvedAsymptotes;
+        delete func.polarRayAsymptotes;
         delete func.asymptoteData;
         delete func.envelopeData;
         delete func.holes;
@@ -18818,6 +19170,11 @@ class Graphiti {
         const horizontalValues = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal.slice().sort((a, b) => a - b) : [];
         const obliqueLines = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
         const curvedAsymptotes = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
+        const polarRays = Array.isArray(asymptoteData.polarRays) ? asymptoteData.polarRays.slice().sort((a, b) => a - b) : [];
+
+        for (const theta of polarRays) {
+            equations.push(`\\theta = ${this.formatAsymptoteCoefficientLatex(theta)}`);
+        }
 
         const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
         const hasReciprocalPeriodicTrigVerticals = /\/\s*(?:\(\s*)*(sin|cos|tan)\s*\(/.test(expression);
@@ -45997,7 +46354,7 @@ class Graphiti {
     }
 
     drawFunctionAsymptotes(func, context = this.ctx) {
-        if (!func || this.plotMode !== 'cartesian' || !context) {
+        if (!func || !context) {
             return;
         }
         if (func.showAsymptotes === false) {
@@ -46013,7 +46370,8 @@ class Graphiti {
         const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
         const oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
         const curved = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
-        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0 && curved.length === 0) {
+        const polarRays = Array.isArray(asymptoteData.polarRays) ? asymptoteData.polarRays : [];
+        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0 && curved.length === 0 && polarRays.length === 0) {
             return;
         }
 
@@ -46022,6 +46380,42 @@ class Graphiti {
         context.lineWidth = this.getLineWidth(2);
         context.globalAlpha = 0.75;
         context.setLineDash([this.getLineWidth(7), this.getLineWidth(4)]);
+
+        if (this.plotMode === 'polar') {
+            if (polarRays.length > 0) {
+                const uniqueAngles = [];
+                for (const rawTheta of polarRays) {
+                    if (!Number.isFinite(rawTheta)) {
+                        continue;
+                    }
+                    const thetaRadians = this.angleMode === 'degrees' ? (rawTheta * Math.PI / 180) : rawTheta;
+                    const normalized = this.normalizeAngleRadians(thetaRadians);
+                    const duplicate = uniqueAngles.some(existing => this.angleDistanceModulo(existing, normalized, Math.PI) <= 1e-5);
+                    if (!duplicate) {
+                        uniqueAngles.push(normalized);
+                    }
+                }
+
+                for (const theta of uniqueAngles) {
+                    const segment = this.getPolarAsymptoteViewportSegment(theta);
+                    if (!segment) {
+                        continue;
+                    }
+                    const start = this.worldToScreen(segment.start.x, segment.start.y);
+                    const end = this.worldToScreen(segment.end.x, segment.end.y);
+                    if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(end.x) || !Number.isFinite(end.y)) {
+                        continue;
+                    }
+                    context.beginPath();
+                    context.moveTo(start.x, start.y);
+                    context.lineTo(end.x, end.y);
+                    context.stroke();
+                }
+            }
+
+            context.restore();
+            return;
+        }
 
         if (vertical.length > 0) {
             let visibleVertical = vertical
@@ -46113,6 +46507,56 @@ class Graphiti {
         }
 
         context.restore();
+    }
+
+    getPolarAsymptoteViewportSegment(thetaRadians) {
+        if (!Number.isFinite(thetaRadians)) {
+            return null;
+        }
+
+        const directionX = Math.cos(thetaRadians);
+        const directionY = Math.sin(thetaRadians);
+        const epsilon = 1e-10;
+        const candidates = [];
+        const pushCandidate = (x, y, t) => {
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(t)) {
+                return;
+            }
+            if (x < this.viewport.minX - 1e-7 || x > this.viewport.maxX + 1e-7 || y < this.viewport.minY - 1e-7 || y > this.viewport.maxY + 1e-7) {
+                return;
+            }
+            candidates.push({ x, y, t });
+        };
+
+        if (Math.abs(directionX) > epsilon) {
+            const tLeft = this.viewport.minX / directionX;
+            pushCandidate(this.viewport.minX, tLeft * directionY, tLeft);
+            const tRight = this.viewport.maxX / directionX;
+            pushCandidate(this.viewport.maxX, tRight * directionY, tRight);
+        }
+
+        if (Math.abs(directionY) > epsilon) {
+            const tBottom = this.viewport.minY / directionY;
+            pushCandidate(tBottom * directionX, this.viewport.minY, tBottom);
+            const tTop = this.viewport.maxY / directionY;
+            pushCandidate(tTop * directionX, this.viewport.maxY, tTop);
+        }
+
+        if (candidates.length < 2) {
+            return null;
+        }
+
+        candidates.sort((a, b) => a.t - b.t);
+        const start = candidates[0];
+        const end = candidates[candidates.length - 1];
+        if (!start || !end || Math.abs(start.t - end.t) <= 1e-9) {
+            return null;
+        }
+
+        return {
+            start: { x: start.x, y: start.y },
+            end: { x: end.x, y: end.y }
+        };
     }
 
     filterImplicitObliqueAsymptotesBySampleSpread(func, points) {
