@@ -2271,6 +2271,64 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     );
 }
 
+async function assertPolarFullCycleWrapClosure(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+        graphiti.polarSettings.plotNegativeR = true;
+
+        const expr = 'r^2/(theta-pi/3)=sin(theta)';
+        graphiti.addFunction(expr);
+        const func = graphiti.polarFunctions[0];
+        await graphiti.plotFunction(func);
+
+        const points = Array.isArray(func.points) ? func.points : [];
+        const finitePoints = points.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+        const firstFinite = finitePoints.length > 0 ? finitePoints[0] : null;
+        const lastFinite = finitePoints.length > 0 ? finitePoints[finitePoints.length - 1] : null;
+        const wrapDistance = (firstFinite && lastFinite)
+            ? Math.hypot(firstFinite.x - lastFinite.x, firstFinite.y - lastFinite.y)
+            : Infinity;
+        const tail = points.slice(-3);
+
+        return {
+            finiteCount: finitePoints.length,
+            firstFinite,
+            lastFinite,
+            wrapDistance,
+            tail,
+            asymptoticRays: func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+                ? func.asymptoteData.polarRays.slice()
+                : []
+        };
+    });
+
+    assert(
+        result.finiteCount > 120,
+        `full-cycle polar closure regression should still produce substantial finite points: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.asymptoticRays.length === 0,
+        `full-cycle closure probe should not rely on asymptote rays: ${JSON.stringify(result)}`
+    );
+    assert(
+        Number.isFinite(result.wrapDistance) && result.wrapDistance <= 0.02,
+        `full-cycle polar curve should close across theta-range boundary when endpoints are near-equal: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.tail.every(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)),
+        `full-cycle closure should end on finite points rather than a NaN separator: ${JSON.stringify(result)}`
+    );
+}
+
 async function assertImplicitFastPathTurningPointsStayQuiet(page) {
     const cases = [
         '\\frac13y^2x=0',
@@ -6004,6 +6062,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertPolarThetaRangeRestoreUsesSavedMaxUnlessInterrupted(page);
         await assertImplicitPolarAnimationReplotStaysConsistent(page);
         await assertExplicitPolarSingularRayAsymptotes(page);
+        await assertPolarFullCycleWrapClosure(page);
         await assertStrictImplicitInequalityVerticalComponentsAreDashed(page);
         await assertImplicitFastPathTurningPointsStayQuiet(page);
         await assertInverseCubeRootImplicitPlotsAsCubic(page);

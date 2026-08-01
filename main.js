@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.61';
+const VERSION = '1.3.62';
 
 class Graphiti {
     constructor() {
@@ -5487,6 +5487,11 @@ class Graphiti {
             if (polarRayAsymptotes.length > 0) {
                 this.breakPolarAsymptoteBridges(points, polarRayAsymptotes, thetaStep);
             }
+
+            this.compactPolarOriginGaps(points);
+            if (!func._skipPolarRangeClosure) {
+                this.closePolarRangeIfNeeded(points, thetaMin, thetaMax, thetaStep, polarRayAsymptotes);
+            }
             
             func.points = points;
         } catch (error) {
@@ -5589,6 +5594,119 @@ class Graphiti {
                 current.connected = false;
             }
         }
+    }
+
+    compactPolarOriginGaps(points) {
+        if (!Array.isArray(points) || points.length < 3) {
+            return points;
+        }
+
+        const viewportRadius = Math.hypot(
+            Math.max(Math.abs(this.viewport?.minX ?? 0), Math.abs(this.viewport?.maxX ?? 0)),
+            Math.max(Math.abs(this.viewport?.minY ?? 0), Math.abs(this.viewport?.maxY ?? 0))
+        );
+        const originBridgeRadius = Math.max(0.14, viewportRadius * 0.05);
+
+        const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+        const isNearOrigin = (point) => isFinitePoint(point) && Math.hypot(point.x, point.y) <= originBridgeRadius;
+
+        const compacted = [];
+        for (let index = 0; index < points.length; index++) {
+            const point = points[index];
+
+            if (isFinitePoint(point)) {
+                compacted.push(point);
+                continue;
+            }
+
+            let previousFinite = null;
+            for (let previousIndex = compacted.length - 1; previousIndex >= 0; previousIndex--) {
+                if (isFinitePoint(compacted[previousIndex])) {
+                    previousFinite = compacted[previousIndex];
+                    break;
+                }
+            }
+
+            let nextFinite = null;
+            for (let nextIndex = index + 1; nextIndex < points.length; nextIndex++) {
+                if (isFinitePoint(points[nextIndex])) {
+                    nextFinite = points[nextIndex];
+                    break;
+                }
+            }
+
+            const shouldCollapseGap = previousFinite && nextFinite && isNearOrigin(previousFinite) && isNearOrigin(nextFinite);
+            if (!shouldCollapseGap) {
+                compacted.push({ x: NaN, y: NaN, connected: false });
+            }
+
+            while (index + 1 < points.length && !isFinitePoint(points[index + 1])) {
+                index++;
+            }
+        }
+
+        points.length = 0;
+        points.push(...compacted);
+        return points;
+    }
+
+    closePolarRangeIfNeeded(points, thetaMin, thetaMax, thetaStep, polarRayAsymptotes = []) {
+        if (!Array.isArray(points) || points.length < 2 || !Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return points;
+        }
+
+        if (Array.isArray(polarRayAsymptotes) && polarRayAsymptotes.some(value => Number.isFinite(value))) {
+            return points;
+        }
+
+        const thetaSpan = thetaMax - thetaMin;
+        const fullPeriod = this.angleMode === 'degrees' ? 360 : (2 * Math.PI);
+        const fullPeriodTolerance = Math.max(Math.abs(thetaStep) * 12, fullPeriod * 0.05);
+        if (Math.abs(thetaSpan - fullPeriod) > fullPeriodTolerance) {
+            return points;
+        }
+
+        const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+        let firstFinite = null;
+        let firstFiniteIndex = -1;
+        let lastFinite = null;
+        let lastFiniteIndex = -1;
+
+        for (let index = 0; index < points.length; index++) {
+            const point = points[index];
+            if (!isFinitePoint(point)) {
+                continue;
+            }
+            if (!firstFinite) {
+                firstFinite = point;
+                firstFiniteIndex = index;
+            }
+            lastFinite = point;
+            lastFiniteIndex = index;
+        }
+
+        if (!firstFinite || !lastFinite || firstFiniteIndex === lastFiniteIndex) {
+            return points;
+        }
+
+        const wrapJoinTolerance = Math.max(0.08, Math.hypot(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY) * 0.0025);
+        const firstRadius = Math.hypot(firstFinite.x, firstFinite.y);
+        const lastRadius = Math.hypot(lastFinite.x, lastFinite.y);
+        if (Math.hypot(firstFinite.x - lastFinite.x, firstFinite.y - lastFinite.y) > wrapJoinTolerance && Math.max(firstRadius, lastRadius) > wrapJoinTolerance) {
+            return points;
+        }
+
+        while (points.length > lastFiniteIndex + 1) {
+            points.pop();
+        }
+
+        points.push({
+            ...firstFinite,
+            connected: true,
+            theta: firstFinite.theta
+        });
+
+        return points;
     }
 
     detectPolarRayAsymptotes(compiledExpression, thetaMin, thetaMax) {
@@ -6668,6 +6786,32 @@ class Graphiti {
         const clearAsymptoteData = options.clearAsymptoteData !== false;
         const mergedPoints = [];
         let hasFinitePoints = false;
+        const branchJoinTolerance = Math.max(0.08, Math.hypot(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY) * 0.0025);
+
+        const getFirstFinitePoint = (points) => {
+            if (!Array.isArray(points)) {
+                return null;
+            }
+            for (const point of points) {
+                if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                    return point;
+                }
+            }
+            return null;
+        };
+
+        const getLastFinitePoint = (points) => {
+            if (!Array.isArray(points)) {
+                return null;
+            }
+            for (let index = points.length - 1; index >= 0; index--) {
+                const point = points[index];
+                if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                    return point;
+                }
+            }
+            return null;
+        };
 
         branchExpressions.forEach((branchExpression, index) => {
             if (typeof branchExpression !== 'string' || !branchExpression.trim()) {
@@ -6677,6 +6821,7 @@ class Graphiti {
             const proxyFunc = {
                 ...func,
                 expression: 'r=' + branchExpression,
+                _skipPolarRangeClosure: true,
                 points: [],
                 displayPoints: []
             };
@@ -6689,7 +6834,18 @@ class Graphiti {
             }
 
             if (index > 0 && mergedPoints.length > 0) {
-                mergedPoints.push({ x: NaN, y: NaN, connected: false });
+                const previousEndpoint = getLastFinitePoint(mergedPoints);
+                const currentStart = getFirstFinitePoint(branchPoints);
+                const previousRadius = previousEndpoint ? Math.hypot(previousEndpoint.x, previousEndpoint.y) : Infinity;
+                const currentRadius = currentStart ? Math.hypot(currentStart.x, currentStart.y) : Infinity;
+                const sharesEndpoint = previousEndpoint && currentStart &&
+                    previousRadius <= branchJoinTolerance &&
+                    currentRadius <= branchJoinTolerance &&
+                    Math.hypot(previousEndpoint.x - currentStart.x, previousEndpoint.y - currentStart.y) <= branchJoinTolerance;
+
+                if (!sharesEndpoint) {
+                    mergedPoints.push({ x: NaN, y: NaN, connected: false });
+                }
             }
 
             for (const point of branchPoints) {
@@ -6702,6 +6858,8 @@ class Graphiti {
             return false;
         }
 
+        this.compactPolarOriginGaps(mergedPoints);
+        this.closePolarRangeIfNeeded(mergedPoints, func.polarSettings?.thetaMin ?? this.polarSettings.thetaMin, func.polarSettings?.thetaMax ?? this.polarSettings.thetaMax, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax), func.asymptoteData?.polarRays || []);
         func.points = mergedPoints;
         func.displayPoints = mergedPoints;
         if (clearAsymptoteData) {
@@ -10565,6 +10723,7 @@ class Graphiti {
         const filteredPoints = [];
         const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax));
         const thetaExclusionTolerance = Math.max(thetaStep * 0.6, 1e-4);
+        const nearOriginPreservationRadius = Math.max(1e-3, thetaStep * 3);
         for (const point of points) {
             if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                 filteredPoints.push({ x: NaN, y: NaN, connected: false });
@@ -10588,11 +10747,6 @@ class Graphiti {
                     continue;
                 }
 
-                if (hasThetaExclusions && metadata.domainExclusionsTheta.some(exclusion => Math.abs(exclusion - thetaValue) <= thetaExclusionTolerance)) {
-                    filteredPoints.push({ x: NaN, y: NaN, connected: false });
-                    continue;
-                }
-
                 const radiusValue = Math.hypot(point.x, point.y);
                 scope.r = radiusValue;
                 scope.theta = thetaValue;
@@ -10610,6 +10764,17 @@ class Graphiti {
                 }
             } catch {
                 keepPoint = false;
+            }
+
+            if (!keepPoint && coordinateSystem === 'polar' && hasThetaExclusions) {
+                const thetaValue = Number.isFinite(point.theta)
+                    ? point.theta
+                    : this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+                const radiusValue = Math.hypot(point.x, point.y);
+                const nearThetaExclusion = metadata.domainExclusionsTheta.some(exclusion => Math.abs(exclusion - thetaValue) <= thetaExclusionTolerance);
+                if (nearThetaExclusion && radiusValue <= nearOriginPreservationRadius) {
+                    keepPoint = true;
+                }
             }
 
             if (keepPoint) {
