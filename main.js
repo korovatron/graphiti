@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.65';
+const VERSION = '1.3.66';
 
 class Graphiti {
     constructor() {
@@ -2443,7 +2443,7 @@ class Graphiti {
 
         // Set placeholder based on the function's mode
         const placeholder = (func.mode === 'polar') 
-            ? '\\text{Enter f(θ)}' 
+            ? '\\text{Enter f(θ) or f(r,θ)}' 
             : '\\text{f(x) or f(x,y) or (f(t), g(t))}';
 
         funcDiv.innerHTML = `
@@ -35499,7 +35499,7 @@ class Graphiti {
         const mathFields = document.querySelectorAll('.function-item math-field');
         mathFields.forEach(mathField => {
             if (this.plotMode === 'polar') {
-                mathField.setAttribute('placeholder', '\\text{Enter f(θ)}');
+                mathField.setAttribute('placeholder', '\\text{Enter f(θ) or f(r,θ)}');
             } else {
                 mathField.setAttribute('placeholder', '\\text{f(x) or f(x,y) or (f(t), g(t))}');
             }
