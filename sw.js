@@ -1,4 +1,4 @@
-const CACHE_NAME = 'graphiti-v1.3.66';
+const CACHE_NAME = 'graphiti-v1.3.67';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -86,6 +86,10 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - cache first with network fallback and timeout
 self.addEventListener('fetch', (event) => {
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
     // For navigation requests (opening the app), use aggressive cache-first with short timeout
     if (event.request.mode === 'navigate') {
         event.respondWith(
@@ -109,7 +113,20 @@ self.addEventListener('fetch', (event) => {
                     
                     // No cache, try network with short timeout
                     return fetchWithTimeout(event.request, 2000)
-                        .catch(() => caches.match('./index.html'));
+                        .catch(async () => {
+                            const fallback = await caches.match('./index.html');
+                            return fallback || new Response('Offline', {
+                                status: 503,
+                                statusText: 'Offline'
+                            });
+                        });
+                })
+                .catch(async () => {
+                    const fallback = await caches.match('./index.html');
+                    return fallback || new Response('Offline', {
+                        status: 503,
+                        statusText: 'Offline'
+                    });
                 })
         );
         return;
@@ -147,25 +164,56 @@ self.addEventListener('fetch', (event) => {
                         }
                         
                         return response;
+                    })
+                    .catch(async () => {
+                        if (event.request.destination === 'document') {
+                            const fallbackDoc = await caches.match('./index.html');
+                            if (fallbackDoc) {
+                                return fallbackDoc;
+                            }
+                        }
+
+                        const fallbackAsset = await caches.match(event.request, { ignoreSearch: true });
+                        if (fallbackAsset) {
+                            return fallbackAsset;
+                        }
+
+                        return new Response('', {
+                            status: 504,
+                            statusText: 'Gateway Timeout'
+                        });
                     });
             })
-            .catch((error) => {
+            .catch(async () => {
                 if (event.request.destination === 'document') {
-                    return caches.match('./index.html');
+                    const fallbackDoc = await caches.match('./index.html');
+                    if (fallbackDoc) {
+                        return fallbackDoc;
+                    }
                 }
-                throw error;
+
+                const fallbackAsset = await caches.match(event.request, { ignoreSearch: true });
+                if (fallbackAsset) {
+                    return fallbackAsset;
+                }
+
+                return new Response('', {
+                    status: 504,
+                    statusText: 'Gateway Timeout'
+                });
             })
     );
 });
 
 // Fetch with timeout helper
 function fetchWithTimeout(request, timeout) {
-    return Promise.race([
-        fetch(request),
-        new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Network timeout')), timeout)
-        )
-    ]);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    return fetch(request, { signal: controller.signal })
+        .finally(() => {
+            clearTimeout(timeoutId);
+        });
 }
 
 // Handle messages from main thread

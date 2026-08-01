@@ -2942,6 +2942,28 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(inequalityFunc);
         await graphiti.plotFunction(inequalityFunc);
 
+        const thetaDenominatorInequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '((r-(2+cos(theta)))/(theta-pi/3))<0',
+            points: [],
+            color: '#1976D2',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(thetaDenominatorInequalityFunc);
+        await graphiti.plotFunction(thetaDenominatorInequalityFunc);
+
+        const thetaBaselineInequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-(2+cos(theta))<0',
+            points: [],
+            color: '#00C853',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(thetaBaselineInequalityFunc);
+        await graphiti.plotFunction(thetaBaselineInequalityFunc);
+
         const quadraticInequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r^2/(theta-pi/3)<sin(theta)',
@@ -2966,6 +2988,8 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
 
         quadraticNonStrictInequalityFunc.enabled = false;
         inequalityFunc.enabled = false;
+        thetaDenominatorInequalityFunc.enabled = false;
+        thetaBaselineInequalityFunc.enabled = false;
         graphiti.draw();
 
         const displayCtx = graphiti.canvas.getContext('2d', { alpha: true });
@@ -2975,6 +2999,35 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
             const sampleY = Math.max(0, Math.min(graphiti.canvas.height - 1, Math.round(screen.y)));
             return Array.from(displayCtx.getImageData(sampleX, sampleY, 1, 1).data);
         };
+
+        const sampleThetaDenominatorComparison = (() => {
+            const capture = (fn) => {
+                const previousEnabled = graphiti.polarFunctions.map(current => current.enabled);
+                graphiti.polarFunctions.forEach(current => {
+                    current.enabled = current.id === fn.id;
+                });
+                graphiti.draw();
+
+                const data = {
+                    interiorPosAxisRGBA: samplePixelRGBA(1.0, 0.2),
+                    exteriorPosAxisRGBA: samplePixelRGBA(4.0, 0.2),
+                    interiorLowerQuadrantRGBA: samplePixelRGBA(1.0, -1.0),
+                    exteriorUpperRayRGBA: samplePixelRGBA(4.0, 4.0),
+                    interiorUpperNearRayRGBA: samplePixelRGBA(1.0, 1.0)
+                };
+
+                graphiti.polarFunctions.forEach((current, index) => {
+                    current.enabled = previousEnabled[index];
+                });
+
+                return data;
+            };
+
+            const denominator = capture(thetaDenominatorInequalityFunc);
+            const baseline = capture(thetaBaselineInequalityFunc);
+            graphiti.draw();
+            return { denominator, baseline };
+        })();
 
         quadraticInequalityFunc.enabled = true;
         quadraticNonStrictInequalityFunc.enabled = true;
@@ -3442,6 +3495,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 finitePointCount: inequalityFinitePointCount,
                 hasGridData: !!inequalityFunc.gridData
             },
+            thetaDenominatorComparison: sampleThetaDenominatorComparison,
             quadraticInequality: {
                 detectedType: graphiti.detectFunctionType(quadraticInequalityFunc.expression),
                 renderMode: quadraticInequalityFunc.implicitRenderMode || null,
@@ -3607,6 +3661,12 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
     assert(result.inequality.finitePointCount > 10, `implicit polar inequality boundary should produce finite points: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.hasGridData, true, `implicit polar inequality should produce grid data for shading: ${JSON.stringify(result.inequality)}`);
+
+    const thetaDenominatorInteriorPosAxisBrightness = result.thetaDenominatorComparison.denominator.interiorPosAxisRGBA[0] + result.thetaDenominatorComparison.denominator.interiorPosAxisRGBA[1] + result.thetaDenominatorComparison.denominator.interiorPosAxisRGBA[2];
+    const thetaDenominatorExteriorPosAxisBrightness = result.thetaDenominatorComparison.denominator.exteriorPosAxisRGBA[0] + result.thetaDenominatorComparison.denominator.exteriorPosAxisRGBA[1] + result.thetaDenominatorComparison.denominator.exteriorPosAxisRGBA[2];
+    const thetaDenominatorUpperNearRayBrightness = result.thetaDenominatorComparison.denominator.interiorUpperNearRayRGBA[0] + result.thetaDenominatorComparison.denominator.interiorUpperNearRayRGBA[1] + result.thetaDenominatorComparison.denominator.interiorUpperNearRayRGBA[2];
+    assert(thetaDenominatorExteriorPosAxisBrightness > thetaDenominatorInteriorPosAxisBrightness, `theta-denominator inequality should not shade the positive x-axis interior while shading exterior on that ray: ${JSON.stringify(result.thetaDenominatorComparison)}`);
+    assert(thetaDenominatorExteriorPosAxisBrightness > thetaDenominatorUpperNearRayBrightness, `theta-denominator inequality should keep near-ray interior unshaded on the theta<pi/3 side: ${JSON.stringify(result.thetaDenominatorComparison)}`);
 
     assert.strictEqual(result.quadraticInequality.detectedType, 'implicit-inequality', `quadratic rational polar inequality should stay implicit-inequality in classification: ${JSON.stringify(result.quadraticInequality)}`);
     assert.strictEqual(result.quadraticInequality.renderMode, 'quadratic-polar-inequality-fastpath', `quadratic rational polar inequality should use the explicit even-power fast-path: ${JSON.stringify(result.quadraticInequality)}`);

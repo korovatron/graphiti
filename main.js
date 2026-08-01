@@ -6467,6 +6467,10 @@ class Graphiti {
             };
 
             if (isInequality) {
+                this.populateImplicitPolarInequalityHoleMetadata(func, equation);
+            }
+
+            if (isInequality) {
                 const fastPathHandled = await this.tryPlotImplicitPolarInequalityFastPath(func, equation);
                 if (fastPathHandled) {
                     if (!suppressDraw) {
@@ -7323,6 +7327,87 @@ class Graphiti {
         const inequality = this.parseInequality(func.expression);
         if (!inequality) {
             return false;
+        }
+
+        const leftSideExpression = (inequality.leftSide || '').trim();
+        const rightSideExpression = (inequality.rightSide || '').trim();
+        const unwrapNode = (node) => {
+            let current = node;
+            while (current && current.type === 'ParenthesisNode' && current.content) {
+                current = current.content;
+            }
+            return current;
+        };
+        let rightIsZero = false;
+        try {
+            const rightValue = this.cleanMath.evaluate(rightSideExpression, { pi: Math.PI, e: Math.E });
+            rightIsZero = typeof rightValue === 'number' && Number.isFinite(rightValue) && Math.abs(rightValue) <= 1e-12;
+        } catch {
+            rightIsZero = rightSideExpression === '0' || rightSideExpression === '0.0' || rightSideExpression === '(0)';
+        }
+        if (rightIsZero) {
+            try {
+                const parsedLeft = unwrapNode(this.cleanMath.parse(leftSideExpression));
+                if (parsedLeft && parsedLeft.type === 'OperatorNode' && parsedLeft.op === '/' && Array.isArray(parsedLeft.args) && parsedLeft.args.length === 2) {
+                    const numeratorNode = unwrapNode(parsedLeft.args[0]);
+                    const denominatorNode = unwrapNode(parsedLeft.args[1]);
+                    if (!numeratorNode || !denominatorNode) {
+                        throw new Error('Invalid numerator/denominator node');
+                    }
+                    let numeratorExpression = numeratorNode.toString();
+                    let denominatorExpression = denominatorNode.toString();
+
+                    if (this.plotMode === 'polar') {
+                        numeratorExpression = numeratorExpression.replace(/θ/g, 'theta').replace(/\btheta\b/gi, 't');
+                        denominatorExpression = denominatorExpression.replace(/θ/g, 'theta').replace(/\btheta\b/gi, 't');
+                    }
+
+                    const denominatorHasTheta = /\bt\b|\btheta\b/.test(denominatorExpression);
+                    const denominatorHasR = /\br\b/.test(denominatorExpression);
+                    const denominatorHasCartesian = /\bx\b|\by\b/.test(denominatorExpression);
+
+                    if (denominatorHasTheta && !denominatorHasR && !denominatorHasCartesian) {
+                        const numeratorEquation = {
+                            leftExpression: this.processImplicitExpression(numeratorExpression),
+                            rightExpression: '0',
+                            coordinateSystem: 'polar'
+                        };
+
+                        const affinePolarModel = this.tryBuildAffinePolarImplicitModel(numeratorEquation);
+                        if (affinePolarModel && typeof affinePolarModel.explicitExpression === 'string' && affinePolarModel.explicitExpression.trim()) {
+                            const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
+                            if (handled) {
+                                const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(equation) || equation;
+                                this.addPolarDenominatorClearedHolesForExpressions(func, [affinePolarModel.explicitExpression], denominatorClearedEquation);
+                                this.cacheImplicitPolarFastPathPostProcess(func, denominatorClearedEquation, [affinePolarModel.explicitExpression]);
+                                this.applyImplicitFunctionPoints(func, func.points || []);
+
+                                const coefficientSign = this.getStablePolarModelCoefficientSign(affinePolarModel.aCompiled);
+                                const isLessThan = inequality.operator === '<' || inequality.operator === '<=';
+                                const fillMode = (isLessThan && coefficientSign > 0) || (!isLessThan && coefficientSign < 0)
+                                    ? 'inside'
+                                    : 'outside';
+
+                                func.implicitRenderMode = 'affine-polar-inequality-piecewise-fastpath';
+                                func.implicitPolarInequalityFastPath = {
+                                    fillMode,
+                                    operator: inequality.operator,
+                                    denominatorExpression: this.processImplicitExpression(denominatorExpression),
+                                    leftExpression: equation.leftExpression,
+                                    rightExpression: equation.rightExpression
+                                };
+
+                                delete func.gridData;
+                                this.invalidateInequalityIntersectionCache();
+                                this.implicitShadingCache.delete(func.id);
+                                return true;
+                            }
+                        }
+                    }
+                }
+            } catch {
+                // Fall through to existing fast-path logic
+            }
         }
 
         const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(equation);
@@ -9319,6 +9404,240 @@ class Graphiti {
         ctx.fill('evenodd'); // Use even-odd rule to create the hole
     }
 
+    drawImplicitPolarDenominatorPiecewiseFastPath(func) {
+        if (!func || !func.implicitPolarInequalityFastPath || func.implicitPolarInequalityFastPath.fillMode !== 'piecewise-denominator') {
+            return false;
+        }
+
+        const fastPathMeta = func.implicitPolarInequalityFastPath;
+        const denominatorExpression = fastPathMeta.denominatorExpression;
+        const operator = fastPathMeta.operator;
+        if (!denominatorExpression || !operator) {
+            return false;
+        }
+
+        let denominatorCompiled;
+        try {
+            denominatorCompiled = this.getCompiledExpression(denominatorExpression);
+        } catch {
+            return false;
+        }
+
+        const width = this.viewport.width | 0;
+        const height = this.viewport.height | 0;
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+            return false;
+        }
+
+        const sourcePoints = Array.isArray(func.displayPoints) && func.displayPoints.length > 0
+            ? func.displayPoints
+            : func.points;
+        if (!Array.isArray(sourcePoints) || sourcePoints.length < 2) {
+            return false;
+        }
+
+        const viewportKey = `${this.viewport.minX},${this.viewport.minY},${this.viewport.maxX},${this.viewport.maxY}`;
+        const cacheKey = `${viewportKey}|${operator}|${denominatorExpression}|${this.angleMode}|${sourcePoints.length}`;
+        const cached = this.implicitShadingCache.get(func.id);
+        if (cached && cached.piecewiseCacheKey === cacheKey && cached.canvas) {
+            this.ctx.drawImage(cached.canvas, 0, 0);
+            return true;
+        }
+
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = width;
+        offscreenCanvas.height = height;
+        const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+
+        const colorWithAlpha = this.addAlphaToColor(func.color, 0.25);
+        offscreenCtx.fillStyle = colorWithAlpha;
+
+        const maxViewportRadius = Math.max(
+            Math.hypot(this.viewport.minX, this.viewport.minY),
+            Math.hypot(this.viewport.minX, this.viewport.maxY),
+            Math.hypot(this.viewport.maxX, this.viewport.minY),
+            Math.hypot(this.viewport.maxX, this.viewport.maxY)
+        ) * 1.6;
+        const originScreen = this.worldToScreen(0, 0);
+        const scope = this.getEvaluationScope({ t: 0, theta: 0, pi: Math.PI, e: Math.E });
+        const denominatorSignAt = (thetaRadians) => {
+            if (!Number.isFinite(thetaRadians)) {
+                return 0;
+            }
+            scope.t = thetaRadians;
+            scope.theta = thetaRadians;
+            try {
+                const value = denominatorCompiled.evaluate(scope);
+                if (!Number.isFinite(value) || Math.abs(value) <= 1e-8) {
+                    return 0;
+                }
+                return Math.sign(value);
+            } catch {
+                return 0;
+            }
+        };
+
+        const pointThetaToRadians = (point) => {
+            if (point && Number.isFinite(point.theta)) {
+                return this.angleMode === 'degrees' ? (point.theta * Math.PI / 180) : point.theta;
+            }
+            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                return this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+            }
+            return NaN;
+        };
+
+        const buildWedgePath = (ctx, thetaStart, thetaEnd) => {
+            if (!Number.isFinite(thetaStart) || !Number.isFinite(thetaEnd)) {
+                return false;
+            }
+            let start = thetaStart;
+            let end = thetaEnd;
+            while (end < start) {
+                end += 2 * Math.PI;
+            }
+            const span = end - start;
+            if (!Number.isFinite(span) || span <= 1e-8) {
+                return false;
+            }
+
+            const samples = Math.max(8, Math.min(256, Math.ceil(span / (Math.PI / 72))));
+            ctx.beginPath();
+            ctx.moveTo(originScreen.x, originScreen.y);
+            for (let i = 0; i <= samples; i++) {
+                const t = start + (span * i / samples);
+                const x = maxViewportRadius * Math.cos(t);
+                const y = maxViewportRadius * Math.sin(t);
+                const screen = this.worldToScreen(x, y);
+                ctx.lineTo(screen.x, screen.y);
+            }
+            ctx.closePath();
+            return true;
+        };
+
+        const buildSectorPath = (ctx, segmentPoints) => {
+            if (!Array.isArray(segmentPoints) || segmentPoints.length < 2) {
+                return false;
+            }
+            ctx.beginPath();
+            ctx.moveTo(originScreen.x, originScreen.y);
+            for (const p of segmentPoints) {
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+                    continue;
+                }
+                const sp = this.worldToScreen(p.x, p.y);
+                ctx.lineTo(sp.x, sp.y);
+            }
+            ctx.closePath();
+            return true;
+        };
+
+        const fillOutsideSegment = (ctx, segmentPoints) => {
+            if (!Array.isArray(segmentPoints) || segmentPoints.length < 2) {
+                return;
+            }
+
+            ctx.beginPath();
+            ctx.rect(0, 0, width, height);
+
+            for (let i = segmentPoints.length - 1; i >= 0; i--) {
+                const p = segmentPoints[i];
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+                    continue;
+                }
+                const sp = this.worldToScreen(p.x, p.y);
+                if (i === segmentPoints.length - 1) {
+                    ctx.moveTo(sp.x, sp.y);
+                } else {
+                    ctx.lineTo(sp.x, sp.y);
+                }
+            }
+
+            ctx.closePath();
+            ctx.fill('evenodd');
+        };
+
+        const flushSegment = (segmentPoints, denominatorSign) => {
+            if (!Array.isArray(segmentPoints) || segmentPoints.length < 2 || denominatorSign === 0) {
+                return;
+            }
+
+            const isLessThan = operator === '<' || operator === '<=';
+            const numeratorShouldBeLessThanZero = denominatorSign > 0 ? isLessThan : !isLessThan;
+            const fillInside = numeratorShouldBeLessThanZero;
+
+            const thetaStart = pointThetaToRadians(segmentPoints[0]);
+            const thetaEnd = pointThetaToRadians(segmentPoints[segmentPoints.length - 1]);
+
+            if (fillInside) {
+                offscreenCtx.save();
+                if (buildWedgePath(offscreenCtx, thetaStart, thetaEnd)) {
+                    offscreenCtx.clip();
+                }
+                if (buildSectorPath(offscreenCtx, segmentPoints)) {
+                    offscreenCtx.fill();
+                }
+                offscreenCtx.restore();
+                return;
+            }
+
+            if (!buildWedgePath(offscreenCtx, thetaStart, thetaEnd)) {
+                return;
+            }
+            offscreenCtx.save();
+            offscreenCtx.clip();
+            fillOutsideSegment(offscreenCtx, segmentPoints);
+            offscreenCtx.restore();
+        };
+
+        let activeSegment = [];
+        let activeSign = 0;
+
+        for (const point of sourcePoints) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                flushSegment(activeSegment, activeSign);
+                activeSegment = [];
+                activeSign = 0;
+                continue;
+            }
+
+            if (point.connected === false && activeSegment.length > 0) {
+                flushSegment(activeSegment, activeSign);
+                activeSegment = [];
+                activeSign = 0;
+            }
+
+            const thetaRad = pointThetaToRadians(point);
+            const sign = denominatorSignAt(thetaRad);
+            if (sign === 0) {
+                flushSegment(activeSegment, activeSign);
+                activeSegment = [];
+                activeSign = 0;
+                continue;
+            }
+
+            if (activeSign !== 0 && sign !== activeSign) {
+                flushSegment(activeSegment, activeSign);
+                activeSegment = [point];
+                activeSign = sign;
+                continue;
+            }
+
+            activeSegment.push(point);
+            activeSign = sign;
+        }
+        flushSegment(activeSegment, activeSign);
+
+        this.punchOutImplicitInequalityHoles(offscreenCtx, func);
+        this.implicitShadingCache.set(func.id, {
+            canvas: offscreenCanvas,
+            viewport: viewportKey,
+            piecewiseCacheKey: cacheKey
+        });
+        this.ctx.drawImage(offscreenCanvas, 0, 0);
+        return true;
+    }
+
     // ================================
     // INEQUALITY COMPOSITING METHODS (for intersections)
     // ================================
@@ -9550,6 +9869,11 @@ class Graphiti {
         }
         
         if (!operator) return;
+
+        const equation = this.parseImplicitInequality(func.expression);
+        const exclusionData = (isImplicitPolar && equation)
+            ? this.getImplicitPolarInequalityExclusionData(func, equation)
+            : null;
         
         // Fill with white on the off-screen canvas
         offscreenCtx.fillStyle = 'white';
@@ -9566,6 +9890,9 @@ class Graphiti {
                     const cellCentreX = worldX + worldWidth * 0.5;
                     const cellCentreY = worldY + worldHeight * 0.5;
                     if (!this.isWorldPointWithinPolarThetaRange(cellCentreX, cellCentreY)) {
+                        continue;
+                    }
+                    if (this.shouldSkipImplicitPolarInequalityCell(worldX, worldY, worldWidth, worldHeight, exclusionData)) {
                         continue;
                     }
                 }
@@ -9610,6 +9937,9 @@ class Graphiti {
                         if (!this.isWorldPointWithinPolarThetaRange(cellCentreX, cellCentreY)) {
                             continue;
                         }
+                        if (this.shouldSkipImplicitPolarInequalityCell(worldX, worldY, cellWidth, cellHeight, exclusionData)) {
+                            continue;
+                        }
                     }
                     
                     // Check if inequality is satisfied
@@ -9641,6 +9971,7 @@ class Graphiti {
         
         // Fill all rectangles at once to avoid seams
         offscreenCtx.fill();
+        this.punchOutImplicitInequalityHoles(offscreenCtx, func);
     }
 
     drawInequalityIntersection() {
@@ -9987,6 +10318,203 @@ class Graphiti {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
+    getImplicitPolarInequalityExclusionData(func, equation) {
+        if (!func || !equation || this.plotMode !== 'polar' || !this.isPolarImplicitExpression(func.expression)) {
+            return null;
+        }
+
+        const thetaMin = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+        const thetaMax = Number.isFinite(this.polarSettings.thetaMax) ? this.polarSettings.thetaMax : (thetaMin + (2 * Math.PI));
+        const cacheKey = [
+            this.getCachedNormalisedFunctionExpression(func),
+            this.angleMode,
+            thetaMin,
+            thetaMax
+        ].join('|');
+
+        if (func._implicitPolarInequalityExclusionCache && func._implicitPolarInequalityExclusionCache.key === cacheKey) {
+            return func._implicitPolarInequalityExclusionCache.data;
+        }
+
+        const polarEquation = {
+            ...equation,
+            coordinateSystem: 'polar'
+        };
+        const cleared = this.buildPolarDenominatorClearedImplicitEquation(polarEquation);
+        const metadata = cleared && cleared.denominatorClearedFromEquation
+            ? cleared.denominatorClearedFromEquation
+            : null;
+        const thetaExclusions = metadata && Array.isArray(metadata.domainExclusionsTheta)
+            ? metadata.domainExclusionsTheta.filter(value => Number.isFinite(value))
+            : [];
+        const radialExclusions = metadata && Array.isArray(metadata.domainExclusions)
+            ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+            : [];
+        const denominatorExpressions = metadata && Array.isArray(metadata.denominators)
+            ? metadata.denominators.filter(value => typeof value === 'string' && value.trim())
+            : [];
+        const hasThetaDenominator = denominatorExpressions.some(denominator => /\btheta\b|\bt\b|θ/i.test(denominator));
+        if (hasThetaDenominator) {
+            const seamTheta = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+            if (!thetaExclusions.some(value => Math.abs(value - seamTheta) <= 1e-6)) {
+                thetaExclusions.push(seamTheta);
+            }
+        }
+
+        const data = (thetaExclusions.length > 0 || radialExclusions.length > 0)
+            ? { thetaExclusions, radialExclusions }
+            : null;
+
+        func._implicitPolarInequalityExclusionCache = {
+            key: cacheKey,
+            data
+        };
+
+        return data;
+    }
+
+    punchOutImplicitInequalityHoles(ctx, func) {
+        if (!ctx || !func || !Array.isArray(func.holes) || func.holes.length === 0) {
+            return;
+        }
+
+        const holeRadius = Math.max(this.getLineWidth(10), 10);
+        let hasPath = false;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+
+        for (const hole of func.holes) {
+            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                continue;
+            }
+            const screen = this.worldToScreen(hole.x, hole.y);
+            if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                continue;
+            }
+
+            ctx.moveTo(screen.x + holeRadius, screen.y);
+            ctx.arc(screen.x, screen.y, holeRadius, 0, 2 * Math.PI);
+            hasPath = true;
+        }
+
+        if (hasPath) {
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    populateImplicitPolarInequalityHoleMetadata(func, equation) {
+        if (!func || !equation || equation.coordinateSystem !== 'polar') {
+            return;
+        }
+
+        const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(equation);
+        if (!denominatorClearedEquation || !denominatorClearedEquation.denominatorClearedFromEquation) {
+            return;
+        }
+
+        const explicitExpressions = [];
+        const pushExpression = (expression) => {
+            if (typeof expression !== 'string' || !expression.trim()) {
+                return;
+            }
+            if (!explicitExpressions.includes(expression)) {
+                explicitExpressions.push(expression);
+            }
+        };
+
+        const affineModel = this.tryBuildAffinePolarImplicitModel(denominatorClearedEquation);
+        if (affineModel && typeof affineModel.explicitExpression === 'string') {
+            pushExpression(affineModel.explicitExpression);
+        }
+
+        const quadraticModel = this.tryBuildQuadraticPolarImplicitModel(denominatorClearedEquation);
+        if (quadraticModel && Array.isArray(quadraticModel.branchExpressions)) {
+            quadraticModel.branchExpressions.forEach(pushExpression);
+        }
+
+        const monomialModel = this.tryBuildMonomialPolarImplicitModel(denominatorClearedEquation);
+        if (monomialModel && Array.isArray(monomialModel.branchExpressions)) {
+            monomialModel.branchExpressions.forEach(pushExpression);
+        }
+
+        if (explicitExpressions.length === 0) {
+            return;
+        }
+
+        this.addPolarDenominatorClearedHolesForExpressions(func, explicitExpressions, denominatorClearedEquation);
+    }
+
+    shouldSkipImplicitPolarInequalityCell(worldX, worldY, worldWidth, worldHeight, exclusionData) {
+        if (!exclusionData) {
+            return false;
+        }
+
+        const centreX = worldX + (worldWidth * 0.5);
+        const centreY = worldY + (worldHeight * 0.5);
+        const radius = Math.hypot(centreX, centreY);
+        const halfDiagonal = Math.max(1e-9, Math.hypot(worldWidth, worldHeight) * 0.5);
+
+        if (Array.isArray(exclusionData.radialExclusions) && exclusionData.radialExclusions.length > 0) {
+            const radialTolerance = Math.max(halfDiagonal, 1e-4);
+            for (const exclusion of exclusionData.radialExclusions) {
+                if (Math.abs(radius - exclusion) <= radialTolerance) {
+                    return true;
+                }
+            }
+        }
+
+        if (Array.isArray(exclusionData.thetaExclusions) && exclusionData.thetaExclusions.length > 0) {
+            const minX = worldX;
+            const maxX = worldX + worldWidth;
+            const minY = worldY;
+            const maxY = worldY + worldHeight;
+            const corners = [
+                { x: minX, y: minY },
+                { x: maxX, y: minY },
+                { x: maxX, y: maxY },
+                { x: minX, y: maxY }
+            ];
+            const containsOrigin = minX <= 0 && maxX >= 0 && minY <= 0 && maxY >= 0;
+
+            for (const exclusion of exclusionData.thetaExclusions) {
+                if (!Number.isFinite(exclusion)) {
+                    continue;
+                }
+
+                const ux = Math.cos(exclusion);
+                const uy = Math.sin(exclusion);
+                if (!Number.isFinite(ux) || !Number.isFinite(uy)) {
+                    continue;
+                }
+
+                let minCross = Infinity;
+                let maxCross = -Infinity;
+                let maxProjection = -Infinity;
+                for (const corner of corners) {
+                    const crossValue = (ux * corner.y) - (uy * corner.x);
+                    const projection = (ux * corner.x) + (uy * corner.y);
+                    if (crossValue < minCross) minCross = crossValue;
+                    if (crossValue > maxCross) maxCross = crossValue;
+                    if (projection > maxProjection) maxProjection = projection;
+                }
+
+                const rayTolerance = Math.max(1e-6, halfDiagonal * 0.2);
+                const crossesSupportingLine = minCross <= rayTolerance && maxCross >= -rayTolerance;
+                const intersectsForwardRay = maxProjection >= -rayTolerance;
+
+                if ((crossesSupportingLine && intersectsForwardRay) || containsOrigin) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     drawImplicitInequality(func) {
         if (func.implicitPolarInequalityFastPath) {
             const pointsToUse = func.displayPoints || func.points;
@@ -10080,6 +10608,10 @@ class Graphiti {
         // Parse equation for full-viewport checking
         const equation = this.parseImplicitInequality(func.expression);
         if (!equation) return;
+        const isImplicitPolar = !!(func && typeof func.implicitRenderMode === 'string' && func.implicitRenderMode.startsWith('marching-polar'));
+        const exclusionData = isImplicitPolar
+            ? this.getImplicitPolarInequalityExclusionData(func, equation)
+            : null;
         
         // Extract operator from expression
         const clean = this.convertFromLatex(func.expression).trim();
@@ -10107,6 +10639,9 @@ class Graphiti {
         if (func.gridData.adaptiveCells) {
             for (const cell of func.gridData.adaptiveCells) {
                 const { worldX, worldY, worldWidth, worldHeight, value } = cell;
+                if (isImplicitPolar && this.shouldSkipImplicitPolarInequalityCell(worldX, worldY, worldWidth, worldHeight, exclusionData)) {
+                    continue;
+                }
                 
                 // Check if inequality is satisfied
                 let satisfiesInequality = false;
@@ -10171,6 +10706,11 @@ class Graphiti {
             for (let i = 0; i < width - 1; i++) {
                 for (let j = 0; j < height - 1; j++) {
                     const value = values[i][j];
+                    const worldX = minX + i * cellWidth;
+                    const worldY = minY + j * cellHeight;
+                    if (isImplicitPolar && this.shouldSkipImplicitPolarInequalityCell(worldX, worldY, cellWidth, cellHeight, exclusionData)) {
+                        continue;
+                    }
                     
                     // Check if inequality is satisfied
                     let satisfiesInequality = false;
@@ -10186,10 +10726,6 @@ class Graphiti {
                     
                     if (satisfiesInequality) {
                         cellsShaded = true;
-                        // Convert grid position to world coordinates
-                        const worldX = minX + i * cellWidth;
-                        const worldY = minY + j * cellHeight;
-                        
                         // Convert to screen coordinates and draw
                         const topLeft = this.worldToScreen(worldX, worldY);
                         const bottomRight = this.worldToScreen(worldX + cellWidth, worldY + cellHeight);
@@ -10233,6 +10769,8 @@ class Graphiti {
                 }
             }
         }
+
+        this.punchOutImplicitInequalityHoles(offscreenCtx, func);
         
         // Store in cache
         this.implicitShadingCache.set(func.id, {
@@ -16451,6 +16989,35 @@ class Graphiti {
             ? []
             : this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
         const evalPoint = this.buildImplicitPointEvaluator(equation);
+        let polarExclusionData = null;
+        if (isPolarImplicitEquation && equation && equation.isInequality === true) {
+            const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(equation);
+            const metadata = denominatorClearedEquation && denominatorClearedEquation.denominatorClearedFromEquation
+                ? denominatorClearedEquation.denominatorClearedFromEquation
+                : null;
+            if (metadata) {
+                const thetaExclusions = Array.isArray(metadata.domainExclusionsTheta)
+                    ? metadata.domainExclusionsTheta.filter(value => Number.isFinite(value))
+                    : [];
+                const radialExclusions = Array.isArray(metadata.domainExclusions)
+                    ? metadata.domainExclusions.filter(value => Number.isFinite(value))
+                    : [];
+                const denominators = Array.isArray(metadata.denominators)
+                    ? metadata.denominators.filter(value => typeof value === 'string' && value.trim())
+                    : [];
+                const hasThetaDenominator = denominators.some(denominator => /\btheta\b|\bt\b|θ/i.test(denominator));
+                if (hasThetaDenominator) {
+                    const seamTheta = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+                    if (!thetaExclusions.some(value => Math.abs(value - seamTheta) <= 1e-6)) {
+                        thetaExclusions.push(seamTheta);
+                    }
+                }
+
+                if (thetaExclusions.length > 0 || radialExclusions.length > 0) {
+                    polarExclusionData = { thetaExclusions, radialExclusions };
+                }
+            }
+        }
         
         // Phase 1: Create coarse grid
         const coarseGrid = [];
@@ -16485,8 +17052,19 @@ class Graphiti {
                 // Check if signs differ (boundary crosses this cell)
                 const hasPositive = corners.some(v => v > 0);
                 const hasNegative = corners.some(v => v < 0);
-                
-                if (hasPositive && hasNegative) {
+
+                const coarseCellWorldX = this.viewport.minX + i * coarseStepX;
+                const coarseCellWorldY = this.viewport.minY + j * coarseStepY;
+                const intersectsPolarExclusion = !!(polarExclusionData &&
+                    this.shouldSkipImplicitPolarInequalityCell(
+                        coarseCellWorldX,
+                        coarseCellWorldY,
+                        coarseStepX,
+                        coarseStepY,
+                        polarExclusionData
+                    ));
+
+                if (hasPositive && hasNegative || intersectsPolarExclusion) {
                     boundaryCells.add(`${i},${j}`);
                 }
             }
@@ -16512,7 +17090,11 @@ class Graphiti {
                         for (let fj = 0; fj < refineFactor; fj++) {
                             const worldX = cellStartX + fi * fineStepX;
                             const worldY = cellStartY + fj * fineStepY;
-                            const sampleValue = evalPoint(worldX, worldY);
+                            // Classify fill cells by centre sample to avoid corner bias,
+                            // especially for rational inequalities with singular rays.
+                            const sampleX = worldX + fineStepX * 0.5;
+                            const sampleY = worldY + fineStepY * 0.5;
+                            const sampleValue = evalPoint(sampleX, sampleY);
                             const value = sampleValue === null ? (isPolarImplicitEquation ? null : 0) : sampleValue;
                             
                             adaptiveCells.push({
@@ -16525,10 +17107,13 @@ class Graphiti {
                         }
                     }
                 } else {
-                    // Use coarse cell value (fast)
+                    // Use coarse cell centre value for robust shading classification.
                     const worldX = this.viewport.minX + i * coarseStepX;
                     const worldY = this.viewport.minY + j * coarseStepY;
-                    const value = coarseGrid[i][j];
+                    const sampleX = worldX + coarseStepX * 0.5;
+                    const sampleY = worldY + coarseStepY * 0.5;
+                    const sampleValue = evalPoint(sampleX, sampleY);
+                    const value = sampleValue === null ? (isPolarImplicitEquation ? null : 0) : sampleValue;
                     
                     adaptiveCells.push({
                         worldX,
@@ -24026,7 +24611,8 @@ class Graphiti {
             // Return the difference: left - right (so we solve for = 0)
             const result = {
                 leftExpression: leftProcessed,
-                rightExpression: rightProcessed
+                rightExpression: rightProcessed,
+                isInequality: false
             };
             
             // Cache the result
@@ -24084,7 +24670,8 @@ class Graphiti {
             // The inequality operator will be used during shading
             return {
                 leftExpression: leftProcessed,
-                rightExpression: rightProcessed
+                rightExpression: rightProcessed,
+                isInequality: true
             };
             
         } catch (error) {
