@@ -2194,6 +2194,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(affineFastPathFunc);
         await graphiti.plotFunction(affineFastPathFunc);
 
+        const quadraticFastPathFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r^2-(2+cos(t))=0',
+            points: [],
+            color: '#00695C',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(quadraticFastPathFunc);
+        await graphiti.plotFunction(quadraticFastPathFunc);
+
         const explicitRoseFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r=2*cos(3*theta)',
@@ -2246,6 +2257,9 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
             point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.y < -0.05
         );
         const affineFastPathFinitePointCount = (affineFastPathFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ).length;
+        const quadraticFastPathFinitePointCount = (quadraticFastPathFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
         const clippedAngles = clippedEquationFinitePoints.map(point => {
@@ -2359,6 +2373,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
 
         const implicitEquationAnimationArcCount = getAnimationArcCountForFunction(equationFunc, 0);
         const affineFastPathAnimationArcCount = getAnimationArcCountForFunction(affineFastPathFunc, 0);
+        const quadraticFastPathAnimationArcCount = getAnimationArcCountForFunction(quadraticFastPathFunc, 0);
         const explicitRoseAnimationAfterPiA = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.2);
         const explicitRoseAnimationAfterPiB = getAnimationArcSummaryForFunction(explicitRoseFunc, Math.PI + 0.4);
         let explicitRosePostPiMotion = null;
@@ -2406,6 +2421,15 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 renderMode: affineFastPathFunc.implicitRenderMode || null,
                 finitePointCount: affineFastPathFinitePointCount,
                 animationArcCount: affineFastPathAnimationArcCount
+            },
+            quadraticFastPath: {
+                detectedType: graphiti.detectFunctionType(quadraticFastPathFunc.expression),
+                renderMode: quadraticFastPathFunc.implicitRenderMode || null,
+                finitePointCount: quadraticFastPathFinitePointCount,
+                animationArcCount: quadraticFastPathAnimationArcCount,
+                branchCount: Array.isArray(quadraticFastPathFunc.quadraticPolarExplicitExpressions)
+                    ? quadraticFastPathFunc.quadraticPolarExplicitExpressions.length
+                    : 0
             },
             explicitRoseAnimation: {
                 arcCountAfterPiA: explicitRoseAnimationAfterPiA.arcCount,
@@ -2460,6 +2484,12 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.affineFastPath.renderMode, 'affine-polar-explicit', `affine implicit polar expression should activate affine fast-path: ${JSON.stringify(result.affineFastPath)}`);
     assert(result.affineFastPath.finitePointCount > 30, `affine implicit polar fast-path should produce visible points: ${JSON.stringify(result.affineFastPath)}`);
     assert(result.affineFastPath.animationArcCount >= 3, `affine implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.affineFastPath)}`);
+
+    assert.strictEqual(result.quadraticFastPath.detectedType, 'implicit', `quadratic implicit polar expression should remain implicit in classification: ${JSON.stringify(result.quadraticFastPath)}`);
+    assert.strictEqual(result.quadraticFastPath.renderMode, 'quadratic-polar-explicit', `quadratic implicit polar expression should activate quadratic fast-path: ${JSON.stringify(result.quadraticFastPath)}`);
+    assert(result.quadraticFastPath.branchCount >= 2, `quadratic implicit polar fast-path should expose both explicit branches: ${JSON.stringify(result.quadraticFastPath)}`);
+    assert(result.quadraticFastPath.finitePointCount > 80, `quadratic implicit polar fast-path should produce substantial finite points: ${JSON.stringify(result.quadraticFastPath)}`);
+    assert(result.quadraticFastPath.animationArcCount >= 3, `quadratic implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.quadraticFastPath)}`);
 
     assert(result.explicitRoseAnimation.arcCountAfterPiA >= 3, `explicit rose should still draw marker arcs after pi (first sample): ${JSON.stringify(result.explicitRoseAnimation)}`);
     assert(result.explicitRoseAnimation.arcCountAfterPiB >= 3, `explicit rose should still draw marker arcs after pi (second sample): ${JSON.stringify(result.explicitRoseAnimation)}`);

@@ -274,6 +274,8 @@ class Graphiti {
             'quadraticYExplicitProxy',
             'quadraticDiscriminantRoots',
             'quadraticYVerticalComponents',
+            'quadraticPolarExplicitExpressions',
+            'quadraticPolarDiscriminantExpression',
             'productImplicitFactorExpressions',
             'productImplicitFactorRenderModes',
             'productImplicitVerticalComponents',
@@ -5509,6 +5511,23 @@ class Graphiti {
                         return;
                     }
                 }
+
+                const quadraticPolarModel = this.tryBuildQuadraticPolarImplicitModel(equation);
+                if (quadraticPolarModel) {
+                    const handled = await this.plotImplicitPolarQuadraticAsExplicit(func, quadraticPolarModel);
+                    if (handled) {
+                        if (!suppressDraw) {
+                            this.draw();
+                        }
+                        this.activeImplicitCalculations.delete(func.id);
+
+                        if (this.performance.enabled) {
+                            const elapsed = performance.now() - startTime;
+                            this.performance.plotTimes.set(func.id, elapsed);
+                        }
+                        return;
+                    }
+                }
             }
 
             if (this.isCalculationCancelled(func.id, calculationId)) {
@@ -5719,6 +5738,136 @@ class Graphiti {
         };
     }
 
+    tryBuildQuadraticPolarImplicitModel(equation) {
+        if (!equation || !equation.leftExpression || !equation.rightExpression) {
+            return null;
+        }
+
+        const combinedExpression = '((' + equation.leftExpression + ')-(' + equation.rightExpression + '))';
+        if (/\bx\b|\by\b/i.test(combinedExpression)) {
+            return null;
+        }
+
+        const replaceRSymbol = (expression, replacement) => expression.replace(/\br\b/g, '(' + replacement + ')');
+        const simplifyGeneratedExpression = (expression) => {
+            try {
+                const simplified = this.cleanMath.simplify(expression).toString();
+                return simplified || expression;
+            } catch {
+                return expression;
+            }
+        };
+
+        let cExpression = simplifyGeneratedExpression(replaceRSymbol(combinedExpression, '0'));
+        const f1Expression = simplifyGeneratedExpression(replaceRSymbol(combinedExpression, '1'));
+        const f2Expression = simplifyGeneratedExpression(replaceRSymbol(combinedExpression, '2'));
+        let aExpression = simplifyGeneratedExpression('(((' + f2Expression + ')-(2*(' + f1Expression + '))+(' + cExpression + '))/2)');
+        let bExpression = simplifyGeneratedExpression('(((4*(' + f1Expression + '))-(' + f2Expression + ')-(3*(' + cExpression + ')))/2)');
+        let discriminantExpression = simplifyGeneratedExpression('((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))');
+
+        let combinedForEval = combinedExpression;
+        let aForEval = aExpression;
+        let bForEval = bExpression;
+        let cForEval = cExpression;
+        if (this.angleMode === 'degrees') {
+            combinedForEval = this.convertTrigToDegreeModeImplicitCartesian(combinedForEval);
+            aForEval = this.convertTrigToDegreeModeImplicitCartesian(aForEval);
+            bForEval = this.convertTrigToDegreeModeImplicitCartesian(bForEval);
+            cForEval = this.convertTrigToDegreeModeImplicitCartesian(cForEval);
+        }
+
+        let combinedCompiled;
+        let aCompiled;
+        let bCompiled;
+        let cCompiled;
+        try {
+            combinedCompiled = this.getCompiledExpression(combinedForEval);
+            aCompiled = this.getCompiledExpression(aForEval);
+            bCompiled = this.getCompiledExpression(bForEval);
+            cCompiled = this.getCompiledExpression(cForEval);
+        } catch {
+            return null;
+        }
+
+        const scope = this.getEvaluationScope({ r: 0, t: 0, theta: 0, pi: Math.PI, e: Math.E });
+        const evaluateCompiled = (compiled, theta, rValue) => {
+            scope.r = rValue;
+            scope.t = theta;
+            scope.theta = theta;
+            try {
+                const value = compiled.evaluate(scope);
+                return Number.isFinite(value) ? value : null;
+            } catch {
+                return null;
+            }
+        };
+
+        const thetaMin = this.polarSettings.thetaMin;
+        const thetaMax = this.polarSettings.thetaMax;
+        if (!Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin) {
+            return null;
+        }
+
+        const thetaSpan = thetaMax - thetaMin;
+        const sampleCount = Math.max(18, Math.min(64, Math.ceil(thetaSpan / Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax)))));
+        const rSamples = [-2, -1, -0.5, 0, 0.5, 1, 2, 3];
+
+        let validSamples = 0;
+        let maxResidual = 0;
+        let maxMagnitude = 0;
+        let maxQuadraticMagnitude = 0;
+        for (let i = 0; i <= sampleCount; i++) {
+            const theta = thetaMin + (thetaSpan * i / sampleCount);
+            const aValue = evaluateCompiled(aCompiled, theta, 0);
+            const bValue = evaluateCompiled(bCompiled, theta, 0);
+            const cValue = evaluateCompiled(cCompiled, theta, 0);
+            if (aValue === null || bValue === null || cValue === null) {
+                continue;
+            }
+
+            maxQuadraticMagnitude = Math.max(maxQuadraticMagnitude, Math.abs(aValue));
+            for (const rValue of rSamples) {
+                const combinedValue = evaluateCompiled(combinedCompiled, theta, rValue);
+                if (combinedValue === null) {
+                    continue;
+                }
+                const reconstructed = (aValue * rValue * rValue) + (bValue * rValue) + cValue;
+                const residual = Math.abs(combinedValue - reconstructed);
+                maxResidual = Math.max(maxResidual, residual);
+                maxMagnitude = Math.max(maxMagnitude, Math.abs(combinedValue), Math.abs(reconstructed));
+                validSamples++;
+            }
+        }
+
+        if (validSamples < 24) {
+            return null;
+        }
+
+        const residualTolerance = Math.max(1e-6, maxMagnitude * 1e-6);
+        if (maxResidual > residualTolerance) {
+            return null;
+        }
+
+        const quadraticTolerance = Math.max(1e-8, maxMagnitude * 1e-8);
+        if (maxQuadraticMagnitude <= quadraticTolerance) {
+            return null;
+        }
+
+        discriminantExpression = simplifyGeneratedExpression('((' + bExpression + ')^2-(4*(' + aExpression + ')*(' + cExpression + ')))');
+        const branchExpressions = [
+            simplifyGeneratedExpression('(-(' + bExpression + ')+sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))'),
+            simplifyGeneratedExpression('(-(' + bExpression + ')-sqrt(' + discriminantExpression + '))/(2*(' + aExpression + '))')
+        ];
+
+        return {
+            aExpression,
+            bExpression,
+            cExpression,
+            discriminantExpression,
+            branchExpressions
+        };
+    }
+
     async plotImplicitPolarAffineAsExplicit(func, affinePolarModel) {
         if (!func || !affinePolarModel || !affinePolarModel.explicitExpression) {
             return false;
@@ -5733,6 +5882,24 @@ class Graphiti {
 
         func.implicitRenderMode = 'affine-polar-explicit';
         func.affinePolarExplicitExpression = affinePolarModel.explicitExpression;
+        return true;
+    }
+
+    async plotImplicitPolarQuadraticAsExplicit(func, quadraticPolarModel) {
+        if (!func || !quadraticPolarModel || !Array.isArray(quadraticPolarModel.branchExpressions) || quadraticPolarModel.branchExpressions.length === 0) {
+            return false;
+        }
+
+        const handled = this.plotCachedPolarQuadraticExplicitProxy(func, quadraticPolarModel.branchExpressions, {
+            clearAsymptoteData: true
+        });
+        if (!handled) {
+            return false;
+        }
+
+        func.implicitRenderMode = 'quadratic-polar-explicit';
+        func.quadraticPolarExplicitExpressions = quadraticPolarModel.branchExpressions.slice();
+        func.quadraticPolarDiscriminantExpression = quadraticPolarModel.discriminantExpression;
         return true;
     }
 
@@ -5765,6 +5932,56 @@ class Graphiti {
         func.displayPoints = Array.isArray(proxyFunc.displayPoints)
             ? proxyFunc.displayPoints
             : func.points;
+        if (clearAsymptoteData) {
+            this.clearFunctionAsymptoteData(func);
+        }
+        return true;
+    }
+
+    plotCachedPolarQuadraticExplicitProxy(func, branchExpressions, options = {}) {
+        if (!func || !Array.isArray(branchExpressions) || branchExpressions.length === 0) {
+            return false;
+        }
+
+        const clearAsymptoteData = options.clearAsymptoteData !== false;
+        const mergedPoints = [];
+        let hasFinitePoints = false;
+
+        branchExpressions.forEach((branchExpression, index) => {
+            if (typeof branchExpression !== 'string' || !branchExpression.trim()) {
+                return;
+            }
+
+            const proxyFunc = {
+                ...func,
+                expression: 'r=' + branchExpression,
+                points: [],
+                displayPoints: []
+            };
+            this.plotPolarFunction(proxyFunc);
+
+            const branchPoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
+            const finiteBranchPoints = branchPoints.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+            if (finiteBranchPoints.length === 0) {
+                return;
+            }
+
+            if (index > 0 && mergedPoints.length > 0) {
+                mergedPoints.push({ x: NaN, y: NaN, connected: false });
+            }
+
+            for (const point of branchPoints) {
+                mergedPoints.push(point);
+            }
+            hasFinitePoints = true;
+        });
+
+        if (!hasFinitePoints || mergedPoints.length === 0) {
+            return false;
+        }
+
+        func.points = mergedPoints;
+        func.displayPoints = mergedPoints;
         if (clearAsymptoteData) {
             this.clearFunctionAsymptoteData(func);
         }
@@ -6616,6 +6833,17 @@ class Graphiti {
                     return;
                 }
             }
+
+            if (func.implicitRenderMode === 'quadratic-polar-explicit' &&
+                Array.isArray(func.quadraticPolarExplicitExpressions) &&
+                func.quadraticPolarExplicitExpressions.length > 0) {
+                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.quadraticPolarExplicitExpressions, {
+                    clearAsymptoteData: false
+                });
+                if (handled) {
+                    return;
+                }
+            }
             this.plotFunction(func);
         });
         
@@ -6767,6 +6995,7 @@ class Graphiti {
     isExplicitImplicitFastPath(func) {
         return !!func && (
             func.implicitRenderMode === 'affine-polar-explicit' ||
+            func.implicitRenderMode === 'quadratic-polar-explicit' ||
             func.implicitRenderMode === 'affine-explicit' ||
             func.implicitRenderMode === 'monomial-explicit' ||
             func.implicitRenderMode === 'monomial-x-explicit' ||
@@ -17656,6 +17885,8 @@ class Graphiti {
         delete func.quadraticYCacheKey;
         delete func.quadraticYDiscriminantExpression;
         delete func.quadraticYVerticalComponents;
+        delete func.quadraticPolarExplicitExpressions;
+        delete func.quadraticPolarDiscriminantExpression;
         delete func._useExplicitCurveRenderCache;
 
         this.updateFunctionAsymptoteInfo(func);
