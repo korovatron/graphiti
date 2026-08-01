@@ -282,6 +282,7 @@ class Graphiti {
             'productImplicitFactorExpressions',
             'productImplicitFactorRenderModes',
             'productImplicitVerticalComponents',
+            'productPolarExplicitExpressions',
             'singleVariableImplicitVerticalComponents',
             'singleVariableImplicitHorizontalComponents'
         ];
@@ -314,6 +315,9 @@ class Graphiti {
         this.linkedBadgePairs = []; // Store linked badge pairs for area-between-curves calculation
         this.pendingLabelClick = null; // Store pending click to check after next draw
         this.integralPanelCheckboxes = []; // Track which integral pairs have checkboxes checked
+
+        // Keep polar animation marker selection stable across frames.
+        this.polarAnimationMarkerState = new Map();
         
         // Trapezium rule visualization
         this.showTrapeziumRule = false; // Toggle for trapezium rule visualization
@@ -5675,6 +5679,19 @@ class Graphiti {
         }
 
         const factorResults = [];
+        const productPolarExplicitExpressions = [];
+        const addProductPolarExpression = (expression) => {
+            if (typeof expression !== 'string') {
+                return;
+            }
+            const trimmed = expression.trim();
+            if (!trimmed) {
+                return;
+            }
+            if (!productPolarExplicitExpressions.includes(trimmed)) {
+                productPolarExplicitExpressions.push(trimmed);
+            }
+        };
         for (let index = 0; index < factorExpressions.length; index++) {
             const factorExpression = factorExpressions[index];
             const factorFunc = {
@@ -5697,6 +5714,20 @@ class Graphiti {
                 : 0;
             if (finitePointCount === 0) {
                 return false;
+            }
+
+            if (typeof factorFunc.affinePolarExplicitExpression === 'string') {
+                addProductPolarExpression(factorFunc.affinePolarExplicitExpression);
+            }
+            if (Array.isArray(factorFunc.quadraticPolarExplicitExpressions)) {
+                for (const expression of factorFunc.quadraticPolarExplicitExpressions) {
+                    addProductPolarExpression(expression);
+                }
+            }
+            if (Array.isArray(factorFunc.monomialPolarExplicitExpressions)) {
+                for (const expression of factorFunc.monomialPolarExplicitExpressions) {
+                    addProductPolarExpression(expression);
+                }
             }
 
             factorResults.push(factorFunc);
@@ -5788,6 +5819,7 @@ class Graphiti {
         func.productImplicitFactorExpressions = factorExpressions.slice();
         func.productImplicitFactorRenderModes = factorResults.map(factorFunc => factorFunc.implicitRenderMode || null);
         func.productImplicitVerticalComponents = verticalComponents.slice();
+        func.productPolarExplicitExpressions = productPolarExplicitExpressions.slice();
         func.implicitRenderMode = 'product-factors';
         this.applyImplicitFunctionPoints(func, mergedPoints);
         this.updateFunctionAsymptoteInfo(func);
@@ -7180,6 +7212,26 @@ class Graphiti {
                 });
                 if (handled) {
                     return;
+                }
+            }
+
+            if (func.implicitRenderMode === 'product-factors') {
+                const cachedProductExpressions = Array.isArray(func.productPolarExplicitExpressions)
+                    ? func.productPolarExplicitExpressions.filter(expression => typeof expression === 'string' && expression.trim())
+                    : [];
+                const expressionsToPlot = cachedProductExpressions.length > 0
+                    ? cachedProductExpressions
+                    : this.getPolarInterceptExpressionCandidates(func, this.detectFunctionType(func.expression));
+                if (expressionsToPlot.length > 0) {
+                    const handled = this.plotCachedPolarQuadraticExplicitProxy(func, expressionsToPlot, {
+                        clearAsymptoteData: false
+                    });
+                    if (handled) {
+                        if (cachedProductExpressions.length === 0) {
+                            func.productPolarExplicitExpressions = expressionsToPlot.slice();
+                        }
+                        return;
+                    }
                 }
             }
             this.plotFunction(func);
@@ -18236,6 +18288,7 @@ class Graphiti {
         delete func.productImplicitFactorExpressions;
         delete func.productImplicitFactorRenderModes;
         delete func.productImplicitVerticalComponents;
+        delete func.productPolarExplicitExpressions;
         delete func.singleVariableImplicitVerticalComponents;
         delete func.singleVariableImplicitHorizontalComponents;
         delete func.quadraticDiscriminantRoots;
@@ -38730,6 +38783,13 @@ class Graphiti {
             func.implicitRenderMode === 'product-factors' && Array.isArray(func.productImplicitFactorExpressions)
                 ? func.productImplicitFactorExpressions
                 : [];
+        const cachedProductPolarExplicitExpressions =
+            func.implicitRenderMode === 'product-factors' && Array.isArray(func.productPolarExplicitExpressions)
+                ? uniqueExpressions(func.productPolarExplicitExpressions)
+                : [];
+        if (cachedProductPolarExplicitExpressions.length > 0) {
+            return cachedProductPolarExplicitExpressions;
+        }
         if (productFactorExpressions.length > 0) {
             const factorCandidates = [];
             for (const factorExpression of productFactorExpressions) {
@@ -38748,7 +38808,8 @@ class Graphiti {
                 : '';
         const cachedPolarBranchExpressions = uniqueExpressions([
             ...(Array.isArray(func.quadraticPolarExplicitExpressions) ? func.quadraticPolarExplicitExpressions : []),
-            ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : [])
+            ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : []),
+            ...(Array.isArray(func.productPolarExplicitExpressions) ? func.productPolarExplicitExpressions : [])
         ]);
 
         if (cachedPolarBranchExpressions.length > 0) {
@@ -50751,6 +50812,165 @@ class Graphiti {
         
         this.ctx.restore();
     }
+
+    getPolarAnimationSourceExpressions(func, functionType) {
+        const uniqueExpressions = [];
+        const addExpression = (expression) => {
+            if (typeof expression !== 'string') {
+                return;
+            }
+            const trimmed = expression.trim();
+            if (!trimmed) {
+                return;
+            }
+            if (!uniqueExpressions.includes(trimmed)) {
+                uniqueExpressions.push(trimmed);
+            }
+        };
+
+        const cachedBranchExpressions = [
+            ...(Array.isArray(func.quadraticPolarExplicitExpressions) ? func.quadraticPolarExplicitExpressions : []),
+            ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : []),
+            ...(Array.isArray(func.productPolarExplicitExpressions) ? func.productPolarExplicitExpressions : [])
+        ];
+        for (const expression of cachedBranchExpressions) {
+            addExpression(expression);
+        }
+
+        if (typeof func.affinePolarExplicitExpression === 'string') {
+            addExpression(func.affinePolarExplicitExpression);
+        }
+
+        // Legacy or restored product-factor functions may miss cached branch expressions.
+        if (uniqueExpressions.length === 0 &&
+            func.implicitRenderMode === 'product-factors' &&
+            Array.isArray(func.productImplicitFactorExpressions) &&
+            func.productImplicitFactorExpressions.length > 0) {
+            const fallbackCandidates = this.getPolarInterceptExpressionCandidates(func, functionType);
+            for (const expression of fallbackCandidates) {
+                addExpression(expression);
+            }
+            if (uniqueExpressions.length > 0) {
+                func.productPolarExplicitExpressions = uniqueExpressions.slice();
+            }
+        }
+
+        if (uniqueExpressions.length > 0) {
+            return uniqueExpressions;
+        }
+
+        if (functionType === 'polar-inequality') {
+            const inequality = this.parsePolarInequality(func.expression);
+            if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
+                return [];
+            }
+            addExpression(inequality.rightSide);
+            return uniqueExpressions;
+        }
+
+        let processedExpression = this.convertFromLatex(func.expression).trim();
+        if (processedExpression.toLowerCase().startsWith('r=')) {
+            processedExpression = processedExpression.substring(2).trim();
+        }
+        addExpression(processedExpression);
+        return uniqueExpressions;
+    }
+
+    getPolarAnimationCompiledExpressions(func, functionType) {
+        const sourceExpressions = this.getPolarAnimationSourceExpressions(func, functionType);
+        if (sourceExpressions.length === 0) {
+            return [];
+        }
+
+        const signature = `${this.angleMode}|${sourceExpressions.join('||')}`;
+        if (func._polarAnimationCompiledSignature === signature && Array.isArray(func._polarAnimationCompiledExpressions)) {
+            return func._polarAnimationCompiledExpressions;
+        }
+
+        const compiledExpressions = [];
+        for (let expression of sourceExpressions) {
+            expression = expression.toLowerCase();
+            expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+            expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+            if (this.angleMode === 'degrees') {
+                const hasRegularTrig = this.getCachedRegex('regularTrig').test(expression);
+                if (hasRegularTrig) {
+                    expression = this.convertTrigToDegreeMode(expression);
+                }
+            }
+
+            try {
+                compiledExpressions.push(this.getCompiledExpression(expression));
+            } catch {
+                // Skip expressions that fail to compile.
+            }
+        }
+
+        func._polarAnimationCompiledSignature = signature;
+        func._polarAnimationCompiledExpressions = compiledExpressions;
+        return compiledExpressions;
+    }
+
+    selectStablePolarAnimationPrimaryPoint(func, evaluatedMarkerPoints) {
+        if (!Array.isArray(evaluatedMarkerPoints) || evaluatedMarkerPoints.length === 0) {
+            return null;
+        }
+
+        if (evaluatedMarkerPoints.length === 1) {
+            this.polarAnimationMarkerState.set(func.id, { primaryIndex: 0 });
+            return { point: evaluatedMarkerPoints[0], index: 0 };
+        }
+
+        const previousState = this.polarAnimationMarkerState.get(func.id);
+        const previousIndex = previousState && Number.isInteger(previousState.primaryIndex)
+            ? previousState.primaryIndex
+            : 0;
+
+        if (previousIndex >= 0 && previousIndex < evaluatedMarkerPoints.length) {
+            this.polarAnimationMarkerState.set(func.id, { primaryIndex: previousIndex });
+            return { point: evaluatedMarkerPoints[previousIndex], index: previousIndex };
+        }
+
+        this.polarAnimationMarkerState.set(func.id, { primaryIndex: 0 });
+        return { point: evaluatedMarkerPoints[0], index: 0 };
+    }
+
+    drawPolarAnimationMarkerGlyph(point, color) {
+        if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+            return;
+        }
+
+        const screenPos = this.worldToScreen(point.x, point.y);
+        const pulseSpeed = 3;
+        const minRadius = 4;
+        const maxRadius = 8;
+        const pulseRadius = minRadius + (maxRadius - minRadius) *
+            (0.5 + 0.5 * Math.sin(Date.now() * pulseSpeed / 1000));
+
+        const gradient = this.ctx.createRadialGradient(
+            screenPos.x, screenPos.y, 0,
+            screenPos.x, screenPos.y, pulseRadius * 2
+        );
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(0.5, color + '88');
+        gradient.addColorStop(1, color + '00');
+
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.arc(screenPos.x, screenPos.y, pulseRadius * 2, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.beginPath();
+        this.ctx.arc(screenPos.x, screenPos.y, pulseRadius * 0.4, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
     
     drawPolarAnimationPoint() {
         // Safety check: ensure polarAnimation exists
@@ -50781,45 +51001,16 @@ class Graphiti {
                 }
 
                 let markerPoint = null;
-                const affinePolarExplicitExpression =
-                    func.implicitRenderMode === 'affine-polar-explicit' && typeof func.affinePolarExplicitExpression === 'string'
-                        ? func.affinePolarExplicitExpression.trim()
-                        : '';
-                const cachedPolarBranchExpressions = [
-                    ...(Array.isArray(func.quadraticPolarExplicitExpressions) ? func.quadraticPolarExplicitExpressions : []),
-                    ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : [])
-                ]
-                    .filter(expression => typeof expression === 'string' && expression.trim())
-                    .map(expression => expression.trim());
+                const compiledPolarAnimationExpressions = this.getPolarAnimationCompiledExpressions(func, functionType);
                 const shouldUseLivePolarEvaluation =
                     functionType === 'polar' ||
                     functionType === 'polar-inequality' ||
                     functionType === 'explicit' ||
-                    affinePolarExplicitExpression.length > 0 ||
-                    cachedPolarBranchExpressions.length > 0;
+                    compiledPolarAnimationExpressions.length > 0;
 
                 // Explicit polar functions should evaluate against the live animation theta so
                 // closed curves that intentionally stop plotting early can still retrace later.
                 if (shouldUseLivePolarEvaluation) {
-                    let processedExpressions;
-                    if (cachedPolarBranchExpressions.length > 0) {
-                        processedExpressions = cachedPolarBranchExpressions.map(expression => expression.toLowerCase());
-                    } else if (affinePolarExplicitExpression.length > 0) {
-                        processedExpressions = [affinePolarExplicitExpression.toLowerCase()];
-                    } else if (functionType === 'polar-inequality') {
-                        const inequality = this.parsePolarInequality(func.expression);
-                        if (!inequality || inequality.leftSide.toLowerCase() !== 'r') {
-                            return;
-                        }
-                        processedExpressions = [inequality.rightSide.toLowerCase()];
-                    } else {
-                        let processedExpression = this.convertFromLatex(func.expression).trim();
-                        if (processedExpression.toLowerCase().startsWith('r=')) {
-                            processedExpression = processedExpression.substring(2).trim();
-                        }
-                        processedExpressions = [processedExpression.toLowerCase()];
-                    }
-
                     const evaluatedMarkerPoints = [];
                     const scope = this.getEvaluationScope({
                         theta: thetaRad,
@@ -50828,11 +51019,7 @@ class Graphiti {
                         e: Math.E
                     });
 
-                    for (let processedExpression of processedExpressions) {
-                        processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
-                        processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
-
-                        const compiled = this.getCompiledExpression(processedExpression);
+                    for (const compiled of compiledPolarAnimationExpressions) {
                         const result = compiled.evaluate(scope);
                         let r = typeof result === 'number' ? result : (result && result.re !== undefined ? result.re : NaN);
                         if (!Number.isFinite(r)) {
@@ -50859,38 +51046,25 @@ class Graphiti {
                         return;
                     }
 
-                    markerPoint = evaluatedMarkerPoints[0];
-                    for (let markerIndex = 1; markerIndex < evaluatedMarkerPoints.length; markerIndex++) {
+                    if (func.implicitRenderMode === 'product-factors' && evaluatedMarkerPoints.length > 1) {
+                        for (const branchPoint of evaluatedMarkerPoints) {
+                            this.drawPolarAnimationMarkerGlyph(branchPoint, func.color);
+                        }
+                        return;
+                    }
+
+                    const primarySelection = this.selectStablePolarAnimationPrimaryPoint(func, evaluatedMarkerPoints);
+                    if (!primarySelection || !primarySelection.point) {
+                        return;
+                    }
+                    markerPoint = primarySelection.point;
+                    const primaryIndex = Number.isInteger(primarySelection.index) ? primarySelection.index : 0;
+                    for (let markerIndex = 0; markerIndex < evaluatedMarkerPoints.length; markerIndex++) {
+                        if (markerIndex === primaryIndex) {
+                            continue;
+                        }
                         const extraPoint = evaluatedMarkerPoints[markerIndex];
-                        const extraScreenPos = this.worldToScreen(extraPoint.x, extraPoint.y);
-                        const pulseSpeed = 3;
-                        const minRadius = 4;
-                        const maxRadius = 8;
-                        const pulseRadius = minRadius + (maxRadius - minRadius) *
-                            (0.5 + 0.5 * Math.sin(Date.now() * pulseSpeed / 1000));
-
-                        const extraGradient = this.ctx.createRadialGradient(
-                            extraScreenPos.x, extraScreenPos.y, 0,
-                            extraScreenPos.x, extraScreenPos.y, pulseRadius * 2
-                        );
-                        extraGradient.addColorStop(0, func.color);
-                        extraGradient.addColorStop(0.5, func.color + '88');
-                        extraGradient.addColorStop(1, func.color + '00');
-
-                        this.ctx.fillStyle = extraGradient;
-                        this.ctx.beginPath();
-                        this.ctx.arc(extraScreenPos.x, extraScreenPos.y, pulseRadius * 2, 0, Math.PI * 2);
-                        this.ctx.fill();
-
-                        this.ctx.fillStyle = func.color;
-                        this.ctx.beginPath();
-                        this.ctx.arc(extraScreenPos.x, extraScreenPos.y, pulseRadius, 0, Math.PI * 2);
-                        this.ctx.fill();
-
-                        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                        this.ctx.beginPath();
-                        this.ctx.arc(extraScreenPos.x, extraScreenPos.y, pulseRadius * 0.4, 0, Math.PI * 2);
-                        this.ctx.fill();
+                        this.drawPolarAnimationMarkerGlyph(extraPoint, func.color);
                     }
                 } else {
                     const pointsToUse = Array.isArray(func.displayPoints) && func.displayPoints.length > 0
@@ -50931,41 +51105,7 @@ class Graphiti {
                     }
                 }
                 
-                // Convert to screen coordinates
-                const screenPos = this.worldToScreen(markerPoint.x, markerPoint.y);
-                
-                // Create pulsating effect using timestamp
-                const pulseSpeed = 3; // Speed of pulsation
-                const minRadius = 4;
-                const maxRadius = 8;
-                const pulseRadius = minRadius + (maxRadius - minRadius) * 
-                    (0.5 + 0.5 * Math.sin(Date.now() * pulseSpeed / 1000));
-                
-                // Draw outer glow
-                const gradient = this.ctx.createRadialGradient(
-                    screenPos.x, screenPos.y, 0,
-                    screenPos.x, screenPos.y, pulseRadius * 2
-                );
-                gradient.addColorStop(0, func.color);
-                gradient.addColorStop(0.5, func.color + '88'); // Semi-transparent
-                gradient.addColorStop(1, func.color + '00'); // Fully transparent
-                
-                this.ctx.fillStyle = gradient;
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, pulseRadius * 2, 0, Math.PI * 2);
-                this.ctx.fill();
-                
-                // Draw solid inner point
-                this.ctx.fillStyle = func.color;
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
-                this.ctx.fill();
-                
-                // Draw bright center highlight
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                this.ctx.beginPath();
-                this.ctx.arc(screenPos.x, screenPos.y, pulseRadius * 0.4, 0, Math.PI * 2);
-                this.ctx.fill();
+                this.drawPolarAnimationMarkerGlyph(markerPoint, func.color);
                 
             } catch (error) {
                 // Skip this function if evaluation fails
