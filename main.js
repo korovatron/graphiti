@@ -7766,6 +7766,76 @@ class Graphiti {
         this.draw();
     }
 
+    replotCachedImplicitFastPathForViewport(func) {
+        if (!func || this.plotMode !== 'polar' || !this.isExplicitImplicitFastPath(func)) {
+            return false;
+        }
+
+        const rawFunctionType = this.detectFunctionType(func.expression);
+        if (rawFunctionType !== 'implicit' && rawFunctionType !== 'implicit-inequality') {
+            return false;
+        }
+
+        if (func.implicitRenderMode === 'affine-polar-explicit' &&
+            typeof func.affinePolarExplicitExpression === 'string' &&
+            func.affinePolarExplicitExpression.trim()) {
+            const handled = this.plotCachedPolarExplicitProxy(func, func.affinePolarExplicitExpression, {
+                clearAsymptoteData: false
+            });
+            if (handled) {
+                this.reapplyImplicitPolarFastPathPostProcessing(func);
+                return true;
+            }
+        }
+
+        if (func.implicitRenderMode === 'quadratic-polar-explicit' &&
+            Array.isArray(func.quadraticPolarExplicitExpressions) &&
+            func.quadraticPolarExplicitExpressions.length > 0) {
+            const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.quadraticPolarExplicitExpressions, {
+                clearAsymptoteData: false
+            });
+            if (handled) {
+                this.reapplyImplicitPolarFastPathPostProcessing(func);
+                return true;
+            }
+        }
+
+        if (func.implicitRenderMode === 'monomial-polar-explicit' &&
+            Array.isArray(func.monomialPolarExplicitExpressions) &&
+            func.monomialPolarExplicitExpressions.length > 0) {
+            const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.monomialPolarExplicitExpressions, {
+                clearAsymptoteData: false
+            });
+            if (handled) {
+                this.reapplyImplicitPolarFastPathPostProcessing(func);
+                return true;
+            }
+        }
+
+        if (func.implicitRenderMode === 'product-factors') {
+            const cachedProductExpressions = Array.isArray(func.productPolarExplicitExpressions)
+                ? func.productPolarExplicitExpressions.filter(expression => typeof expression === 'string' && expression.trim())
+                : [];
+            const expressionsToPlot = cachedProductExpressions.length > 0
+                ? cachedProductExpressions
+                : this.getPolarInterceptExpressionCandidates(func, this.detectFunctionType(func.expression));
+            if (expressionsToPlot.length > 0) {
+                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, expressionsToPlot, {
+                    clearAsymptoteData: false
+                });
+                if (handled) {
+                    this.reapplyImplicitPolarFastPathPostProcessing(func);
+                    if (cachedProductExpressions.length === 0) {
+                        func.productPolarExplicitExpressions = expressionsToPlot.slice();
+                    }
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     cacheImplicitPolarFastPathPostProcess(func, equation, explicitExpressions = []) {
         if (!func || !equation || !equation.denominatorClearedFromEquation) {
             delete func.polarFastPathPostProcess;
@@ -24254,7 +24324,13 @@ class Graphiti {
             this.getActiveEnabledFunctions().forEach(func => {
                 if (func.expression && func.enabled && !func.validationError) {
                     const functionType = this.getEffectiveFunctionType(func);
-                    if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant') {
+                    const rawFunctionType = this.detectFunctionType(func.expression);
+                    const canUseFastSettleLane = this.isExplicitImplicitFastPath(func) &&
+                        (rawFunctionType === 'implicit' || rawFunctionType === 'implicit-inequality');
+                    if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant' || canUseFastSettleLane) {
+                        if (canUseFastSettleLane && this.replotCachedImplicitFastPathForViewport(func)) {
+                            return;
+                        }
                         if (this.isExplicitImplicitFastPath(func)) {
                             func._preserveFastPathMetadataDuringViewportRefresh = true;
                         }
@@ -24271,8 +24347,11 @@ class Graphiti {
             // For inequalities, this recalculates grid data at proper resolution
             const hasImplicitFunctionsToReplot = this.getActiveEnabledFunctions().some(func => {
                 if (!func.expression || !func.enabled || func.validationError) return false;
-                const functionType = this.getEffectiveFunctionType(func);
-                return functionType === 'implicit' || functionType === 'implicit-inequality';
+                const rawFunctionType = this.detectFunctionType(func.expression);
+                if (this.isExplicitImplicitFastPath(func) && (rawFunctionType === 'implicit' || rawFunctionType === 'implicit-inequality')) {
+                    return false;
+                }
+                return rawFunctionType === 'implicit' || rawFunctionType === 'implicit-inequality';
             });
             if (hasImplicitFunctionsToReplot) {
                 explicitReplotPromises.push(this.replotImplicitFunctions(true));
@@ -35057,7 +35136,7 @@ class Graphiti {
     }
 
     shouldShowViewportWorkIndicator() {
-        if (this.plotMode !== 'cartesian') {
+        if (this.plotMode !== 'cartesian' && this.plotMode !== 'polar') {
             return false;
         }
 
