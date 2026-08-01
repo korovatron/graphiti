@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.63';
+const VERSION = '1.3.64';
 
 class Graphiti {
     constructor() {
@@ -1783,7 +1783,11 @@ class Graphiti {
             // full quality to avoid showing a coarse first frame.
             const functionType = this.detectFunctionType(expression);
             if (functionType === 'implicit' || functionType === 'implicit-inequality') {
-                await this.plotImplicitFunction(emptyFunc, false, true);
+                if (this.plotMode === 'polar' && this.isPolarImplicitExpression(expression)) {
+                    await this.plotImplicitPolarFunction(emptyFunc, false, true);
+                } else {
+                    await this.plotImplicitFunction(emptyFunc, false, true);
+                }
             } else {
                 await this.plotFunction(emptyFunc);
             }
@@ -1936,7 +1940,7 @@ class Graphiti {
                     'r=1+\\cos\\left(\\theta\\right)',                 // Cardioid
                     'r=2\\cos\\left(3\\theta\\right)',                  // Rose curve
                     '\\theta=\\frac{\\pi}{4}',                           // Ray at 45 degrees
-                    '\\theta=\\frac{3\\pi}{4}'                          // Ray at 135 degrees
+                    'r=\\frac{1}{\\theta-\\frac{\\pi}{2}}'            // Reciprocal-in-theta asymptotic branch
                 ],
                 description: 'Polar Basics Demo',
                 viewport: { minX: -3, maxX: 3, minY: -3, maxY: 3 }
@@ -5911,24 +5915,46 @@ class Graphiti {
             return NaN;
         };
 
+        const snapNearInteger = (value, tolerance = 0.01) => {
+            if (!Number.isFinite(value)) {
+                return value;
+            }
+            const rounded = Math.round(value);
+            return Math.abs(value - rounded) <= tolerance ? rounded : value;
+        };
+
+        const normalizeLinearOffset = (value) => {
+            if (!Number.isFinite(value)) {
+                return value;
+            }
+            const nearZeroSnapped = Math.abs(value) < 0.18 ? 0 : value;
+            return snapNearInteger(nearZeroSnapped, Math.max(0.01, Math.abs(nearZeroSnapped) * 0.004));
+        };
+
         const tryAddVertical = (x, thetaRay) => {
-            if (!Number.isFinite(x)) {
+            const normalizedX = normalizeLinearOffset(x);
+            if (!Number.isFinite(normalizedX)) {
                 return;
             }
-            const duplicate = result.vertical.some(existing => Math.abs(existing - x) <= Math.max(1e-5, Math.abs(existing) * 1e-5));
+            const duplicate = result.vertical.some(existing => Math.abs(existing - normalizedX) <= Math.max(1e-5, Math.abs(existing) * 1e-5));
             if (!duplicate) {
-                result.vertical.push(x);
+                result.vertical.push(normalizedX);
+            }
+            if (Number.isFinite(thetaRay) && !result.consumedRays.some(existing => Math.abs(existing - thetaRay) <= 1e-8)) {
                 result.consumedRays.push(thetaRay);
             }
         };
 
         const tryAddHorizontal = (y, thetaRay) => {
-            if (!Number.isFinite(y)) {
+            const normalizedY = normalizeLinearOffset(y);
+            if (!Number.isFinite(normalizedY)) {
                 return;
             }
-            const duplicate = result.horizontal.some(existing => Math.abs(existing - y) <= Math.max(1e-5, Math.abs(existing) * 1e-5));
+            const duplicate = result.horizontal.some(existing => Math.abs(existing - normalizedY) <= Math.max(1e-5, Math.abs(existing) * 1e-5));
             if (!duplicate) {
-                result.horizontal.push(y);
+                result.horizontal.push(normalizedY);
+            }
+            if (Number.isFinite(thetaRay) && !result.consumedRays.some(existing => Math.abs(existing - thetaRay) <= 1e-8)) {
                 result.consumedRays.push(thetaRay);
             }
         };
@@ -5952,12 +5978,18 @@ class Graphiti {
                 if (mapping) {
                     mapping.rays.push(thetaRay);
                 }
+                if (Number.isFinite(thetaRay) && !result.consumedRays.some(existing => Math.abs(existing - thetaRay) <= 1e-8)) {
+                    result.consumedRays.push(thetaRay);
+                }
                 return;
             }
 
             const newLine = { m, b, direction: 0 };
             result.oblique.push(newLine);
             inferredRayMap.push({ line: newLine, rays: [thetaRay] });
+            if (Number.isFinite(thetaRay) && !result.consumedRays.some(existing => Math.abs(existing - thetaRay) <= 1e-8)) {
+                result.consumedRays.push(thetaRay);
+            }
         };
 
         for (const thetaRay of polarRayAsymptotes) {
@@ -6154,6 +6186,11 @@ class Graphiti {
         }
 
         const consumed = [];
+        for (const ray of result.consumedRays || []) {
+            if (Number.isFinite(ray) && !consumed.some(existing => Math.abs(existing - ray) <= 1e-8)) {
+                consumed.push(ray);
+            }
+        }
         for (const mapping of inferredRayMap) {
             if (!mapping || !Array.isArray(mapping.rays)) {
                 continue;
@@ -6172,7 +6209,13 @@ class Graphiti {
             }
         }
 
-        if (consumed.length < 2) {
+        const inferredLineCount = result.vertical.length + result.horizontal.length + result.oblique.length;
+        const uniqueInputRayCount = Array.isArray(polarRayAsymptotes)
+            ? polarRayAsymptotes.filter(value => Number.isFinite(value)).length
+            : 0;
+        const allowSingleRayInference = uniqueInputRayCount === 1 && inferredLineCount === 1;
+
+        if (!allowSingleRayInference && consumed.length < 2) {
             return {
                 vertical: [],
                 horizontal: [],

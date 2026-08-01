@@ -2114,6 +2114,9 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         const asymptoticRays = asymptoticFunc.asymptoteData && Array.isArray(asymptoticFunc.asymptoteData.polarRays)
             ? asymptoticFunc.asymptoteData.polarRays.slice()
             : [];
+        const asymptoticVertical = asymptoticFunc.asymptoteData && Array.isArray(asymptoticFunc.asymptoteData.vertical)
+            ? asymptoticFunc.asymptoteData.vertical.slice()
+            : [];
         const asymptoticDisplay = graphiti.buildAsymptoteDisplayLatex(asymptoticFunc);
         const asymptoticConnectedStraddleCount = (() => {
             const points = Array.isArray(asymptoticFunc.points) ? asymptoticFunc.points : [];
@@ -2252,6 +2255,7 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
 
         return {
             asymptoticRays,
+            asymptoticVertical,
             asymptoticDisplay,
             asymptoticBridgeSegments,
             asymptoticConnectedStraddleCount,
@@ -2275,12 +2279,22 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     });
 
     assert(
-        result.asymptoticRays.some(theta => approxEqual(theta, Math.PI / 2, 0.06)),
-        `explicit polar reciprocal should detect singular theta ray near pi/2: ${JSON.stringify(result)}`
+        result.asymptoticVertical.some(value => approxEqual(value, -1, 0.1)),
+        `explicit polar reciprocal should infer Cartesian asymptote x=-1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.asymptoticRays.length,
+        0,
+        `explicit polar reciprocal should suppress theta-only asymptote metadata when a Cartesian asymptote is inferred: ${JSON.stringify(result)}`
     );
     assert(
+        result.asymptoticDisplay.some(equation => /^x\s*=\s*-?1(?:\.0+)?$/.test(equation) || equation === 'x = -1'),
+        `explicit polar reciprocal should render Cartesian asymptote equation x = -1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
         result.asymptoticDisplay.some(equation => /\\theta\s*=/.test(equation)),
-        `explicit polar singular rays should render theta-based asymptote metadata: ${JSON.stringify(result)}`
+        false,
+        `explicit polar reciprocal should not render theta-only asymptote metadata once line asymptote is inferred: ${JSON.stringify(result)}`
     );
     assert.strictEqual(
         result.boundedRays.length,
@@ -6311,6 +6325,55 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
     }], `valid demo set should track one GoatCounter load event: ${JSON.stringify(result)}`);
 }
 
+async function assertImplicitPolarDemoHolesRenderImmediately(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        await graphiti.addDemoSet('implicit-polar');
+
+        const targetFunc = (graphiti.polarFunctions || []).find(func => func && func.expression === 'r-\\frac{\\theta}{r}=0') || null;
+        if (!targetFunc) {
+            return {
+                foundFunction: false,
+                holesCount: 0,
+                holeDisplayCount: 0,
+                holesVisible: false,
+                firstHoleDisplay: null
+            };
+        }
+
+        const holeDisplay = graphiti.buildHoleDisplayLatex(targetFunc);
+        const item = document.querySelector(`[data-function-id="${targetFunc.id}"]`);
+        const holesContainer = item ? item.querySelector('.holes-info-container') : null;
+        const holeItems = holesContainer ? Array.from(holesContainer.querySelectorAll('.holes-equation-item, .asymptote-equation-item')) : [];
+
+        return {
+            foundFunction: true,
+            holesCount: Array.isArray(targetFunc.holes) ? targetFunc.holes.length : 0,
+            holeDisplayCount: Array.isArray(holeDisplay) ? holeDisplay.length : 0,
+            holesVisible: holesContainer ? holesContainer.classList.contains('visible') : false,
+            firstHoleDisplay: Array.isArray(holeDisplay) && holeDisplay.length > 0 ? holeDisplay[0] : null,
+            domHoleItemCount: holeItems.length
+        };
+    });
+
+    assert.strictEqual(result.foundFunction, true, `implicit polar demo should load target expression: ${JSON.stringify(result)}`);
+    assert(result.holesCount > 0, `implicit polar demo target should expose hole metadata immediately: ${JSON.stringify(result)}`);
+    assert(result.holeDisplayCount > 0, `implicit polar demo target should build non-empty hole display immediately: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.holesVisible, true, `implicit polar demo hole row should be visible immediately after loading: ${JSON.stringify(result)}`);
+    assert(result.domHoleItemCount > 0, `implicit polar demo hole row should render at least one hole equation item immediately: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -6442,6 +6505,7 @@ async function assertDemoSetLoadsTrackGoatCounterEvent(page) {
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
         await assertTurningPointBadgesDoNotRelinkToDistantCandidates(page);
         await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
+        await assertImplicitPolarDemoHolesRenderImmediately(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
