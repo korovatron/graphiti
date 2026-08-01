@@ -18895,6 +18895,16 @@ class Graphiti {
             return this.classifyPolarFunctionShape(`r=${expression}`);
         }
         if (this.plotMode === 'polar' && (functionType === 'implicit' || functionType === 'implicit-inequality')) {
+            if (func && func.implicitRenderMode === 'product-factors' && Array.isArray(func.productImplicitFactorExpressions) && func.productImplicitFactorExpressions.length > 0) {
+                const factorShapes = func.productImplicitFactorExpressions
+                    .map(factorExpression => this.classifyImplicitPolarFactorShape(factorExpression))
+                    .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
+                const combinedShape = this.combinePolarFactorShapes(factorShapes);
+                if (combinedShape) {
+                    return combinedShape;
+                }
+            }
+
             if (func && typeof func.affinePolarExplicitExpression === 'string' && func.affinePolarExplicitExpression.trim()) {
                 const proxyShape = this.classifyPolarFunctionShape(`r=${func.affinePolarExplicitExpression}`);
                 if (proxyShape) {
@@ -18961,6 +18971,91 @@ class Graphiti {
         }
 
         return this.classifyImplicitEquationShape(equation, 0);
+    }
+
+    classifyImplicitPolarFactorShape(factorExpression) {
+        if (typeof factorExpression !== 'string' || !factorExpression.trim()) {
+            return null;
+        }
+
+        const equation = this.parseImplicitEquation(`${factorExpression}=0`);
+        if (!equation) {
+            return null;
+        }
+
+        const polarEquation = { ...equation, coordinateSystem: 'polar' };
+
+        const quadraticModel = this.tryBuildQuadraticPolarImplicitModel(polarEquation);
+        if (quadraticModel && Array.isArray(quadraticModel.branchExpressions) && quadraticModel.branchExpressions.length > 0) {
+            const branchShapes = quadraticModel.branchExpressions
+                .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`))
+                .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
+            const combinedBranchShape = this.combinePolarFactorShapes(branchShapes);
+            if (combinedBranchShape) {
+                return combinedBranchShape;
+            }
+        }
+
+        const monomialModel = this.tryBuildMonomialPolarImplicitModel(polarEquation);
+        if (monomialModel && Array.isArray(monomialModel.branchExpressions) && monomialModel.branchExpressions.length > 0) {
+            const branchShapes = monomialModel.branchExpressions
+                .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`))
+                .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
+            const combinedBranchShape = this.combinePolarFactorShapes(branchShapes);
+            if (combinedBranchShape) {
+                return combinedBranchShape;
+            }
+        }
+
+        const affineModel = this.tryBuildAffinePolarImplicitModel(polarEquation);
+        if (affineModel && typeof affineModel.explicitExpression === 'string' && affineModel.explicitExpression.trim()) {
+            return this.classifyPolarFunctionShape(`r=${affineModel.explicitExpression}`);
+        }
+
+        return null;
+    }
+
+    combinePolarFactorShapes(shapes) {
+        if (!Array.isArray(shapes) || shapes.length === 0) {
+            return null;
+        }
+
+        const uniqueShapes = [];
+        for (const shape of shapes) {
+            if (!shape || typeof shape.label !== 'string') {
+                continue;
+            }
+
+            const trimmedLabel = shape.label.trim();
+            if (!trimmedLabel) {
+                continue;
+            }
+
+            if (!uniqueShapes.some(existing => existing.label === trimmedLabel)) {
+                uniqueShapes.push({ ...shape, label: trimmedLabel });
+            }
+        }
+
+        if (uniqueShapes.length === 0) {
+            return null;
+        }
+
+        if (uniqueShapes.length === 1) {
+            return uniqueShapes[0];
+        }
+
+        const confidences = uniqueShapes.map(shape => shape.confidence || 'unknown');
+        const combinedConfidence = confidences.every(confidence => confidence === 'exact')
+            ? 'exact'
+            : (confidences.every(confidence => confidence === 'parameter')
+                ? 'parameter'
+                : 'structural');
+
+        return {
+            label: uniqueShapes.map(shape => shape.label).join(' + '),
+            confidence: combinedConfidence,
+            components: uniqueShapes.map(shape => ({ ...shape }))
+        };
     }
 
     classifyExplicitEquationShape(equation) {
@@ -38585,16 +38680,76 @@ class Graphiti {
             return [];
         }
 
+        const uniqueExpressions = (expressions) => {
+            const result = [];
+            for (const expression of expressions) {
+                if (typeof expression !== 'string') {
+                    continue;
+                }
+                const trimmed = expression.trim();
+                if (!trimmed) {
+                    continue;
+                }
+                if (!result.includes(trimmed)) {
+                    result.push(trimmed);
+                }
+            }
+            return result;
+        };
+
+        const buildPolarCandidatesFromImplicitFactor = (factorExpression) => {
+            if (typeof factorExpression !== 'string' || !factorExpression.trim()) {
+                return [];
+            }
+
+            const equation = this.parseImplicitEquation(`${factorExpression}=0`);
+            if (!equation) {
+                return [];
+            }
+
+            const polarEquation = { ...equation, coordinateSystem: 'polar' };
+            const quadraticModel = this.tryBuildQuadraticPolarImplicitModel(polarEquation);
+            if (quadraticModel && Array.isArray(quadraticModel.branchExpressions) && quadraticModel.branchExpressions.length > 0) {
+                return uniqueExpressions(quadraticModel.branchExpressions);
+            }
+
+            const monomialModel = this.tryBuildMonomialPolarImplicitModel(polarEquation);
+            if (monomialModel && Array.isArray(monomialModel.branchExpressions) && monomialModel.branchExpressions.length > 0) {
+                return uniqueExpressions(monomialModel.branchExpressions);
+            }
+
+            const affineModel = this.tryBuildAffinePolarImplicitModel(polarEquation);
+            if (affineModel && typeof affineModel.explicitExpression === 'string' && affineModel.explicitExpression.trim()) {
+                return [affineModel.explicitExpression.trim()];
+            }
+
+            return [];
+        };
+
+        const productFactorExpressions =
+            func.implicitRenderMode === 'product-factors' && Array.isArray(func.productImplicitFactorExpressions)
+                ? func.productImplicitFactorExpressions
+                : [];
+        if (productFactorExpressions.length > 0) {
+            const factorCandidates = [];
+            for (const factorExpression of productFactorExpressions) {
+                factorCandidates.push(...buildPolarCandidatesFromImplicitFactor(factorExpression));
+            }
+
+            const uniqueFactorCandidates = uniqueExpressions(factorCandidates);
+            if (uniqueFactorCandidates.length > 0) {
+                return uniqueFactorCandidates;
+            }
+        }
+
         const affinePolarExplicitExpression =
             func.implicitRenderMode === 'affine-polar-explicit' && typeof func.affinePolarExplicitExpression === 'string'
                 ? func.affinePolarExplicitExpression.trim()
                 : '';
-        const cachedPolarBranchExpressions = [
+        const cachedPolarBranchExpressions = uniqueExpressions([
             ...(Array.isArray(func.quadraticPolarExplicitExpressions) ? func.quadraticPolarExplicitExpressions : []),
             ...(Array.isArray(func.monomialPolarExplicitExpressions) ? func.monomialPolarExplicitExpressions : [])
-        ]
-            .filter(expression => typeof expression === 'string' && expression.trim())
-            .map(expression => expression.trim());
+        ]);
 
         if (cachedPolarBranchExpressions.length > 0) {
             return cachedPolarBranchExpressions;
@@ -39626,57 +39781,114 @@ class Graphiti {
             
             return true;
         });
+
+        const polarStationaryPriority = (point) => {
+            if (!point) return 0;
+            if (point.type === 'radialMaximum') return 3;
+            if (point.type === 'polarStationary') return 2;
+            if (point.type === 'radialMinimum') return 1;
+            return 0;
+        };
+
+        const collapseDuplicatePolarTurningPoints = (points) => {
+            const collapsed = [];
+            const tolerance = 1e-5;
+            for (const point of points) {
+                if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                    continue;
+                }
+
+                const existingIndex = collapsed.findIndex(existing =>
+                    Math.hypot(existing.x - point.x, existing.y - point.y) <= tolerance
+                );
+                if (existingIndex === -1) {
+                    collapsed.push(point);
+                    continue;
+                }
+
+                if (polarStationaryPriority(point) > polarStationaryPriority(collapsed[existingIndex])) {
+                    collapsed[existingIndex] = point;
+                }
+            }
+            return collapsed;
+        };
         
         for (const func of enabledFunctions) {
             try {
-                let cleanExpression;
-                
-                // For polar inequalities, use the boundary expression
-                if (func.inequality && func.inequality.expression) {
-                    cleanExpression = func.inequality.expression;
-                } else {
-                    // Convert from LaTeX first since we now store LaTeX format
-                    const convertedExpression = this.convertFromLatex(func.expression);
-                    
-                    // Clean the expression - remove "r=" or "r>", "r<", "r≥", "r≤" prefix if present
-                    cleanExpression = convertedExpression.trim();
-                    if (/^r\s*[=><≥≤]/.test(cleanExpression.toLowerCase())) {
-                        // Find the operator and take everything after it
-                        const match = cleanExpression.match(/^r\s*[=><≥≤]\s*(.+)$/i);
-                        if (match) {
-                            cleanExpression = match[1].trim();
-                        }
-                    }
-                }
-                
-                // Validate that the expression can be parsed before attempting derivatives
-                try {
-                    math.parse(cleanExpression);
-                } catch (parseError) {
-                    console.warn(`Skipping polar turning points for invalid expression "${func.expression}":`, parseError.message);
-                    continue;
-                }
-                
-                // Make function names case-insensitive for derivative calculation
-                let processedExpression = cleanExpression.toLowerCase();
-                
-                // If expression contains derivative(), compute it symbolically first
-                // Process from innermost to outermost by finding derivatives that don't contain other derivatives
-                while (processedExpression.includes('derivative(')) {
+                const functionType = this.detectFunctionType(func.expression);
+                const candidateExpressions = this.getPolarInterceptExpressionCandidates(func, functionType);
+                const expressionsToProcess = candidateExpressions.length > 0
+                    ? candidateExpressions
+                    : [this.getProcessedPolarExpression(func)];
+
+                const perFunctionTurningPoints = [];
+                for (const expressionCandidate of expressionsToProcess) {
+                    // Validate that the expression can be parsed before attempting derivatives
                     try {
-                        // Find the innermost derivative (one whose content doesn't contain another derivative)
-                        let derivStart = -1;
-                        let searchIndex = 0;
-                        let foundInnermost = false;
-                        
-                        // Keep finding derivative( until we find one whose content doesn't contain another derivative(
-                        while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
-                            const start = searchIndex + 'derivative('.length;
+                        math.parse(expressionCandidate);
+                    } catch (parseError) {
+                        continue;
+                    }
+
+                    // Make function names case-insensitive for derivative calculation
+                    let processedExpression = String(expressionCandidate).toLowerCase();
+
+                    // If expression contains derivative(), compute it symbolically first
+                    // Process from innermost to outermost by finding derivatives that don't contain other derivatives
+                    while (processedExpression.includes('derivative(')) {
+                        try {
+                            // Find the innermost derivative (one whose content doesn't contain another derivative)
+                            let derivStart = -1;
+                            let searchIndex = 0;
+                            let foundInnermost = false;
+
+                            // Keep finding derivative( until we find one whose content doesn't contain other derivative(
+                            while ((searchIndex = processedExpression.indexOf('derivative(', searchIndex)) !== -1) {
+                                const start = searchIndex + 'derivative('.length;
+                                let depth = 0;
+                                let endParen = -1;
+                                let lastCommaPos = -1;
+
+                                // Find the matching closing parenthesis
+                                for (let i = start; i < processedExpression.length; i++) {
+                                    if (processedExpression[i] === '(') depth++;
+                                    else if (processedExpression[i] === ')') {
+                                        if (depth === 0) {
+                                            endParen = i;
+                                            break;
+                                        }
+                                        depth--;
+                                    }
+                                    else if (processedExpression[i] === ',' && depth === 0) {
+                                        lastCommaPos = i;
+                                    }
+                                }
+
+                                if (lastCommaPos !== -1 && endParen !== -1) {
+                                    const content = processedExpression.substring(start, endParen);
+
+                                    // Check if this content contains another derivative(
+                                    if (!content.includes('derivative(')) {
+                                        // Found innermost derivative
+                                        derivStart = searchIndex;
+                                        foundInnermost = true;
+                                        break;
+                                    }
+                                }
+
+                                searchIndex++;
+                            }
+
+                            if (!foundInnermost) {
+                                break; // No valid innermost derivative found
+                            }
+
+                            // Process the innermost derivative
+                            const start = derivStart + 'derivative('.length;
                             let depth = 0;
                             let endParen = -1;
                             let lastCommaPos = -1;
-                            
-                            // Find the matching closing parenthesis
+
                             for (let i = start; i < processedExpression.length; i++) {
                                 if (processedExpression[i] === '(') depth++;
                                 else if (processedExpression[i] === ')') {
@@ -39690,102 +39902,63 @@ class Graphiti {
                                     lastCommaPos = i;
                                 }
                             }
-                            
+
                             if (lastCommaPos !== -1 && endParen !== -1) {
-                                const content = processedExpression.substring(start, endParen);
-                                
-                                // Check if this content contains another derivative(
-                                if (!content.includes('derivative(')) {
-                                    // Found innermost derivative
-                                    derivStart = searchIndex;
-                                    foundInnermost = true;
-                                    break;
+                                const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
+                                let derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
+
+                                // In polar mode, theta is converted to 't'
+                                if (derivVariable === 'theta') {
+                                    derivVariable = 't';
                                 }
+
+                                const derivativeResult = this.cleanMath.derivative(derivExpr, derivVariable);
+
+                                // Replace only the derivative() call with its result, preserving surrounding expression
+                                processedExpression = processedExpression.substring(0, derivStart) +
+                                                      '(' + derivativeResult.toString() + ')' +
+                                                      processedExpression.substring(endParen + 1);
+                            } else {
+                                break; // Invalid format, stop processing
                             }
-                            
-                            searchIndex++;
+                        } catch {
+                            break;
                         }
-                        
-                        if (!foundInnermost) {
-                            break; // No valid innermost derivative found
-                        }
-                        
-                        // Process the innermost derivative
-                        const start = derivStart + 'derivative('.length;
-                        let depth = 0;
-                        let endParen = -1;
-                        let lastCommaPos = -1;
-                        
-                        for (let i = start; i < processedExpression.length; i++) {
-                            if (processedExpression[i] === '(') depth++;
-                            else if (processedExpression[i] === ')') {
-                                if (depth === 0) {
-                                    endParen = i;
-                                    break;
-                                }
-                                depth--;
-                            }
-                            else if (processedExpression[i] === ',' && depth === 0) {
-                                lastCommaPos = i;
-                            }
-                        }
-                        
-                        if (lastCommaPos !== -1 && endParen !== -1) {
-                            const derivExpr = processedExpression.substring(start, lastCommaPos).trim();
-                            let derivVariable = processedExpression.substring(lastCommaPos + 1, endParen).trim();
-                            
-                            // In polar mode, theta is converted to 't'
-                            if (derivVariable === 'theta') {
-                                derivVariable = 't';
-                            }
-                            
-                            const derivativeResult = this.cleanMath.derivative(derivExpr, derivVariable);
-                            
-                            // Replace only the derivative() call with its result, preserving surrounding expression
-                            processedExpression = processedExpression.substring(0, derivStart) + 
-                                                  '(' + derivativeResult.toString() + ')' + 
-                                                  processedExpression.substring(endParen + 1);
-                        } else {
-                            break; // Invalid format, stop processing
-                        }
-                    } catch (err) {
-                        console.warn('Could not compute derivative for polar turning points:', err);
-                        break;
                     }
-                }
-                
-                // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
-                processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
-                processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
-                
-                // Get symbolic derivative dr/dtheta using math.js
-                // Try both theta and t as variable names
-                let derivative;
-                let derivativeStr;
-                try {
-                    // Try theta first
-                    derivative = this.cleanMath.derivative(processedExpression, 'theta');
-                    derivativeStr = derivative.toString();
-                    
-                    // If derivative is just "0", try with 't' instead
-                    if (derivativeStr === '0') {
-                        derivative = this.cleanMath.derivative(processedExpression, 't');
+
+                    // Add implicit multiplication: 2theta -> 2*theta, 3cos -> 3*cos
+                    processedExpression = processedExpression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                    processedExpression = processedExpression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+
+                    // Get symbolic derivative dr/dtheta using math.js
+                    // Try both theta and t as variable names
+                    let derivativeStr;
+                    try {
+                        // Try theta first
+                        let derivative = this.cleanMath.derivative(processedExpression, 'theta');
                         derivativeStr = derivative.toString();
-                    }
-                    
-                    // If still "0", it's probably a constant function
-                    if (derivativeStr === '0') {
+
+                        // If derivative is just "0", try with 't' instead
+                        if (derivativeStr === '0') {
+                            derivative = this.cleanMath.derivative(processedExpression, 't');
+                            derivativeStr = derivative.toString();
+                        }
+
+                        // If still "0", it's probably a constant function
+                        if (derivativeStr === '0') {
+                            continue;
+                        }
+                    } catch {
                         continue;
                     }
-                } catch (e) {
-                    console.warn(`Could not compute derivative for polar function ${func.expression}:`, e);
-                    continue;
+
+                    // Find turning points by finding roots of dr/dtheta = 0
+                    // Pass the processed expression so r values are calculated correctly for derivative functions
+                    const expressionTurningPoints = this.findPolarTurningPointsForFunction(func, derivativeStr, processedExpression);
+                    perFunctionTurningPoints.push(...expressionTurningPoints);
                 }
-                
-                // Find turning points by finding roots of dr/dtheta = 0
-                // Pass the processed expression so r values are calculated correctly for derivative functions
-                const functionTurningPoints = this.findPolarTurningPointsForFunction(func, derivativeStr, processedExpression);
-                turningPoints.push(...functionTurningPoints);
+
+                turningPoints.push(...collapseDuplicatePolarTurningPoints(perFunctionTurningPoints));
                 
             } catch (error) {
                 console.warn(`Could not find polar turning points for function ${func.expression}:`, error);

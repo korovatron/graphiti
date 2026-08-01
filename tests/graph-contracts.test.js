@@ -2271,6 +2271,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(implicitRoseAffineFunc);
         await graphiti.plotFunction(implicitRoseAffineFunc);
 
+        const productRoseCircleFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: '(r-2*cos(3*theta))*(r-3)=0',
+            points: [],
+            color: '#6A1B9A',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(productRoseCircleFunc);
+        await graphiti.plotFunction(productRoseCircleFunc);
+
         const inequalityFunc = {
             id: graphiti.nextFunctionId++,
             expression: 'r-(1+cos(t))<0',
@@ -2597,12 +2608,37 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 implicitTraceSlopeFinite: implicitLimaconTraceProbe.slopeFinite,
                 implicitDragStaysOnCurve: implicitPolarDragConstraintProbe.staysOnCurve
             },
+            equivalentRosesTurningPoints: (() => {
+                const originalShowTurningPoints = graphiti.showTurningPoints;
+                graphiti.showTurningPoints = true;
+                const allTurningPoints = graphiti.findTurningPoints();
+                graphiti.showTurningPoints = originalShowTurningPoints;
+                const countType = (funcId, type) => allTurningPoints.filter(point =>
+                    point && point.func && point.func.id === funcId && point.type === type
+                ).length;
+
+                return {
+                    explicitRadialMaxima: countType(explicitRoseFunc.id, 'radialMaximum'),
+                    implicitRadialMaxima: countType(implicitRoseAffineFunc.id, 'radialMaximum'),
+                    productRoseCircleRadialMaxima: countType(productRoseCircleFunc.id, 'radialMaximum')
+                };
+            })(),
             implicitRoseAffine: {
                 detectedType: graphiti.detectFunctionType(implicitRoseAffineFunc.expression),
                 renderMode: implicitRoseAffineFunc.implicitRenderMode || null,
                 arcCountAfterPiA: implicitRoseAnimationAfterPiA.arcCount,
                 arcCountAfterPiB: implicitRoseAnimationAfterPiB.arcCount,
                 postPiMotion: implicitRosePostPiMotion
+            },
+            productRoseCircle: {
+                renderMode: productRoseCircleFunc.implicitRenderMode || null,
+                factorCount: Array.isArray(productRoseCircleFunc.productImplicitFactorExpressions)
+                    ? productRoseCircleFunc.productImplicitFactorExpressions.length
+                    : 0,
+                shapeLabel: (() => {
+                    const shape = graphiti.classifyFunctionShape(productRoseCircleFunc);
+                    return shape && shape.label ? shape.label : null;
+                })()
             },
             inequality: {
                 detectedType: graphiti.detectFunctionType(inequalityFunc.expression),
@@ -2685,6 +2721,10 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.equivalentLimacons.implicitTraceSlopeFinite, true, `rearranged implicit limacon trace should produce finite slope for tangent/normal transitions: ${JSON.stringify(result.equivalentLimacons)}`);
     assert.strictEqual(result.equivalentLimacons.implicitDragStaysOnCurve, true, `rearranged implicit limacon drag should remain on-curve even with empty display buffer: ${JSON.stringify(result.equivalentLimacons)}`);
 
+    assert(result.equivalentRosesTurningPoints.explicitRadialMaxima >= 3, `explicit rose should identify radial maxima turning points: ${JSON.stringify(result.equivalentRosesTurningPoints)}`);
+    assert.strictEqual(result.equivalentRosesTurningPoints.implicitRadialMaxima, result.equivalentRosesTurningPoints.explicitRadialMaxima, `implicit rose equivalent should match explicit rose radial maxima classification: ${JSON.stringify(result.equivalentRosesTurningPoints)}`);
+    assert.strictEqual(result.equivalentRosesTurningPoints.productRoseCircleRadialMaxima, result.equivalentRosesTurningPoints.explicitRadialMaxima, `product-factor rose+circle should preserve rose radial maxima classification: ${JSON.stringify(result.equivalentRosesTurningPoints)}`);
+
     assert.strictEqual(result.implicitRoseAffine.detectedType, 'implicit', `implicit affine rose should remain implicit in type detection: ${JSON.stringify(result.implicitRoseAffine)}`);
     assert.strictEqual(result.implicitRoseAffine.renderMode, 'affine-polar-explicit', `implicit affine rose should activate affine polar fast-path: ${JSON.stringify(result.implicitRoseAffine)}`);
     assert(result.implicitRoseAffine.arcCountAfterPiA >= 3, `implicit affine rose should still draw marker arcs after pi (first sample): ${JSON.stringify(result.implicitRoseAffine)}`);
@@ -2693,6 +2733,10 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         Number.isFinite(result.implicitRoseAffine.postPiMotion) && result.implicitRoseAffine.postPiMotion > 0.5,
         `implicit affine rose marker should continue moving after pi instead of freezing: ${JSON.stringify(result.implicitRoseAffine)}`
     );
+
+    assert.strictEqual(result.productRoseCircle.renderMode, 'product-factors', `product rose+circle should use product-factors render mode: ${JSON.stringify(result.productRoseCircle)}`);
+    assert.strictEqual(result.productRoseCircle.factorCount, 2, `product rose+circle should expose both factors: ${JSON.stringify(result.productRoseCircle)}`);
+    assert.strictEqual(result.productRoseCircle.shapeLabel, 'rose curve - 3 petals + circle', `product rose+circle should classify both components: ${JSON.stringify(result.productRoseCircle)}`);
 
     assert.strictEqual(result.inequality.detectedType, 'implicit-inequality', `implicit polar inequality should be detected as implicit-inequality: ${JSON.stringify(result.inequality)}`);
     assert.strictEqual(result.inequality.renderMode, 'marching-polar-adaptive', `implicit polar inequality should use adaptive marching: ${JSON.stringify(result.inequality)}`);
