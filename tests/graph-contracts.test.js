@@ -3900,6 +3900,15 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 return {
                     detectedType: graphiti.detectFunctionType(radialDenominatorOriginHoleFunc.expression),
                     renderMode: radialDenominatorOriginHoleFunc.implicitRenderMode || null,
+                    branchCount: (() => {
+                        const quadraticBranches = Array.isArray(radialDenominatorOriginHoleFunc.quadraticPolarExplicitExpressions)
+                            ? radialDenominatorOriginHoleFunc.quadraticPolarExplicitExpressions.length
+                            : 0;
+                        const monomialBranches = Array.isArray(radialDenominatorOriginHoleFunc.monomialPolarExplicitExpressions)
+                            ? radialDenominatorOriginHoleFunc.monomialPolarExplicitExpressions.length
+                            : 0;
+                        return Math.max(quadraticBranches, monomialBranches);
+                    })(),
                     finitePointCount: radialDenominatorOriginHoleFinitePointCount,
                     validationError: radialDenominatorOriginHoleFunc.validationError,
                     holeCount: holes.length,
@@ -4168,6 +4177,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
 
     assert.strictEqual(result.radialDenominatorOriginHole.detectedType, 'implicit', `r=theta/r should stay implicit in polar classification: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
     assert.strictEqual(result.radialDenominatorOriginHole.validationError, null, `r=theta/r should validate cleanly on the implicit polar path: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
+    assert.strictEqual(result.radialDenominatorOriginHole.branchCount, 2, `r=theta/r should preserve both non-periodic sqrt branches instead of collapsing to a reflected single branch: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
     assert(result.radialDenominatorOriginHole.finitePointCount > 10, `r=theta/r should still produce visible implicit polar points: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
     assert(result.radialDenominatorOriginHole.holeCount >= 1, `r=theta/r should expose a removable origin hole in metadata: ${JSON.stringify(result.radialDenominatorOriginHole)}`);
     assert(result.radialDenominatorOriginHole.nearestHoleDistance < 1e-6, `r=theta/r should place its removable hole at the origin: ${JSON.stringify(result.radialDenominatorOriginHole)}`);

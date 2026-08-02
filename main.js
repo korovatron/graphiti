@@ -8466,6 +8466,10 @@ class Graphiti {
             return branchExpressions.slice();
         }
 
+        if (!this.isPolarExpressionApproximatelyPiPeriodic('abs(' + firstBranch + ')')) {
+            return branchExpressions.slice();
+        }
+
         const preferredBranch = this.selectCanonicalPolarOppositeBranch(firstBranch, secondBranch);
         return [preferredBranch];
     }
@@ -8524,13 +8528,77 @@ class Graphiti {
         }
     }
 
+    isPolarExpressionApproximatelyPiPeriodic(expression) {
+        if (typeof expression !== 'string' || !expression.trim()) {
+            return false;
+        }
+
+        let expressionForEval = expression;
+        if (this.angleMode === 'degrees') {
+            expressionForEval = this.convertTrigToDegreeModeImplicitCartesian(expressionForEval);
+        }
+
+        try {
+            const compiled = this.getCompiledExpression(expressionForEval);
+            const thetaMin = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+            const thetaMax = Number.isFinite(this.polarSettings.thetaMax) && this.polarSettings.thetaMax > thetaMin
+                ? this.polarSettings.thetaMax
+                : thetaMin + (2 * Math.PI);
+            const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
+            const sampleCount = Math.max(20, Math.min(96, Math.ceil((thetaMax - thetaMin) / thetaStep)));
+            const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+
+            let validSamples = 0;
+            let periodicSamples = 0;
+            for (let index = 0; index <= sampleCount; index++) {
+                const thetaValue = thetaMin + ((thetaMax - thetaMin) * index / sampleCount);
+
+                scope.theta = thetaValue;
+                scope.t = thetaValue;
+                let baseValue;
+                try {
+                    baseValue = compiled.evaluate(scope);
+                } catch {
+                    continue;
+                }
+
+                scope.theta = thetaValue + Math.PI;
+                scope.t = thetaValue + Math.PI;
+                let shiftedValue;
+                try {
+                    shiftedValue = compiled.evaluate(scope);
+                } catch {
+                    continue;
+                }
+
+                if (!Number.isFinite(baseValue) || !Number.isFinite(shiftedValue)) {
+                    continue;
+                }
+
+                validSamples++;
+                const scale = Math.max(1, Math.abs(baseValue), Math.abs(shiftedValue));
+                if (Math.abs(baseValue - shiftedValue) <= scale * 1e-6) {
+                    periodicSamples++;
+                }
+            }
+
+            return validSamples >= 6 && periodicSamples >= Math.max(6, Math.floor(validSamples * 0.75));
+        } catch {
+            return false;
+        }
+    }
+
     async plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel) {
         if (!func || !monomialPolarModel || !Array.isArray(monomialPolarModel.branchExpressions) || monomialPolarModel.branchExpressions.length === 0) {
             return false;
         }
 
         let branchExpressions = monomialPolarModel.branchExpressions.slice();
-        if (monomialPolarModel.power === 2 && this.polarSettings.plotNegativeR && branchExpressions.length === 2) {
+        const allowCanonicalCollapse = monomialPolarModel.power === 2
+            && this.polarSettings.plotNegativeR
+            && branchExpressions.length === 2
+            && this.isPolarExpressionApproximatelyPiPeriodic(monomialPolarModel.radicandExpression);
+        if (allowCanonicalCollapse) {
             const [firstBranch, secondBranch] = branchExpressions;
             if (typeof firstBranch === 'string' && typeof secondBranch === 'string') {
                 if (this.arePolarBranchesOpposite(firstBranch, secondBranch)) {
