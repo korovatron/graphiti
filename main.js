@@ -7673,6 +7673,7 @@ class Graphiti {
         }
 
         const clearAsymptoteData = options.clearAsymptoteData !== false;
+        const preserveAsymptoteData = options.preserveAsymptoteData === true;
 
         const proxyFunc = {
             ...func,
@@ -7695,7 +7696,7 @@ class Graphiti {
         }
 
         const proxyAsymptoteData = proxyFunc.asymptoteData;
-        if (proxyAsymptoteData) {
+        if (!preserveAsymptoteData && proxyAsymptoteData) {
             this.updateFunctionAsymptoteData(
                 func,
                 Array.isArray(proxyAsymptoteData.vertical) ? proxyAsymptoteData.vertical.slice() : [],
@@ -7725,6 +7726,9 @@ class Graphiti {
         }
 
         const clearAsymptoteData = options.clearAsymptoteData !== false;
+        const preserveAsymptoteData = options.preserveAsymptoteData === true;
+        const skipOriginBoundaryRefinement = options.skipOriginBoundaryRefinement === true;
+        const skipPolarPostProcessing = options.skipPolarPostProcessing === true;
         const mergedPoints = [];
         let hasFinitePoints = false;
         const mergedVerticalAsymptotes = [];
@@ -7993,7 +7997,7 @@ class Graphiti {
             this.plotPolarFunction(proxyFunc);
 
             const proxyAsymptoteData = proxyFunc.asymptoteData;
-            if (proxyAsymptoteData) {
+            if (!preserveAsymptoteData && proxyAsymptoteData) {
                 if (Array.isArray(proxyAsymptoteData.vertical)) {
                     for (const value of proxyAsymptoteData.vertical) {
                         addUniqueNumber(mergedVerticalAsymptotes, value);
@@ -8016,7 +8020,10 @@ class Graphiti {
                 }
             }
 
-            const branchPoints = addOriginBoundaryPoints(Array.isArray(proxyFunc.points) ? proxyFunc.points : [], branchExpression);
+            const rawBranchPoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
+            const branchPoints = skipOriginBoundaryRefinement
+                ? rawBranchPoints
+                : addOriginBoundaryPoints(rawBranchPoints, branchExpression);
             const finiteBranchPoints = branchPoints.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
             if (finiteBranchPoints.length === 0) {
                 return;
@@ -8047,18 +8054,22 @@ class Graphiti {
             return false;
         }
 
-        this.compactPolarOriginGaps(mergedPoints);
-        this.closePolarRangeIfNeeded(
-            mergedPoints,
-            func.polarSettings?.thetaMin ?? this.polarSettings.thetaMin,
-            func.polarSettings?.thetaMax ?? this.polarSettings.thetaMax,
-            this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax),
-            mergedPolarRays
-        );
+        if (!skipPolarPostProcessing) {
+            this.compactPolarOriginGaps(mergedPoints);
+            this.closePolarRangeIfNeeded(
+                mergedPoints,
+                func.polarSettings?.thetaMin ?? this.polarSettings.thetaMin,
+                func.polarSettings?.thetaMax ?? this.polarSettings.thetaMax,
+                this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax),
+                mergedPolarRays
+            );
+        }
         func.points = mergedPoints;
         func.displayPoints = mergedPoints;
         this.implicitCurveCache.delete(func.id);
-        this.updateFunctionAsymptoteData(func, mergedVerticalAsymptotes, mergedHorizontalAsymptotes, mergedObliqueAsymptotes, null, null, [], mergedPolarRays);
+        if (!preserveAsymptoteData) {
+            this.updateFunctionAsymptoteData(func, mergedVerticalAsymptotes, mergedHorizontalAsymptotes, mergedObliqueAsymptotes, null, null, [], mergedPolarRays);
+        }
         if (clearAsymptoteData) {
             this.clearFunctionAsymptoteData(func);
         }
@@ -8898,14 +8909,19 @@ class Graphiti {
     replotAllPolarFunctions() {
         // Replot only polar functions
         const polarFunctions = this.polarFunctions.filter(func => func.enabled);
+        const animationActive = !!(this.polarAnimation && this.polarAnimation.isAnimating);
+        const fastAnimationOptions = {
+            clearAsymptoteData: false,
+            preserveAsymptoteData: animationActive,
+            skipOriginBoundaryRefinement: animationActive,
+            skipPolarPostProcessing: animationActive
+        };
         
         polarFunctions.forEach(func => {
             if (func.implicitRenderMode === 'affine-polar-explicit' &&
                 typeof func.affinePolarExplicitExpression === 'string' &&
                 func.affinePolarExplicitExpression.trim()) {
-                const handled = this.plotCachedPolarExplicitProxy(func, func.affinePolarExplicitExpression, {
-                    clearAsymptoteData: false
-                });
+                const handled = this.plotCachedPolarExplicitProxy(func, func.affinePolarExplicitExpression, fastAnimationOptions);
                 if (handled) {
                     this.reapplyImplicitPolarFastPathPostProcessing(func);
                     return;
@@ -8915,9 +8931,7 @@ class Graphiti {
             if (func.implicitRenderMode === 'quadratic-polar-explicit' &&
                 Array.isArray(func.quadraticPolarExplicitExpressions) &&
                 func.quadraticPolarExplicitExpressions.length > 0) {
-                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.quadraticPolarExplicitExpressions, {
-                    clearAsymptoteData: false
-                });
+                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.quadraticPolarExplicitExpressions, fastAnimationOptions);
                 if (handled) {
                     this.reapplyImplicitPolarFastPathPostProcessing(func);
                     return;
@@ -8927,9 +8941,7 @@ class Graphiti {
             if (func.implicitRenderMode === 'monomial-polar-explicit' &&
                 Array.isArray(func.monomialPolarExplicitExpressions) &&
                 func.monomialPolarExplicitExpressions.length > 0) {
-                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.monomialPolarExplicitExpressions, {
-                    clearAsymptoteData: false
-                });
+                const handled = this.plotCachedPolarQuadraticExplicitProxy(func, func.monomialPolarExplicitExpressions, fastAnimationOptions);
                 if (handled) {
                     this.reapplyImplicitPolarFastPathPostProcessing(func);
                     return;
@@ -8944,9 +8956,7 @@ class Graphiti {
                     ? cachedProductExpressions
                     : this.getPolarInterceptExpressionCandidates(func, this.detectFunctionType(func.expression));
                 if (expressionsToPlot.length > 0) {
-                    const handled = this.plotCachedPolarQuadraticExplicitProxy(func, expressionsToPlot, {
-                        clearAsymptoteData: false
-                    });
+                    const handled = this.plotCachedPolarQuadraticExplicitProxy(func, expressionsToPlot, fastAnimationOptions);
                     if (handled) {
                         this.reapplyImplicitPolarFastPathPostProcessing(func);
                         if (cachedProductExpressions.length === 0) {
