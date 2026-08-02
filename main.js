@@ -5410,8 +5410,12 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
+            const exactPolarReciprocalConic = this.tryClassifyExactPolarReciprocalConicFromProcessedExpression(processedExpression);
             const exactCartesianAsymptotes = this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression);
-            const polarRayAsymptotes = this.detectPolarRayAsymptotes(compiledExpression, this.polarSettings.thetaMin, this.polarSettings.thetaMax);
+            const suppressPolarRayAsymptotes = exactPolarReciprocalConic && !['hyperbola', 'rectangular hyperbola'].includes(exactPolarReciprocalConic.label);
+            const polarRayAsymptotes = suppressPolarRayAsymptotes
+                ? []
+                : this.detectPolarRayAsymptotes(compiledExpression, this.polarSettings.thetaMin, this.polarSettings.thetaMax);
             
             const points = [];
             const thetaMin = this.polarSettings.thetaMin;
@@ -6280,6 +6284,26 @@ class Graphiti {
         };
 
         return this.detectImplicitHyperbolaAsymptotes(quadraticEquation);
+    }
+
+    tryClassifyExactPolarReciprocalConicFromProcessedExpression(processedExpression) {
+        if (typeof processedExpression !== 'string' || !processedExpression.trim()) {
+            return null;
+        }
+
+        let expressionText = processedExpression.trim();
+        if (expressionText.toLowerCase().startsWith('r=')) {
+            expressionText = expressionText.substring(2).trim();
+        }
+
+        let parsed;
+        try {
+            parsed = this.cleanMath.parse(expressionText);
+        } catch {
+            return null;
+        }
+
+        return this.classifyExactPolarReciprocalConicShape(parsed);
     }
 
     extractPolarReciprocalLinearTrigComponents(node) {

@@ -2230,9 +2230,19 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             : [];
         const conicDisplay = graphiti.buildAsymptoteDisplayLatex(conicFunc);
 
+        const parabolaExpr = 'r=\\frac{1}{\\sin\\left(\\theta\\right)-1}';
+        graphiti.addFunction(parabolaExpr);
+        const parabolaFunc = graphiti.polarFunctions[4];
+        await graphiti.plotFunction(parabolaFunc);
+
+        const parabolaRays = parabolaFunc.asymptoteData && Array.isArray(parabolaFunc.asymptoteData.polarRays)
+            ? parabolaFunc.asymptoteData.polarRays.slice()
+            : [];
+        const parabolaDisplay = graphiti.buildAsymptoteDisplayLatex(parabolaFunc);
+
         const shiftedExpr = 'r=\\frac{1}{\\cos\\left(\\theta\\right)-\\sin\\left(\\theta\\right)}+1';
         graphiti.addFunction(shiftedExpr);
-        const shiftedFunc = graphiti.polarFunctions[4];
+        const shiftedFunc = graphiti.polarFunctions[5];
         await graphiti.plotFunction(shiftedFunc);
 
         const shiftedRays = shiftedFunc.asymptoteData && Array.isArray(shiftedFunc.asymptoteData.polarRays)
@@ -2263,7 +2273,7 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         graphiti.polarSettings.thetaMinLatex = '0';
         const periodicExpr = 'r=\\frac{1}{\\cos\\left(2\\theta\\right)}';
         graphiti.addFunction(periodicExpr);
-        const periodicFunc = graphiti.polarFunctions[5];
+        const periodicFunc = graphiti.polarFunctions[6];
         await graphiti.plotFunction(periodicFunc);
 
         const periodicRays = periodicFunc.asymptoteData && Array.isArray(periodicFunc.asymptoteData.polarRays)
@@ -2286,6 +2296,8 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             conicRays,
             conicOblique,
             conicDisplay,
+            parabolaRays,
+            parabolaDisplay,
             shiftedRays,
             shiftedOblique,
             shiftedDisplay,
@@ -2298,7 +2310,8 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             periodicGeneralEquation,
             asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
-            lineFinitePoints: (lineFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
+            lineFinitePoints: (lineFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
+            parabolaFinitePoints: (parabolaFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length
         };
     });
 
@@ -2355,6 +2368,16 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     assert(
         result.conicDisplay.some(equation => equation.includes('\\frac{4\\sqrt{3}}{3}')),
         `reciprocal polar conic display should show the exact constant term instead of a decimal fit: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.parabolaRays.length,
+        0,
+        `reciprocal polar parabola should not publish a false theta-ray asymptote: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.parabolaDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `reciprocal polar parabola should not render theta asymptote metadata: ${JSON.stringify(result)}`
     );
     assert(
         result.shiftedOblique.some(line => approxEqual(line.m, 1, 0.06) && approxEqual(line.b, -1, 0.12)),
@@ -2430,6 +2453,10 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     assert(
         result.lineFinitePoints > 80,
         `straight-line reciprocal polar form should remain well sampled: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.parabolaFinitePoints > 80,
+        `reciprocal polar parabola should remain well sampled without asymptote metadata: ${JSON.stringify(result)}`
     );
 }
 
