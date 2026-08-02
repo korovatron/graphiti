@@ -6085,6 +6085,49 @@ class Graphiti {
                 continue;
             }
 
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            for (const point of candidates) {
+                if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                    continue;
+                }
+                if (point.x < minX) minX = point.x;
+                if (point.x > maxX) maxX = point.x;
+                if (point.y < minY) minY = point.y;
+                if (point.y > maxY) maxY = point.y;
+            }
+
+            const xSpread = maxX - minX;
+            const ySpread = maxY - minY;
+            const axisSpreadTolerance = Math.max(0.04, viewportDiagonal * 0.004, orthogonalSpread * 6);
+            const axisDominanceFactor = 12;
+            const estimateAxisAlignedLimit = (axisKey, magnitudeKey) => {
+                const ranked = candidates
+                    .filter(point => Number.isFinite(point[axisKey]) && Number.isFinite(point[magnitudeKey]))
+                    .slice()
+                    .sort((left, right) => Math.abs(right[magnitudeKey]) - Math.abs(left[magnitudeKey]));
+                if (ranked.length === 0) {
+                    return axisKey === 'x' ? meanX : meanY;
+                }
+
+                const sampleCount = Math.max(2, Math.min(4, ranked.length));
+                const focused = ranked.slice(0, sampleCount);
+                const total = focused.reduce((sum, point) => sum + point[axisKey], 0);
+                return total / focused.length;
+            };
+            if (Number.isFinite(xSpread) && Number.isFinite(ySpread)) {
+                if (xSpread <= axisSpreadTolerance && ySpread >= Math.max(1.5, xSpread * axisDominanceFactor, majorSpread * 1.5)) {
+                    tryAddVertical(estimateAxisAlignedLimit('x', 'y'), thetaRay);
+                    continue;
+                }
+                if (ySpread <= axisSpreadTolerance && xSpread >= Math.max(1.5, ySpread * axisDominanceFactor, majorSpread * 1.5)) {
+                    tryAddHorizontal(estimateAxisAlignedLimit('y', 'x'), thetaRay);
+                    continue;
+                }
+            }
+
             // Total least-squares line normal from the minor principal axis.
             let normalX = sxy;
             let normalY = minorVariance - sxx;

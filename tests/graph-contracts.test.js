@@ -2283,9 +2283,22 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         const periodicThetaEquations = periodicDisplay.filter(equation => /\\theta\s*=/.test(equation));
         const periodicGeneralEquation = periodicThetaEquations.find(equation => /\bn\b/.test(equation)) || null;
 
+        const secantShiftExpr = 'r=\\cos\\left(\\theta\\right)+\\operatorname{\\mathrm{sec}}\\left(\\theta\\right)';
+        graphiti.addFunction(secantShiftExpr);
+        const secantShiftFunc = graphiti.polarFunctions[7];
+        await graphiti.plotFunction(secantShiftFunc);
+
+        const secantShiftVertical = secantShiftFunc.asymptoteData && Array.isArray(secantShiftFunc.asymptoteData.vertical)
+            ? secantShiftFunc.asymptoteData.vertical.slice()
+            : [];
+        const secantShiftOblique = secantShiftFunc.asymptoteData && Array.isArray(secantShiftFunc.asymptoteData.oblique)
+            ? secantShiftFunc.asymptoteData.oblique.slice()
+            : [];
+        const secantShiftDisplay = graphiti.buildAsymptoteDisplayLatex(secantShiftFunc);
+
         const implicitHyperbolaExpr = '2\\sin\\left(\\theta\\right)-1=\\frac{1}{r}';
         graphiti.addFunction(implicitHyperbolaExpr);
-        const implicitHyperbolaFunc = graphiti.polarFunctions[7];
+        const implicitHyperbolaFunc = graphiti.polarFunctions[8];
         await graphiti.plotFunction(implicitHyperbolaFunc);
 
         const implicitHyperbolaDisplayPoints = Array.isArray(implicitHyperbolaFunc.displayPoints)
@@ -2323,6 +2336,9 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             periodicDisplay,
             periodicThetaEquationCount: periodicThetaEquations.length,
             periodicGeneralEquation,
+            secantShiftVertical,
+            secantShiftOblique,
+            secantShiftDisplay,
             implicitHyperbolaTopCount,
             implicitHyperbolaBottomCount,
             implicitHyperbolaOblique,
@@ -2459,6 +2475,19 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.periodicThetaEquationCount,
         1,
         `periodic polar asymptote metadata should show one general theta equation instead of enumerating each instance: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantShiftVertical.some(value => approxEqual(value, 1, 0.03)),
+        `polar secant-shift form should infer the vertical asymptote x=1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.secantShiftOblique.length,
+        0,
+        `polar secant-shift form should not publish a spurious oblique asymptote: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantShiftDisplay.includes('x = 1'),
+        `polar secant-shift form should render asymptote x = 1: ${JSON.stringify(result)}`
     );
     assert(
         result.implicitHyperbolaBottomCount > 40,
