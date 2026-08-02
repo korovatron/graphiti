@@ -6124,7 +6124,9 @@ class Graphiti {
             Math.max(Math.abs(this.viewport.minX), Math.abs(this.viewport.maxX)),
             Math.max(Math.abs(this.viewport.minY), Math.abs(this.viewport.maxY))
         );
-        const magnitudeThreshold = Math.max(8, viewportRadius * 1.8);
+        // Lituus endpoint poles can still be valid at larger viewport scales where
+        // the first finite sample may not exceed a large viewport-proportional threshold.
+        const magnitudeThreshold = Math.max(3, Math.min(10, viewportRadius * 0.9));
         const rawCandidates = [];
 
         for (let index = 1; index < sampleCount; index++) {
@@ -6242,6 +6244,20 @@ class Graphiti {
             const nearValue = evaluateAt(nearTheta);
             const fartherValue = evaluateAt(fartherTheta);
 
+            // Lituus endpoint singularity at theta=0 should be detected regardless
+            // of viewport scale if the boundary is singular and adjacent samples are finite.
+            if (Math.abs(boundaryTheta) <= Math.max(step * 0.5, 1e-6) && Number.isFinite(nearValue)) {
+                const candidateTheta = boundaryTheta + (direction * step * 0.5);
+                if (this.isValidPolarRayAsymptote(compiledExpression, candidateTheta, step, Math.max(1, magnitudeThreshold * 0.5))) {
+                    const refined = this.refinePolarRayAsymptoteCandidate(compiledExpression, candidateTheta, step);
+                    const tolerance = Math.max(step * 2, Math.abs(thetaRange) * 1e-5);
+                    if (!result.some(existing => Math.abs(existing - refined) <= tolerance)) {
+                        result.push(refined);
+                    }
+                    return;
+                }
+            }
+
             if (!Number.isFinite(nearValue)) {
                 return;
             }
@@ -6353,6 +6369,53 @@ class Graphiti {
         }
 
         return [];
+    }
+
+    refreshLituusEndpointAsymptoteMetadata(func) {
+        if (!func || this.plotMode !== 'polar') {
+            return false;
+        }
+
+        const shape = this.classifyFunctionShape(func);
+        if (!shape || shape.label !== 'lituus') {
+            return false;
+        }
+
+        const rays = this.getLituusEndpointRaysFromFunctionExpression(
+            func,
+            shape,
+            this.polarSettings.thetaMin,
+            this.polarSettings.thetaMax
+        );
+        if (!Array.isArray(rays) || rays.length === 0) {
+            return false;
+        }
+
+        const asymptoteData = func.asymptoteData || {};
+        const existingRays = Array.isArray(asymptoteData.polarRays) ? asymptoteData.polarRays : [];
+        const mergedRays = existingRays.slice();
+        for (const ray of rays) {
+            if (!Number.isFinite(ray)) {
+                continue;
+            }
+            if (!mergedRays.some(existing => Math.abs(existing - ray) <= 1e-6)) {
+                mergedRays.push(ray);
+            }
+        }
+        mergedRays.sort((a, b) => a - b);
+
+        this.updateFunctionAsymptoteData(
+            func,
+            Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [],
+            Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [],
+            Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [],
+            null,
+            null,
+            Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [],
+            mergedRays
+        );
+
+        return true;
     }
 
     inferCartesianAsymptotesFromPolarSingularRays(compiledExpression, polarRayAsymptotes, thetaStep) {
@@ -10008,6 +10071,7 @@ class Graphiti {
             });
             if (handled) {
                 this.reapplyImplicitPolarFastPathPostProcessing(func);
+                this.refreshLituusEndpointAsymptoteMetadata(func);
                 return true;
             }
         }
@@ -10021,6 +10085,7 @@ class Graphiti {
             });
             if (handled) {
                 this.reapplyImplicitPolarFastPathPostProcessing(func);
+                this.refreshLituusEndpointAsymptoteMetadata(func);
                 return true;
             }
         }
@@ -10033,6 +10098,7 @@ class Graphiti {
             });
             if (handled) {
                 this.reapplyImplicitPolarFastPathPostProcessing(func);
+                this.refreshLituusEndpointAsymptoteMetadata(func);
                 return true;
             }
         }
@@ -10050,6 +10116,7 @@ class Graphiti {
                 });
                 if (handled) {
                     this.reapplyImplicitPolarFastPathPostProcessing(func);
+                    this.refreshLituusEndpointAsymptoteMetadata(func);
                     if (cachedProductExpressions.length === 0) {
                         func.productPolarExplicitExpressions = expressionsToPlot.slice();
                     }
@@ -28571,6 +28638,9 @@ class Graphiti {
                 if (func.expression && func.enabled && !func.validationError) {
                     const functionType = this.getEffectiveFunctionType(func);
                     const rawFunctionType = this.detectFunctionType(func.expression);
+                    if (this.plotMode === 'polar' && rawFunctionType === 'polar') {
+                        this.refreshLituusEndpointAsymptoteMetadata(func);
+                    }
                     const canUseFastSettleLane = this.isExplicitImplicitFastPath(func) &&
                         (rawFunctionType === 'implicit' || rawFunctionType === 'implicit-inequality');
                     if (functionType === 'explicit' || functionType === 'explicit-inequality' || functionType === 'theta-constant' || canUseFastSettleLane) {

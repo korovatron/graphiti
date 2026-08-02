@@ -2509,6 +2509,28 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             : [];
         const lituusImplicitDisplay = graphiti.buildAsymptoteDisplayLatex(lituusImplicitFunc);
 
+        graphiti.viewport.minX = -5;
+        graphiti.viewport.maxX = 5;
+        graphiti.viewport.minY = -5;
+        graphiti.viewport.maxY = 5;
+        await graphiti.plotFunction(lituusExplicitFunc);
+        await graphiti.plotFunction(lituusImplicitFunc);
+
+        const lituusExplicitRaysWideViewport = lituusExplicitFunc.asymptoteData && Array.isArray(lituusExplicitFunc.asymptoteData.polarRays)
+            ? lituusExplicitFunc.asymptoteData.polarRays.slice()
+            : [];
+        const lituusExplicitHorizontalWideViewport = lituusExplicitFunc.asymptoteData && Array.isArray(lituusExplicitFunc.asymptoteData.horizontal)
+            ? lituusExplicitFunc.asymptoteData.horizontal.slice()
+            : [];
+        const lituusExplicitDisplayWideViewport = graphiti.buildAsymptoteDisplayLatex(lituusExplicitFunc);
+        const lituusImplicitRaysWideViewport = lituusImplicitFunc.asymptoteData && Array.isArray(lituusImplicitFunc.asymptoteData.polarRays)
+            ? lituusImplicitFunc.asymptoteData.polarRays.slice()
+            : [];
+        const lituusImplicitHorizontalWideViewport = lituusImplicitFunc.asymptoteData && Array.isArray(lituusImplicitFunc.asymptoteData.horizontal)
+            ? lituusImplicitFunc.asymptoteData.horizontal.slice()
+            : [];
+        const lituusImplicitDisplayWideViewport = graphiti.buildAsymptoteDisplayLatex(lituusImplicitFunc);
+
         return {
             asymptoticRays,
             asymptoticVertical,
@@ -2559,6 +2581,12 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             lituusExplicitDisplay,
             lituusImplicitRays,
             lituusImplicitDisplay,
+            lituusExplicitRaysWideViewport,
+            lituusExplicitHorizontalWideViewport,
+            lituusExplicitDisplayWideViewport,
+            lituusImplicitRaysWideViewport,
+            lituusImplicitHorizontalWideViewport,
+            lituusImplicitDisplayWideViewport,
             asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             lineFinitePoints: (lineFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
@@ -2833,6 +2861,23 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     assert(
         result.lituusImplicitDisplay.some(equation => /\\theta\s*=\s*0/.test(equation)),
         `implicit lituus form should display theta=0 asymptote metadata: ${JSON.stringify(result)}`
+    );
+    const explicitWideHasAsymptote =
+        result.lituusExplicitRaysWideViewport.some(value => approxEqual(value, 0, 0.03)) ||
+        result.lituusExplicitHorizontalWideViewport.some(value => approxEqual(value, 0, 0.03)) ||
+        result.lituusExplicitDisplayWideViewport.some(equation => /\\theta\s*=\s*0|y\s*=\s*0/.test(equation));
+    assert(
+        explicitWideHasAsymptote,
+        `explicit lituus should still expose an equivalent theta=0/y=0 asymptote at a wider viewport: ${JSON.stringify(result)}`
+    );
+
+    const implicitWideHasAsymptote =
+        result.lituusImplicitRaysWideViewport.some(value => approxEqual(value, 0, 0.03)) ||
+        result.lituusImplicitHorizontalWideViewport.some(value => approxEqual(value, 0, 0.03)) ||
+        result.lituusImplicitDisplayWideViewport.some(equation => /\\theta\s*=\s*0|y\s*=\s*0/.test(equation));
+    assert(
+        implicitWideHasAsymptote,
+        `implicit lituus should still expose an equivalent theta=0/y=0 asymptote at a wider viewport: ${JSON.stringify(result)}`
     );
     assert(
         result.asymptoticFinitePoints > 80,
@@ -7212,6 +7257,77 @@ async function assertImplicitLituusOrientationMatchesExplicitForm(page) {
     assert(Number.isFinite(result.firstPointDot) && result.firstPointDot > 0, `implicit multiplied form should align with explicit lituus orientation: ${JSON.stringify(result)}`);
 }
 
+async function assertEquivalentLituusFormsRecoverAsymptotesAfterViewportSettle(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+
+        graphiti.viewport.minX = -5;
+        graphiti.viewport.maxX = 5;
+        graphiti.viewport.minY = -5;
+        graphiti.viewport.maxY = 5;
+
+        const expressions = [
+            'r^2=1/theta',
+            'r*sqrt(theta)=1',
+            'r^2*theta=1',
+            'r=1/sqrt(theta)'
+        ];
+
+        const funcs = [];
+        for (const expression of expressions) {
+            graphiti.addFunction(expression);
+            const func = graphiti.polarFunctions[graphiti.polarFunctions.length - 1];
+            await graphiti.plotFunctionWithValidation(func);
+            funcs.push(func);
+        }
+
+        graphiti.viewport.minX = -1.5;
+        graphiti.viewport.maxX = 1.5;
+        graphiti.viewport.minY = -1.5;
+        graphiti.viewport.maxY = 1.5;
+        graphiti.handleViewportChange({ immediate: true, skipCoverageRefresh: true });
+        await new Promise(resolve => setTimeout(resolve, 120));
+
+        return funcs.map(func => {
+            const rays = func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+                ? func.asymptoteData.polarRays.slice()
+                : [];
+            const display = graphiti.buildAsymptoteDisplayLatex(func);
+            return {
+                expression: func.expression,
+                renderMode: func.implicitRenderMode || null,
+                rays,
+                display
+            };
+        });
+    });
+
+    assert(Array.isArray(result) && result.length === 4, `expected four lituus-equivalent forms in viewport-settle test: ${JSON.stringify(result)}`);
+    for (const item of result) {
+        const hasThetaRay = Array.isArray(item.rays) && item.rays.some(value => approxEqual(value, 0, 0.03));
+        const hasThetaDisplay = Array.isArray(item.display) && item.display.some(equation => /\\theta\s*=\s*0/.test(equation));
+        assert(
+            hasThetaRay || hasThetaDisplay,
+            `equivalent lituus form should recover theta=0 asymptote after viewport settle: ${JSON.stringify(item)}`
+        );
+    }
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -7347,6 +7463,7 @@ async function assertImplicitLituusOrientationMatchesExplicitForm(page) {
         await assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(page);
         await assertPolarLituusLabelRendersForReciprocalRootForm(page);
         await assertImplicitLituusOrientationMatchesExplicitForm(page);
+        await assertEquivalentLituusFormsRecoverAsymptotesAfterViewportSettle(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
