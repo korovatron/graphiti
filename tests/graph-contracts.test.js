@@ -2344,9 +2344,22 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             : [];
         const cosecantTangentDisplay = graphiti.buildAsymptoteDisplayLatex(cosecantTangentFunc);
 
+        const rearrangedCotangentExpr = 'r-\\operatorname{\\mathrm{cot}}\\left(\\theta\\right)=\\tan\\left(\\theta\\right)';
+        graphiti.addFunction(rearrangedCotangentExpr);
+        const rearrangedCotangentFunc = graphiti.polarFunctions[11];
+        await graphiti.plotFunction(rearrangedCotangentFunc);
+
+        const rearrangedCotangentVertical = rearrangedCotangentFunc.asymptoteData && Array.isArray(rearrangedCotangentFunc.asymptoteData.vertical)
+            ? rearrangedCotangentFunc.asymptoteData.vertical.slice()
+            : [];
+        const rearrangedCotangentHorizontal = rearrangedCotangentFunc.asymptoteData && Array.isArray(rearrangedCotangentFunc.asymptoteData.horizontal)
+            ? rearrangedCotangentFunc.asymptoteData.horizontal.slice()
+            : [];
+        const rearrangedCotangentDisplay = graphiti.buildAsymptoteDisplayLatex(rearrangedCotangentFunc);
+
         const implicitHyperbolaExpr = '2\\sin\\left(\\theta\\right)-1=\\frac{1}{r}';
         graphiti.addFunction(implicitHyperbolaExpr);
-        const implicitHyperbolaFunc = graphiti.polarFunctions[11];
+        const implicitHyperbolaFunc = graphiti.polarFunctions[12];
         await graphiti.plotFunction(implicitHyperbolaFunc);
 
         const implicitHyperbolaDisplayPoints = Array.isArray(implicitHyperbolaFunc.displayPoints)
@@ -2399,6 +2412,9 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             cosecantTangentHorizontal,
             cosecantTangentRays,
             cosecantTangentDisplay,
+            rearrangedCotangentVertical,
+            rearrangedCotangentHorizontal,
+            rearrangedCotangentDisplay,
             implicitHyperbolaTopCount,
             implicitHyperbolaBottomCount,
             implicitHyperbolaOblique,
@@ -2622,6 +2638,28 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.cosecantTangentDisplay.some(equation => /\\theta\s*=/.test(equation)),
         false,
         `polar cosecant-plus-tangent form should not render theta-ray asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.rearrangedCotangentVertical.some(value => approxEqual(value, -1, 0.03)) &&
+        result.rearrangedCotangentVertical.some(value => approxEqual(value, 1, 0.03)),
+        `rearranged cotangent-plus-tangent polar form should preserve vertical asymptotes x=±1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.rearrangedCotangentHorizontal.some(value => approxEqual(value, -1, 0.03)) &&
+        result.rearrangedCotangentHorizontal.some(value => approxEqual(value, 1, 0.03)),
+        `rearranged cotangent-plus-tangent polar form should preserve horizontal asymptotes y=±1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.rearrangedCotangentDisplay.includes('x = -1') &&
+        result.rearrangedCotangentDisplay.includes('x = 1') &&
+        result.rearrangedCotangentDisplay.includes('y = -1') &&
+        result.rearrangedCotangentDisplay.includes('y = 1'),
+        `rearranged cotangent-plus-tangent polar form should render explicit Cartesian asymptotes instead of a periodic x-family: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.rearrangedCotangentDisplay.some(equation => /n/.test(equation)),
+        false,
+        `rearranged cotangent-plus-tangent polar form should not render periodic cartesian asymptote notation: ${JSON.stringify(result)}`
     );
     assert(
         result.implicitHyperbolaBottomCount > 40,

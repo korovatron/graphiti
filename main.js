@@ -21217,7 +21217,8 @@ class Graphiti {
         const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
         const hasReciprocalPeriodicTrigVerticals = /\/\s*(?:\(\s*)*(sin|cos|tan)\s*\(/.test(expression);
         const hasDerivedPolarRayVerticals = verticalDetails.some(item => item && item.source === 'derived-polar-ray');
-        const hasPeriodicTrigVerticals = !hasDerivedPolarRayVerticals && (hasNamedPeriodicTrigVerticals || hasReciprocalPeriodicTrigVerticals) && verticalValues.length >= 2;
+        const isPolarModeFunction = func && func.mode === 'polar';
+        const hasPeriodicTrigVerticals = !isPolarModeFunction && !hasDerivedPolarRayVerticals && (hasNamedPeriodicTrigVerticals || hasReciprocalPeriodicTrigVerticals) && verticalValues.length >= 2;
         if (hasPeriodicTrigVerticals) {
             const periodicEquation = this.formatPeriodicVerticalAsymptoteLatex(verticalValues);
             if (periodicEquation) {
