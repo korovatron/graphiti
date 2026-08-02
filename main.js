@@ -6195,6 +6195,30 @@ class Graphiti {
             return [];
         }
 
+        const result = [];
+        if (Number.isFinite(shape.thetaPole) && Number.isFinite(shape.thetaCoefficient) && Math.abs(shape.thetaCoefficient) > 1e-12) {
+            const convertPoleToDisplayUnits = (poleRadians) => this.angleMode === 'degrees'
+                ? poleRadians * 180 / Math.PI
+                : poleRadians;
+            const poleDisplay = convertPoleToDisplayUnits(shape.thetaPole);
+            const periodDisplay = convertPoleToDisplayUnits((2 * Math.PI) / Math.abs(shape.thetaCoefficient));
+            const normalizedPeriod = Number.isFinite(periodDisplay) && periodDisplay > 1e-12 ? periodDisplay : (thetaMax - thetaMin);
+            const startK = Math.ceil((thetaMin - poleDisplay) / normalizedPeriod) - 1;
+            const endK = Math.floor((thetaMax - poleDisplay) / normalizedPeriod) + 1;
+            const tolerance = Math.max(Math.abs(thetaMax - thetaMin) * 1e-6, 1e-6);
+
+            for (let k = startK; k <= endK; k++) {
+                const candidate = poleDisplay + (k * normalizedPeriod);
+                if (!Number.isFinite(candidate) || candidate < thetaMin - tolerance || candidate > thetaMax + tolerance) {
+                    continue;
+                }
+                if (result.some(existing => Math.abs(existing - candidate) <= tolerance)) {
+                    continue;
+                }
+                result.push(candidate);
+            }
+        }
+
         const thetaRange = thetaMax - thetaMin;
         const rangeRadians = this.angleMode === 'degrees' ? thetaRange * Math.PI / 180 : thetaRange;
         if (!Number.isFinite(rangeRadians) || rangeRadians <= 0) {
@@ -6232,7 +6256,6 @@ class Graphiti {
             return NaN;
         };
 
-        const result = [];
         const tryBoundary = (boundaryTheta, direction) => {
             const boundaryValue = evaluateAt(boundaryTheta);
             if (Number.isFinite(boundaryValue)) {
@@ -24791,7 +24814,14 @@ class Graphiti {
                 return null;
             }
 
-            return { label: 'lituus', confidence: 'structural' };
+            const thetaPole = -inverseThetaRadicand.thetaOffset / inverseThetaRadicand.thetaCoefficient;
+            return {
+                label: 'lituus',
+                confidence: 'structural',
+                thetaCoefficient: inverseThetaRadicand.thetaCoefficient,
+                thetaOffset: inverseThetaRadicand.thetaOffset,
+                thetaPole
+            };
         }
 
         const reciprocalSqrtTheta = this.extractPolarShapeConstantOverSqrtTheta(node);
@@ -24803,7 +24833,14 @@ class Graphiti {
             return null;
         }
 
-        return { label: 'lituus', confidence: 'structural' };
+        const thetaPole = -reciprocalSqrtTheta.thetaOffset / reciprocalSqrtTheta.thetaCoefficient;
+        return {
+            label: 'lituus',
+            confidence: 'structural',
+            thetaCoefficient: reciprocalSqrtTheta.thetaCoefficient,
+            thetaOffset: reciprocalSqrtTheta.thetaOffset,
+            thetaPole
+        };
     }
 
     extractPolarShapeConstantOverSqrtTheta(node) {
@@ -24825,7 +24862,8 @@ class Graphiti {
             if (leftConstant !== null && rightReciprocalPower) {
                 return {
                     numerator: leftConstant * rightReciprocalPower.coefficient,
-                    thetaCoefficient: rightReciprocalPower.thetaCoefficient
+                    thetaCoefficient: rightReciprocalPower.thetaCoefficient,
+                    thetaOffset: rightReciprocalPower.thetaOffset
                 };
             }
 
@@ -24834,7 +24872,8 @@ class Graphiti {
             if (rightConstant !== null && leftReciprocalPower) {
                 return {
                     numerator: rightConstant * leftReciprocalPower.coefficient,
-                    thetaCoefficient: leftReciprocalPower.thetaCoefficient
+                    thetaCoefficient: leftReciprocalPower.thetaCoefficient,
+                    thetaOffset: leftReciprocalPower.thetaOffset
                 };
             }
         }
@@ -24843,7 +24882,8 @@ class Graphiti {
         if (directReciprocalPower) {
             return {
                 numerator: directReciprocalPower.coefficient,
-                thetaCoefficient: directReciprocalPower.thetaCoefficient
+                thetaCoefficient: directReciprocalPower.thetaCoefficient,
+                thetaOffset: directReciprocalPower.thetaOffset
             };
         }
 
@@ -24865,12 +24905,16 @@ class Graphiti {
                 return null;
             }
 
-            const thetaMultiple = this.extractPolarShapeThetaMultiple(denominatorSqrt.args[0]);
-            if (!thetaMultiple || Math.abs(thetaMultiple.coefficient) <= 1e-9) {
+            const thetaAffine = this.extractPolarShapeThetaAffine(denominatorSqrt.args[0]);
+            if (!thetaAffine || Math.abs(thetaAffine.coefficient) <= 1e-9) {
                 return null;
             }
 
-            return { numerator, thetaCoefficient: thetaMultiple.coefficient };
+            return {
+                numerator,
+                thetaCoefficient: thetaAffine.coefficient,
+                thetaOffset: thetaAffine.constant
+            };
         }
 
         return null;
@@ -24903,8 +24947,8 @@ class Graphiti {
             return null;
         }
 
-        const thetaMultiple = this.extractPolarShapeThetaMultiple(baseNode);
-        if (!thetaMultiple || Math.abs(thetaMultiple.coefficient) <= 1e-9) {
+        const thetaAffine = this.extractPolarShapeThetaAffine(baseNode);
+        if (!thetaAffine || Math.abs(thetaAffine.coefficient) <= 1e-9) {
             return null;
         }
 
@@ -24915,7 +24959,8 @@ class Graphiti {
 
         return {
             coefficient: 1,
-            thetaCoefficient: thetaMultiple.coefficient
+            thetaCoefficient: thetaAffine.coefficient,
+            thetaOffset: thetaAffine.constant
         };
     }
 
@@ -25146,9 +25191,13 @@ class Graphiti {
         }
         if (node.type === 'OperatorNode' && node.op === '/' && node.args.length === 2) {
             const numerator = this.evaluatePolarShapeConstant(node.args[0]);
-            const thetaMultiple = this.extractPolarShapeThetaMultiple(node.args[1]);
-            if (numerator !== null && thetaMultiple && Math.abs(thetaMultiple.coefficient) > 1e-9) {
-                return { numerator, thetaCoefficient: thetaMultiple.coefficient };
+            const thetaAffine = this.extractPolarShapeThetaAffine(node.args[1]);
+            if (numerator !== null && thetaAffine && Math.abs(thetaAffine.coefficient) > 1e-9) {
+                return {
+                    numerator,
+                    thetaCoefficient: thetaAffine.coefficient,
+                    thetaOffset: thetaAffine.constant
+                };
             }
         }
 

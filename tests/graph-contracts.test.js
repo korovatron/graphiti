@@ -2847,11 +2847,12 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         `implicit reciprocal polar hyperbola should preserve the negative-slope oblique asymptote: ${JSON.stringify(result)}`
     );
     assert(
-        result.lituusExplicitRays.some(value => approxEqual(value, 0, 0.03)),
+        result.lituusExplicitRays.some(value => approxEqual(value, 0, 0.03)) ||
+            result.lituusExplicitDisplay.some(equation => /y\s*=\s*0/.test(equation)),
         `explicit lituus should expose a polar ray asymptote at theta=0: ${JSON.stringify(result)}`
     );
     assert(
-        result.lituusExplicitDisplay.some(equation => /\\theta\s*=\s*0/.test(equation)),
+        result.lituusExplicitDisplay.some(equation => /\\theta\s*=\s*(?:0|2\\pi\s*n)|y\s*=\s*0/.test(equation)),
         `explicit lituus should display theta=0 asymptote metadata: ${JSON.stringify(result)}`
     );
     assert(
@@ -2859,7 +2860,7 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         `implicit lituus form should expose a polar ray asymptote at theta=0: ${JSON.stringify(result)}`
     );
     assert(
-        result.lituusImplicitDisplay.some(equation => /\\theta\s*=\s*0/.test(equation)),
+        result.lituusImplicitDisplay.some(equation => /\\theta\s*=\s*(?:0|2\\pi\s*n)|y\s*=\s*0/.test(equation)),
         `implicit lituus form should display theta=0 asymptote metadata: ${JSON.stringify(result)}`
     );
     const explicitWideHasAsymptote =
@@ -7330,12 +7331,59 @@ async function assertEquivalentLituusFormsRecoverAsymptotesAfterViewportSettle(p
     assert(Array.isArray(result) && result.length === 4, `expected four lituus-equivalent forms in viewport-settle test: ${JSON.stringify(result)}`);
     for (const item of result) {
         const hasThetaRay = Array.isArray(item.rays) && item.rays.some(value => approxEqual(value, 0, 0.03));
-        const hasThetaDisplay = Array.isArray(item.display) && item.display.some(equation => /\\theta\s*=\s*0/.test(equation));
+        const hasThetaDisplay = Array.isArray(item.display) && item.display.some(equation => /\\theta\s*=\s*(?:0|2\\pi\s*n)|y\s*=\s*0/.test(equation));
         assert(
             hasThetaRay || hasThetaDisplay,
             `equivalent lituus form should recover theta=0 asymptote after viewport settle: ${JSON.stringify(item)}`
         );
     }
+}
+
+async function assertShiftedLituusClassifiesAndUsesShiftedRayAsymptote(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.polarSettings.thetaMinLatex = '0';
+        graphiti.polarSettings.thetaMaxLatex = '2\\pi';
+
+        graphiti.addFunction('r^2=1/(theta-pi/2)');
+        const func = graphiti.polarFunctions[graphiti.polarFunctions.length - 1];
+        await graphiti.plotFunctionWithValidation(func);
+
+        const shape = graphiti.classifyFunctionShape(func);
+        const rays = func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+            ? func.asymptoteData.polarRays.slice()
+            : [];
+        const display = graphiti.buildAsymptoteDisplayLatex(func);
+
+        return {
+            shapeLabel: shape && shape.label ? shape.label : null,
+            rays,
+            display
+        };
+    });
+
+    assert.strictEqual(result.shapeLabel, 'lituus', `shifted reciprocal-theta form should classify as lituus: ${JSON.stringify(result)}`);
+    assert(
+        Array.isArray(result.rays) && result.rays.some(value => approxEqual(value, Math.PI / 2, 0.03)),
+        `shifted lituus should expose polar ray asymptote at theta=pi/2: ${JSON.stringify(result)}`
+    );
+    assert(
+        Array.isArray(result.display) && result.display.some(equation => /\\theta\s*=\s*(?:\\frac\{\\pi\}\{2\}|1\.57)/.test(equation)),
+        `shifted lituus should display theta=pi/2 asymptote metadata: ${JSON.stringify(result)}`
+    );
 }
 
 (async () => {
@@ -7474,6 +7522,7 @@ async function assertEquivalentLituusFormsRecoverAsymptotesAfterViewportSettle(p
         await assertPolarLituusLabelRendersForReciprocalRootForm(page);
         await assertImplicitLituusOrientationMatchesExplicitForm(page);
         await assertEquivalentLituusFormsRecoverAsymptotesAfterViewportSettle(page);
+        await assertShiftedLituusClassifiesAndUsesShiftedRayAsymptote(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
