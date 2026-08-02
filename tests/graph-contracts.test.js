@@ -608,6 +608,9 @@ async function assertShapeClassification(page) {
             { expression: 'r=2/theta', expected: 'hyperbolic spiral' },
             { expression: 'r=sqrt(2*theta)', expected: 'Fermat spiral' },
             { expression: 'r=sqrt(9/theta)', expected: 'lituus' },
+            { expression: 'r=1/sqrt(theta)', expected: 'lituus' },
+            { expression: 'r=theta^(-1/2)', expected: 'lituus' },
+            { expression: 'r=3*theta^(-1/2)', expected: 'lituus' },
             { expression: 'r=2+sec(theta)', expected: 'conchoid of Nicomedes' },
             { expression: 'r=(8*cos(3*theta))^(1/3)', expected: 'sinusoidal spiral - 3-fold horizontal' },
             { expression: 'r^3=8*cos(3*theta)', expected: 'sinusoidal spiral - 3-fold horizontal' },
@@ -7068,6 +7071,107 @@ async function assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(pag
     assert(result.afterHideInequality.holeDisplayCount > 0, `disabling implicit inequality should keep hole metadata entries: ${JSON.stringify(result)}`);
 }
 
+async function assertPolarLituusLabelRendersForReciprocalRootForm(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        graphiti.addFunction('r=\\frac{1}{\\sqrt{\\theta}}');
+        const func = graphiti.polarFunctions[graphiti.polarFunctions.length - 1];
+        await graphiti.plotFunctionWithValidation(func);
+        graphiti.draw();
+        graphiti.updateFunctionAsymptoteInfo(func);
+
+        const shape = graphiti.classifyFunctionShape(func);
+        const funcItem = document.querySelector(`[data-function-id="${func.id}"]`);
+        const shapeContainer = funcItem ? funcItem.querySelector('.shape-info-container') : null;
+        const shapeValue = funcItem ? funcItem.querySelector('.shape-info-value') : null;
+
+        return {
+            detectedType: graphiti.detectFunctionType(func.expression),
+            converted: graphiti.convertFromLatex(func.expression),
+            classifiedLabel: shape && shape.label ? shape.label : null,
+            shapeVisible: shapeContainer ? shapeContainer.classList.contains('visible') : null,
+            domShapeLabel: shapeValue ? shapeValue.textContent : null,
+            validationError: func.validationError || null
+        };
+    });
+
+    assert.strictEqual(result.detectedType, 'polar', `reciprocal root lituus should be treated as a polar explicit expression: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.classifiedLabel, 'lituus', `reciprocal root lituus should classify as lituus: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.shapeVisible, true, `reciprocal root lituus shape metadata should be visible: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.domShapeLabel, 'lituus', `reciprocal root lituus should render lituus label in metadata: ${JSON.stringify(result)}`);
+}
+
+async function assertImplicitLituusOrientationMatchesExplicitForm(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        graphiti.addFunction('r=1/sqrt(theta)');
+        const explicitFunc = graphiti.polarFunctions[graphiti.polarFunctions.length - 1];
+        await graphiti.plotFunctionWithValidation(explicitFunc);
+
+        graphiti.addFunction('r^2*theta=1');
+        const implicitFunc = graphiti.polarFunctions[graphiti.polarFunctions.length - 1];
+        await graphiti.plotFunctionWithValidation(implicitFunc);
+
+        const finiteExplicit = (explicitFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+        const finiteImplicit = (implicitFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+
+        const firstExplicit = finiteExplicit.length > 0 ? finiteExplicit[0] : null;
+        const firstImplicit = finiteImplicit.length > 0 ? finiteImplicit[0] : null;
+        const dot = firstExplicit && firstImplicit
+            ? (firstExplicit.x * firstImplicit.x) + (firstExplicit.y * firstImplicit.y)
+            : null;
+
+        return {
+            explicitShape: (graphiti.classifyFunctionShape(explicitFunc) || {}).label || null,
+            implicitShape: (graphiti.classifyFunctionShape(implicitFunc) || {}).label || null,
+            implicitRenderMode: implicitFunc.implicitRenderMode || null,
+            quadraticBranches: Array.isArray(implicitFunc.quadraticPolarExplicitExpressions)
+                ? implicitFunc.quadraticPolarExplicitExpressions.slice()
+                : [],
+            monomialBranches: Array.isArray(implicitFunc.monomialPolarExplicitExpressions)
+                ? implicitFunc.monomialPolarExplicitExpressions.slice()
+                : [],
+            firstExplicit,
+            firstImplicit,
+            firstPointDot: dot
+        };
+    });
+
+    assert.strictEqual(result.explicitShape, 'lituus', `explicit reciprocal-root form should classify as lituus: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.implicitShape, 'lituus', `implicit multiplied form should classify as lituus: ${JSON.stringify(result)}`);
+    assert(
+        result.implicitRenderMode === 'monomial-polar-explicit' || result.implicitRenderMode === 'quadratic-polar-explicit',
+        `implicit multiplied form should use an explicit polar fast-path: ${JSON.stringify(result)}`
+    );
+
+    const canonicalBranches = result.quadraticBranches.length > 0 ? result.quadraticBranches : result.monomialBranches;
+    assert(Array.isArray(canonicalBranches) && canonicalBranches.length >= 1, `implicit multiplied form should expose at least one canonical branch expression: ${JSON.stringify(result)}`);
+    assert(!/^\s*-/.test(canonicalBranches[0] || ''), `implicit multiplied form should order branches with the positive canonical branch first to avoid 180-degree rotation: ${JSON.stringify(result)}`);
+    assert(Number.isFinite(result.firstPointDot) && result.firstPointDot > 0, `implicit multiplied form should align with explicit lituus orientation: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -7201,6 +7305,8 @@ async function assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(pag
         await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
         await assertImplicitPolarDemoHolesRenderImmediately(page);
         await assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(page);
+        await assertPolarLituusLabelRendersForReciprocalRootForm(page);
+        await assertImplicitLituusOrientationMatchesExplicitForm(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);
