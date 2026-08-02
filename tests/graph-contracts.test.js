@@ -3109,6 +3109,28 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(monomialCubeFastPathFunc);
         await graphiti.plotFunction(monomialCubeFastPathFunc);
 
+        const squaredTanBoundaryFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r^2=5-4*tan(theta)',
+            points: [],
+            color: '#039BE5',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(squaredTanBoundaryFunc);
+        await graphiti.plotFunctionWithValidation(squaredTanBoundaryFunc);
+
+        const squaredTanInequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r^2<5-4*tan(theta)',
+            points: [],
+            color: '#8E24AA',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(squaredTanInequalityFunc);
+        await graphiti.plotFunctionWithValidation(squaredTanInequalityFunc);
+
         const productFactorsFastPathFunc = {
             id: graphiti.nextFunctionId++,
             expression: '(r-(1+cos(t)))*(r^2-(2+cos(t)))=0',
@@ -3383,6 +3405,12 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         const monomialCubeFastPathFinitePointCount = (monomialCubeFastPathFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
+        const squaredTanBoundaryFinitePoints = (squaredTanBoundaryFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        );
+        const squaredTanInequalityFinitePoints = (squaredTanInequalityFunc.points || []).filter(point =>
+            point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        );
         const productFactorsFastPathFinitePointCount = (productFactorsFastPathFunc.points || []).filter(point =>
             point && Number.isFinite(point.x) && Number.isFinite(point.y)
         ).length;
@@ -3500,6 +3528,35 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         const quadraticFastPathAnimationArcCount = getAnimationArcCountForFunction(quadraticFastPathFunc, 0);
         const monomialCubeFastPathAnimationArcCount = getAnimationArcCountForFunction(monomialCubeFastPathFunc, 0);
         const productFactorsFastPathAnimationArcCount = getAnimationArcCountForFunction(productFactorsFastPathFunc, 0);
+
+        const squaredTanBoundaryParity = (() => {
+            const sampleBoundary = squaredTanBoundaryFinitePoints.filter((_, index) => index % 12 === 0);
+            const nearestDistance = (point, others) => {
+                let best = Infinity;
+                for (const other of others) {
+                    const distance = Math.hypot(point.x - other.x, point.y - other.y);
+                    if (distance < best) {
+                        best = distance;
+                    }
+                }
+                return best;
+            };
+
+            const distances = sampleBoundary
+                .map(point => nearestDistance(point, squaredTanInequalityFinitePoints))
+                .filter(distance => Number.isFinite(distance));
+
+            return {
+                sampleCount: sampleBoundary.length,
+                averageDistance: distances.length > 0
+                    ? distances.reduce((sum, value) => sum + value, 0) / distances.length
+                    : Infinity,
+                maxDistance: distances.length > 0 ? Math.max(...distances) : Infinity
+            };
+        })();
+        const squaredTanBoundaryMinRadius = squaredTanBoundaryFinitePoints.length > 0
+            ? Math.min(...squaredTanBoundaryFinitePoints.map(point => Math.hypot(point.x, point.y)))
+            : Infinity;
 
         graphiti.showIntercepts = true;
         const polarAxisIntercepts = graphiti.findAxisIntercepts();
@@ -3673,6 +3730,23 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                     ? monomialCubeFastPathFunc.monomialPolarExplicitExpressions.length
                     : 0,
                 power: monomialCubeFastPathFunc.monomialPolarPower
+            },
+            squaredTanBoundaryPair: {
+                equalityRenderMode: squaredTanBoundaryFunc.implicitRenderMode || null,
+                inequalityRenderMode: squaredTanInequalityFunc.implicitRenderMode || null,
+                equalityBranches: Array.isArray(squaredTanBoundaryFunc.monomialPolarExplicitExpressions)
+                    ? squaredTanBoundaryFunc.monomialPolarExplicitExpressions.slice()
+                    : [],
+                inequalityBranches: Array.isArray(squaredTanInequalityFunc.monomialPolarExplicitExpressions)
+                    ? squaredTanInequalityFunc.monomialPolarExplicitExpressions.slice()
+                    : [],
+                inequalityFillMode: squaredTanInequalityFunc.implicitPolarInequalityFastPath
+                    ? squaredTanInequalityFunc.implicitPolarInequalityFastPath.fillMode
+                    : null,
+                equalityFinitePointCount: squaredTanBoundaryFinitePoints.length,
+                inequalityFinitePointCount: squaredTanInequalityFinitePoints.length,
+                equalityMinRadius: squaredTanBoundaryMinRadius,
+                parity: squaredTanBoundaryParity
             },
             productFactorsFastPath: {
                 detectedType: graphiti.detectFunctionType(productFactorsFastPathFunc.expression),
@@ -3905,6 +3979,18 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert(result.monomialCubeFastPath.finitePointCount > 80, `monomial cube implicit polar fast-path should produce substantial finite points: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert(result.monomialCubeFastPath.animationArcCount >= 3, `monomial cube implicit polar fast-path should draw animation marker arcs: ${JSON.stringify(result.monomialCubeFastPath)}`);
     assert(result.monomialCubeFastPath.axisInterceptCount >= 2, `monomial cube implicit polar fast-path should report axis intercepts: ${JSON.stringify(result.monomialCubeFastPath)}`);
+
+    assert.strictEqual(result.squaredTanBoundaryPair.equalityRenderMode, 'monomial-polar-explicit', `r^2=5-4tan(theta) should use the monomial polar fast-path: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert.strictEqual(result.squaredTanBoundaryPair.inequalityRenderMode, 'quadratic-polar-inequality-fastpath', `r^2<5-4tan(theta) should use the polar inequality fast-path: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert.strictEqual(result.squaredTanBoundaryPair.inequalityFillMode, 'inside', `r^2<5-4tan(theta) should fill inside the shared boundary: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert.strictEqual(result.squaredTanBoundaryPair.equalityBranches.length, 1, `r^2=5-4tan(theta) should expose one explicit sqrt branch when negative-r reflection is enabled: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert.deepStrictEqual(result.squaredTanBoundaryPair.inequalityBranches, result.squaredTanBoundaryPair.equalityBranches, `r^2<5-4tan(theta) should reuse the same sqrt boundary branches as the equality: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.equalityFinitePointCount > 300, `r^2=5-4tan(theta) should produce substantial boundary points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.inequalityFinitePointCount > 300, `r^2<5-4tan(theta) should produce substantial boundary points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.equalityMinRadius <= 1e-8, `r^2=5-4tan(theta) branch fast-path should meet at the origin: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.parity.sampleCount > 30, `r^2 boundary parity probe should sample enough points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.parity.averageDistance <= 0.08, `r^2 inequality boundary should stay close to the equality boundary on average: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.parity.maxDistance <= 0.35, `r^2 inequality boundary should not visibly diverge from the equality boundary: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
 
     assert.strictEqual(result.productFactorsFastPath.detectedType, 'implicit', `product implicit polar expression should remain implicit in classification: ${JSON.stringify(result.productFactorsFastPath)}`);
     assert.strictEqual(result.productFactorsFastPath.renderMode, 'product-factors', `product implicit polar expression should activate product-factors mode: ${JSON.stringify(result.productFactorsFastPath)}`);

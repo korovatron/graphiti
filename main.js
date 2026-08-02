@@ -7078,25 +7078,30 @@ class Graphiti {
 
         let validSamples = 0;
         let maxSecondDifference = 0;
-        let maxMagnitude = 0;
         let maxSlopeMagnitude = 0;
 
         for (let i = 0; i <= sampleCount; i++) {
             const theta = thetaMin + (thetaSpan * i / sampleCount);
+            const fNeg1 = evaluateCombined(theta, -1);
             const f0 = evaluateCombined(theta, 0);
             const f1 = evaluateCombined(theta, 1);
             const f2 = evaluateCombined(theta, 2);
             const f3 = evaluateCombined(theta, 3);
-            if (f0 === null || f1 === null || f2 === null || f3 === null) {
+            if (fNeg1 === null || f0 === null || f1 === null || f2 === null || f3 === null) {
                 continue;
             }
 
+            const secondDifferenceNeg1 = f1 - (2 * f0) + fNeg1;
             const secondDifference0 = f2 - (2 * f1) + f0;
             const secondDifference1 = f3 - (2 * f2) + f1;
-            const slopeMagnitude = Math.abs(f1 - f0);
-            maxSecondDifference = Math.max(maxSecondDifference, Math.abs(secondDifference0), Math.abs(secondDifference1));
+            const slopeMagnitude = Math.max(
+                Math.abs(f0 - fNeg1),
+                Math.abs(f1 - f0),
+                Math.abs(f2 - f1),
+                Math.abs(f3 - f2)
+            );
+            maxSecondDifference = Math.max(maxSecondDifference, Math.abs(secondDifferenceNeg1), Math.abs(secondDifference0), Math.abs(secondDifference1));
             maxSlopeMagnitude = Math.max(maxSlopeMagnitude, slopeMagnitude);
-            maxMagnitude = Math.max(maxMagnitude, Math.abs(f0), Math.abs(f1), Math.abs(f2), Math.abs(f3));
             validSamples++;
         }
 
@@ -7104,7 +7109,7 @@ class Graphiti {
             return null;
         }
 
-        const linearityTolerance = Math.max(1e-7, maxMagnitude * 1e-7);
+        const linearityTolerance = Math.max(1e-7, maxSlopeMagnitude * 1e-6);
         if (maxSecondDifference > linearityTolerance) {
             return null;
         }
@@ -7328,13 +7333,15 @@ class Graphiti {
         const thetaSpan = thetaMax - thetaMin;
         const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
         const sampleCount = Math.max(18, Math.min(64, Math.ceil(thetaSpan / thetaStep)));
-        const rSamples = [-2, -1, -0.5, 0, 0.5, 1, 2, 3];
 
         for (const power of [2, 3]) {
+            const rSamples = power === 2
+                ? [0, 0.5, 1, 2, 3]
+                : [-2, -1, -0.5, 0, 0.5, 1, 2, 3];
             let validSamples = 0;
             let maxResidual = 0;
-            let maxMagnitude = 0;
             let maxCoefficientMagnitude = 0;
+            let maxResponseMagnitude = 0;
 
             for (let i = 0; i <= sampleCount; i++) {
                 const theta = thetaMin + (thetaSpan * i / sampleCount);
@@ -7345,9 +7352,13 @@ class Graphiti {
                 }
 
                 const aValue = f1 - bValue;
+                const localCoefficientScale = Math.max(1, Math.abs(bValue), Math.abs(f1));
+                if (Math.abs(aValue) <= localCoefficientScale * 1e-12) {
+                    continue;
+                }
                 let sampleSetValid = true;
                 let localResidual = 0;
-                let localMagnitude = Math.max(Math.abs(bValue), Math.abs(f1));
+                let localResponseMagnitude = Math.abs(aValue);
                 for (const rValue of rSamples) {
                     const actual = evaluateCombined(theta, rValue);
                     if (actual === null) {
@@ -7357,7 +7368,7 @@ class Graphiti {
 
                     const expected = bValue + (aValue * Math.pow(rValue, power));
                     localResidual = Math.max(localResidual, Math.abs(actual - expected));
-                    localMagnitude = Math.max(localMagnitude, Math.abs(actual), Math.abs(expected));
+                    localResponseMagnitude = Math.max(localResponseMagnitude, Math.abs(actual - bValue), Math.abs(expected - bValue));
                 }
 
                 if (!sampleSetValid) {
@@ -7365,8 +7376,8 @@ class Graphiti {
                 }
 
                 maxResidual = Math.max(maxResidual, localResidual);
-                maxMagnitude = Math.max(maxMagnitude, localMagnitude);
                 maxCoefficientMagnitude = Math.max(maxCoefficientMagnitude, Math.abs(aValue));
+                maxResponseMagnitude = Math.max(maxResponseMagnitude, localResponseMagnitude);
                 validSamples++;
             }
 
@@ -7374,8 +7385,8 @@ class Graphiti {
                 continue;
             }
 
-            const residualTolerance = Math.max(1e-6, maxMagnitude * 1e-7);
-            const coefficientTolerance = Math.max(1e-7, maxMagnitude * 1e-8);
+            const residualTolerance = Math.max(1e-6, maxResponseMagnitude * 1e-6);
+            const coefficientTolerance = Math.max(1e-7, maxResponseMagnitude * 1e-6);
             if (maxResidual > residualTolerance || maxCoefficientMagnitude <= coefficientTolerance) {
                 continue;
             }
@@ -7443,7 +7454,18 @@ class Graphiti {
             return false;
         }
 
-        const handled = this.plotCachedPolarQuadraticExplicitProxy(func, monomialPolarModel.branchExpressions, {
+        let branchExpressions = monomialPolarModel.branchExpressions.slice();
+        if (monomialPolarModel.power === 2 && this.polarSettings.plotNegativeR && branchExpressions.length === 2) {
+            const [firstBranch, secondBranch] = branchExpressions;
+            if (typeof firstBranch === 'string' && typeof secondBranch === 'string') {
+                const normalise = (expression) => expression.replace(/\s+/g, '');
+                if (normalise(secondBranch) === '-' + normalise(firstBranch) || normalise(firstBranch) === '-' + normalise(secondBranch)) {
+                    branchExpressions = [firstBranch];
+                }
+            }
+        }
+
+        const handled = this.plotCachedPolarQuadraticExplicitProxy(func, branchExpressions, {
             clearAsymptoteData: false
         });
         if (!handled) {
@@ -7451,7 +7473,7 @@ class Graphiti {
         }
 
         func.implicitRenderMode = 'monomial-polar-explicit';
-        func.monomialPolarExplicitExpressions = monomialPolarModel.branchExpressions.slice();
+        func.monomialPolarExplicitExpressions = branchExpressions.slice();
         func.monomialPolarRadicandExpression = monomialPolarModel.radicandExpression;
         func.monomialPolarPower = monomialPolarModel.power;
         return true;
@@ -7689,6 +7711,7 @@ class Graphiti {
         func.displayPoints = Array.isArray(proxyFunc.displayPoints)
             ? proxyFunc.displayPoints
             : func.points;
+        this.implicitCurveCache.delete(func.id);
         if (clearAsymptoteData) {
             this.clearFunctionAsymptoteData(func);
         }
@@ -7704,6 +7727,7 @@ class Graphiti {
         const mergedPoints = [];
         let hasFinitePoints = false;
         const mergedPolarRays = [];
+        const branchThetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax));
         const addUniquePolarRay = (value) => {
             if (!Number.isFinite(value)) {
                 return;
@@ -7739,6 +7763,196 @@ class Graphiti {
             return null;
         };
 
+        const addOriginBoundaryPoints = (points, branchExpression) => {
+            if (!Array.isArray(points) || points.length === 0) {
+                return points;
+            }
+
+            const originBoundaryTolerance = Math.max(
+                0.25,
+                Math.hypot(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY) * 0.0125
+            );
+            const result = [];
+            let compiledBranchExpression = null;
+            let compiledRadicandExpression = null;
+            if (typeof branchExpression === 'string' && branchExpression.trim()) {
+                try {
+                    let expression = branchExpression.toLowerCase();
+                    expression = expression.replace(/(\d)([a-zA-Z])/g, '$1*$2');
+                    expression = expression.replace(/(\))([a-zA-Z])/g, '$1*$2');
+                    compiledBranchExpression = this.getCompiledExpression(expression);
+
+                    const sqrtMatch = expression.match(/^-?sqrt\((.*)\)$/);
+                    if (sqrtMatch && sqrtMatch[1]) {
+                        compiledRadicandExpression = this.getCompiledExpression(sqrtMatch[1]);
+                    }
+                } catch {
+                    compiledBranchExpression = null;
+                    compiledRadicandExpression = null;
+                }
+            }
+
+            const scope = compiledBranchExpression
+                ? this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E })
+                : null;
+            const evaluatePolarBranchPoint = (thetaValue) => {
+                if (!compiledBranchExpression || !scope || !Number.isFinite(thetaValue)) {
+                    return null;
+                }
+
+                const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+                scope.theta = thetaForEval;
+                scope.t = thetaForEval;
+
+                let r;
+                try {
+                    r = compiledBranchExpression.evaluate(scope);
+                } catch {
+                    return null;
+                }
+
+                if (!Number.isFinite(r)) {
+                    return null;
+                }
+
+                let adjustedTheta = thetaForEval;
+                if (r < 0) {
+                    if (!this.polarSettings.plotNegativeR) {
+                        return null;
+                    }
+                    r = Math.abs(r);
+                    adjustedTheta += Math.PI;
+                }
+
+                const x = r * Math.cos(adjustedTheta);
+                const y = r * Math.sin(adjustedTheta);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                    return null;
+                }
+
+                return { x, y, connected: true, theta: thetaValue };
+            };
+
+            const evaluateRadicand = (thetaValue) => {
+                if (!compiledRadicandExpression || !scope || !Number.isFinite(thetaValue)) {
+                    return null;
+                }
+
+                const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+                scope.theta = thetaForEval;
+                scope.t = thetaForEval;
+                try {
+                    const value = compiledRadicandExpression.evaluate(scope);
+                    return Number.isFinite(value) ? value : null;
+                } catch {
+                    return null;
+                }
+            };
+
+            const refineTowardOrigin = (finitePoint, invalidPoint) => {
+                if (!finitePoint || !Number.isFinite(finitePoint.theta)) {
+                    return null;
+                }
+
+                const invalidTheta = invalidPoint && Number.isFinite(invalidPoint.theta)
+                    ? invalidPoint.theta
+                    : finitePoint.theta + branchThetaStep;
+                if (!Number.isFinite(invalidTheta)) {
+                    return null;
+                }
+
+                let lowTheta = finitePoint.theta;
+                let highTheta = invalidTheta;
+                let bestPoint = finitePoint;
+                let originTheta = finitePoint.theta;
+
+                const finiteRadicand = evaluateRadicand(finitePoint.theta);
+                const invalidRadicand = evaluateRadicand(invalidTheta);
+                if (compiledRadicandExpression && Number.isFinite(finiteRadicand) && finiteRadicand >= 0 && Number.isFinite(invalidRadicand) && invalidRadicand <= 0) {
+                    for (let iteration = 0; iteration < 16; iteration++) {
+                        const midTheta = (lowTheta + highTheta) * 0.5;
+                        const midRadicand = evaluateRadicand(midTheta);
+                        if (Number.isFinite(midRadicand) && midRadicand >= 0) {
+                            const midPoint = evaluatePolarBranchPoint(midTheta);
+                            if (midPoint) {
+                                bestPoint = midPoint;
+                                lowTheta = midTheta;
+                            } else {
+                                highTheta = midTheta;
+                            }
+                        } else {
+                            highTheta = midTheta;
+                        }
+                    }
+                    originTheta = (lowTheta + highTheta) * 0.5;
+                } else {
+                    for (let iteration = 0; iteration < 8; iteration++) {
+                        const midTheta = (lowTheta + highTheta) * 0.5;
+                        const midPoint = evaluatePolarBranchPoint(midTheta);
+                        if (midPoint) {
+                            bestPoint = midPoint;
+                            lowTheta = midTheta;
+                        } else {
+                            highTheta = midTheta;
+                        }
+                    }
+                    originTheta = lowTheta;
+                }
+
+                const bestRadius = bestPoint ? Math.hypot(bestPoint.x, bestPoint.y) : Infinity;
+                if (!bestPoint || !Number.isFinite(bestRadius) || bestRadius >= Math.hypot(finitePoint.x, finitePoint.y)) {
+                    return null;
+                }
+
+                return {
+                    point: {
+                        ...bestPoint,
+                        connected: true
+                    },
+                    originTheta
+                };
+            };
+
+            const maybePushOriginAfterFinite = (point, nextPoint) => {
+                if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.theta)) {
+                    return;
+                }
+
+                if (compiledRadicandExpression) {
+                    const refinedPoint = refineTowardOrigin(point, nextPoint);
+                    if (refinedPoint) {
+                        result.push(refinedPoint.point);
+                        return;
+                    }
+                }
+
+                const radius = Math.hypot(point.x, point.y);
+                if (radius <= originBoundaryTolerance) {
+                    const refinedPoint = refineTowardOrigin(point, nextPoint);
+                    if (refinedPoint) {
+                        result.push(refinedPoint.point);
+                    }
+                }
+            };
+
+            for (let index = 0; index < points.length; index++) {
+                const point = points[index];
+                const previous = index > 0 ? points[index - 1] : null;
+
+                if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                    result.push(point);
+                    continue;
+                }
+
+                if (previous && Number.isFinite(previous.x) && Number.isFinite(previous.y)) {
+                    maybePushOriginAfterFinite(previous, point);
+                }
+                result.push(point);
+            }
+
+            return result;
+        };
+
         branchExpressions.forEach((branchExpression, index) => {
             if (typeof branchExpression !== 'string' || !branchExpression.trim()) {
                 return;
@@ -7762,7 +7976,7 @@ class Graphiti {
                 }
             }
 
-            const branchPoints = Array.isArray(proxyFunc.points) ? proxyFunc.points : [];
+            const branchPoints = addOriginBoundaryPoints(Array.isArray(proxyFunc.points) ? proxyFunc.points : [], branchExpression);
             const finiteBranchPoints = branchPoints.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
             if (finiteBranchPoints.length === 0) {
                 return;
@@ -7803,6 +8017,7 @@ class Graphiti {
         );
         func.points = mergedPoints;
         func.displayPoints = mergedPoints;
+        this.implicitCurveCache.delete(func.id);
         this.updateFunctionAsymptoteData(func, [], [], [], null, null, [], mergedPolarRays);
         if (clearAsymptoteData) {
             this.clearFunctionAsymptoteData(func);
@@ -49139,6 +49354,7 @@ class Graphiti {
         
         // Check curve cache
         const cached = this.implicitCurveCache.get(func.id);
+        const shouldSkipViewportScaledCache = this.isExplicitImplicitFastPath(func);
         if (cached && 
             cached.pointsHash === pointsHash &&
             cached.color === func.color &&
@@ -49149,7 +49365,7 @@ class Graphiti {
             
             // Check if viewport has changed but curve data hasn't
             if (cached.viewport !== viewportKey) {
-                if (this.isViewportChanging && cached.viewportBounds) {
+                if (!shouldSkipViewportScaledCache && this.isViewportChanging && cached.viewportBounds) {
                     const topLeft = this.worldToScreen(cached.viewportBounds.minX, cached.viewportBounds.maxY);
                     const bottomRight = this.worldToScreen(cached.viewportBounds.maxX, cached.viewportBounds.minY);
                     const width = bottomRight.x - topLeft.x;
