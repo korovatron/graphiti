@@ -5509,6 +5509,8 @@ class Graphiti {
                 }
             }
 
+            this.refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep);
+
             if (polarRayAsymptotes.length > 0) {
                 this.breakPolarAsymptoteBridges(points, polarRayAsymptotes, thetaStep);
             }
@@ -5529,6 +5531,8 @@ class Graphiti {
                     null,
                     []
                 );
+
+                this.refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep);
             } else if (polarRayAsymptotes.length > 0) {
                 const inferredLineAsymptotes = this.inferCartesianAsymptotesFromPolarSingularRays(compiledExpression, polarRayAsymptotes, thetaStep);
                 const consumedRays = Array.isArray(inferredLineAsymptotes.consumedRays)
@@ -5566,6 +5570,137 @@ class Graphiti {
             // Silent error for better UX during typing - no alert popup
             func.points = [];
         }
+    }
+
+    refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep) {
+        if (!Array.isArray(points) || points.length < 2 || !compiledExpression || !Number.isFinite(thetaStep) || thetaStep === 0) {
+            return points;
+        }
+
+        const viewportRadius = Math.hypot(
+            Math.max(Math.abs(this.viewport?.minX ?? 0), Math.abs(this.viewport?.maxX ?? 0)),
+            Math.max(Math.abs(this.viewport?.minY ?? 0), Math.abs(this.viewport?.maxY ?? 0))
+        );
+        const boundaryProbeRadius = Math.max(0.2, viewportRadius * 0.03);
+        const originSnapRadius = Math.max(0.02, viewportRadius * 0.002);
+        const originSnapToZeroRadius = Math.max(0.015, viewportRadius * 0.0018);
+
+        const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+
+        const evaluatePointAtTheta = (thetaValue) => {
+            if (!Number.isFinite(thetaValue)) {
+                return null;
+            }
+
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            scope.theta = thetaForEval;
+            scope.t = thetaForEval;
+
+            let r;
+            try {
+                r = compiledExpression.evaluate(scope);
+            } catch {
+                return null;
+            }
+
+            if (!Number.isFinite(r)) {
+                return null;
+            }
+
+            let adjustedTheta = thetaForEval;
+            if (r < 0) {
+                if (!this.polarSettings.plotNegativeR) {
+                    return null;
+                }
+                r = Math.abs(r);
+                adjustedTheta += Math.PI;
+            }
+
+            const x = r * Math.cos(adjustedTheta);
+            const y = r * Math.sin(adjustedTheta);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return null;
+            }
+
+            return {
+                x,
+                y,
+                connected: true,
+                theta: thetaValue
+            };
+        };
+
+        const result = [];
+        for (let index = 0; index < points.length; index++) {
+            const point = points[index];
+            result.push(point);
+
+            if (index >= points.length - 1) {
+                continue;
+            }
+
+            const nextPoint = points[index + 1];
+            const pointFinite = isFinitePoint(point);
+            const nextFinite = isFinitePoint(nextPoint);
+            if (pointFinite === nextFinite) {
+                continue;
+            }
+
+            const finitePoint = pointFinite ? point : nextPoint;
+            const invalidPoint = pointFinite ? nextPoint : point;
+            if (!Number.isFinite(finitePoint.theta) || !Number.isFinite(invalidPoint.theta)) {
+                continue;
+            }
+
+            const finiteRadius = Math.hypot(finitePoint.x, finitePoint.y);
+            if (!Number.isFinite(finiteRadius) || finiteRadius > boundaryProbeRadius) {
+                continue;
+            }
+
+            let finiteTheta = finitePoint.theta;
+            let invalidTheta = invalidPoint.theta;
+            let bestPoint = finitePoint;
+            for (let iteration = 0; iteration < 18; iteration++) {
+                const midTheta = (finiteTheta + invalidTheta) * 0.5;
+                const midPoint = evaluatePointAtTheta(midTheta);
+                if (midPoint) {
+                    bestPoint = midPoint;
+                    finiteTheta = midTheta;
+                } else {
+                    invalidTheta = midTheta;
+                }
+            }
+
+            if (!bestPoint || !Number.isFinite(bestPoint.x) || !Number.isFinite(bestPoint.y)) {
+                continue;
+            }
+
+            const bestRadius = Math.hypot(bestPoint.x, bestPoint.y);
+            if (!Number.isFinite(bestRadius) || bestRadius > finiteRadius + originSnapRadius) {
+                continue;
+            }
+
+            const refinedPoint = {
+                ...bestPoint,
+                connected: pointFinite
+            };
+
+            if (bestRadius <= originSnapToZeroRadius) {
+                refinedPoint.x = 0;
+                refinedPoint.y = 0;
+            }
+
+            if (!pointFinite) {
+                result.push(refinedPoint);
+            } else {
+                result.push(refinedPoint);
+            }
+        }
+
+        points.length = 0;
+        points.push(...result);
+        return points;
     }
 
     breakPolarAsymptoteBridges(points, polarRayAsymptotes, thetaStep) {
@@ -5663,6 +5798,115 @@ class Graphiti {
         }
     }
 
+    refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep) {
+        if (!Array.isArray(points) || points.length < 2 || !compiledExpression || !Number.isFinite(thetaStep) || thetaStep <= 0) {
+            return points;
+        }
+
+        const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const evaluatePointAtTheta = (thetaValue) => {
+            if (!Number.isFinite(thetaValue)) {
+                return null;
+            }
+
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            scope.theta = thetaForEval;
+            scope.t = thetaForEval;
+
+            let r;
+            try {
+                r = compiledExpression.evaluate(scope);
+            } catch {
+                return null;
+            }
+
+            if (!Number.isFinite(r)) {
+                return null;
+            }
+
+            let adjustedTheta = thetaForEval;
+            if (r < 0) {
+                if (!this.polarSettings.plotNegativeR) {
+                    return null;
+                }
+                r = Math.abs(r);
+                adjustedTheta += Math.PI;
+            }
+
+            const x = r * Math.cos(adjustedTheta);
+            const y = r * Math.sin(adjustedTheta);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return null;
+            }
+
+            return { x, y, theta: thetaValue };
+        };
+
+        const viewportDiagonal = Math.hypot(
+            Math.abs((this.viewport?.maxX ?? 0) - (this.viewport?.minX ?? 0)),
+            Math.abs((this.viewport?.maxY ?? 0) - (this.viewport?.minY ?? 0))
+        );
+        const originSnapRadius = Math.max(0.012, viewportDiagonal * 0.001);
+
+        for (let index = 1; index < points.length; index++) {
+            const previous = points[index - 1];
+            const current = points[index];
+
+            const previousFinite = isFinitePoint(previous);
+            const currentFinite = isFinitePoint(current);
+            if (previousFinite === currentFinite) {
+                continue;
+            }
+
+            const finitePoint = previousFinite ? previous : current;
+            const invalidPoint = previousFinite ? current : previous;
+            if (!finitePoint || !Number.isFinite(finitePoint.theta) || !invalidPoint || !Number.isFinite(invalidPoint.theta)) {
+                continue;
+            }
+
+            let lowTheta = finitePoint.theta;
+            let highTheta = invalidPoint.theta;
+
+            let lowEval = evaluatePointAtTheta(lowTheta);
+            let highEval = evaluatePointAtTheta(highTheta);
+
+            // Keep the finite endpoint as low and the invalid side as high.
+            if (!lowEval && highEval) {
+                [lowTheta, highTheta] = [highTheta, lowTheta];
+                [lowEval, highEval] = [highEval, lowEval];
+            }
+
+            if (!lowEval || highEval) {
+                continue;
+            }
+
+            let best = lowEval;
+            for (let iteration = 0; iteration < 16; iteration++) {
+                const midTheta = (lowTheta + highTheta) * 0.5;
+                const midEval = evaluatePointAtTheta(midTheta);
+                if (midEval) {
+                    best = midEval;
+                    lowTheta = midTheta;
+                } else {
+                    highTheta = midTheta;
+                }
+            }
+
+            const previousRadius = Math.hypot(finitePoint.x, finitePoint.y);
+            const refinedRadius = Math.hypot(best.x, best.y);
+            if (!Number.isFinite(previousRadius) || !Number.isFinite(refinedRadius) || refinedRadius > previousRadius + 1e-8) {
+                continue;
+            }
+
+            finitePoint.x = refinedRadius <= originSnapRadius ? 0 : best.x;
+            finitePoint.y = refinedRadius <= originSnapRadius ? 0 : best.y;
+            finitePoint.theta = best.theta;
+        }
+
+        return points;
+    }
+
     compactPolarOriginGaps(points) {
         if (!Array.isArray(points) || points.length < 3) {
             return points;
@@ -5676,6 +5920,18 @@ class Graphiti {
 
         const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
         const isNearOrigin = (point) => isFinitePoint(point) && Math.hypot(point.x, point.y) <= originBridgeRadius;
+        const angularDistance = (a, b) => {
+            if (!Number.isFinite(a) || !Number.isFinite(b)) {
+                return Infinity;
+            }
+            const period = this.angleMode === 'degrees' ? 360 : (2 * Math.PI);
+            let distance = Math.abs(a - b) % period;
+            if (distance > period / 2) {
+                distance = period - distance;
+            }
+            return Math.abs(distance);
+        };
+        const originGapThetaJoinTolerance = this.angleMode === 'degrees' ? 14 : 0.24;
 
         const compacted = [];
         for (let index = 0; index < points.length; index++) {
@@ -5702,7 +5958,14 @@ class Graphiti {
                 }
             }
 
-            const shouldCollapseGap = previousFinite && nextFinite && isNearOrigin(previousFinite) && isNearOrigin(nextFinite);
+            const thetaGap = previousFinite && nextFinite
+                ? angularDistance(previousFinite.theta, nextFinite.theta)
+                : Infinity;
+            const shouldCollapseGap = previousFinite &&
+                nextFinite &&
+                isNearOrigin(previousFinite) &&
+                isNearOrigin(nextFinite) &&
+                thetaGap <= originGapThetaJoinTolerance;
             if (!shouldCollapseGap) {
                 compacted.push({ x: NaN, y: NaN, connected: false });
             }
