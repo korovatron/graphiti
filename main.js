@@ -5409,7 +5409,7 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
-
+            const exactCartesianAsymptotes = this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression);
             const polarRayAsymptotes = this.detectPolarRayAsymptotes(compiledExpression, this.polarSettings.thetaMin, this.polarSettings.thetaMax);
             
             const points = [];
@@ -5512,7 +5512,18 @@ class Graphiti {
                 this.closePolarRangeIfNeeded(points, thetaMin, thetaMax, thetaStep, polarRayAsymptotes);
             }
 
-            if (polarRayAsymptotes.length > 0) {
+            if (exactCartesianAsymptotes) {
+                this.updateFunctionAsymptoteData(
+                    func,
+                    exactCartesianAsymptotes.vertical,
+                    exactCartesianAsymptotes.horizontal,
+                    exactCartesianAsymptotes.oblique,
+                    null,
+                    null,
+                    null,
+                    []
+                );
+            } else if (polarRayAsymptotes.length > 0) {
                 const inferredLineAsymptotes = this.inferCartesianAsymptotesFromPolarSingularRays(compiledExpression, polarRayAsymptotes, thetaStep);
                 const consumedRays = Array.isArray(inferredLineAsymptotes.consumedRays)
                     ? inferredLineAsymptotes.consumedRays
@@ -6229,6 +6240,108 @@ class Graphiti {
         result.consumedRays = consumed;
 
         return result;
+    }
+
+    tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression) {
+        if (typeof processedExpression !== 'string' || !processedExpression.trim()) {
+            return null;
+        }
+
+        let expressionText = processedExpression.trim();
+        if (expressionText.toLowerCase().startsWith('r=')) {
+            expressionText = expressionText.substring(2).trim();
+        }
+
+        let parsed;
+        try {
+            parsed = this.cleanMath.parse(expressionText);
+        } catch {
+            return null;
+        }
+
+        const reciprocalComponents = this.extractPolarReciprocalLinearTrigComponents(parsed);
+        if (!reciprocalComponents) {
+            return null;
+        }
+
+        const { numerator, cosCoefficient, sinCoefficient, constant } = reciprocalComponents;
+        if (!Number.isFinite(numerator) || !Number.isFinite(cosCoefficient) || !Number.isFinite(sinCoefficient) || !Number.isFinite(constant)) {
+            return null;
+        }
+
+        if (Math.abs(cosCoefficient) <= 1e-12 && Math.abs(sinCoefficient) <= 1e-12) {
+            return null;
+        }
+
+        const quadraticEquation = {
+            leftExpression: `${(constant * constant) - (cosCoefficient * cosCoefficient)}*x^2+${-2 * cosCoefficient * sinCoefficient}*x*y+${(constant * constant) - (sinCoefficient * sinCoefficient)}*y^2+${2 * numerator * cosCoefficient}*x+${2 * numerator * sinCoefficient}*y+${-(numerator * numerator)}`,
+            rightExpression: '0'
+        };
+
+        return this.detectImplicitHyperbolaAsymptotes(quadraticEquation);
+    }
+
+    extractPolarReciprocalLinearTrigComponents(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarReciprocalLinearTrigComponents(node.content);
+        }
+
+        if (node.type !== 'OperatorNode' || node.op !== '/' || !Array.isArray(node.args) || node.args.length !== 2) {
+            return null;
+        }
+
+        const numerator = this.evaluatePolarShapeConstant(node.args[0]);
+        if (numerator === null) {
+            return null;
+        }
+
+        const denominatorTerms = this.extractPolarShapeAdditiveTerms(node.args[1]);
+        if (!Array.isArray(denominatorTerms) || denominatorTerms.length === 0) {
+            return null;
+        }
+
+        let cosCoefficient = 0;
+        let sinCoefficient = 0;
+        let constant = 0;
+
+        for (const term of denominatorTerms) {
+            if (!term || !Number.isFinite(term.coefficient)) {
+                return null;
+            }
+
+            if (term.kind === 'constant') {
+                constant += term.coefficient;
+                continue;
+            }
+
+            const frequency = Number.isFinite(term.frequency) ? term.frequency : term.multiplier;
+            if (term.kind !== 'trig' || term.trig === 'tan' || term.trig === 'cot' || !Number.isFinite(frequency) || Math.abs(frequency - 1) > 1e-12 || !Number.isFinite(term.phase) || Math.abs(term.phase) > 1e-12) {
+                return null;
+            }
+
+            if (term.trig === 'cos') {
+                cosCoefficient += term.coefficient;
+            } else if (term.trig === 'sin') {
+                sinCoefficient += term.coefficient;
+            } else {
+                return null;
+            }
+        }
+
+        if (Math.abs(cosCoefficient) <= 1e-12 && Math.abs(sinCoefficient) <= 1e-12) {
+            return null;
+        }
+
+        return {
+            numerator,
+            cosCoefficient,
+            sinCoefficient,
+            constant
+        };
     }
 
     isExplicitPolarLocusApproximatelyLine(compiledExpression, thetaMin, thetaMax, evaluateAt) {
@@ -21395,7 +21508,7 @@ class Graphiti {
             return this.classifyPolarFunctionShape(`r=${expression}`);
         }
         if (this.plotMode === 'polar' && (functionType === 'implicit' || functionType === 'implicit-inequality')) {
-            const equation = functionType === 'implicit-inequality'
+            let equation = functionType === 'implicit-inequality'
                 ? this.parseImplicitInequality(expression)
                 : this.parseImplicitEquation(expression);
             if (!equation) {
@@ -27360,6 +27473,7 @@ class Graphiti {
                 '√3/2': '\\frac{\\sqrt{3}}{2}',
                 '√3/3': '\\frac{\\sqrt{3}}{3}',
                 '2√3/3': '\\frac{2\\sqrt{3}}{3}',
+                '4√3/3': '\\frac{4\\sqrt{3}}{3}',
                 'e': 'e',
                 'e-1': 'e-1',
                 '1-1/e': '1-\\frac{1}{e}',
@@ -47590,6 +47704,7 @@ class Graphiti {
             { value: Math.sqrt(3), label: '√3' },
             { value: Math.sqrt(5), label: '√5' },
             { value: 2*Math.sqrt(3)/3, label: '2√3/3' },
+            { value: 4*Math.sqrt(3)/3, label: '4√3/3' },
             // Negative values
             { value: -1/2, label: '-1/2' },
             { value: -Math.sqrt(2)/2, label: '-√2/2' },
@@ -47599,6 +47714,7 @@ class Graphiti {
             { value: -Math.sqrt(3), label: '-√3' },
             { value: -Math.sqrt(5), label: '-√5' },
             { value: -2*Math.sqrt(3)/3, label: '-2√3/3' },
+            { value: -4*Math.sqrt(3)/3, label: '-4√3/3' },
             // Special values
             { value: Math.E, label: 'e' },
             { value: -Math.E, label: '-e' },

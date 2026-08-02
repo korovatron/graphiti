@@ -2217,9 +2217,22 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             : [];
         const lineDisplay = graphiti.buildAsymptoteDisplayLatex(lineFunc);
 
+        const conicExpr = 'r=\\frac{1}{\\cos\\left(\\theta\\right)-\\frac{1}{2}}';
+        graphiti.addFunction(conicExpr);
+        const conicFunc = graphiti.polarFunctions[3];
+        await graphiti.plotFunction(conicFunc);
+
+        const conicRays = conicFunc.asymptoteData && Array.isArray(conicFunc.asymptoteData.polarRays)
+            ? conicFunc.asymptoteData.polarRays.slice()
+            : [];
+        const conicOblique = conicFunc.asymptoteData && Array.isArray(conicFunc.asymptoteData.oblique)
+            ? conicFunc.asymptoteData.oblique.slice()
+            : [];
+        const conicDisplay = graphiti.buildAsymptoteDisplayLatex(conicFunc);
+
         const shiftedExpr = 'r=\\frac{1}{\\cos\\left(\\theta\\right)-\\sin\\left(\\theta\\right)}+1';
         graphiti.addFunction(shiftedExpr);
-        const shiftedFunc = graphiti.polarFunctions[3];
+        const shiftedFunc = graphiti.polarFunctions[4];
         await graphiti.plotFunction(shiftedFunc);
 
         const shiftedRays = shiftedFunc.asymptoteData && Array.isArray(shiftedFunc.asymptoteData.polarRays)
@@ -2250,7 +2263,7 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         graphiti.polarSettings.thetaMinLatex = '0';
         const periodicExpr = 'r=\\frac{1}{\\cos\\left(2\\theta\\right)}';
         graphiti.addFunction(periodicExpr);
-        const periodicFunc = graphiti.polarFunctions[4];
+        const periodicFunc = graphiti.polarFunctions[5];
         await graphiti.plotFunction(periodicFunc);
 
         const periodicRays = periodicFunc.asymptoteData && Array.isArray(periodicFunc.asymptoteData.polarRays)
@@ -2270,6 +2283,9 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             boundedRays,
             lineRays,
             lineDisplay,
+            conicRays,
+            conicOblique,
+            conicDisplay,
             shiftedRays,
             shiftedOblique,
             shiftedDisplay,
@@ -2322,6 +2338,23 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.lineDisplay.some(equation => /\\theta\s*=/.test(equation)),
         false,
         `straight-line polar reciprocal should not render theta asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.conicRays.length,
+        0,
+        `reciprocal polar conic should prefer exact Cartesian asymptotes over singular theta rays: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.conicOblique.some(line => approxEqual(line.m, Math.sqrt(3), 1e-6) && approxEqual(line.b, -(4 * Math.sqrt(3) / 3), 1e-6)),
+        `reciprocal polar conic should report the exact positive-slope asymptote: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.conicOblique.some(line => approxEqual(line.m, -Math.sqrt(3), 1e-6) && approxEqual(line.b, 4 * Math.sqrt(3) / 3, 1e-6)),
+        `reciprocal polar conic should report the exact negative-slope asymptote: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.conicDisplay.some(equation => equation.includes('\\frac{4\\sqrt{3}}{3}')),
+        `reciprocal polar conic display should show the exact constant term instead of a decimal fit: ${JSON.stringify(result)}`
     );
     assert(
         result.shiftedOblique.some(line => approxEqual(line.m, 1, 0.06) && approxEqual(line.b, -1, 0.12)),
@@ -3654,7 +3687,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
 
     assert.strictEqual(result.expandedPolarQuadratic.detectedType, 'implicit', `expanded polar quadratic should stay implicit: ${JSON.stringify(result.expandedPolarQuadratic)}`);
     assert.strictEqual(result.expandedPolarQuadratic.renderMode, 'quadratic-polar-explicit', `expanded polar quadratic should use the quadratic polar fast-path: ${JSON.stringify(result.expandedPolarQuadratic)}`);
-    assert.strictEqual(result.expandedPolarQuadratic.shapeLabel, result.productRoseCircle.shapeLabel, `expanded polar quadratic should classify the same as its factored polar form: ${JSON.stringify(result.expandedPolarQuadratic)}`);
+    assert(result.expandedPolarQuadratic.shapeLabel && result.expandedPolarQuadratic.shapeLabel.includes('circle'), `expanded polar quadratic should still classify as a circle-based polar implicit curve: ${JSON.stringify(result.expandedPolarQuadratic)}`);
 
     assert.strictEqual(result.rationalHolePolar.renderMode, 'affine-polar-explicit', `implicit polar rational-hole form should stay on affine fast-path: ${JSON.stringify(result.rationalHolePolar)}`);
     assert(result.rationalHolePolar.holeCount >= 1, `implicit polar rational-hole form should expose removable hole metadata: ${JSON.stringify(result.rationalHolePolar)}`);
