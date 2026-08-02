@@ -21395,6 +21395,17 @@ class Graphiti {
             return this.classifyPolarFunctionShape(`r=${expression}`);
         }
         if (this.plotMode === 'polar' && (functionType === 'implicit' || functionType === 'implicit-inequality')) {
+            const equation = functionType === 'implicit-inequality'
+                ? this.parseImplicitInequality(expression)
+                : this.parseImplicitEquation(expression);
+            if (!equation) {
+                return null;
+            }
+            const polarEquation = {
+                ...equation,
+                coordinateSystem: 'polar'
+            };
+
             if (func && func.implicitRenderMode === 'product-factors' && Array.isArray(func.productImplicitFactorExpressions) && func.productImplicitFactorExpressions.length > 0) {
                 const factorShapes = func.productImplicitFactorExpressions
                     .map(factorExpression => this.classifyImplicitPolarFactorShape(factorExpression));
@@ -21408,6 +21419,49 @@ class Graphiti {
                 }
             }
 
+            const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(polarEquation);
+            const candidateEquations = denominatorClearedEquation
+                ? [denominatorClearedEquation, polarEquation]
+                : [polarEquation];
+
+            for (const candidateEquation of candidateEquations) {
+                const affinePolarModel = this.tryBuildAffinePolarImplicitModel(candidateEquation);
+                if (affinePolarModel && typeof affinePolarModel.explicitExpression === 'string' && affinePolarModel.explicitExpression.trim()) {
+                    const proxyShape = this.classifyPolarFunctionShape(`r=${affinePolarModel.explicitExpression}`);
+                    if (proxyShape) {
+                        return proxyShape;
+                    }
+                }
+
+                const quadraticPolarModel = this.tryBuildQuadraticPolarImplicitModel(candidateEquation);
+                if (quadraticPolarModel && Array.isArray(quadraticPolarModel.branchExpressions) && quadraticPolarModel.branchExpressions.length > 0) {
+                    const branchShapes = quadraticPolarModel.branchExpressions
+                        .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`));
+                    const classifiedBranchShapes = branchShapes
+                        .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
+                    const combinedBranchShape = this.combinePolarFactorShapes(classifiedBranchShapes, {
+                        unclassifiedComponentCount: branchShapes.length - classifiedBranchShapes.length
+                    });
+                    if (combinedBranchShape) {
+                        return combinedBranchShape;
+                    }
+                }
+
+                const monomialPolarModel = this.tryBuildMonomialPolarImplicitModel(candidateEquation);
+                if (monomialPolarModel && Array.isArray(monomialPolarModel.branchExpressions) && monomialPolarModel.branchExpressions.length > 0) {
+                    const branchShapes = monomialPolarModel.branchExpressions
+                        .map(branchExpression => this.classifyPolarFunctionShape(`r=${branchExpression}`));
+                    const classifiedBranchShapes = branchShapes
+                        .filter(shape => !!shape && typeof shape.label === 'string' && shape.label.trim());
+                    const combinedBranchShape = this.combinePolarFactorShapes(classifiedBranchShapes, {
+                        unclassifiedComponentCount: branchShapes.length - classifiedBranchShapes.length
+                    });
+                    if (combinedBranchShape) {
+                        return combinedBranchShape;
+                    }
+                }
+            }
+
             if (func && typeof func.affinePolarExplicitExpression === 'string' && func.affinePolarExplicitExpression.trim()) {
                 const proxyShape = this.classifyPolarFunctionShape(`r=${func.affinePolarExplicitExpression}`);
                 if (proxyShape) {
@@ -21416,7 +21470,6 @@ class Graphiti {
             }
 
             // Classification fallback for implicit-polar forms that are affine in r.
-            let equation = null;
             if (functionType === 'implicit-inequality') {
                 equation = this.parseImplicitInequality(expression);
             } else {

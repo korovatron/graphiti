@@ -2880,6 +2880,17 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         graphiti.polarFunctions.push(productRoseCircleFunc);
         await graphiti.plotFunction(productRoseCircleFunc);
 
+        const expandedPolarQuadraticFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r^2-r=0',
+            points: [],
+            color: '#2E7D32',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(expandedPolarQuadraticFunc);
+        await graphiti.plotFunction(expandedPolarQuadraticFunc);
+
         const rationalHolePolarFunc = {
             id: graphiti.nextFunctionId++,
             expression: '(r-(2+cos(theta)))/(theta-pi/3)=0',
@@ -3429,6 +3440,14 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                     return shape && shape.label ? shape.label : null;
                 })()
             },
+            expandedPolarQuadratic: {
+                detectedType: graphiti.detectFunctionType(expandedPolarQuadraticFunc.expression),
+                renderMode: expandedPolarQuadraticFunc.implicitRenderMode || null,
+                shapeLabel: (() => {
+                    const shape = graphiti.classifyFunctionShape(expandedPolarQuadraticFunc);
+                    return shape && shape.label ? shape.label : null;
+                })()
+            },
             rationalHolePolar: (() => {
                 const holes = Array.isArray(rationalHolePolarFunc.holes) ? rationalHolePolarFunc.holes : [];
                 const holeDisplay = graphiti.buildHoleDisplayLatex(rationalHolePolarFunc);
@@ -3632,6 +3651,10 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.productRoseCircle.renderMode, 'product-factors', `product rose+circle should use product-factors render mode: ${JSON.stringify(result.productRoseCircle)}`);
     assert.strictEqual(result.productRoseCircle.factorCount, 2, `product rose+circle should expose both factors: ${JSON.stringify(result.productRoseCircle)}`);
     assert.strictEqual(result.productRoseCircle.shapeLabel, 'rose curve - 3 petals + circle', `product rose+circle should classify both components: ${JSON.stringify(result.productRoseCircle)}`);
+
+    assert.strictEqual(result.expandedPolarQuadratic.detectedType, 'implicit', `expanded polar quadratic should stay implicit: ${JSON.stringify(result.expandedPolarQuadratic)}`);
+    assert.strictEqual(result.expandedPolarQuadratic.renderMode, 'quadratic-polar-explicit', `expanded polar quadratic should use the quadratic polar fast-path: ${JSON.stringify(result.expandedPolarQuadratic)}`);
+    assert.strictEqual(result.expandedPolarQuadratic.shapeLabel, result.productRoseCircle.shapeLabel, `expanded polar quadratic should classify the same as its factored polar form: ${JSON.stringify(result.expandedPolarQuadratic)}`);
 
     assert.strictEqual(result.rationalHolePolar.renderMode, 'affine-polar-explicit', `implicit polar rational-hole form should stay on affine fast-path: ${JSON.stringify(result.rationalHolePolar)}`);
     assert(result.rationalHolePolar.holeCount >= 1, `implicit polar rational-hole form should expose removable hole metadata: ${JSON.stringify(result.rationalHolePolar)}`);
