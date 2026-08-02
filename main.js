@@ -5416,9 +5416,30 @@ class Graphiti {
                 this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression) ||
                 this.tryBuildExactCartesianAsymptotesFromPolarTanCotExpression(processedExpression);
             const suppressPolarRayAsymptotes = exactPolarReciprocalConic && !['hyperbola', 'rectangular hyperbola'].includes(exactPolarReciprocalConic.label);
-            const polarRayAsymptotes = suppressPolarRayAsymptotes
+            let polarRayAsymptotes = suppressPolarRayAsymptotes
                 ? []
                 : this.detectPolarRayAsymptotes(compiledExpression, this.polarSettings.thetaMin, this.polarSettings.thetaMax);
+            if (!suppressPolarRayAsymptotes) {
+                const lituusEndpointRays = this.detectLituusEndpointPolarRayAsymptotes(
+                    compiledExpression,
+                    processedExpression,
+                    this.polarSettings.thetaMin,
+                    this.polarSettings.thetaMax
+                );
+                if (lituusEndpointRays.length > 0) {
+                    const merged = Array.isArray(polarRayAsymptotes) ? polarRayAsymptotes.slice() : [];
+                    for (const ray of lituusEndpointRays) {
+                        if (!Number.isFinite(ray)) {
+                            continue;
+                        }
+                        if (!merged.some(existing => Math.abs(existing - ray) <= 1e-6)) {
+                            merged.push(ray);
+                        }
+                    }
+                    merged.sort((a, b) => a - b);
+                    polarRayAsymptotes = merged;
+                }
+            }
             
             const points = [];
             const thetaMin = this.polarSettings.thetaMin;
@@ -6160,6 +6181,178 @@ class Graphiti {
 
         validated.sort((left, right) => left - right);
         return validated;
+    }
+
+    detectLituusEndpointPolarRayAsymptotes(compiledExpression, processedExpression, thetaMin, thetaMax) {
+        if (!compiledExpression || !Number.isFinite(thetaMin) || !Number.isFinite(thetaMax) || thetaMax <= thetaMin || typeof processedExpression !== 'string') {
+            return [];
+        }
+
+        const shape = this.classifyPolarFunctionShape(`r=${processedExpression}`);
+        if (!shape || shape.label !== 'lituus') {
+            return [];
+        }
+
+        const thetaRange = thetaMax - thetaMin;
+        const rangeRadians = this.angleMode === 'degrees' ? thetaRange * Math.PI / 180 : thetaRange;
+        if (!Number.isFinite(rangeRadians) || rangeRadians <= 0) {
+            return [];
+        }
+
+        const sampleCount = Math.max(480, Math.min(2400, Math.ceil(rangeRadians / 0.01)));
+        const step = thetaRange / sampleCount;
+        if (!Number.isFinite(step) || step <= 0) {
+            return [];
+        }
+
+        const viewportRadius = Math.hypot(
+            Math.max(Math.abs(this.viewport.minX), Math.abs(this.viewport.maxX)),
+            Math.max(Math.abs(this.viewport.minY), Math.abs(this.viewport.maxY))
+        );
+        const magnitudeThreshold = Math.max(8, viewportRadius * 1.8);
+
+        const scope = this.getEvaluationScope({ theta: 0, t: 0, pi: Math.PI, e: Math.E });
+        const evaluateAt = (thetaValue) => {
+            const thetaForEval = this.angleMode === 'degrees' ? thetaValue * Math.PI / 180 : thetaValue;
+            scope.theta = thetaForEval;
+            scope.t = thetaForEval;
+            try {
+                const value = compiledExpression.evaluate(scope);
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    return value;
+                }
+                if (value && typeof value.re === 'number' && Number.isFinite(value.re)) {
+                    return value.re;
+                }
+            } catch {
+                return NaN;
+            }
+            return NaN;
+        };
+
+        const result = [];
+        const tryBoundary = (boundaryTheta, direction) => {
+            const boundaryValue = evaluateAt(boundaryTheta);
+            if (Number.isFinite(boundaryValue)) {
+                return;
+            }
+
+            const nearTheta = boundaryTheta + (direction * step);
+            const fartherTheta = boundaryTheta + (direction * step * 2);
+            const nearValue = evaluateAt(nearTheta);
+            const fartherValue = evaluateAt(fartherTheta);
+
+            if (!Number.isFinite(nearValue)) {
+                return;
+            }
+
+            const nearMagnitude = Math.abs(nearValue);
+            if (!Number.isFinite(nearMagnitude) || nearMagnitude < magnitudeThreshold) {
+                return;
+            }
+
+            const fartherMagnitude = Number.isFinite(fartherValue) ? Math.abs(fartherValue) : 0;
+            if (Number.isFinite(fartherValue) && nearMagnitude < Math.max(magnitudeThreshold, fartherMagnitude * 1.08)) {
+                return;
+            }
+
+            const candidateTheta = boundaryTheta + (direction * step * 0.5);
+            if (!this.isValidPolarRayAsymptote(compiledExpression, candidateTheta, step, magnitudeThreshold)) {
+                return;
+            }
+
+            const refined = this.refinePolarRayAsymptoteCandidate(compiledExpression, candidateTheta, step);
+            const tolerance = Math.max(step * 2, Math.abs(thetaRange) * 1e-5);
+            if (!result.some(existing => Math.abs(existing - refined) <= tolerance)) {
+                result.push(refined);
+            }
+        };
+
+        tryBoundary(thetaMin, 1);
+        tryBoundary(thetaMax, -1);
+
+        result.sort((left, right) => left - right);
+        return result;
+    }
+
+    getLituusEndpointRaysFromFunctionExpression(func, shape, thetaMin, thetaMax) {
+        if (!func || !shape || shape.label !== 'lituus') {
+            return [];
+        }
+
+        const expression = typeof func.expression === 'string' ? func.expression : '';
+        if (!expression.trim()) {
+            return [];
+        }
+
+        const functionType = this.detectFunctionType(expression);
+        if (functionType !== 'polar' && functionType !== 'implicit') {
+            return [];
+        }
+
+        if (functionType === 'polar') {
+            const converted = this.convertFromLatex(expression).trim().toLowerCase();
+            if (!converted.startsWith('r=')) {
+                return [];
+            }
+            const rhs = converted.substring(2).trim();
+            if (!rhs) {
+                return [];
+            }
+            try {
+                const compiled = this.getCompiledExpression(rhs);
+                return this.detectLituusEndpointPolarRayAsymptotes(compiled, rhs, thetaMin, thetaMax);
+            } catch {
+                return [];
+            }
+        }
+
+        const equation = this.parseImplicitEquation(expression);
+        if (!equation) {
+            return [];
+        }
+
+        const polarEquation = { ...equation, coordinateSystem: 'polar' };
+        const denominatorClearedEquation = this.buildPolarDenominatorClearedImplicitEquation(polarEquation);
+        const candidateEquations = denominatorClearedEquation
+            ? [denominatorClearedEquation, polarEquation]
+            : [polarEquation];
+
+        for (const candidateEquation of candidateEquations) {
+            const monomialModel = this.tryBuildMonomialPolarImplicitModel(candidateEquation);
+            if (monomialModel && typeof monomialModel.radicandExpression === 'string' && monomialModel.radicandExpression.trim()) {
+                const explicitExpression = monomialModel.power === 2
+                    ? `sqrt(${monomialModel.radicandExpression})`
+                    : `(${monomialModel.radicandExpression})^(1/${monomialModel.power})`;
+                try {
+                    const compiled = this.getCompiledExpression(explicitExpression);
+                    const rays = this.detectLituusEndpointPolarRayAsymptotes(compiled, explicitExpression, thetaMin, thetaMax);
+                    if (rays.length > 0) {
+                        return rays;
+                    }
+                } catch {
+                    // Try next candidate.
+                }
+            }
+
+            const quadraticModel = this.tryBuildQuadraticPolarImplicitModel(candidateEquation);
+            if (quadraticModel && Array.isArray(quadraticModel.branchExpressions) && quadraticModel.branchExpressions.length > 0) {
+                const firstBranch = quadraticModel.branchExpressions[0];
+                if (typeof firstBranch === 'string' && firstBranch.trim()) {
+                    try {
+                        const compiled = this.getCompiledExpression(firstBranch);
+                        const rays = this.detectLituusEndpointPolarRayAsymptotes(compiled, firstBranch, thetaMin, thetaMax);
+                        if (rays.length > 0) {
+                            return rays;
+                        }
+                    } catch {
+                        // Try next candidate.
+                    }
+                }
+            }
+        }
+
+        return [];
     }
 
     inferCartesianAsymptotesFromPolarSingularRays(compiledExpression, polarRayAsymptotes, thetaStep) {
@@ -7272,6 +7465,37 @@ class Graphiti {
                         this.applyDenominatorClearedDomainExclusions(affinePolarModel, candidateEquation);
                         const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
                         if (handled) {
+                            const shape = this.classifyFunctionShape(func);
+                            if (shape && shape.label === 'lituus') {
+                                const lituusEndpointRays = this.getLituusEndpointRaysFromFunctionExpression(
+                                    func,
+                                    shape,
+                                    this.polarSettings.thetaMin,
+                                    this.polarSettings.thetaMax
+                                );
+                                if (lituusEndpointRays.length > 0) {
+                                    const existingRays = func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+                                        ? func.asymptoteData.polarRays
+                                        : [];
+                                    const mergedRays = existingRays.slice();
+                                    for (const ray of lituusEndpointRays) {
+                                        if (Number.isFinite(ray) && !mergedRays.some(existing => Math.abs(existing - ray) <= 1e-6)) {
+                                            mergedRays.push(ray);
+                                        }
+                                    }
+                                    mergedRays.sort((a, b) => a - b);
+                                    this.updateFunctionAsymptoteData(
+                                        func,
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [],
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.horizontal) ? func.asymptoteData.horizontal : [],
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique : [],
+                                        null,
+                                        null,
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.curved) ? func.asymptoteData.curved : [],
+                                        mergedRays
+                                    );
+                                }
+                            }
                             this.applyPolarExactAsymptoteFallbackForExpression(func, affinePolarModel.explicitExpression);
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, [affinePolarModel.explicitExpression], candidateEquation);
@@ -7295,6 +7519,37 @@ class Graphiti {
                         this.applyDenominatorClearedDomainExclusions(quadraticPolarModel, candidateEquation);
                         const handled = await this.plotImplicitPolarQuadraticAsExplicit(func, quadraticPolarModel);
                         if (handled) {
+                            const shape = this.classifyFunctionShape(func);
+                            if (shape && shape.label === 'lituus') {
+                                const lituusEndpointRays = this.getLituusEndpointRaysFromFunctionExpression(
+                                    func,
+                                    shape,
+                                    this.polarSettings.thetaMin,
+                                    this.polarSettings.thetaMax
+                                );
+                                if (lituusEndpointRays.length > 0) {
+                                    const existingRays = func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+                                        ? func.asymptoteData.polarRays
+                                        : [];
+                                    const mergedRays = existingRays.slice();
+                                    for (const ray of lituusEndpointRays) {
+                                        if (Number.isFinite(ray) && !mergedRays.some(existing => Math.abs(existing - ray) <= 1e-6)) {
+                                            mergedRays.push(ray);
+                                        }
+                                    }
+                                    mergedRays.sort((a, b) => a - b);
+                                    this.updateFunctionAsymptoteData(
+                                        func,
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [],
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.horizontal) ? func.asymptoteData.horizontal : [],
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique : [],
+                                        null,
+                                        null,
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.curved) ? func.asymptoteData.curved : [],
+                                        mergedRays
+                                    );
+                                }
+                            }
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, quadraticPolarModel.branchExpressions, candidateEquation);
                             this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, quadraticPolarModel.branchExpressions);
@@ -7317,6 +7572,37 @@ class Graphiti {
                         this.applyDenominatorClearedDomainExclusions(monomialPolarModel, candidateEquation);
                         const handled = await this.plotImplicitPolarMonomialAsExplicit(func, monomialPolarModel);
                         if (handled) {
+                            const shape = this.classifyFunctionShape(func);
+                            if (shape && shape.label === 'lituus') {
+                                const lituusEndpointRays = this.getLituusEndpointRaysFromFunctionExpression(
+                                    func,
+                                    shape,
+                                    this.polarSettings.thetaMin,
+                                    this.polarSettings.thetaMax
+                                );
+                                if (lituusEndpointRays.length > 0) {
+                                    const existingRays = func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+                                        ? func.asymptoteData.polarRays
+                                        : [];
+                                    const mergedRays = existingRays.slice();
+                                    for (const ray of lituusEndpointRays) {
+                                        if (Number.isFinite(ray) && !mergedRays.some(existing => Math.abs(existing - ray) <= 1e-6)) {
+                                            mergedRays.push(ray);
+                                        }
+                                    }
+                                    mergedRays.sort((a, b) => a - b);
+                                    this.updateFunctionAsymptoteData(
+                                        func,
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [],
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.horizontal) ? func.asymptoteData.horizontal : [],
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique : [],
+                                        null,
+                                        null,
+                                        func.asymptoteData && Array.isArray(func.asymptoteData.curved) ? func.asymptoteData.curved : [],
+                                        mergedRays
+                                    );
+                                }
+                            }
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, monomialPolarModel.branchExpressions, candidateEquation);
                             this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, monomialPolarModel.branchExpressions);

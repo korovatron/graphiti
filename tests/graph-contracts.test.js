@@ -2489,6 +2489,26 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             ? implicitHyperbolaFunc.asymptoteData.oblique.slice()
             : [];
 
+        const lituusExplicitExpr = 'r=\\frac{1}{\\sqrt{\\theta}}';
+        graphiti.addFunction(lituusExplicitExpr);
+        const lituusExplicitFunc = graphiti.polarFunctions[13];
+        await graphiti.plotFunction(lituusExplicitFunc);
+
+        const lituusExplicitRays = lituusExplicitFunc.asymptoteData && Array.isArray(lituusExplicitFunc.asymptoteData.polarRays)
+            ? lituusExplicitFunc.asymptoteData.polarRays.slice()
+            : [];
+        const lituusExplicitDisplay = graphiti.buildAsymptoteDisplayLatex(lituusExplicitFunc);
+
+        const lituusImplicitExpr = 'r^2\\theta=1';
+        graphiti.addFunction(lituusImplicitExpr);
+        const lituusImplicitFunc = graphiti.polarFunctions[14];
+        await graphiti.plotFunction(lituusImplicitFunc);
+
+        const lituusImplicitRays = lituusImplicitFunc.asymptoteData && Array.isArray(lituusImplicitFunc.asymptoteData.polarRays)
+            ? lituusImplicitFunc.asymptoteData.polarRays.slice()
+            : [];
+        const lituusImplicitDisplay = graphiti.buildAsymptoteDisplayLatex(lituusImplicitFunc);
+
         return {
             asymptoticRays,
             asymptoticVertical,
@@ -2535,6 +2555,10 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             implicitHyperbolaTopCount,
             implicitHyperbolaBottomCount,
             implicitHyperbolaOblique,
+            lituusExplicitRays,
+            lituusExplicitDisplay,
+            lituusImplicitRays,
+            lituusImplicitDisplay,
             asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             lineFinitePoints: (lineFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
@@ -2793,6 +2817,22 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     assert(
         result.implicitHyperbolaOblique.some(line => approxEqual(line.m, -Math.sqrt(1 / 3), 0.03) && approxEqual(line.b, 2 / 3, 0.08)),
         `implicit reciprocal polar hyperbola should preserve the negative-slope oblique asymptote: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.lituusExplicitRays.some(value => approxEqual(value, 0, 0.03)),
+        `explicit lituus should expose a polar ray asymptote at theta=0: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.lituusExplicitDisplay.some(equation => /\\theta\s*=\s*0/.test(equation)),
+        `explicit lituus should display theta=0 asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.lituusImplicitRays.some(value => approxEqual(value, 0, 0.03)),
+        `implicit lituus form should expose a polar ray asymptote at theta=0: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.lituusImplicitDisplay.some(equation => /\\theta\s*=\s*0/.test(equation)),
+        `implicit lituus form should display theta=0 asymptote metadata: ${JSON.stringify(result)}`
     );
     assert(
         result.asymptoticFinitePoints > 80,
