@@ -1428,6 +1428,29 @@
             font-size: 16px !important;
         }
 
+        .holes-equation-list .asymptote-equation-field {
+            min-height: 36px !important;
+            padding: 4px 0 !important;
+            overflow: visible !important;
+        }
+
+        .holes-equation-list {
+            row-gap: 6px;
+        }
+
+        .holes-equation-list .asymptote-equation-field::part(container) {
+            overflow: visible !important;
+            padding-top: 2px !important;
+            padding-bottom: 2px !important;
+        }
+
+        .holes-equation-list .asymptote-equation-field::part(content) {
+            line-height: 1.5 !important;
+            overflow: visible !important;
+            padding-top: 1px !important;
+            padding-bottom: 1px !important;
+        }
+
         .integral-limit-row {
             flex: 1;
             min-width: 0;
