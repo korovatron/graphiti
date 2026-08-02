@@ -5412,7 +5412,9 @@ class Graphiti {
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
             const exactPolarReciprocalConic = this.tryClassifyExactPolarReciprocalConicFromProcessedExpression(processedExpression);
-            const exactCartesianAsymptotes = this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression);
+            const exactCartesianAsymptotes =
+                this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression) ||
+                this.tryBuildExactCartesianAsymptotesFromPolarTanCotExpression(processedExpression);
             const suppressPolarRayAsymptotes = exactPolarReciprocalConic && !['hyperbola', 'rectangular hyperbola'].includes(exactPolarReciprocalConic.label);
             const polarRayAsymptotes = suppressPolarRayAsymptotes
                 ? []
@@ -6030,6 +6032,13 @@ class Graphiti {
             points.pop();
         }
 
+        // If the last retained branch is wrapped back to the start, drop any
+        // trailing separator immediately before the final finite point so the
+        // array tail remains finite for closure-sensitive consumers.
+        while (points.length >= 2 && !isFinitePoint(points[points.length - 2])) {
+            points.splice(points.length - 2, 1);
+        }
+
         points.push({
             ...firstFinite,
             connected: true,
@@ -6599,6 +6608,299 @@ class Graphiti {
         return this.detectImplicitHyperbolaAsymptotes(quadraticEquation);
     }
 
+    tryBuildExactCartesianAsymptotesFromPolarTanCotExpression(processedExpression) {
+        if (typeof processedExpression !== 'string' || !processedExpression.trim()) {
+            return null;
+        }
+
+        let expressionText = processedExpression.trim();
+        if (expressionText.toLowerCase().startsWith('r=')) {
+            expressionText = expressionText.substring(2).trim();
+        }
+
+        let parsed;
+        try {
+            parsed = this.cleanMath.parse(expressionText);
+        } catch {
+            return null;
+        }
+
+        const thetaIsIdentity = (node) => {
+            const affine = this.extractPolarShapeThetaAffine(node);
+            return !!affine && Math.abs(affine.coefficient - 1) <= 1e-9 && Math.abs(affine.constant) <= 1e-9;
+        };
+
+        const asConstant = (node) => this.evaluatePolarShapeConstant(node);
+
+        const extractTanCotTerm = (node) => {
+            if (!node) {
+                return null;
+            }
+
+            if (node.type === 'ParenthesisNode') {
+                return extractTanCotTerm(node.content);
+            }
+            if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+                const inner = extractTanCotTerm(node.args[0]);
+                return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+            }
+            if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+                const leftConstant = asConstant(node.args[0]);
+                const rightTerm = extractTanCotTerm(node.args[1]);
+                if (leftConstant !== null && rightTerm) {
+                    return { ...rightTerm, coefficient: leftConstant * rightTerm.coefficient };
+                }
+
+                const rightConstant = asConstant(node.args[1]);
+                const leftTerm = extractTanCotTerm(node.args[0]);
+                if (rightConstant !== null && leftTerm) {
+                    return { ...leftTerm, coefficient: rightConstant * leftTerm.coefficient };
+                }
+            }
+            if (node.type === 'OperatorNode' && node.op === '/' && node.args.length === 2) {
+                const denominator = asConstant(node.args[1]);
+                const numeratorTerm = extractTanCotTerm(node.args[0]);
+                if (denominator !== null && Math.abs(denominator) > 1e-12 && numeratorTerm) {
+                    return { ...numeratorTerm, coefficient: numeratorTerm.coefficient / denominator };
+                }
+            }
+            if (node.type === 'FunctionNode') {
+                const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+                if (!['tan', 'cot'].includes(name) || !Array.isArray(node.args) || node.args.length !== 1) {
+                    return null;
+                }
+
+                if (!thetaIsIdentity(node.args[0])) {
+                    return null;
+                }
+
+                return { trig: name, coefficient: 1 };
+            }
+
+            return null;
+        };
+
+        const collectTanCotTerms = (node, sign = 1, terms = []) => {
+            if (!node) {
+                return false;
+            }
+            if (node.type === 'ParenthesisNode') {
+                return collectTanCotTerms(node.content, sign, terms);
+            }
+            if (node.type === 'OperatorNode' && node.op === '+' && node.args.length === 2) {
+                return collectTanCotTerms(node.args[0], sign, terms) && collectTanCotTerms(node.args[1], sign, terms);
+            }
+            if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 2) {
+                return collectTanCotTerms(node.args[0], sign, terms) && collectTanCotTerms(node.args[1], -sign, terms);
+            }
+            if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+                return collectTanCotTerms(node.args[0], -sign, terms);
+            }
+
+            const term = extractTanCotTerm(node);
+            if (!term || !Number.isFinite(term.coefficient)) {
+                return false;
+            }
+
+            terms.push({ trig: term.trig, coefficient: sign * term.coefficient });
+            return true;
+        };
+
+        const extractSinCosProductScale = (node) => {
+            if (!node) {
+                return null;
+            }
+            if (node.type === 'ParenthesisNode') {
+                return extractSinCosProductScale(node.content);
+            }
+            if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+                const inner = extractSinCosProductScale(node.args[0]);
+                return inner === null ? null : -inner;
+            }
+            const extractTrigIdentity = (candidate) => {
+                if (!candidate) {
+                    return null;
+                }
+                if (candidate.type === 'ParenthesisNode') {
+                    return extractTrigIdentity(candidate.content);
+                }
+                if (!candidate || candidate.type !== 'FunctionNode') {
+                    return null;
+                }
+                const name = String(candidate.fn && candidate.fn.name ? candidate.fn.name : candidate.name || '').toLowerCase();
+                if (!['sin', 'cos'].includes(name) || !Array.isArray(candidate.args) || candidate.args.length !== 1) {
+                    return null;
+                }
+                if (!thetaIsIdentity(candidate.args[0])) {
+                    return null;
+                }
+                return name;
+            };
+
+            const parseScaleAndTrigFactors = (candidate) => {
+                if (!candidate) {
+                    return null;
+                }
+                if (candidate.type === 'ParenthesisNode') {
+                    return parseScaleAndTrigFactors(candidate.content);
+                }
+                if (candidate.type === 'OperatorNode' && candidate.op === '-' && candidate.args.length === 1) {
+                    const inner = parseScaleAndTrigFactors(candidate.args[0]);
+                    return inner ? { scale: -inner.scale, trigFactors: inner.trigFactors.slice() } : null;
+                }
+
+                const constant = asConstant(candidate);
+                if (constant !== null) {
+                    return { scale: constant, trigFactors: [] };
+                }
+
+                const trig = extractTrigIdentity(candidate);
+                if (trig) {
+                    return { scale: 1, trigFactors: [trig] };
+                }
+
+                if (candidate.type === 'OperatorNode' && candidate.op === '*' && candidate.args.length === 2) {
+                    const left = parseScaleAndTrigFactors(candidate.args[0]);
+                    const right = parseScaleAndTrigFactors(candidate.args[1]);
+                    if (!left || !right) {
+                        return null;
+                    }
+                    return {
+                        scale: left.scale * right.scale,
+                        trigFactors: left.trigFactors.concat(right.trigFactors)
+                    };
+                }
+
+                if (candidate.type === 'OperatorNode' && candidate.op === '/' && candidate.args.length === 2) {
+                    const left = parseScaleAndTrigFactors(candidate.args[0]);
+                    const right = parseScaleAndTrigFactors(candidate.args[1]);
+                    if (!left || !right || right.trigFactors.length > 0 || !Number.isFinite(right.scale) || Math.abs(right.scale) <= 1e-12) {
+                        return null;
+                    }
+                    return {
+                        scale: left.scale / right.scale,
+                        trigFactors: left.trigFactors.slice()
+                    };
+                }
+
+                return null;
+            };
+
+            const parseReciprocalSinCos = (candidate) => {
+                if (!candidate || candidate.type !== 'OperatorNode' || candidate.op !== '/' || candidate.args.length !== 2) {
+                    return null;
+                }
+
+                const numeratorPart = parseScaleAndTrigFactors(candidate.args[0]);
+                const denominatorPart = parseScaleAndTrigFactors(candidate.args[1]);
+                if (!numeratorPart || !denominatorPart || denominatorPart.trigFactors.length === 0 || !Number.isFinite(denominatorPart.scale) || Math.abs(denominatorPart.scale) <= 1e-12) {
+                    if (!denominatorPart || denominatorPart.trigFactors.length === 0 || !Number.isFinite(denominatorPart.scale) || Math.abs(denominatorPart.scale) <= 1e-12) {
+                        return null;
+                    }
+                }
+
+                let numeratorScale = null;
+                if (numeratorPart && numeratorPart.trigFactors.length === 0 && Number.isFinite(numeratorPart.scale)) {
+                    numeratorScale = numeratorPart.scale;
+                } else {
+                    numeratorScale = this.evaluatePolarShapeParameterResolvedConstant(candidate.args[0]);
+                    if (!Number.isFinite(numeratorScale)) {
+                        return null;
+                    }
+                }
+
+                const trigFactors = denominatorPart.trigFactors.slice();
+                const hasSin = trigFactors.includes('sin');
+                const hasCos = trigFactors.includes('cos');
+                if (!hasSin || !hasCos || trigFactors.length !== 2) {
+                    return null;
+                }
+
+                return numeratorScale / denominatorPart.scale;
+            };
+
+            const direct = parseReciprocalSinCos(node);
+            if (direct !== null) {
+                return direct;
+            }
+
+            if (node.type === 'OperatorNode' && node.op === '/' && node.args.length === 2 && node.args[0] && node.args[0].type === 'OperatorNode' && node.args[0].op === '/' && node.args[0].args.length === 2) {
+                const firstDenTrig = extractTrigIdentity(node.args[0].args[1]);
+                const secondDenTrig = extractTrigIdentity(node.args[1]);
+                const numerator = asConstant(node.args[0].args[0]);
+                if (numerator !== null && firstDenTrig && secondDenTrig && firstDenTrig !== secondDenTrig) {
+                    return numerator;
+                }
+            }
+
+            return null;
+        };
+
+        let scale = null;
+        const tanCotTerms = [];
+        if (collectTanCotTerms(parsed, 1, tanCotTerms)) {
+            const tanTerms = tanCotTerms.filter(term => term.trig === 'tan');
+            const cotTerms = tanCotTerms.filter(term => term.trig === 'cot');
+            if (tanTerms.length === 1 && cotTerms.length === 1) {
+                const tanCoefficient = tanTerms[0].coefficient;
+                const cotCoefficient = cotTerms[0].coefficient;
+                const tolerance = Math.max(1, Math.abs(tanCoefficient), Math.abs(cotCoefficient)) * 1e-8;
+                if (Math.abs(tanCoefficient - cotCoefficient) <= tolerance && Math.abs(tanCoefficient) > 1e-9) {
+                    scale = tanCoefficient;
+                }
+            }
+        }
+
+        if (scale === null) {
+            scale = extractSinCosProductScale(parsed);
+        }
+
+        if (!Number.isFinite(scale) || Math.abs(scale) <= 1e-9) {
+            return null;
+        }
+
+        const magnitude = Math.abs(scale);
+        return {
+            vertical: [-magnitude, magnitude],
+            horizontal: [-magnitude, magnitude],
+            oblique: []
+        };
+    }
+
+    applyPolarExactAsymptoteFallbackForExpression(func, explicitExpression) {
+        if (!func || typeof explicitExpression !== 'string' || !explicitExpression.trim()) {
+            return;
+        }
+
+        const hasExistingAsymptotes = !!(func.asymptoteData && (
+            (Array.isArray(func.asymptoteData.vertical) && func.asymptoteData.vertical.length > 0) ||
+            (Array.isArray(func.asymptoteData.horizontal) && func.asymptoteData.horizontal.length > 0) ||
+            (Array.isArray(func.asymptoteData.oblique) && func.asymptoteData.oblique.length > 0) ||
+            (Array.isArray(func.asymptoteData.polarRays) && func.asymptoteData.polarRays.length > 0)
+        ));
+        if (hasExistingAsymptotes) {
+            return;
+        }
+
+        const exactAsymptotes =
+            this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression('r=' + explicitExpression) ||
+            this.tryBuildExactCartesianAsymptotesFromPolarTanCotExpression('r=' + explicitExpression);
+        if (!exactAsymptotes) {
+            return;
+        }
+
+        this.updateFunctionAsymptoteData(
+            func,
+            Array.isArray(exactAsymptotes.vertical) ? exactAsymptotes.vertical.slice() : [],
+            Array.isArray(exactAsymptotes.horizontal) ? exactAsymptotes.horizontal.slice() : [],
+            Array.isArray(exactAsymptotes.oblique) ? exactAsymptotes.oblique.map(line => ({ ...line })) : [],
+            null,
+            null,
+            [],
+            []
+        );
+    }
+
     tryClassifyExactPolarReciprocalConicFromProcessedExpression(processedExpression) {
         if (typeof processedExpression !== 'string' || !processedExpression.trim()) {
             return null;
@@ -6970,6 +7272,7 @@ class Graphiti {
                         this.applyDenominatorClearedDomainExclusions(affinePolarModel, candidateEquation);
                         const handled = await this.plotImplicitPolarAffineAsExplicit(func, affinePolarModel);
                         if (handled) {
+                            this.applyPolarExactAsymptoteFallbackForExpression(func, affinePolarModel.explicitExpression);
                             this.filterDenominatorClearedFastPathPoints(func, candidateEquation);
                             this.addPolarDenominatorClearedHolesForExpressions(func, [affinePolarModel.explicitExpression], candidateEquation);
                             this.cacheImplicitPolarFastPathPostProcess(func, candidateEquation, [affinePolarModel.explicitExpression]);
@@ -7109,6 +7412,13 @@ class Graphiti {
             if (this.isCalculationCancelled(func.id, calculationId)) {
                 this.activeImplicitCalculations.delete(func.id);
                 return;
+            }
+
+            if (!isInequality) {
+                const affineAsymptoteModel = this.tryBuildAffinePolarImplicitModel(equation);
+                if (affineAsymptoteModel && typeof affineAsymptoteModel.explicitExpression === 'string' && affineAsymptoteModel.explicitExpression.trim()) {
+                    this.applyPolarExactAsymptoteFallbackForExpression(func, affineAsymptoteModel.explicitExpression);
+                }
             }
 
             func.implicitRenderMode = implicitRenderMode;
@@ -7355,6 +7665,19 @@ class Graphiti {
                 continue;
             }
 
+            const localMagnitude = Math.max(
+                Math.abs(fNeg1),
+                Math.abs(f0),
+                Math.abs(f1),
+                Math.abs(f2),
+                Math.abs(f3)
+            );
+            // Near singular rays, trig evaluations can return huge finite values
+            // that are numerically unstable for second-difference checks.
+            if (localMagnitude > 1e12) {
+                continue;
+            }
+
             const secondDifferenceNeg1 = f1 - (2 * f0) + fNeg1;
             const secondDifference0 = f2 - (2 * f1) + f0;
             const secondDifference1 = f3 - (2 * f2) + f1;
@@ -7598,8 +7921,8 @@ class Graphiti {
         const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
         const sampleCount = Math.max(18, Math.min(64, Math.ceil(thetaSpan / thetaStep)));
 
-        for (const power of [2, 3]) {
-            const rSamples = power === 2
+        for (const power of [2, 3, 4, 5, 6]) {
+            const rSamples = power % 2 === 0
                 ? [0, 0.5, 1, 2, 3]
                 : [-2, -1, -0.5, 0, 0.5, 1, 2, 3];
             let validSamples = 0;
@@ -7657,13 +7980,18 @@ class Graphiti {
 
             let radicandExpression = '-(' + bExpression + ')/(' + aExpression + ')';
             radicandExpression = simplifyGeneratedExpression(radicandExpression);
-            const branchExpressions = power === 2
+            const principalRoot = power === 2
+                ? simplifyGeneratedExpression('sqrt(' + radicandExpression + ')')
+                : simplifyGeneratedExpression('(' + radicandExpression + ')^(1/' + power + ')');
+            const branchExpressions = power % 2 === 0
                 ? [
-                    simplifyGeneratedExpression('sqrt(' + radicandExpression + ')'),
-                    simplifyGeneratedExpression('-sqrt(' + radicandExpression + ')')
+                    principalRoot,
+                    power === 2
+                        ? simplifyGeneratedExpression('-sqrt(' + radicandExpression + ')')
+                        : simplifyGeneratedExpression('-(' + principalRoot + ')')
                 ]
                 : [
-                    simplifyGeneratedExpression('sign(' + radicandExpression + ')*abs(' + radicandExpression + ')^(1/3)')
+                    simplifyGeneratedExpression('sign(' + radicandExpression + ')*abs(' + radicandExpression + ')^(1/' + power + ')')
                 ];
 
             return {
@@ -10070,25 +10398,42 @@ class Graphiti {
         const alpha = 0.25; // 25% opacity for shading
         const colorWithAlpha = this.addAlphaToColor(color, alpha);
         ctx.fillStyle = colorWithAlpha;
-        
-        // For polar inequalities r < f(θ), fill from origin to the boundary curve
+
+        // For polar inequalities r < f(θ), fill each connected boundary segment
+        // from the origin so disconnected lobes are shaded independently.
         ctx.beginPath();
-        
-        // Start at origin
         const origin = this.worldToScreen(0, 0);
-        ctx.moveTo(origin.x, origin.y);
-        
-        // Trace the boundary curve
-        for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            if (isFinite(point.x) && isFinite(point.y)) {
+        let currentSegment = [];
+
+        const flushSegment = () => {
+            if (currentSegment.length < 2) {
+                currentSegment = [];
+                return;
+            }
+
+            ctx.moveTo(origin.x, origin.y);
+            for (const point of currentSegment) {
                 const screenPos = this.worldToScreen(point.x, point.y);
                 ctx.lineTo(screenPos.x, screenPos.y);
             }
+            ctx.closePath();
+            currentSegment = [];
+        };
+
+        for (const point of points) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                flushSegment();
+                continue;
+            }
+
+            if (point.connected === false && currentSegment.length > 0) {
+                flushSegment();
+            }
+
+            currentSegment.push(point);
         }
-        
-        // Close path back to origin
-        ctx.closePath();
+        flushSegment();
+
         ctx.fill();
     }
 
@@ -10100,28 +10445,50 @@ class Graphiti {
         const colorWithAlpha = this.addAlphaToColor(color, alpha);
         ctx.fillStyle = colorWithAlpha;
         
-        // For polar inequalities r > f(θ), fill from the boundary curve to viewport edge
-        // This is done by creating a large outer boundary and cutting out the inner curve
-        
+        // For polar inequalities r > f(θ), fill from the boundary curves to viewport edge.
         ctx.beginPath();
-        
+
         // Create outer rectangle (viewport boundary)
         ctx.rect(0, 0, this.viewport.width, this.viewport.height);
-        
-        // Trace the boundary curve in reverse to create a "hole"
-        for (let i = points.length - 1; i >= 0; i--) {
-            const point = points[i];
-            if (isFinite(point.x) && isFinite(point.y)) {
-                const screenPos = this.worldToScreen(point.x, point.y);
-                if (i === points.length - 1) {
+
+        const segments = [];
+        let currentSegment = [];
+        for (const point of points) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                if (currentSegment.length > 0) {
+                    segments.push(currentSegment);
+                    currentSegment = [];
+                }
+                continue;
+            }
+
+            if (point.connected === false && currentSegment.length > 0) {
+                segments.push(currentSegment);
+                currentSegment = [];
+            }
+
+            currentSegment.push(point);
+        }
+        if (currentSegment.length > 0) {
+            segments.push(currentSegment);
+        }
+
+        for (const segment of segments) {
+            if (segment.length < 2) {
+                continue;
+            }
+
+            for (let i = segment.length - 1; i >= 0; i--) {
+                const screenPos = this.worldToScreen(segment[i].x, segment[i].y);
+                if (i === segment.length - 1) {
                     ctx.moveTo(screenPos.x, screenPos.y);
                 } else {
                     ctx.lineTo(screenPos.x, screenPos.y);
                 }
             }
+            ctx.closePath();
         }
         
-        ctx.closePath();
         ctx.fill('evenodd'); // Use even-odd rule to create the hole
     }
 
@@ -10489,11 +10856,16 @@ class Graphiti {
         };
 
         for (const point of points) {
-            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
-                currentSegment.push(point);
-            } else {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                flushSegment();
+                continue;
+            }
+
+            if (point.connected === false && currentSegment.length > 0) {
                 flushSegment();
             }
+
+            currentSegment.push(point);
         }
         flushSegment();
 
@@ -10517,12 +10889,20 @@ class Graphiti {
         const segments = [];
         let currentSegment = [];
         for (const point of points) {
-            if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
-                currentSegment.push(point);
-            } else if (currentSegment.length > 0) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                if (currentSegment.length > 0) {
+                    segments.push(currentSegment);
+                    currentSegment = [];
+                }
+                continue;
+            }
+
+            if (point.connected === false && currentSegment.length > 0) {
                 segments.push(currentSegment);
                 currentSegment = [];
             }
+
+            currentSegment.push(point);
         }
         if (currentSegment.length > 0) {
             segments.push(currentSegment);
@@ -12791,6 +13171,15 @@ class Graphiti {
         func.displayPoints = adjustedPoints;
         func._denominatorClearedDisplayPoints = adjustedPoints;
         this.pruneDenominatorClearedHoles(func, equation);
+        if (metadata.coordinateSystem === 'polar') {
+            const thetaMin = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+            const thetaMax = Number.isFinite(this.polarSettings.thetaMax) ? this.polarSettings.thetaMax : (thetaMin + (2 * Math.PI));
+            const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(thetaMin, thetaMax));
+            const polarRays = func.asymptoteData && Array.isArray(func.asymptoteData.polarRays)
+                ? func.asymptoteData.polarRays
+                : [];
+            this.closePolarRangeIfNeeded(func.points, thetaMin, thetaMax, thetaStep, polarRays);
+        }
         func.implicitDenominatorCleared = true;
     }
 
@@ -12933,6 +13322,10 @@ class Graphiti {
         const coordinateSystem = metadata.coordinateSystem === 'polar' ? 'polar' : 'cartesian';
         const hasDomainExclusions = Array.isArray(metadata.domainExclusions) && metadata.domainExclusions.length > 0;
         const hasThetaExclusions = Array.isArray(metadata.domainExclusionsTheta) && metadata.domainExclusionsTheta.length > 0;
+        const originalEquationExpression = `(${metadata.leftExpression || ''})-(${metadata.rightExpression || ''})`;
+        const nonTrigExpression = originalEquationExpression
+            .replace(/(sin|cos|tan|cot|sec|csc|sinh|cosh|tanh|csch|sech|coth)\s*\([^)]*\)/gi, '');
+        const hasExplicitThetaTerm = /(^|[^a-z])(theta|t)($|[^a-z])/i.test(nonTrigExpression);
 
         // For Cartesian marching samples, avoid residual pruning when no exclusions were introduced.
         if (coordinateSystem !== 'polar' && !hasDomainExclusions) {
@@ -12951,6 +13344,12 @@ class Graphiti {
         const scope = this.getEvaluationScope({ x: 0, y: 0, r: 0, theta: 0, t: 0, pi: Math.PI, e: Math.E });
         const filteredPoints = [];
         const thetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax));
+        const thetaMin = Number.isFinite(this.polarSettings.thetaMin) ? this.polarSettings.thetaMin : 0;
+        const thetaMax = Number.isFinite(this.polarSettings.thetaMax) ? this.polarSettings.thetaMax : thetaMin;
+        const thetaSpan = Math.abs(thetaMax - thetaMin);
+        const fullPeriod = this.angleMode === 'degrees' ? 360 : (2 * Math.PI);
+        const fullPeriodTolerance = Math.max(Math.abs(thetaStep) * 12, fullPeriod * 0.05);
+        const useGeometricThetaForResidual = hasThetaExclusions && Math.abs(thetaSpan - fullPeriod) <= fullPeriodTolerance;
         const thetaExclusionTolerance = Math.max(thetaStep * 0.6, 1e-4);
         const nearOriginPreservationRadius = Math.max(1e-3, thetaStep * 3);
         for (const point of points) {
@@ -12966,11 +13365,13 @@ class Graphiti {
 
             scope.x = point.x;
             scope.y = point.y;
+            let geometricThetaValue = null;
 
             if (coordinateSystem === 'polar') {
-                let thetaValue = Number.isFinite(point.theta)
-                    ? point.theta
-                    : this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+                geometricThetaValue = this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+                let thetaValue = useGeometricThetaForResidual
+                    ? geometricThetaValue
+                    : (Number.isFinite(point.theta) ? point.theta : geometricThetaValue);
                 if (!Number.isFinite(thetaValue)) {
                     filteredPoints.push({ x: NaN, y: NaN, connected: false });
                     continue;
@@ -12995,14 +13396,17 @@ class Graphiti {
                 keepPoint = false;
             }
 
-            if (!keepPoint && coordinateSystem === 'polar' && this.polarSettings.plotNegativeR && Number.isFinite(point.theta)) {
+            if (!keepPoint && coordinateSystem === 'polar' && this.polarSettings.plotNegativeR && !hasThetaExclusions) {
+                const savedRadius = scope.r;
+                const savedTheta = scope.theta;
+                const savedT = scope.t;
                 try {
-                    const savedRadius = scope.r;
                     scope.r = -savedRadius;
+                    scope.theta = savedTheta;
+                    scope.t = savedT;
+
                     const leftValue = leftCompiled.evaluate(scope);
                     const rightValue = rightCompiled.evaluate(scope);
-                    scope.r = savedRadius;
-
                     if (Number.isFinite(leftValue) && Number.isFinite(rightValue)) {
                         const residual = Math.abs(leftValue - rightValue);
                         const scale = Math.max(1, Math.abs(leftValue), Math.abs(rightValue));
@@ -13011,12 +13415,14 @@ class Graphiti {
                 } catch {
                     keepPoint = false;
                 }
+
+                scope.r = savedRadius;
+                scope.theta = savedTheta;
+                scope.t = savedT;
             }
 
             if (!keepPoint && coordinateSystem === 'polar' && hasThetaExclusions) {
-                const thetaValue = Number.isFinite(point.theta)
-                    ? point.theta
-                    : this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
+                const thetaValue = this.liftPolarAngleToConfiguredRangeRadians(Math.atan2(point.y, point.x));
                 const radiusValue = Math.hypot(point.x, point.y);
                 const nearThetaExclusion = metadata.domainExclusionsTheta.some(exclusion => Math.abs(exclusion - thetaValue) <= thetaExclusionTolerance);
                 if (nearThetaExclusion && radiusValue <= nearOriginPreservationRadius) {
@@ -13025,7 +13431,33 @@ class Graphiti {
             }
 
             if (keepPoint) {
-                filteredPoints.push({ ...point });
+                const normalizedPoint = { ...point };
+                if (coordinateSystem === 'polar' && hasDomainExclusions && !hasThetaExclusions && hasExplicitThetaTerm && Number.isFinite(geometricThetaValue)) {
+                    let normalizedTheta = geometricThetaValue;
+                    if (Number.isFinite(point.theta)) {
+                        let bestTheta = null;
+                        let bestDistance = Infinity;
+                        for (let k = -4; k <= 4; k++) {
+                            const candidate = geometricThetaValue + (k * fullPeriod);
+                            if (!Number.isFinite(candidate)) {
+                                continue;
+                            }
+                            if (candidate < thetaMin - 1e-8 || candidate > thetaMax + 1e-8) {
+                                continue;
+                            }
+                            const distance = Math.abs(candidate - point.theta);
+                            if (distance < bestDistance) {
+                                bestDistance = distance;
+                                bestTheta = candidate;
+                            }
+                        }
+                        if (Number.isFinite(bestTheta)) {
+                            normalizedTheta = bestTheta;
+                        }
+                    }
+                    normalizedPoint.theta = normalizedTheta;
+                }
+                filteredPoints.push(normalizedPoint);
             } else {
                 filteredPoints.push({ x: NaN, y: NaN, connected: false });
             }
@@ -22323,6 +22755,11 @@ class Graphiti {
                     if (combinedBranchShape) {
                         return combinedBranchShape;
                     }
+
+                    const monomialShape = this.classifyPolarMonomialSpiralShape(monomialPolarModel);
+                    if (monomialShape) {
+                        return monomialShape;
+                    }
                 }
             }
 
@@ -22445,6 +22882,11 @@ class Graphiti {
             });
             if (combinedBranchShape) {
                 return combinedBranchShape;
+            }
+
+            const monomialShape = this.classifyPolarMonomialSpiralShape(monomialModel);
+            if (monomialShape) {
+                return monomialShape;
             }
         }
 
@@ -23625,6 +24067,31 @@ class Graphiti {
             return { label: 'Archimedean spiral', confidence: 'exact' };
         }
 
+        const logarithmicSpiral = this.classifyPolarLogarithmicSpiral(node);
+        if (logarithmicSpiral) {
+            return logarithmicSpiral;
+        }
+
+        const hyperbolicSpiral = this.classifyPolarHyperbolicSpiral(node);
+        if (hyperbolicSpiral) {
+            return hyperbolicSpiral;
+        }
+
+        const fermatSpiral = this.classifyPolarFermatSpiral(node);
+        if (fermatSpiral) {
+            return fermatSpiral;
+        }
+
+        const lituusSpiral = this.classifyPolarLituusSpiral(node);
+        if (lituusSpiral) {
+            return lituusSpiral;
+        }
+
+        const conchoid = this.classifyPolarConchoid(node);
+        if (conchoid) {
+            return conchoid;
+        }
+
         const trigTerm = asTrigTerm(node);
         if (trigTerm && Math.abs(trigTerm.coefficient) > 1e-9) {
             if (Math.abs(trigTerm.multiplier - 1) <= 1e-9) {
@@ -23644,6 +24111,16 @@ class Graphiti {
                 return shape;
             }
             return null;
+        }
+
+        const lemniscateBranch = this.classifyPolarLemniscateBranch(node);
+        if (lemniscateBranch) {
+            return lemniscateBranch;
+        }
+
+        const sinusoidalSpiral = this.classifyPolarSinusoidalSpiral(node);
+        if (sinusoidalSpiral) {
+            return sinusoidalSpiral;
         }
 
         const terms = asAdditiveTerms(node);
@@ -23682,6 +24159,528 @@ class Graphiti {
         }
 
         return null;
+    }
+
+    classifyPolarLogarithmicSpiral(node) {
+        const expComponent = this.extractPolarShapeExponentialThetaComponent(node);
+        if (!expComponent) {
+            return null;
+        }
+
+        if (Math.abs(expComponent.scale) <= 1e-9 || Math.abs(expComponent.thetaCoefficient) <= 1e-9) {
+            return null;
+        }
+
+        return { label: 'logarithmic spiral', confidence: 'structural' };
+    }
+
+    classifyPolarHyperbolicSpiral(node) {
+        const ratio = this.extractPolarShapeConstantOverTheta(node);
+        if (!ratio) {
+            return null;
+        }
+
+        if (Math.abs(ratio.numerator) <= 1e-9 || Math.abs(ratio.thetaCoefficient) <= 1e-9) {
+            return null;
+        }
+
+        return { label: 'hyperbolic spiral', confidence: 'structural' };
+    }
+
+    classifyPolarFermatSpiral(node) {
+        const thetaRadicand = this.extractPolarShapeSqrtThetaRadicand(node);
+        if (!thetaRadicand) {
+            return null;
+        }
+
+        if (Math.abs(thetaRadicand.thetaCoefficient) <= 1e-9) {
+            return null;
+        }
+
+        return { label: 'Fermat spiral', confidence: 'structural' };
+    }
+
+    classifyPolarLituusSpiral(node) {
+        const inverseThetaRadicand = this.extractPolarShapeSqrtInverseThetaRadicand(node);
+        if (!inverseThetaRadicand) {
+            return null;
+        }
+
+        if (Math.abs(inverseThetaRadicand.numerator) <= 1e-9 || Math.abs(inverseThetaRadicand.thetaCoefficient) <= 1e-9) {
+            return null;
+        }
+
+        return { label: 'lituus', confidence: 'structural' };
+    }
+
+    classifyPolarConchoid(node) {
+        const terms = this.extractPolarShapeAdditiveTerms(node);
+        if (!terms) {
+            return null;
+        }
+
+        const nonZeroTerms = terms.filter(term => Math.abs(term.coefficient) > 1e-9);
+        const constantTerms = nonZeroTerms.filter(term => term.kind === 'constant');
+        const secCscTerms = nonZeroTerms.filter(term => term.kind === 'sec-csc');
+        const hasOtherTerms = nonZeroTerms.some(term => term.kind !== 'constant' && term.kind !== 'sec-csc');
+        if (hasOtherTerms || constantTerms.length !== 1 || secCscTerms.length !== 1) {
+            return null;
+        }
+
+        const inverseTrig = secCscTerms[0];
+        if (!Number.isFinite(inverseTrig.multiplier) || Math.abs(inverseTrig.multiplier - 1) > 1e-8) {
+            return null;
+        }
+
+        return { label: 'conchoid of Nicomedes', confidence: 'structural' };
+    }
+
+    classifyPolarSinusoidalSpiral(node) {
+        const rootPattern = this.extractPolarShapeTrigPowerRoot(node);
+        if (!rootPattern) {
+            return null;
+        }
+
+        if (!Number.isFinite(rootPattern.order) || rootPattern.order < 2) {
+            return null;
+        }
+        if (!Number.isFinite(rootPattern.trigMultiplier) || Math.abs(rootPattern.trigMultiplier - rootPattern.order) > 1e-8) {
+            return null;
+        }
+
+        const order = Math.max(2, Math.round(rootPattern.order));
+        if (order === 2) {
+            const lemniscateOrientation = this.classifyPolarLemniscateOrientation(
+                rootPattern.trigKind,
+                rootPattern.phase,
+                rootPattern.trigCoefficient
+            );
+            return {
+                label: `lemniscate of Bernoulli - ${lemniscateOrientation}`,
+                confidence: 'structural',
+                orientation: lemniscateOrientation
+            };
+        }
+
+        const orientation = this.classifyPolarSinusoidalOrientation(
+            order,
+            rootPattern.trigKind,
+            rootPattern.phase,
+            rootPattern.trigCoefficient
+        );
+
+        return {
+            label: `sinusoidal spiral - ${order}-fold ${orientation}`,
+            confidence: 'structural',
+            order,
+            orientation
+        };
+    }
+
+    classifyPolarMonomialSpiralShape(monomialPolarModel) {
+        if (!monomialPolarModel || !Number.isFinite(monomialPolarModel.power) || monomialPolarModel.power < 2) {
+            return null;
+        }
+
+        if (typeof monomialPolarModel.radicandExpression !== 'string' || !monomialPolarModel.radicandExpression.trim()) {
+            return null;
+        }
+
+        let radicandNode;
+        try {
+            radicandNode = this.cleanMath.parse(monomialPolarModel.radicandExpression);
+        } catch {
+            return null;
+        }
+
+        const trigTerm = this.extractPolarShapeTrigTerm(radicandNode);
+        if (!trigTerm || Math.abs(trigTerm.coefficient) <= 1e-9) {
+            return null;
+        }
+
+        if (!Number.isFinite(trigTerm.multiplier) || Math.abs(trigTerm.multiplier - monomialPolarModel.power) > 1e-8) {
+            return null;
+        }
+
+        const order = Math.max(2, Math.round(monomialPolarModel.power));
+        if (order === 2) {
+            const lemniscateOrientation = this.classifyPolarLemniscateOrientation(
+                trigTerm.trig,
+                trigTerm.phase,
+                trigTerm.coefficient
+            );
+            return {
+                label: `lemniscate of Bernoulli - ${lemniscateOrientation}`,
+                confidence: 'structural',
+                orientation: lemniscateOrientation
+            };
+        }
+
+        const orientation = this.classifyPolarSinusoidalOrientation(
+            order,
+            trigTerm.trig,
+            trigTerm.phase,
+            trigTerm.coefficient
+        );
+
+        return {
+            label: `sinusoidal spiral - ${order}-fold ${orientation}`,
+            confidence: 'structural',
+            order,
+            orientation
+        };
+    }
+
+    classifyPolarSinusoidalOrientation(order, trigKind, phase = 0, coefficient = 1) {
+        if (!Number.isFinite(order) || order < 1) {
+            return 'oblique';
+        }
+
+        const normaliseModulo = (value, period) => {
+            if (!Number.isFinite(value) || !Number.isFinite(period) || period <= 0) {
+                return 0;
+            }
+            let normalised = value % period;
+            if (normalised < 0) {
+                normalised += period;
+            }
+            return normalised;
+        };
+
+        let equivalentCosPhase = Number.isFinite(phase) ? phase : 0;
+        if (String(trigKind).toLowerCase() === 'sin') {
+            equivalentCosPhase -= Math.PI / 2;
+        }
+        if (Number.isFinite(coefficient) && coefficient < 0) {
+            equivalentCosPhase += Math.PI;
+        }
+
+        const primaryDirection = normaliseModulo(-equivalentCosPhase / order, Math.PI);
+        const tolerance = 1e-6;
+        if (this.angleDistanceModulo(primaryDirection, 0, Math.PI) <= tolerance) {
+            return 'horizontal';
+        }
+        if (this.angleDistanceModulo(primaryDirection, Math.PI / 2, Math.PI) <= tolerance) {
+            return 'vertical';
+        }
+        if (this.angleDistanceModulo(primaryDirection, Math.PI / 4, Math.PI / 2) <= tolerance) {
+            return 'diagonal';
+        }
+        return 'oblique';
+    }
+
+    extractPolarShapeExponentialThetaComponent(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeExponentialThetaComponent(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractPolarShapeExponentialThetaComponent(node.args[0]);
+            return inner ? { ...inner, scale: -inner.scale } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluatePolarShapeConstant(node.args[0]);
+            const rightExp = this.extractPolarShapeExponentialThetaComponent(node.args[1]);
+            if (leftConstant !== null && rightExp) {
+                return { ...rightExp, scale: leftConstant * rightExp.scale };
+            }
+
+            const rightConstant = this.evaluatePolarShapeConstant(node.args[1]);
+            const leftExp = this.extractPolarShapeExponentialThetaComponent(node.args[0]);
+            if (rightConstant !== null && leftExp) {
+                return { ...leftExp, scale: rightConstant * leftExp.scale };
+            }
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            if (name !== 'exp' || !Array.isArray(node.args) || node.args.length !== 1) {
+                return null;
+            }
+            const thetaAffine = this.extractPolarShapeThetaAffine(node.args[0]);
+            if (!thetaAffine || !Number.isFinite(thetaAffine.coefficient) || Math.abs(thetaAffine.coefficient) <= 1e-9) {
+                return null;
+            }
+            return { scale: 1, thetaCoefficient: thetaAffine.coefficient, thetaOffset: thetaAffine.constant };
+        }
+        if (node.type === 'OperatorNode' && node.op === '^' && node.args.length === 2) {
+            const baseConstant = this.evaluatePolarShapeConstant(node.args[0]);
+            if (baseConstant === null || baseConstant <= 0) {
+                return null;
+            }
+
+            const thetaAffine = this.extractPolarShapeThetaAffine(node.args[1]);
+            if (!thetaAffine || !Number.isFinite(thetaAffine.coefficient) || Math.abs(thetaAffine.coefficient) <= 1e-9) {
+                return null;
+            }
+
+            if (Math.abs(baseConstant - Math.E) > 1e-8) {
+                return null;
+            }
+
+            return { scale: 1, thetaCoefficient: thetaAffine.coefficient, thetaOffset: thetaAffine.constant };
+        }
+
+        return null;
+    }
+
+    extractPolarShapeConstantOverTheta(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeConstantOverTheta(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractPolarShapeConstantOverTheta(node.args[0]);
+            return inner ? { ...inner, numerator: -inner.numerator } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && node.args.length === 2) {
+            const numerator = this.evaluatePolarShapeConstant(node.args[0]);
+            const thetaMultiple = this.extractPolarShapeThetaMultiple(node.args[1]);
+            if (numerator !== null && thetaMultiple && Math.abs(thetaMultiple.coefficient) > 1e-9) {
+                return { numerator, thetaCoefficient: thetaMultiple.coefficient };
+            }
+        }
+
+        return null;
+    }
+
+    extractPolarShapeSqrtThetaRadicand(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeSqrtThetaRadicand(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            return this.extractPolarShapeSqrtThetaRadicand(node.args[0]);
+        }
+
+        const isSqrtNode = node.type === 'FunctionNode'
+            && String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase() === 'sqrt'
+            && Array.isArray(node.args)
+            && node.args.length === 1;
+        if (!isSqrtNode) {
+            return null;
+        }
+
+        const thetaMultiple = this.extractPolarShapeThetaMultiple(node.args[0]);
+        if (!thetaMultiple || Math.abs(thetaMultiple.coefficient) <= 1e-9) {
+            return null;
+        }
+
+        return { thetaCoefficient: thetaMultiple.coefficient };
+    }
+
+    extractPolarShapeSqrtInverseThetaRadicand(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeSqrtInverseThetaRadicand(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            return this.extractPolarShapeSqrtInverseThetaRadicand(node.args[0]);
+        }
+
+        const isSqrtNode = node.type === 'FunctionNode'
+            && String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase() === 'sqrt'
+            && Array.isArray(node.args)
+            && node.args.length === 1;
+        if (!isSqrtNode) {
+            return null;
+        }
+
+        const ratio = this.extractPolarShapeConstantOverTheta(node.args[0]);
+        if (!ratio) {
+            return null;
+        }
+
+        return ratio;
+    }
+
+    extractPolarShapeSecCscTerm(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeSecCscTerm(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            const inner = this.extractPolarShapeSecCscTerm(node.args[0]);
+            return inner ? { ...inner, coefficient: -inner.coefficient } : null;
+        }
+        if (node.type === 'OperatorNode' && node.op === '*' && node.args.length === 2) {
+            const leftConstant = this.evaluatePolarShapeConstant(node.args[0]);
+            const rightTerm = this.extractPolarShapeSecCscTerm(node.args[1]);
+            if (leftConstant !== null && rightTerm) {
+                return { ...rightTerm, coefficient: leftConstant * rightTerm.coefficient };
+            }
+
+            const rightConstant = this.evaluatePolarShapeConstant(node.args[1]);
+            const leftTerm = this.extractPolarShapeSecCscTerm(node.args[0]);
+            if (rightConstant !== null && leftTerm) {
+                return { ...leftTerm, coefficient: rightConstant * leftTerm.coefficient };
+            }
+        }
+        if (node.type === 'FunctionNode') {
+            const name = String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase();
+            if (!['sec', 'csc'].includes(name) || !Array.isArray(node.args) || node.args.length !== 1) {
+                return null;
+            }
+
+            const thetaAffine = this.extractPolarShapeThetaAffine(node.args[0]);
+            if (!thetaAffine || !Number.isFinite(thetaAffine.coefficient) || Math.abs(thetaAffine.coefficient) <= 1e-9) {
+                return null;
+            }
+
+            return {
+                kind: 'sec-csc',
+                trig: name,
+                multiplier: thetaAffine.coefficient,
+                coefficient: 1,
+                phase: thetaAffine.constant
+            };
+        }
+
+        return null;
+    }
+
+    extractPolarShapeTrigPowerRoot(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractPolarShapeTrigPowerRoot(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            return this.extractPolarShapeTrigPowerRoot(node.args[0]);
+        }
+
+        let rootOrder = null;
+        let baseNode = null;
+
+        const isSqrtNode = node.type === 'FunctionNode'
+            && String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase() === 'sqrt'
+            && Array.isArray(node.args)
+            && node.args.length === 1;
+        if (isSqrtNode) {
+            rootOrder = 2;
+            baseNode = node.args[0];
+        } else if (node.type === 'OperatorNode' && node.op === '^' && node.args.length === 2) {
+            const exponentValue = this.evaluatePolarShapeConstant(node.args[1]);
+            if (exponentValue === null || exponentValue <= 0) {
+                return null;
+            }
+
+            const reciprocal = 1 / exponentValue;
+            const roundedOrder = Math.round(reciprocal);
+            if (!Number.isFinite(roundedOrder) || roundedOrder < 2 || Math.abs(reciprocal - roundedOrder) > 1e-8) {
+                return null;
+            }
+            rootOrder = roundedOrder;
+            baseNode = node.args[0];
+        } else {
+            return null;
+        }
+
+        const trigTerm = this.extractPolarShapeTrigTerm(baseNode);
+        if (!trigTerm || Math.abs(trigTerm.coefficient) <= 1e-9) {
+            return null;
+        }
+
+        return {
+            order: rootOrder,
+            trigMultiplier: trigTerm.multiplier,
+            trigKind: trigTerm.trig,
+            trigCoefficient: trigTerm.coefficient,
+            phase: trigTerm.phase
+        };
+    }
+
+    classifyPolarLemniscateBranch(node) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.classifyPolarLemniscateBranch(node.content);
+        }
+        if (node.type === 'OperatorNode' && node.op === '-' && node.args.length === 1) {
+            return this.classifyPolarLemniscateBranch(node.args[0]);
+        }
+
+        const isSqrtNode = node.type === 'FunctionNode'
+            && String(node.fn && node.fn.name ? node.fn.name : node.name || '').toLowerCase() === 'sqrt'
+            && Array.isArray(node.args)
+            && node.args.length === 1;
+        if (!isSqrtNode) {
+            return null;
+        }
+
+        const radicandTrigTerm = this.extractPolarShapeTrigTerm(node.args[0]);
+        if (!radicandTrigTerm || Math.abs(radicandTrigTerm.coefficient) <= 1e-9) {
+            return null;
+        }
+
+        if (!Number.isFinite(radicandTrigTerm.multiplier) || Math.abs(radicandTrigTerm.multiplier - 2) > 1e-8) {
+            return null;
+        }
+
+        const orientation = this.classifyPolarLemniscateOrientation(
+            radicandTrigTerm.trig,
+            radicandTrigTerm.phase,
+            radicandTrigTerm.coefficient
+        );
+
+        return {
+            label: `lemniscate of Bernoulli - ${orientation}`,
+            confidence: 'structural',
+            orientation
+        };
+    }
+
+    classifyPolarLemniscateOrientation(trigKind, phase = 0, coefficient = 1) {
+        const normaliseModulo = (value, period) => {
+            if (!Number.isFinite(value) || !Number.isFinite(period) || period <= 0) {
+                return 0;
+            }
+            let normalised = value % period;
+            if (normalised < 0) {
+                normalised += period;
+            }
+            return normalised;
+        };
+
+        let equivalentCosPhase = Number.isFinite(phase) ? phase : 0;
+        if (String(trigKind).toLowerCase() === 'sin') {
+            equivalentCosPhase -= Math.PI / 2;
+        }
+        if (Number.isFinite(coefficient) && coefficient < 0) {
+            equivalentCosPhase += Math.PI;
+        }
+
+        const principalAxisAngle = normaliseModulo(-equivalentCosPhase / 2, Math.PI);
+        const tolerance = 1e-6;
+
+        if (this.angleDistanceModulo(principalAxisAngle, 0, Math.PI) <= tolerance) {
+            return 'horizontal';
+        }
+        if (this.angleDistanceModulo(principalAxisAngle, Math.PI / 2, Math.PI) <= tolerance) {
+            return 'vertical';
+        }
+        if (this.angleDistanceModulo(principalAxisAngle, Math.PI / 4, Math.PI / 2) <= tolerance) {
+            return 'diagonal';
+        }
+        return 'oblique';
     }
 
     classifyExactPolarReciprocalConicShape(node) {
@@ -23780,6 +24779,13 @@ class Graphiti {
             const leftTheta = this.extractPolarShapeThetaMultiple(node.args[0]);
             if (rightConstant !== null && leftTheta) {
                 return { coefficient: rightConstant * leftTheta.coefficient };
+            }
+        }
+        if (node.type === 'OperatorNode' && node.op === '/' && node.args.length === 2) {
+            const denominator = this.evaluatePolarShapeConstant(node.args[1]);
+            const numeratorTheta = this.extractPolarShapeThetaMultiple(node.args[0]);
+            if (denominator !== null && Math.abs(denominator) > 1e-12 && numeratorTheta) {
+                return { coefficient: numeratorTheta.coefficient / denominator };
             }
         }
 
@@ -23899,6 +24905,11 @@ class Graphiti {
             const theta = this.extractPolarShapeThetaMultiple(candidate);
             if (theta) {
                 terms.push({ kind: 'theta', coefficient: sign * theta.coefficient });
+                return true;
+            }
+            const secCsc = this.extractPolarShapeSecCscTerm(candidate);
+            if (secCsc) {
+                terms.push({ ...secCsc, coefficient: sign * secCsc.coefficient });
                 return true;
             }
             return false;
@@ -48938,6 +49949,8 @@ class Graphiti {
         
         // Count inequalities to determine if we should use compositing or individual shading
         const inequalityCount = this.countEnabledInequalities();
+        const shouldRenderIndividualInequalityShading = inequalityCount === 1 ||
+            (inequalityCount > 1 && !this.inequalityIntersectionCache.canvas);
         
         // If it's an inequality, render shading first (only if single inequality), then boundary
         if (isInequality) {
@@ -48946,7 +49959,7 @@ class Graphiti {
                 const inequality = this.parsePolarInequality(func.expression);
                 if (inequality && func.inequality) {
                     // Only shade individually if this is the only inequality
-                    if (inequalityCount === 1) {
+                    if (shouldRenderIndividualInequalityShading) {
                         // For polar inequalities, shade the region
                         if (inequality.operator === '>' || inequality.operator === '>=') {
                             this.fillOutsidePolarCurve(pointsToUse, func.color, func.inequality);
@@ -48961,7 +49974,7 @@ class Graphiti {
             } else if (functionType === 'implicit-inequality') {
                 const inequality = this.parseInequality(func.expression);
                 if (inequality) {
-                    if (inequalityCount === 1) {
+                    if (shouldRenderIndividualInequalityShading) {
                         if (func.implicitPolarInequalityFastPath) {
                             if (func.implicitPolarInequalityFastPath.fillMode === 'outside') {
                                 this.fillOutsidePolarCurve(pointsToUse, func.color, func.inequality);
@@ -48980,7 +49993,7 @@ class Graphiti {
                 const inequality = this.parseInequality(func.expression);
                 if (inequality) {
                     // Only shade individually if this is the only inequality
-                    if (inequalityCount === 1) {
+                    if (shouldRenderIndividualInequalityShading) {
                         // Render shading based on operator
                         if (inequality.operator === '>' || inequality.operator === '>=') {
                             this.fillAboveCurve(pointsToUse, func.color);
