@@ -22855,6 +22855,11 @@ class Graphiti {
         const asTrigTerm = (candidate) => this.extractPolarShapeTrigTerm(candidate);
         const asAdditiveTerms = (candidate) => this.extractPolarShapeAdditiveTerms(candidate);
 
+        const exactConicShape = this.classifyExactPolarReciprocalConicShape(node);
+        if (exactConicShape) {
+            return exactConicShape;
+        }
+
         const constantValue = asConstant(node);
         if (constantValue !== null && Math.abs(constantValue) > 1e-9) {
             return { label: 'circle', confidence: 'exact' };
@@ -22927,6 +22932,37 @@ class Graphiti {
         }
 
         return null;
+    }
+
+    classifyExactPolarReciprocalConicShape(node) {
+        const reciprocalComponents = this.extractPolarReciprocalLinearTrigComponents(node);
+        if (!reciprocalComponents) {
+            return null;
+        }
+
+        const { numerator, cosCoefficient, sinCoefficient, constant } = reciprocalComponents;
+        if (!Number.isFinite(numerator) || !Number.isFinite(cosCoefficient) || !Number.isFinite(sinCoefficient) || !Number.isFinite(constant)) {
+            return null;
+        }
+
+        if (Math.abs(cosCoefficient) <= 1e-12 && Math.abs(sinCoefficient) <= 1e-12) {
+            return null;
+        }
+
+        const quadraticEquation = {
+            leftExpression: `${(constant * constant) - (cosCoefficient * cosCoefficient)}*x^2+${-2 * cosCoefficient * sinCoefficient}*x*y+${(constant * constant) - (sinCoefficient * sinCoefficient)}*y^2+${2 * numerator * cosCoefficient}*x+${2 * numerator * sinCoefficient}*y+${-(numerator * numerator)}`,
+            rightExpression: '0'
+        };
+
+        const conicShape = this.classifyImplicitEquationShape(quadraticEquation, 0);
+        if (!conicShape || !conicShape.label) {
+            return null;
+        }
+
+        return {
+            ...conicShape,
+            confidence: 'exact'
+        };
     }
 
     evaluatePolarShapeConstant(node) {
