@@ -6982,6 +6982,92 @@ async function assertImplicitPolarDemoHolesRenderImmediately(page) {
     assert(result.domHoleItemCount > 0, `implicit polar demo hole row should render at least one hole equation item immediately: ${JSON.stringify(result)}`);
 }
 
+async function assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        const container = document.getElementById('functions-container');
+        if (container) {
+            container.innerHTML = '';
+        }
+
+        const spiralFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r-\\frac{\\theta}{r}=0',
+            points: [],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(spiralFunc);
+        await graphiti.plotFunction(spiralFunc);
+
+        const summarizeHoles = () => {
+            const item = document.querySelector(`[data-function-id="${spiralFunc.id}"]`);
+            const holesContainer = item ? item.querySelector('.holes-info-container') : null;
+            const holeDisplay = graphiti.buildHoleDisplayLatex(spiralFunc);
+            return {
+                holesCount: Array.isArray(spiralFunc.holes) ? spiralFunc.holes.length : 0,
+                holeDisplayCount: Array.isArray(holeDisplay) ? holeDisplay.length : 0,
+                holesVisible: holesContainer ? holesContainer.classList.contains('visible') : null,
+                firstHoleDisplay: Array.isArray(holeDisplay) && holeDisplay.length > 0 ? holeDisplay[0] : null
+            };
+        };
+
+        const baseline = summarizeHoles();
+
+        const implicitInequalityFunc = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r^2<1',
+            points: [],
+            color: '#00C853',
+            enabled: true,
+            mode: 'polar'
+        };
+        graphiti.polarFunctions.push(implicitInequalityFunc);
+        await graphiti.plotFunction(implicitInequalityFunc);
+
+        const afterAdd = summarizeHoles();
+
+        graphiti.viewport.minX -= 0.2;
+        graphiti.viewport.maxX += 0.2;
+        graphiti.viewport.minY -= 0.2;
+        graphiti.viewport.maxY += 0.2;
+        graphiti.handleViewportChange({ immediate: true });
+        await new Promise(resolve => setTimeout(resolve, 160));
+
+        const afterSettle = summarizeHoles();
+
+        implicitInequalityFunc.enabled = false;
+        graphiti.draw();
+        const afterHideInequality = summarizeHoles();
+
+        return {
+            baseline,
+            afterAdd,
+            afterSettle,
+            afterHideInequality
+        };
+    });
+
+    assert(result.baseline.holesCount > 0, `baseline implicit polar spiral should expose hole metadata: ${JSON.stringify(result)}`);
+    assert(result.baseline.holeDisplayCount > 0, `baseline implicit polar spiral should have hole display entries: ${JSON.stringify(result)}`);
+
+    assert(result.afterAdd.holesCount > 0, `adding implicit inequality should preserve hole data on the spiral function: ${JSON.stringify(result)}`);
+    assert(result.afterAdd.holeDisplayCount > 0, `adding implicit inequality should keep hole display entries visible in metadata: ${JSON.stringify(result)}`);
+
+    assert(result.afterSettle.holesCount > 0, `viewport settle with implicit inequality enabled should not clear hole data: ${JSON.stringify(result)}`);
+    assert(result.afterSettle.holeDisplayCount > 0, `viewport settle with implicit inequality enabled should not clear hole metadata display: ${JSON.stringify(result)}`);
+
+    assert(result.afterHideInequality.holesCount > 0, `disabling implicit inequality should still retain hole data: ${JSON.stringify(result)}`);
+    assert(result.afterHideInequality.holeDisplayCount > 0, `disabling implicit inequality should keep hole metadata entries: ${JSON.stringify(result)}`);
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -7114,6 +7200,7 @@ async function assertImplicitPolarDemoHolesRenderImmediately(page) {
         await assertTurningPointBadgesDoNotRelinkToDistantCandidates(page);
         await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
         await assertImplicitPolarDemoHolesRenderImmediately(page);
+        await assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(page);
         await assertDemoSetLoadsTrackGoatCounterEvent(page);
 
         console.log(`graph contract tests passed (${fixtures.length} fixtures)`);

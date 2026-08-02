@@ -22083,7 +22083,7 @@ class Graphiti {
 
         const functionIsImplicitFamily = functionType === 'implicit' || functionType === 'implicit-inequality';
         let equations = this.buildAsymptoteDisplayLatex(func);
-        const holeEquations = this.buildHoleDisplayLatex(func);
+        let holeEquations = this.buildHoleDisplayLatex(func);
         const envelopeEquations = this.buildEnvelopeDisplayLatex(func);
 
         if (equations.length > 0) {
@@ -22108,6 +22108,34 @@ class Graphiti {
                 (hasActiveImplicitWork || hasPendingViewportWork || fallbackAgeMs <= 500 || infoContainer.classList.contains('visible'));
             if (shouldPreserveStableImplicitMetadata) {
                 equations = fallbackEquations.slice();
+            }
+        }
+
+        if (holeEquations.length > 0) {
+            func._lastStableHoleEquations = holeEquations.slice();
+            func._lastStableHoleUpdatedAt = performance.now();
+            func._lastStableHoleExpression = func.expression;
+        } else if (functionIsImplicitFamily) {
+            const fallbackHoleEquations = Array.isArray(func._lastStableHoleEquations)
+                ? func._lastStableHoleEquations
+                : [];
+            const fallbackHoleAgeMs = Number.isFinite(func._lastStableHoleUpdatedAt)
+                ? (performance.now() - func._lastStableHoleUpdatedAt)
+                : Infinity;
+            const hasActiveImplicitWork = !!(this.activeImplicitCalculations && this.activeImplicitCalculations.has(func.id));
+            const hasPendingViewportWork = this.isViewportChanging || this.pendingViewportRefreshTasks > 0;
+            const fallbackMatchesCurrentExpression = func._lastStableHoleExpression === func.expression;
+            const hasEnabledImplicitInequality = this.getActiveEnabledFunctions().some(current =>
+                current && current.id !== func.id && this.detectFunctionType(current.expression) === 'implicit-inequality'
+            );
+            const shouldPreserveStableImplicitHoles =
+                fallbackHoleEquations.length > 0 &&
+                fallbackMatchesCurrentExpression &&
+                !func.validationError &&
+                (hasActiveImplicitWork || hasPendingViewportWork || hasEnabledImplicitInequality || fallbackHoleAgeMs <= 1500 || (holesContainer && holesContainer.classList.contains('visible')));
+
+            if (shouldPreserveStableImplicitHoles) {
+                holeEquations = fallbackHoleEquations.slice();
             }
         }
 
