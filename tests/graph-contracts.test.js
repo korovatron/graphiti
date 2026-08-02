@@ -2283,6 +2283,21 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         const periodicThetaEquations = periodicDisplay.filter(equation => /\\theta\s*=/.test(equation));
         const periodicGeneralEquation = periodicThetaEquations.find(equation => /\bn\b/.test(equation)) || null;
 
+        const implicitHyperbolaExpr = '2\\sin\\left(\\theta\\right)-1=\\frac{1}{r}';
+        graphiti.addFunction(implicitHyperbolaExpr);
+        const implicitHyperbolaFunc = graphiti.polarFunctions[7];
+        await graphiti.plotFunction(implicitHyperbolaFunc);
+
+        const implicitHyperbolaDisplayPoints = Array.isArray(implicitHyperbolaFunc.displayPoints)
+            ? implicitHyperbolaFunc.displayPoints
+            : (Array.isArray(implicitHyperbolaFunc.points) ? implicitHyperbolaFunc.points : []);
+        const implicitHyperbolaFinitePoints = implicitHyperbolaDisplayPoints.filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+        const implicitHyperbolaTopCount = implicitHyperbolaFinitePoints.filter(point => point.y >= 0).length;
+        const implicitHyperbolaBottomCount = implicitHyperbolaFinitePoints.filter(point => point.y < 0).length;
+        const implicitHyperbolaOblique = implicitHyperbolaFunc.asymptoteData && Array.isArray(implicitHyperbolaFunc.asymptoteData.oblique)
+            ? implicitHyperbolaFunc.asymptoteData.oblique.slice()
+            : [];
+
         return {
             asymptoticRays,
             asymptoticVertical,
@@ -2308,6 +2323,9 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             periodicDisplay,
             periodicThetaEquationCount: periodicThetaEquations.length,
             periodicGeneralEquation,
+            implicitHyperbolaTopCount,
+            implicitHyperbolaBottomCount,
+            implicitHyperbolaOblique,
             asymptoticFinitePoints: (asymptoticFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             boundedFinitePoints: (boundedFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
             lineFinitePoints: (lineFunc.points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y)).length,
@@ -2441,6 +2459,22 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.periodicThetaEquationCount,
         1,
         `periodic polar asymptote metadata should show one general theta equation instead of enumerating each instance: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.implicitHyperbolaBottomCount > 40,
+        `implicit reciprocal polar hyperbola should retain the reflected lower branch: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.implicitHyperbolaTopCount > 120,
+        `implicit reciprocal polar hyperbola should retain the upper branch: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.implicitHyperbolaOblique.some(line => approxEqual(line.m, Math.sqrt(1 / 3), 0.03) && approxEqual(line.b, 2 / 3, 0.08)),
+        `implicit reciprocal polar hyperbola should preserve the positive-slope oblique asymptote: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.implicitHyperbolaOblique.some(line => approxEqual(line.m, -Math.sqrt(1 / 3), 0.03) && approxEqual(line.b, 2 / 3, 0.08)),
+        `implicit reciprocal polar hyperbola should preserve the negative-slope oblique asymptote: ${JSON.stringify(result)}`
     );
     assert(
         result.asymptoticFinitePoints > 80,

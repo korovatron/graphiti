@@ -12410,6 +12410,24 @@ class Graphiti {
                 keepPoint = false;
             }
 
+            if (!keepPoint && coordinateSystem === 'polar' && this.polarSettings.plotNegativeR && Number.isFinite(point.theta)) {
+                try {
+                    const savedRadius = scope.r;
+                    scope.r = -savedRadius;
+                    const leftValue = leftCompiled.evaluate(scope);
+                    const rightValue = rightCompiled.evaluate(scope);
+                    scope.r = savedRadius;
+
+                    if (Number.isFinite(leftValue) && Number.isFinite(rightValue)) {
+                        const residual = Math.abs(leftValue - rightValue);
+                        const scale = Math.max(1, Math.abs(leftValue), Math.abs(rightValue));
+                        keepPoint = residual <= Math.max(1e-4, scale * 1e-4);
+                    }
+                } catch {
+                    keepPoint = false;
+                }
+            }
+
             if (!keepPoint && coordinateSystem === 'polar' && hasThetaExclusions) {
                 const thetaValue = Number.isFinite(point.theta)
                     ? point.theta
