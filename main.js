@@ -6238,10 +6238,10 @@ class Graphiti {
             const inferredLineCount = result.vertical.length + result.horizontal.length + result.oblique.length;
             const isAxisAlignedLineFamily =
                 result.oblique.length === 0 &&
-                result.vertical.length <= 1 &&
-                result.horizontal.length <= 1 &&
+                result.vertical.length <= 2 &&
+                result.horizontal.length <= 2 &&
                 inferredLineCount >= 1 &&
-                inferredLineCount <= 2;
+                inferredLineCount <= 4;
             if (inferredLineCount !== 1 && !isAxisAlignedLineFamily) {
                 return {
                     vertical: [],
@@ -21202,6 +21202,9 @@ class Graphiti {
         const obliqueLines = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
         const curvedAsymptotes = Array.isArray(asymptoteData.curved) ? asymptoteData.curved : [];
         const polarRays = Array.isArray(asymptoteData.polarRays) ? asymptoteData.polarRays.slice().sort((a, b) => a - b) : [];
+        const verticalDetails = asymptoteData.equationsDetailed && Array.isArray(asymptoteData.equationsDetailed.vertical)
+            ? asymptoteData.equationsDetailed.vertical
+            : [];
         const periodicPolarRayEquation = this.formatPeriodicPolarRayAsymptoteLatex(polarRays);
         if (periodicPolarRayEquation) {
             equations.push(periodicPolarRayEquation);
@@ -21213,7 +21216,8 @@ class Graphiti {
 
         const hasNamedPeriodicTrigVerticals = /\b(tan|cot|sec|csc)\s*\(/.test(expression);
         const hasReciprocalPeriodicTrigVerticals = /\/\s*(?:\(\s*)*(sin|cos|tan)\s*\(/.test(expression);
-        const hasPeriodicTrigVerticals = (hasNamedPeriodicTrigVerticals || hasReciprocalPeriodicTrigVerticals) && verticalValues.length >= 2;
+        const hasDerivedPolarRayVerticals = verticalDetails.some(item => item && item.source === 'derived-polar-ray');
+        const hasPeriodicTrigVerticals = !hasDerivedPolarRayVerticals && (hasNamedPeriodicTrigVerticals || hasReciprocalPeriodicTrigVerticals) && verticalValues.length >= 2;
         if (hasPeriodicTrigVerticals) {
             const periodicEquation = this.formatPeriodicVerticalAsymptoteLatex(verticalValues);
             if (periodicEquation) {

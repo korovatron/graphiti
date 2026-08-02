@@ -2312,9 +2312,41 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             : [];
         const secantCosecantDisplay = graphiti.buildAsymptoteDisplayLatex(secantCosecantFunc);
 
+        const secantCotangentExpr = 'r=\\operatorname{\\mathrm{sec}}\\left(\\theta\\right)+\\operatorname{\\mathrm{cot}}\\left(\\theta\\right)';
+        graphiti.addFunction(secantCotangentExpr);
+        const secantCotangentFunc = graphiti.polarFunctions[9];
+        await graphiti.plotFunction(secantCotangentFunc);
+
+        const secantCotangentVertical = secantCotangentFunc.asymptoteData && Array.isArray(secantCotangentFunc.asymptoteData.vertical)
+            ? secantCotangentFunc.asymptoteData.vertical.slice()
+            : [];
+        const secantCotangentHorizontal = secantCotangentFunc.asymptoteData && Array.isArray(secantCotangentFunc.asymptoteData.horizontal)
+            ? secantCotangentFunc.asymptoteData.horizontal.slice()
+            : [];
+        const secantCotangentRays = secantCotangentFunc.asymptoteData && Array.isArray(secantCotangentFunc.asymptoteData.polarRays)
+            ? secantCotangentFunc.asymptoteData.polarRays.slice()
+            : [];
+        const secantCotangentDisplay = graphiti.buildAsymptoteDisplayLatex(secantCotangentFunc);
+
+        const cosecantTangentExpr = 'r=\\operatorname{\\mathrm{csc}}\\left(\\theta\\right)+\\tan\\left(\\theta\\right)';
+        graphiti.addFunction(cosecantTangentExpr);
+        const cosecantTangentFunc = graphiti.polarFunctions[10];
+        await graphiti.plotFunction(cosecantTangentFunc);
+
+        const cosecantTangentVertical = cosecantTangentFunc.asymptoteData && Array.isArray(cosecantTangentFunc.asymptoteData.vertical)
+            ? cosecantTangentFunc.asymptoteData.vertical.slice()
+            : [];
+        const cosecantTangentHorizontal = cosecantTangentFunc.asymptoteData && Array.isArray(cosecantTangentFunc.asymptoteData.horizontal)
+            ? cosecantTangentFunc.asymptoteData.horizontal.slice()
+            : [];
+        const cosecantTangentRays = cosecantTangentFunc.asymptoteData && Array.isArray(cosecantTangentFunc.asymptoteData.polarRays)
+            ? cosecantTangentFunc.asymptoteData.polarRays.slice()
+            : [];
+        const cosecantTangentDisplay = graphiti.buildAsymptoteDisplayLatex(cosecantTangentFunc);
+
         const implicitHyperbolaExpr = '2\\sin\\left(\\theta\\right)-1=\\frac{1}{r}';
         graphiti.addFunction(implicitHyperbolaExpr);
-        const implicitHyperbolaFunc = graphiti.polarFunctions[9];
+        const implicitHyperbolaFunc = graphiti.polarFunctions[11];
         await graphiti.plotFunction(implicitHyperbolaFunc);
 
         const implicitHyperbolaDisplayPoints = Array.isArray(implicitHyperbolaFunc.displayPoints)
@@ -2359,6 +2391,14 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             secantCosecantHorizontal,
             secantCosecantRays,
             secantCosecantDisplay,
+            secantCotangentVertical,
+            secantCotangentHorizontal,
+            secantCotangentRays,
+            secantCotangentDisplay,
+            cosecantTangentVertical,
+            cosecantTangentHorizontal,
+            cosecantTangentRays,
+            cosecantTangentDisplay,
             implicitHyperbolaTopCount,
             implicitHyperbolaBottomCount,
             implicitHyperbolaOblique,
@@ -2530,6 +2570,58 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
         result.secantCosecantDisplay.some(equation => /\\theta\s*=/.test(equation)),
         false,
         `polar secant-plus-cosecant form should not render theta-ray asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCotangentVertical.some(value => approxEqual(value, 1, 0.03)),
+        `polar secant-plus-cotangent form should infer vertical asymptote x=1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCotangentHorizontal.some(value => approxEqual(value, 1, 0.03)),
+        `polar secant-plus-cotangent form should infer horizontal asymptote y=1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCotangentHorizontal.some(value => approxEqual(value, -1, 0.03)),
+        `polar secant-plus-cotangent form should infer horizontal asymptote y=-1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.secantCotangentRays.length,
+        0,
+        `polar secant-plus-cotangent form should prefer Cartesian asymptotes over theta-ray metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCotangentDisplay.includes('x = 1') && result.secantCotangentDisplay.includes('y = 1') && result.secantCotangentDisplay.includes('y = -1'),
+        `polar secant-plus-cotangent form should render x = 1, y = 1, and y = -1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.secantCotangentDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `polar secant-plus-cotangent form should not render theta-ray asymptote metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.cosecantTangentVertical.some(value => approxEqual(value, -1, 0.03)),
+        `polar cosecant-plus-tangent form should infer vertical asymptote x=-1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.cosecantTangentVertical.some(value => approxEqual(value, 1, 0.03)),
+        `polar cosecant-plus-tangent form should infer vertical asymptote x=1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.cosecantTangentHorizontal.some(value => approxEqual(value, 1, 0.03)),
+        `polar cosecant-plus-tangent form should infer horizontal asymptote y=1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.cosecantTangentRays.length,
+        0,
+        `polar cosecant-plus-tangent form should prefer Cartesian asymptotes over theta-ray metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.cosecantTangentDisplay.includes('x = -1') && result.cosecantTangentDisplay.includes('x = 1') && result.cosecantTangentDisplay.includes('y = 1'),
+        `polar cosecant-plus-tangent form should render x = -1, x = 1, and y = 1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.cosecantTangentDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `polar cosecant-plus-tangent form should not render theta-ray asymptote metadata: ${JSON.stringify(result)}`
     );
     assert(
         result.implicitHyperbolaBottomCount > 40,
