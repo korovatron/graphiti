@@ -6236,7 +6236,13 @@ class Graphiti {
         // should remain represented as theta families.
         if (polarRayAsymptotes.length > 2) {
             const inferredLineCount = result.vertical.length + result.horizontal.length + result.oblique.length;
-            if (inferredLineCount !== 1) {
+            const isAxisAlignedLineFamily =
+                result.oblique.length === 0 &&
+                result.vertical.length <= 1 &&
+                result.horizontal.length <= 1 &&
+                inferredLineCount >= 1 &&
+                inferredLineCount <= 2;
+            if (inferredLineCount !== 1 && !isAxisAlignedLineFamily) {
                 return {
                     vertical: [],
                     horizontal: [],

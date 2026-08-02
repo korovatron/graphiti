@@ -2296,9 +2296,25 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             : [];
         const secantShiftDisplay = graphiti.buildAsymptoteDisplayLatex(secantShiftFunc);
 
+        const secantCosecantExpr = 'r=\\operatorname{\\mathrm{sec}}\\left(\\theta\\right)+\\operatorname{\\mathrm{csc}}\\left(\\theta\\right)';
+        graphiti.addFunction(secantCosecantExpr);
+        const secantCosecantFunc = graphiti.polarFunctions[8];
+        await graphiti.plotFunction(secantCosecantFunc);
+
+        const secantCosecantVertical = secantCosecantFunc.asymptoteData && Array.isArray(secantCosecantFunc.asymptoteData.vertical)
+            ? secantCosecantFunc.asymptoteData.vertical.slice()
+            : [];
+        const secantCosecantHorizontal = secantCosecantFunc.asymptoteData && Array.isArray(secantCosecantFunc.asymptoteData.horizontal)
+            ? secantCosecantFunc.asymptoteData.horizontal.slice()
+            : [];
+        const secantCosecantRays = secantCosecantFunc.asymptoteData && Array.isArray(secantCosecantFunc.asymptoteData.polarRays)
+            ? secantCosecantFunc.asymptoteData.polarRays.slice()
+            : [];
+        const secantCosecantDisplay = graphiti.buildAsymptoteDisplayLatex(secantCosecantFunc);
+
         const implicitHyperbolaExpr = '2\\sin\\left(\\theta\\right)-1=\\frac{1}{r}';
         graphiti.addFunction(implicitHyperbolaExpr);
-        const implicitHyperbolaFunc = graphiti.polarFunctions[8];
+        const implicitHyperbolaFunc = graphiti.polarFunctions[9];
         await graphiti.plotFunction(implicitHyperbolaFunc);
 
         const implicitHyperbolaDisplayPoints = Array.isArray(implicitHyperbolaFunc.displayPoints)
@@ -2339,6 +2355,10 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
             secantShiftVertical,
             secantShiftOblique,
             secantShiftDisplay,
+            secantCosecantVertical,
+            secantCosecantHorizontal,
+            secantCosecantRays,
+            secantCosecantDisplay,
             implicitHyperbolaTopCount,
             implicitHyperbolaBottomCount,
             implicitHyperbolaOblique,
@@ -2488,6 +2508,28 @@ async function assertExplicitPolarSingularRayAsymptotes(page) {
     assert(
         result.secantShiftDisplay.includes('x = 1'),
         `polar secant-shift form should render asymptote x = 1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCosecantVertical.some(value => approxEqual(value, 1, 0.03)),
+        `polar secant-plus-cosecant form should infer vertical asymptote x=1: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCosecantHorizontal.some(value => approxEqual(value, 1, 0.03)),
+        `polar secant-plus-cosecant form should infer horizontal asymptote y=1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.secantCosecantRays.length,
+        0,
+        `polar secant-plus-cosecant form should prefer Cartesian asymptotes over theta-ray metadata: ${JSON.stringify(result)}`
+    );
+    assert(
+        result.secantCosecantDisplay.includes('x = 1') && result.secantCosecantDisplay.includes('y = 1'),
+        `polar secant-plus-cosecant form should render x = 1 and y = 1: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.secantCosecantDisplay.some(equation => /\\theta\s*=/.test(equation)),
+        false,
+        `polar secant-plus-cosecant form should not render theta-ray asymptote metadata: ${JSON.stringify(result)}`
     );
     assert(
         result.implicitHyperbolaBottomCount > 40,
