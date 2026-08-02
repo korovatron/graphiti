@@ -4283,7 +4283,9 @@ class Graphiti {
             const functionType = this.detectFunctionType(func.expression);
             const preservePolarFastPathMetadata = this.isExplicitImplicitFastPath(func) &&
                 (this.isViewportChanging || func._preserveFastPathMetadataDuringViewportRefresh);
-            if (!preservePolarFastPathMetadata) {
+            // For implicit plotting, keep existing metadata until the async pass finishes.
+            // This avoids metadata disappearing if a superseded calculation is cancelled.
+            if (!preservePolarFastPathMetadata && functionType !== 'implicit' && functionType !== 'implicit-inequality') {
                 this.clearFunctionAsymptoteData(func);
             }
             if ((functionType === 'implicit' || functionType === 'implicit-inequality') &&
@@ -4331,9 +4333,8 @@ class Graphiti {
 
             const preserveFastPathMetadata = this.isExplicitImplicitFastPath(func) &&
                 (this.isViewportChanging || func._preserveFastPathMetadataDuringViewportRefresh);
-            if (!preserveFastPathMetadata) {
-                this.clearFunctionAsymptoteData(func);
-            }
+            // Keep metadata visible while async implicit recomputation is in-flight.
+            // plotImplicitFunction updates/clears metadata when it has final results.
             await this.plotImplicitFunction(func, false, this.isStartup);
             return;
         }
@@ -5911,7 +5912,7 @@ class Graphiti {
             Math.max(Math.abs(this.viewport?.minY ?? 0), Math.abs(this.viewport?.maxY ?? 0))
         ));
         const thetaStepRadians = this.angleMode === 'degrees' ? Math.abs(thetaStep) * Math.PI / 180 : Math.abs(thetaStep);
-        const minSampleCount = 8;
+        const minSampleCount = 5;
         const originDistanceTolerance = Math.max(0.2, viewportDiagonal * 0.035);
         const sampleRadiusCap = Math.max(30, viewportRadius * 12);
 
@@ -7726,8 +7727,30 @@ class Graphiti {
         const clearAsymptoteData = options.clearAsymptoteData !== false;
         const mergedPoints = [];
         let hasFinitePoints = false;
+        const mergedVerticalAsymptotes = [];
+        const mergedHorizontalAsymptotes = [];
+        const mergedObliqueAsymptotes = [];
         const mergedPolarRays = [];
         const branchThetaStep = Math.max(1e-6, this.calculateDynamicPolarStep(this.polarSettings.thetaMin, this.polarSettings.thetaMax));
+        const addUniqueNumber = (target, value, tolerance = 1e-6) => {
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            if (!target.some(existing => Math.abs(existing - value) <= tolerance)) {
+                target.push(value);
+            }
+        };
+        const addUniqueLine = (target, line) => {
+            if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
+                return;
+            }
+            if (!target.some(existing =>
+                Math.abs(existing.m - line.m) <= Math.max(1e-8, Math.abs(existing.m) * 1e-6) &&
+                Math.abs(existing.b - line.b) <= Math.max(1e-8, Math.abs(existing.b) * 1e-6)
+            )) {
+                target.push({ ...line });
+            }
+        };
         const addUniquePolarRay = (value) => {
             if (!Number.isFinite(value)) {
                 return;
@@ -7970,9 +7993,26 @@ class Graphiti {
             this.plotPolarFunction(proxyFunc);
 
             const proxyAsymptoteData = proxyFunc.asymptoteData;
-            if (proxyAsymptoteData && Array.isArray(proxyAsymptoteData.polarRays)) {
-                for (const theta of proxyAsymptoteData.polarRays) {
-                    addUniquePolarRay(theta);
+            if (proxyAsymptoteData) {
+                if (Array.isArray(proxyAsymptoteData.vertical)) {
+                    for (const value of proxyAsymptoteData.vertical) {
+                        addUniqueNumber(mergedVerticalAsymptotes, value);
+                    }
+                }
+                if (Array.isArray(proxyAsymptoteData.horizontal)) {
+                    for (const value of proxyAsymptoteData.horizontal) {
+                        addUniqueNumber(mergedHorizontalAsymptotes, value);
+                    }
+                }
+                if (Array.isArray(proxyAsymptoteData.oblique)) {
+                    for (const line of proxyAsymptoteData.oblique) {
+                        addUniqueLine(mergedObliqueAsymptotes, line);
+                    }
+                }
+                if (Array.isArray(proxyAsymptoteData.polarRays)) {
+                    for (const theta of proxyAsymptoteData.polarRays) {
+                        addUniquePolarRay(theta);
+                    }
                 }
             }
 
@@ -8018,7 +8058,7 @@ class Graphiti {
         func.points = mergedPoints;
         func.displayPoints = mergedPoints;
         this.implicitCurveCache.delete(func.id);
-        this.updateFunctionAsymptoteData(func, [], [], [], null, null, [], mergedPolarRays);
+        this.updateFunctionAsymptoteData(func, mergedVerticalAsymptotes, mergedHorizontalAsymptotes, mergedObliqueAsymptotes, null, null, [], mergedPolarRays);
         if (clearAsymptoteData) {
             this.clearFunctionAsymptoteData(func);
         }
@@ -11448,9 +11488,18 @@ class Graphiti {
                 }
             }
 
+            // Check if calculation was cancelled before starting heavy computation
+            if (this.isCalculationCancelled(func.id, calculationId)) {
+                this.activeImplicitCalculations.delete(func.id);
+                // Don't clear existing points - keep them visible during cancellation
+                return;
+            }
+
             // Algebraic asymptotes are independent of the marching-squares contour.
             // Keep the existing hyperbola-family conic detector as the preferred path,
             // then fall back to a conservative polynomial-at-infinity detector.
+            // Run this only after cancellation checks so stale superseded passes cannot
+            // clear newer metadata.
             if (functionType === 'implicit' || functionType === 'implicit-inequality') {
                 const implicitAsymptotes = this.detectImplicitHyperbolaAsymptotes(equation) ||
                     this.detectPolynomialImplicitAsymptotes(equation);
@@ -11472,13 +11521,6 @@ class Graphiti {
                 } else {
                     this.clearFunctionAsymptoteData(func);
                 }
-            }
-            
-            // Check if calculation was cancelled before starting heavy computation
-            if (this.isCalculationCancelled(func.id, calculationId)) {
-                this.activeImplicitCalculations.delete(func.id);
-                // Don't clear existing points - keep them visible during cancellation
-                return;
             }
 
             // Optimisation 3 fast path:
@@ -20890,6 +20932,54 @@ class Graphiti {
         const vertical = uniqueSorted(verticalAsymptotes);
         const horizontal = uniqueSorted(horizontalAsymptotes);
         const polarRays = uniqueSorted(polarRayAsymptotes);
+        const normalizeAxisCoincidentPolarRays = (values) => {
+            if (!Array.isArray(values) || values.length === 0) {
+                return null;
+            }
+
+            const finiteValues = values.filter(value => Number.isFinite(value));
+            if (finiteValues.length === 0) {
+                return null;
+            }
+
+            const normalized = finiteValues.map(value => this.normalizeAngleRadians(this.angleMode === 'degrees' ? value * Math.PI / 180 : value));
+            const reference = normalized[0];
+            const sameAxisFamily = normalized.every(value => this.angleDistanceModulo(value, reference, Math.PI) <= 0.03);
+            if (!sameAxisFamily) {
+                return null;
+            }
+
+            const expression = func && typeof func.expression === 'string'
+                ? this.convertFromLatex(func.expression).toLowerCase()
+                : '';
+            const isPolarModeFunction = func && func.mode === 'polar';
+            const hasPeriodicPolarTrig = /\b(tan|cot|sec|csc)\s*\(|\/\s*(?:\(\s*)*(sin|cos|tan)\s*\(/.test(expression);
+            const allowsSingleRayNormalization = isPolarModeFunction && hasPeriodicPolarTrig && this.detectFunctionType(func.expression) !== 'theta-constant';
+            if (finiteValues.length < 2 && !allowsSingleRayNormalization) {
+                return null;
+            }
+
+            const referenceModuloPi = this.modPositive(reference, Math.PI);
+            if (Math.min(Math.abs(referenceModuloPi), Math.abs(referenceModuloPi - Math.PI)) <= 0.03) {
+                return { axis: 'horizontal', value: 0 };
+            }
+            if (Math.abs(referenceModuloPi - (Math.PI / 2)) <= 0.03) {
+                return { axis: 'vertical', value: 0 };
+            }
+
+            return null;
+        };
+        const axisCoincidentPolarRay = vertical.length === 0 && horizontal.length === 0
+            ? normalizeAxisCoincidentPolarRays(polarRays)
+            : null;
+        if (axisCoincidentPolarRay) {
+            if (axisCoincidentPolarRay.axis === 'vertical') {
+                vertical.push(axisCoincidentPolarRay.value);
+            } else if (axisCoincidentPolarRay.axis === 'horizontal') {
+                horizontal.push(axisCoincidentPolarRay.value);
+            }
+            polarRays.length = 0;
+        }
         const normalizeObliqueLine = (line) => {
             if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) {
                 return null;
@@ -21197,6 +21287,16 @@ class Graphiti {
             return;
         }
 
+        // Viewport settle replots can run through fast paths that do not touch
+        // validation styling. If validation state has already recovered, remove
+        // stale UI error classes so metadata can render again.
+        if (!func.validationError) {
+            funcItem.classList.remove('function-error');
+        }
+        if (!func.validationError && func.validationKind !== 'domain') {
+            funcItem.classList.remove('function-warning');
+        }
+
         // Do not display derived asymptote/hole info while expression is invalid.
         if (funcItem.classList.contains('function-error')) {
             const errorShapeContainer = funcItem.querySelector('.shape-info-container');
@@ -21247,9 +21347,35 @@ class Graphiti {
         const asymptoteToggle = infoContainer.querySelector('.asymptote-visibility-toggle');
         const envelopeToggle = envelopeContainer ? envelopeContainer.querySelector('.envelope-visibility-toggle') : null;
 
-        const equations = this.buildAsymptoteDisplayLatex(func);
+        const functionIsImplicitFamily = functionType === 'implicit' || functionType === 'implicit-inequality';
+        let equations = this.buildAsymptoteDisplayLatex(func);
         const holeEquations = this.buildHoleDisplayLatex(func);
         const envelopeEquations = this.buildEnvelopeDisplayLatex(func);
+
+        if (equations.length > 0) {
+            func._lastStableAsymptoteEquations = equations.slice();
+            func._lastStableAsymptoteUpdatedAt = performance.now();
+            func._lastStableAsymptoteExpression = func.expression;
+        } else if (functionIsImplicitFamily) {
+            const fallbackEquations = Array.isArray(func._lastStableAsymptoteEquations)
+                ? func._lastStableAsymptoteEquations
+                : [];
+            const fallbackAgeMs = Number.isFinite(func._lastStableAsymptoteUpdatedAt)
+                ? (performance.now() - func._lastStableAsymptoteUpdatedAt)
+                : Infinity;
+            const hasActiveImplicitWork = !!(this.activeImplicitCalculations && this.activeImplicitCalculations.has(func.id));
+            const hasPendingViewportWork = this.isViewportChanging || this.pendingViewportRefreshTasks > 0;
+            const fallbackMatchesCurrentExpression = func._lastStableAsymptoteExpression === func.expression;
+            const shouldPreserveStableImplicitMetadata =
+                fallbackEquations.length > 0 &&
+                fallbackMatchesCurrentExpression &&
+                func.showAsymptotes !== false &&
+                !func.validationError &&
+                (hasActiveImplicitWork || hasPendingViewportWork || fallbackAgeMs <= 500 || infoContainer.classList.contains('visible'));
+            if (shouldPreserveStableImplicitMetadata) {
+                equations = fallbackEquations.slice();
+            }
+        }
 
         const asymptoteSignature = JSON.stringify(equations);
         const holesSignature = JSON.stringify(holeEquations);
@@ -21420,12 +21546,23 @@ class Graphiti {
         const verticalDetails = asymptoteData.equationsDetailed && Array.isArray(asymptoteData.equationsDetailed.vertical)
             ? asymptoteData.equationsDetailed.vertical
             : [];
-        const periodicPolarRayEquation = this.formatPeriodicPolarRayAsymptoteLatex(polarRays);
-        if (periodicPolarRayEquation) {
-            equations.push(periodicPolarRayEquation);
+        const axisCoincidentPolarRayEquation =
+            verticalValues.length === 0 &&
+            horizontalValues.length === 0 &&
+            obliqueLines.length === 0 &&
+            curvedAsymptotes.length === 0
+                ? this.formatAxisCoincidentPolarRayAsymptoteLatex(polarRays)
+                : null;
+        if (axisCoincidentPolarRayEquation) {
+            equations.push(axisCoincidentPolarRayEquation);
         } else {
-            for (const theta of polarRays) {
-                equations.push(`\\theta = ${this.formatAsymptoteCoefficientLatex(theta)}`);
+            const periodicPolarRayEquation = this.formatPeriodicPolarRayAsymptoteLatex(polarRays);
+            if (periodicPolarRayEquation) {
+                equations.push(periodicPolarRayEquation);
+            } else {
+                for (const theta of polarRays) {
+                    equations.push(`\\theta = ${this.formatAsymptoteCoefficientLatex(theta)}`);
+                }
             }
         }
 
@@ -24460,6 +24597,34 @@ class Graphiti {
 
         const offsetLatex = this.formatAsymptoteCoefficientLatex(offset);
         return `\\theta = ${offsetLatex} + ${periodLatex} n`;
+    }
+
+    formatAxisCoincidentPolarRayAsymptoteLatex(values) {
+        if (!Array.isArray(values) || values.length < 2) {
+            return null;
+        }
+
+        const finiteValues = values.filter(value => Number.isFinite(value));
+        if (finiteValues.length < 2) {
+            return null;
+        }
+
+        const normalized = finiteValues.map(value => this.normalizeAngleRadians(this.angleMode === 'degrees' ? value * Math.PI / 180 : value));
+        const reference = normalized[0];
+        const sameAxisFamily = normalized.every(value => this.angleDistanceModulo(value, reference, Math.PI) <= 0.03);
+        if (!sameAxisFamily) {
+            return null;
+        }
+
+        const referenceModuloPi = this.modPositive(reference, Math.PI);
+        if (Math.min(Math.abs(referenceModuloPi), Math.abs(referenceModuloPi - Math.PI)) <= 0.03) {
+            return 'y = 0';
+        }
+        if (Math.abs(referenceModuloPi - (Math.PI / 2)) <= 0.03) {
+            return 'x = 0';
+        }
+
+        return null;
     }
 
     modPositive(value, modulus) {

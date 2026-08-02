@@ -778,6 +778,107 @@ async function assertShapeClassification(page) {
     assert.strictEqual(metadataToggleResult.after.asymptoteEquationCount, 0, 'asymptote equations should hide when overlay hidden');
     assert.strictEqual(metadataToggleResult.after.envelopeContainerVisible, true, 'envelope metadata should remain visible when overlay hidden');
 
+    const multiCurveAsymptoteMetadataPersistenceResult = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.angleMode = 'radians';
+        graphiti.polarSettings.thetaMin = 0;
+        graphiti.polarSettings.thetaMax = 2 * Math.PI;
+        graphiti.cartesianFunctions = [];
+        graphiti.polarFunctions = [];
+        graphiti.nextFunctionId = 1;
+        const container = document.getElementById('functions-container');
+        container.innerHTML = '';
+
+        graphiti.addFunction('r^2<5-4tan(theta)');
+        graphiti.addFunction('r^2=5-4tan(theta)');
+
+        const inequalityFunc = graphiti.polarFunctions[0];
+        const equalityFunc = graphiti.polarFunctions[1];
+
+        await Promise.all([
+            graphiti.plotFunctionWithValidation(equalityFunc),
+            graphiti.plotFunctionWithValidation(inequalityFunc)
+        ]);
+
+        graphiti.updateFunctionAsymptoteInfo(equalityFunc);
+        graphiti.updateFunctionAsymptoteInfo(inequalityFunc);
+
+        const getPanelState = (func) => {
+            const item = document.querySelector(`[data-function-id="${func.id}"]`);
+            const asymptoteContainer = item ? item.querySelector('.asymptote-info-container') : null;
+            const equationCount = asymptoteContainer
+                ? asymptoteContainer.querySelectorAll('.asymptote-equation-item').length
+                : 0;
+
+            return {
+                visible: asymptoteContainer ? asymptoteContainer.classList.contains('visible') : false,
+                equationCount
+            };
+        };
+
+        const beforeOverlap = {
+            equality: getPanelState(equalityFunc),
+            inequality: getPanelState(inequalityFunc)
+        };
+
+        // Trigger overlapping async replots to mimic settle-time superseding.
+        graphiti.isViewportChanging = true;
+        const overlapFirstPass = [
+            graphiti.plotFunctionWithValidation(equalityFunc),
+            graphiti.plotFunctionWithValidation(inequalityFunc)
+        ];
+        const overlapSecondPass = [
+            graphiti.plotFunctionWithValidation(equalityFunc),
+            graphiti.plotFunctionWithValidation(inequalityFunc)
+        ];
+
+        await Promise.allSettled([...overlapFirstPass, ...overlapSecondPass]);
+        graphiti.isViewportChanging = false;
+
+        await Promise.all([
+            graphiti.plotFunctionWithValidation(equalityFunc),
+            graphiti.plotFunctionWithValidation(inequalityFunc)
+        ]);
+
+        graphiti.updateFunctionAsymptoteInfo(equalityFunc);
+        graphiti.updateFunctionAsymptoteInfo(inequalityFunc);
+
+        const afterOverlap = {
+            equality: getPanelState(equalityFunc),
+            inequality: getPanelState(inequalityFunc)
+        };
+
+        return { beforeOverlap, afterOverlap };
+    });
+
+    assert(
+        multiCurveAsymptoteMetadataPersistenceResult.beforeOverlap.equality.equationCount > 0,
+        `implicit equality should render asymptote metadata before overlap replots: ${JSON.stringify(multiCurveAsymptoteMetadataPersistenceResult)}`
+    );
+    assert(
+        multiCurveAsymptoteMetadataPersistenceResult.beforeOverlap.inequality.equationCount > 0,
+        `implicit inequality should render asymptote metadata before overlap replots: ${JSON.stringify(multiCurveAsymptoteMetadataPersistenceResult)}`
+    );
+    assert.strictEqual(
+        multiCurveAsymptoteMetadataPersistenceResult.afterOverlap.equality.visible,
+        true,
+        `implicit equality asymptote metadata should remain visible after overlap replots: ${JSON.stringify(multiCurveAsymptoteMetadataPersistenceResult)}`
+    );
+    assert.strictEqual(
+        multiCurveAsymptoteMetadataPersistenceResult.afterOverlap.inequality.visible,
+        true,
+        `implicit inequality asymptote metadata should remain visible after overlap replots: ${JSON.stringify(multiCurveAsymptoteMetadataPersistenceResult)}`
+    );
+    assert(
+        multiCurveAsymptoteMetadataPersistenceResult.afterOverlap.equality.equationCount > 0,
+        `implicit equality asymptote equations should persist after overlap replots: ${JSON.stringify(multiCurveAsymptoteMetadataPersistenceResult)}`
+    );
+    assert(
+        multiCurveAsymptoteMetadataPersistenceResult.afterOverlap.inequality.equationCount > 0,
+        `implicit inequality asymptote equations should persist after overlap replots: ${JSON.stringify(multiCurveAsymptoteMetadataPersistenceResult)}`
+    );
+
     const parenthesizedReciprocalTrigAsymptoteResult = await page.evaluate(async () => {
         const graphiti = window.graphiti;
         graphiti.plotMode = 'cartesian';
@@ -3740,6 +3841,14 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 inequalityBranches: Array.isArray(squaredTanInequalityFunc.monomialPolarExplicitExpressions)
                     ? squaredTanInequalityFunc.monomialPolarExplicitExpressions.slice()
                     : [],
+                equalityVerticalAsymptotes: squaredTanBoundaryFunc.asymptoteData && Array.isArray(squaredTanBoundaryFunc.asymptoteData.vertical)
+                    ? squaredTanBoundaryFunc.asymptoteData.vertical.slice()
+                    : [],
+                inequalityVerticalAsymptotes: squaredTanInequalityFunc.asymptoteData && Array.isArray(squaredTanInequalityFunc.asymptoteData.vertical)
+                    ? squaredTanInequalityFunc.asymptoteData.vertical.slice()
+                    : [],
+                equalityDisplay: graphiti.buildAsymptoteDisplayLatex(squaredTanBoundaryFunc),
+                inequalityDisplay: graphiti.buildAsymptoteDisplayLatex(squaredTanInequalityFunc),
                 inequalityFillMode: squaredTanInequalityFunc.implicitPolarInequalityFastPath
                     ? squaredTanInequalityFunc.implicitPolarInequalityFastPath.fillMode
                     : null,
@@ -3985,6 +4094,11 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert.strictEqual(result.squaredTanBoundaryPair.inequalityFillMode, 'inside', `r^2<5-4tan(theta) should fill inside the shared boundary: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert.strictEqual(result.squaredTanBoundaryPair.equalityBranches.length, 1, `r^2=5-4tan(theta) should expose one explicit sqrt branch when negative-r reflection is enabled: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert.deepStrictEqual(result.squaredTanBoundaryPair.inequalityBranches, result.squaredTanBoundaryPair.equalityBranches, `r^2<5-4tan(theta) should reuse the same sqrt boundary branches as the equality: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.equalityVerticalAsymptotes.some(value => approxEqual(value, 0, 0.03)), `r^2=5-4tan(theta) should infer the Cartesian asymptote x=0 instead of a theta ray: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.inequalityVerticalAsymptotes.some(value => approxEqual(value, 0, 0.03)), `r^2<5-4tan(theta) should preserve the Cartesian asymptote x=0: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.equalityDisplay.includes('x = 0'), `r^2=5-4tan(theta) should display x = 0 as its asymptote: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.inequalityDisplay.includes('x = 0'), `r^2<5-4tan(theta) should display x = 0 as its asymptote: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert.strictEqual(result.squaredTanBoundaryPair.equalityDisplay.some(equation => /\\theta\s*=/.test(equation)), false, `r^2=5-4tan(theta) should not fall back to theta-ray asymptote display: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.equalityFinitePointCount > 300, `r^2=5-4tan(theta) should produce substantial boundary points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.inequalityFinitePointCount > 300, `r^2<5-4tan(theta) should produce substantial boundary points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.equalityMinRadius <= 1e-8, `r^2=5-4tan(theta) branch fast-path should meet at the origin: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
