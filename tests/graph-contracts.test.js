@@ -3658,6 +3658,9 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
         const squaredTanBoundaryMinRadius = squaredTanBoundaryFinitePoints.length > 0
             ? Math.min(...squaredTanBoundaryFinitePoints.map(point => Math.hypot(point.x, point.y)))
             : Infinity;
+        const squaredTanInequalityMinRadius = squaredTanInequalityFinitePoints.length > 0
+            ? Math.min(...squaredTanInequalityFinitePoints.map(point => Math.hypot(point.x, point.y)))
+            : Infinity;
 
         graphiti.showIntercepts = true;
         const polarAxisIntercepts = graphiti.findAxisIntercepts();
@@ -3855,6 +3858,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
                 equalityFinitePointCount: squaredTanBoundaryFinitePoints.length,
                 inequalityFinitePointCount: squaredTanInequalityFinitePoints.length,
                 equalityMinRadius: squaredTanBoundaryMinRadius,
+                inequalityMinRadius: squaredTanInequalityMinRadius,
                 parity: squaredTanBoundaryParity
             },
             productFactorsFastPath: {
@@ -4102,6 +4106,7 @@ async function assertImplicitPolarMarchingPlotsAndShades(page) {
     assert(result.squaredTanBoundaryPair.equalityFinitePointCount > 300, `r^2=5-4tan(theta) should produce substantial boundary points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.inequalityFinitePointCount > 300, `r^2<5-4tan(theta) should produce substantial boundary points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.equalityMinRadius <= 1e-8, `r^2=5-4tan(theta) branch fast-path should meet at the origin: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
+    assert(result.squaredTanBoundaryPair.inequalityMinRadius <= 1e-8, `r^2<5-4tan(theta) boundary should meet at the origin: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.parity.sampleCount > 30, `r^2 boundary parity probe should sample enough points: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.parity.averageDistance <= 0.08, `r^2 inequality boundary should stay close to the equality boundary on average: ${JSON.stringify(result.squaredTanBoundaryPair)}`);
     assert(result.squaredTanBoundaryPair.parity.maxDistance <= 0.35, `r^2 inequality boundary should not visibly diverge from the equality boundary: ${JSON.stringify(result.squaredTanBoundaryPair)}`);

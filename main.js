@@ -8406,6 +8406,9 @@ class Graphiti {
                     points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                 }
             }
+
+            this.refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep);
+            this.compactPolarOriginGaps(points);
             
             func.points = points;
             func.inequality = {
@@ -8520,6 +8523,9 @@ class Graphiti {
                     points.push({ x: NaN, y: NaN, connected: false, theta: theta });
                 }
             }
+
+            this.refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep);
+            this.compactPolarOriginGaps(points);
             
             func.points = points;
             func.inequality = {
