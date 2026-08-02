@@ -252,6 +252,28 @@ module.exports = [
         }
     },
     {
+        name: 'high-power literal rational detects curved asymptote',
+        expression: 'y=(x^12-x^6+1)/(x^8-16*x^4+4)',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [-1.9920137512381189, -0.7099416665732861, 0.7099416665732861, 1.9920137512381189],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            curvedAsymptotes: [{ coefficients: [16, 0, 0, 0, 1] }]
+        }
+    },
+    {
+        name: 'parenthesized high-power rational detects curved asymptote',
+        expression: 'y=(x^(12)-x^6+1)/(x^8-16x^4+4)',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [-1.9920137512381189, -0.7099416665732861, 0.7099416665732861, 1.9920137512381189],
+            horizontalAsymptotes: [],
+            obliqueAsymptotes: [],
+            curvedAsymptotes: [{ coefficients: [16, 0, 0, 0, 1] }]
+        }
+    },
+    {
         name: 'polynomial plus reciprocal reports curved asymptote',
         expression: 'y=x^2+1/x',
         viewport: defaultViewport,

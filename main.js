@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.75';
+const VERSION = '1.3.76';
 
 class Graphiti {
     constructor() {
@@ -20060,10 +20060,12 @@ class Graphiti {
 
         if (op === '^' && args.length === 2) {
             const base = this.extractPolynomialRationalCoeffs(args[0]);
-            const exponentNode = args[1];
-            if (!base || !exponentNode || exponentNode.type !== 'ConstantNode') return null;
-            const exponent = Number(exponentNode.value);
-            if (!Number.isInteger(exponent) || exponent < 0 || exponent > 8) return null;
+            if (!base) return null;
+            // Keep explicit-rational asymptote parsing robust for higher powers
+            // without opening unbounded expansion costs.
+            const maxPolynomialExponent = 32;
+            const exponent = this.extractBoundedNonNegativeIntegerExponent(args[1], maxPolynomialExponent);
+            if (exponent === null) return null;
 
             let result = { numerator: [1], denominator: [1] };
             for (let i = 0; i < exponent; i++) {
@@ -20126,6 +20128,28 @@ class Graphiti {
 
         roots.sort((a, b) => a - b);
         return roots;
+    }
+
+    extractBoundedNonNegativeIntegerExponent(node, maxExponent) {
+        if (!node) {
+            return null;
+        }
+
+        let exponentNode = node;
+        while (exponentNode && exponentNode.type === 'ParenthesisNode') {
+            exponentNode = exponentNode.content;
+        }
+
+        if (!exponentNode || exponentNode.type !== 'ConstantNode') {
+            return null;
+        }
+
+        const exponent = Number(exponentNode.value);
+        if (!Number.isInteger(exponent) || exponent < 0 || exponent > maxExponent) {
+            return null;
+        }
+
+        return exponent;
     }
 
     extractPolynomialCoeffs(node) {
@@ -20194,10 +20218,9 @@ class Graphiti {
             const base = this.extractPolynomialCoeffs(args[0]);
             if (!base) return null;
 
-            const expNode = args[1];
-            if (!expNode || expNode.type !== 'ConstantNode') return null;
-            const exponent = Number(expNode.value);
-            if (!Number.isInteger(exponent) || exponent < 0 || exponent > 8) return null;
+            const maxPolynomialExponent = 32;
+            const exponent = this.extractBoundedNonNegativeIntegerExponent(args[1], maxPolynomialExponent);
+            if (exponent === null) return null;
 
             let result = [1];
             for (let i = 0; i < exponent; i++) {
@@ -26439,10 +26462,8 @@ class Graphiti {
         if (op === '^' && args.length === 2) {
             const base = this.extractBivariatePolynomialCoefficients(args[0], maxTotalDegree);
             if (!base) return null;
-            const exponentNode = args[1];
-            if (!exponentNode || exponentNode.type !== 'ConstantNode') return null;
-            const exponent = Number(exponentNode.value);
-            if (!Number.isInteger(exponent) || exponent < 0 || exponent > maxTotalDegree) {
+            const exponent = this.extractBoundedNonNegativeIntegerExponent(args[1], maxTotalDegree);
+            if (exponent === null) {
                 return null;
             }
             let result = { '0,0': 1 };
