@@ -1940,7 +1940,8 @@ class Graphiti {
                     'r=1+\\cos\\left(\\theta\\right)',                 // Cardioid
                     'r=2\\cos\\left(3\\theta\\right)',                  // Rose curve
                     '\\theta=\\frac{\\pi}{4}',                           // Ray at 45 degrees
-                    'r=\\frac{1}{\\theta-\\frac{\\pi}{2}}'            // Reciprocal-in-theta asymptotic branch
+                    'r=\\frac{1}{\\theta-\\frac{\\pi}{2}}',            // Reciprocal-in-theta asymptotic branch
+                    'r=\\frac{1}{\\cos\\left(\\theta\\right)-\\frac{1}{2}}' // Reciprocal polar conic with exact asymptotes
                 ],
                 description: 'Polar Basics Demo',
                 viewport: { minX: -3, maxX: 3, minY: -3, maxY: 3 }
