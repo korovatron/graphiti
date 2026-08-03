@@ -6768,6 +6768,178 @@ async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.turningX, 1, `fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
 }
 
+async function assertOverlappingViewportSettlePreservesFrozenSignificantMarkers(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.showIntersections = false;
+        graphiti.showTurningPoints = true;
+        graphiti.showIntercepts = true;
+
+        graphiti.cartesianFunctions = [
+            {
+                id: 1,
+                expression: 'y=x^2',
+                points: [{ x: -1, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 1 }],
+                color: '#4A90E2',
+                enabled: true,
+                mode: 'cartesian'
+            }
+        ];
+        graphiti.polarFunctions = [];
+
+        // Stale live marker sets that should NOT overwrite the frozen snapshot.
+        graphiti.intercepts = [{ x: 50, y: 0, type: 'x-intercept', functionId: 1 }];
+        graphiti.turningPoints = [{ x: 50, y: 2500, type: 'minimum', func: graphiti.cartesianFunctions[0] }];
+
+        // Existing frozen markers currently shown on screen.
+        graphiti.frozenInterceptBadges = [{ x: 0, y: 0, type: 'x-intercept', functionColor: '#808080' }];
+        graphiti.frozenTurningPointBadges = [{ x: 0, y: 0, type: 'minimum', func: graphiti.cartesianFunctions[0] }];
+        graphiti.interceptsPendingViewportRefresh = true;
+        graphiti.turningPointsPendingViewportRefresh = true;
+        graphiti.isViewportChanging = false;
+
+        const originalPlotFunction = graphiti.plotFunction.bind(graphiti);
+        graphiti.plotFunction = () => new Promise(() => {});
+
+        try {
+            graphiti.handleViewportChange({ skipCoverageRefresh: true, immediate: true, showWorkIndicator: false });
+            await new Promise(resolve => setTimeout(resolve, 30));
+
+            return {
+                frozenIntercepts: graphiti.frozenInterceptBadges.map(point => ({ x: point.x, y: point.y, type: point.type })),
+                frozenTurning: graphiti.frozenTurningPointBadges.map(point => ({ x: point.x, y: point.y, type: point.type })),
+                interceptsPending: graphiti.interceptsPendingViewportRefresh,
+                turningPending: graphiti.turningPointsPendingViewportRefresh
+            };
+        } finally {
+            graphiti.plotFunction = originalPlotFunction;
+            if (graphiti.intersectionDebounceTimer) {
+                clearTimeout(graphiti.intersectionDebounceTimer);
+                graphiti.intersectionDebounceTimer = null;
+            }
+            graphiti.isViewportChanging = false;
+            graphiti.interceptsPendingViewportRefresh = false;
+            graphiti.turningPointsPendingViewportRefresh = false;
+        }
+    });
+
+    assert.deepStrictEqual(
+        result.frozenIntercepts,
+        [{ x: 0, y: 0, type: 'x-intercept' }],
+        `overlapping settle should preserve frozen intercept snapshot: ${JSON.stringify(result)}`
+    );
+    assert.deepStrictEqual(
+        result.frozenTurning,
+        [{ x: 0, y: 0, type: 'minimum' }],
+        `overlapping settle should preserve frozen turning snapshot: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(result.interceptsPending, true, `overlapping settle should keep intercept pending state: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.turningPending, true, `overlapping settle should keep turning pending state: ${JSON.stringify(result)}`);
+}
+
+async function assertPendingViewportTasksBlockStaleFlagClear(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+
+        graphiti.pendingViewportRefreshTasks = 1;
+        graphiti.isViewportChanging = false;
+        graphiti.implicitIntersectionsPending = false;
+        graphiti.isWorkerCalculating = false;
+        graphiti.activeImplicitCalculations = new Set();
+        graphiti.intersectionDebounceTimer = null;
+        graphiti.implicitIntersectionTimer = null;
+
+        graphiti.interceptsPendingViewportRefresh = true;
+        graphiti.turningPointsPendingViewportRefresh = true;
+        graphiti.intersectionMarkersPendingViewportRefresh = true;
+
+        const idleBefore = graphiti.hasNoActiveViewportWork();
+        graphiti.clearStaleViewportIndicatorFlags();
+
+        return {
+            idleBefore,
+            pendingViewportRefreshTasks: graphiti.pendingViewportRefreshTasks,
+            interceptsPending: graphiti.interceptsPendingViewportRefresh,
+            turningPointsPending: graphiti.turningPointsPendingViewportRefresh,
+            intersectionsPending: graphiti.intersectionMarkersPendingViewportRefresh
+        };
+    });
+
+    assert.strictEqual(result.idleBefore, false, `pending viewport tasks should block idle state: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.pendingViewportRefreshTasks, 1, `pending viewport task count should remain unchanged: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.interceptsPending, true, `intercept pending flag should not be cleared while viewport tasks are active: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.turningPointsPending, true, `turning-point pending flag should not be cleared while viewport tasks are active: ${JSON.stringify(result)}`);
+    assert.strictEqual(result.intersectionsPending, true, `intersection pending flag should not be cleared while viewport tasks are active: ${JSON.stringify(result)}`);
+}
+
+async function assertInterceptMarkersDoNotUseStaleScreenCacheAfterViewportChange(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+        graphiti.showIntercepts = true;
+        graphiti.showTurningPoints = false;
+        graphiti.showIntersections = false;
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -10,
+            maxX: 10,
+            minY: -10,
+            maxY: 10,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 48
+        });
+
+        graphiti.intercepts = [{ x: 2, y: 0, type: 'x-intercept', functionId: 1 }];
+        graphiti.cullInterceptMarkers();
+
+        const staleCachedScreenX = graphiti.culledInterceptMarkers[0]?.screenX;
+
+        // Pan viewport but intentionally do not recull intercepts yet.
+        graphiti.viewport.minX += 4;
+        graphiti.viewport.maxX += 4;
+
+        const expectedFreshScreen = graphiti.worldToScreen(2, 0);
+
+        const drawCalls = [];
+        const originalDrawInterceptMarker = graphiti.drawInterceptMarker.bind(graphiti);
+        graphiti.drawInterceptMarker = (screenX, screenY, intercept) => {
+            drawCalls.push({ screenX, screenY, x: intercept?.x, y: intercept?.y });
+        };
+
+        try {
+            graphiti.drawInterceptMarkers();
+        } finally {
+            graphiti.drawInterceptMarker = originalDrawInterceptMarker;
+        }
+
+        const drawn = drawCalls[0] || null;
+        return {
+            staleCachedScreenX,
+            drawnScreenX: drawn ? drawn.screenX : null,
+            expectedFreshScreenX: expectedFreshScreen.x
+        };
+    });
+
+    assert(result.staleCachedScreenX !== null, `setup should create cached intercept screen position: ${JSON.stringify(result)}`);
+    assert(result.drawnScreenX !== null, `intercept marker should be drawn: ${JSON.stringify(result)}`);
+    assert(
+        Math.abs(result.drawnScreenX - result.expectedFreshScreenX) <= 0.5,
+        `drawn intercept should use fresh viewport projection, got ${JSON.stringify(result)}`
+    );
+    assert(
+        Math.abs(result.drawnScreenX - result.staleCachedScreenX) > 1,
+        `drawn intercept should not reuse stale cached screen coordinate, got ${JSON.stringify(result)}`
+    );
+}
+
 async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -6912,6 +7084,87 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.frozenTurningCount, 0, `rectangle zoom frozen turning points should clear after refresh: ${JSON.stringify(result)}`);
     assert.strictEqual(result.afterRefresh.interceptX, 1, `rectangle zoom fresh intercept should replace frozen marker after refresh: ${JSON.stringify(result)}`);
     assert.strictEqual(result.afterRefresh.turningX, 1, `rectangle zoom fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
+}
+
+async function assertWheelZoomAnimationCompletionForcesFinalSettle(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -6,
+            maxY: 6,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        if (graphiti.zoomSettleTimer) {
+            clearTimeout(graphiti.zoomSettleTimer);
+            graphiti.zoomSettleTimer = null;
+        }
+        if (graphiti.wheelZoomAnimation && graphiti.wheelZoomAnimation.animationFrameId) {
+            cancelAnimationFrame(graphiti.wheelZoomAnimation.animationFrameId);
+            graphiti.wheelZoomAnimation.animationFrameId = null;
+        }
+        graphiti.wheelZoomAnimation.active = false;
+
+        const originalHandleViewportChange = graphiti.handleViewportChange.bind(graphiti);
+        const calls = [];
+        graphiti.handleViewportChange = options => {
+            calls.push({
+                settleDelayMs: options && typeof options.settleDelayMs === 'number' ? options.settleDelayMs : null,
+                immediate: !!(options && options.immediate)
+            });
+        };
+
+        try {
+            // Use a very short initial settle delay so it fires while the smooth
+            // wheel animation is still converging toward a large target factor.
+            graphiti.startWheelZoomAnimation(6, {
+                settleDelayMs: 1,
+                showWorkIndicator: false,
+                smoothWheelTransition: true
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 700));
+
+            return {
+                settleCallCount: calls.length,
+                calls,
+                animationActive: graphiti.wheelZoomAnimation.active,
+                hasTimer: !!graphiti.zoomSettleTimer
+            };
+        } finally {
+            graphiti.handleViewportChange = originalHandleViewportChange;
+            if (graphiti.zoomSettleTimer) {
+                clearTimeout(graphiti.zoomSettleTimer);
+                graphiti.zoomSettleTimer = null;
+            }
+            if (graphiti.wheelZoomAnimation && graphiti.wheelZoomAnimation.animationFrameId) {
+                cancelAnimationFrame(graphiti.wheelZoomAnimation.animationFrameId);
+                graphiti.wheelZoomAnimation.animationFrameId = null;
+            }
+            graphiti.wheelZoomAnimation.active = false;
+        }
+    });
+
+    assert(
+        result.settleCallCount >= 2,
+        `smooth wheel zoom should trigger an early and a final settle pass: ${JSON.stringify(result)}`
+    );
+    assert.strictEqual(
+        result.animationActive,
+        false,
+        `smooth wheel zoom animation should complete cleanly: ${JSON.stringify(result)}`
+    );
 }
 
 async function assertTurningPointBadgesDoNotRelinkToDistantCandidates(page) {
@@ -7302,6 +7555,56 @@ async function assertPolarLituusLabelRendersForReciprocalRootForm(page) {
     assert.strictEqual(result.domShapeLabel, 'lituus', `reciprocal root lituus should render lituus label in metadata: ${JSON.stringify(result)}`);
 }
 
+async function assertPolarEndpointAxisInterceptsSurviveSegmentBreaks(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'polar';
+        graphiti.polarFunctions = [];
+        graphiti.cartesianFunctions = [];
+        graphiti.nextFunctionId = 1;
+
+        graphiti.showIntercepts = true;
+
+        const func = {
+            id: graphiti.nextFunctionId++,
+            expression: 'r=\\frac{1}{\\theta-\\frac{\\pi}{2}}',
+            points: [
+                { x: -2 / Math.PI, y: 0, theta: 0 },
+                { x: -0.25, y: 0.2, theta: 0.2, connected: false },
+                { x: 2 / Math.PI, y: 0, theta: Math.PI }
+            ],
+            displayPoints: [
+                { x: -2 / Math.PI, y: 0, theta: 0 },
+                { x: -0.25, y: 0.2, theta: 0.2, connected: false },
+                { x: 2 / Math.PI, y: 0, theta: Math.PI }
+            ],
+            color: '#4A90E2',
+            enabled: true,
+            mode: 'polar'
+        };
+
+        graphiti.polarFunctions.push(func);
+
+        const candidate = {
+            x: -2 / Math.PI,
+            y: 0,
+            type: 'x-axis-negative',
+            functionId: func.id,
+            color: func.color
+        };
+
+        return {
+            accepted: graphiti.isPolarAxisInterceptOnRenderedCurve(func, candidate)
+        };
+    });
+
+    assert.strictEqual(
+        result.accepted,
+        true,
+        `polar endpoint intercept should be accepted even when neighbouring segment is disconnected: ${JSON.stringify(result)}`
+    );
+}
+
 async function assertImplicitLituusOrientationMatchesExplicitForm(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -7608,12 +7911,17 @@ async function assertShiftedLituusClassifiesAndUsesShiftedRayAsymptote(page) {
         await assertMonomialImplicitEndpointsSurviveViewportDecimation(page);
         await assertQuadraticImplicitViewportDrawBreaksDiscriminantGap(page);
         await assertViewportSettleKeepsFrozenSignificantMarkers(page);
+        await assertOverlappingViewportSettlePreservesFrozenSignificantMarkers(page);
+        await assertPendingViewportTasksBlockStaleFlagClear(page);
+        await assertInterceptMarkersDoNotUseStaleScreenCacheAfterViewportChange(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
+        await assertWheelZoomAnimationCompletionForcesFinalSettle(page);
         await assertTurningPointBadgesDoNotRelinkToDistantCandidates(page);
         await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
         await assertImplicitPolarDemoHolesRenderImmediately(page);
         await assertImplicitPolarHoleMetadataPersistsWithImplicitInequality(page);
         await assertPolarLituusLabelRendersForReciprocalRootForm(page);
+        await assertPolarEndpointAxisInterceptsSurviveSegmentBreaks(page);
         await assertImplicitLituusOrientationMatchesExplicitForm(page);
         await assertEquivalentLituusFormsRecoverAsymptotesAfterViewportSettle(page);
         await assertShiftedLituusClassifiesAndUsesShiftedRayAsymptote(page);

@@ -28677,31 +28677,13 @@ class Graphiti {
         );
         
         // Capture current significant-point markers as frozen badges. The viewport may
-        // already be marked changing by the first pan/zoom draw, so do this even when
-        // isViewportChanging is true.
-        if (this.showIntercepts && this.intercepts.length > 0) {
-            this.frozenInterceptBadges = this.intercepts
-                .filter(intercept => !intercept.functionId || enabledFunctionIds.has(intercept.functionId))
-                .map(intercept => ({
-                    x: intercept.x,
-                    y: intercept.y,
-                    type: intercept.type,
-                    functionColor: '#808080' // Neutral gray color for intercepts
-                }));
-            this.interceptsPendingViewportRefresh = this.frozenInterceptBadges.length > 0;
-        }
-        
-        if (this.showTurningPoints && this.turningPoints.length > 0) {
-            this.frozenTurningPointBadges = this.turningPoints
-                .filter(tp => !tp.func || enabledFunctionIds.has(tp.func.id))
-                .map(turningPoint => ({
-                    x: turningPoint.x,
-                    y: turningPoint.y,
-                    type: turningPoint.type,
-                    func: turningPoint.func
-                }));
-                    this.turningPointsPendingViewportRefresh = this.frozenTurningPointBadges.length > 0;
-        }
+        // already be marked changing by the first pan/zoom draw. When a refresh is
+        // already pending, preserve the existing frozen snapshot for visual continuity.
+        this.freezeCurrentInterceptMarkersForViewportChange(enabledFunctionIds);
+        this.interceptsPendingViewportRefresh = this.showIntercepts && this.frozenInterceptBadges.length > 0;
+
+        this.freezeCurrentTurningPointMarkersForViewportChange(enabledFunctionIds);
+        this.turningPointsPendingViewportRefresh = this.showTurningPoints && this.frozenTurningPointBadges.length > 0;
         
         this.freezeCurrentIntersectionMarkersForViewportChange();
         
@@ -38340,6 +38322,19 @@ class Graphiti {
             } else {
                 animation.active = false;
                 animation.animationFrameId = null;
+
+                // If the debounce timer already fired while the wheel animation was
+                // still moving the viewport, schedule one final settle at the
+                // completed viewport so significant-point caches refresh deterministically.
+                if (!this.zoomSettleTimer) {
+                    this.scheduleZoomViewportSettle({
+                        ...options,
+                        settleDelayMs: 0,
+                        immediate: true,
+                        showWorkIndicator: options.showWorkIndicator ?? true,
+                        showWorkIndicatorEarly: false
+                    });
+                }
             }
         };
 
@@ -39956,6 +39951,7 @@ class Graphiti {
 
     hasNoActiveViewportWork() {
         return !this.isViewportChanging &&
+            this.pendingViewportRefreshTasks === 0 &&
             !this.implicitIntersectionsPending &&
             !this.isWorkerCalculating &&
             (!this.activeImplicitCalculations || this.activeImplicitCalculations.size === 0) &&
@@ -42380,6 +42376,12 @@ class Graphiti {
             return;
         }
 
+        const shouldPreserveFrozenMarkers = this.isViewportChanging || this.interceptsPendingViewportRefresh;
+        if (shouldPreserveFrozenMarkers && this.frozenInterceptBadges.length > 0) {
+            // Preserve active frozen snapshots across overlapping settle cycles.
+            return;
+        }
+
         const enabledIds = enabledFunctionIds || new Set(
             this.getCurrentFunctions()
                 .filter(func => func && func.enabled)
@@ -42398,6 +42400,12 @@ class Graphiti {
 
     freezeCurrentTurningPointMarkersForViewportChange(enabledFunctionIds = null) {
         if (!this.showTurningPoints) {
+            return;
+        }
+
+        const shouldPreserveFrozenMarkers = this.isViewportChanging || this.turningPointsPendingViewportRefresh;
+        if (shouldPreserveFrozenMarkers && this.frozenTurningPointBadges.length > 0) {
+            // Preserve active frozen snapshots across overlapping settle cycles.
             return;
         }
 
@@ -44583,6 +44591,20 @@ class Graphiti {
         const viewportSpanX = Math.abs((this.viewport?.maxX ?? 0) - (this.viewport?.minX ?? 0));
         const viewportSpanY = Math.abs((this.viewport?.maxY ?? 0) - (this.viewport?.minY ?? 0));
         const curveDistanceTolerance = Math.max(0.01, Math.min(viewportSpanX, viewportSpanY) * 0.004);
+        const pointDistanceTolerance = Math.max(0.012, curveDistanceTolerance * 1.5);
+
+        // Endpoints and discontinuity-adjacent samples can legitimately represent
+        // axis intercepts even when there is no connected segment to test against.
+        for (const point of points) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                continue;
+            }
+
+            const pointDistance = Math.hypot(candidate.x - point.x, candidate.y - point.y);
+            if (Number.isFinite(pointDistance) && pointDistance <= pointDistanceTolerance) {
+                return true;
+            }
+        }
 
         const pointToSegmentDistance = (px, py, ax, ay, bx, by) => {
             const dx = bx - ax;
@@ -52609,10 +52631,20 @@ class Graphiti {
     }
     
     drawInterceptMarkers() {
-        // Draw the pre-culled cached markers for performance
-        // Culling is done only when intercepts change, not on every frame
+        // Draw pre-culled markers, but project from world coordinates at draw time.
+        // This prevents stale screen-position flashes during overlapping settle cycles.
         for (const marker of this.culledInterceptMarkers) {
-            this.drawInterceptMarker(marker.screenX, marker.screenY, marker.intercept);
+            if (!marker || !marker.intercept) {
+                continue;
+            }
+
+            const screenPos = this.worldToScreen(marker.intercept.x, marker.intercept.y);
+            if (screenPos.x < -20 || screenPos.x > this.viewport.width + 20 ||
+                screenPos.y < -20 || screenPos.y > this.viewport.height + 20) {
+                continue;
+            }
+
+            this.drawInterceptMarker(screenPos.x, screenPos.y, marker.intercept);
         }
     }
     
@@ -52793,20 +52825,20 @@ class Graphiti {
         if (!this.isViewportChanging) {
             const markers = this.culledInterceptMarkers && this.culledInterceptMarkers.length > 0
                 ? this.culledInterceptMarkers
-                : this.intercepts.map(intercept => {
-                    const screenPos = this.worldToScreen(intercept.x, intercept.y);
-                    return {
-                        screenX: screenPos.x,
-                        screenY: screenPos.y,
-                        intercept,
-                        intercepts: [intercept]
-                    };
-                });
+                : this.intercepts.map(intercept => ({
+                    intercept,
+                    intercepts: [intercept]
+                }));
 
             for (const marker of markers) {
+                if (!marker || !marker.intercept) {
+                    continue;
+                }
+
+                const screenPos = this.worldToScreen(marker.intercept.x, marker.intercept.y);
                 const distance = Math.sqrt(
-                    Math.pow(screenX - marker.screenX, 2) +
-                    Math.pow(screenY - marker.screenY, 2)
+                    Math.pow(screenX - screenPos.x, 2) +
+                    Math.pow(screenY - screenPos.y, 2)
                 );
                 
                 if (distance <= tolerance) {
