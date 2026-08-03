@@ -128,7 +128,7 @@ class Graphiti {
         
         // Input handling
         this.input = {
-            mouse: { x: 0, y: 0, down: false },
+            mouse: { x: 0, y: 0, down: false, velocityX: 0, velocityY: 0, lastMoveTime: 0 },
             touch: { x: 0, y: 0, active: false },
             keys: new Set(),
             dragging: false,
@@ -363,6 +363,11 @@ class Graphiti {
             baseYRange: 0,
             currentFactor: 1,
             targetFactor: 1
+        };
+        this.mousePanInertia = {
+            active: false,
+            velocityX: 0,
+            velocityY: 0
         };
         
         // Web Worker for intersection calculations
@@ -32956,6 +32961,8 @@ class Graphiti {
             this.zoomSettleTimer = null;
         }
 
+        this.stopMousePanInertia(false);
+
         // Convert client coordinates to canvas coordinates
         const rect = this.canvas.getBoundingClientRect();
         const canvasX = x - rect.left;
@@ -32971,6 +32978,9 @@ class Graphiti {
         this.input.lastX = canvasX;
         this.input.lastY = canvasY;
         this.input.dragging = false;
+        this.input.mouse.velocityX = 0;
+        this.input.mouse.velocityY = 0;
+        this.input.mouse.lastMoveTime = performance.now();
         
         // Check if we should enter tracing mode
         if (this.currentState === this.states.GRAPHING) {
@@ -33264,10 +33274,37 @@ class Graphiti {
         const rect = this.canvas.getBoundingClientRect();
         const canvasX = x - rect.left;
         const canvasY = y - rect.top;
+        const now = performance.now();
         
         if (this.input.mouse.down && this.currentState === this.states.GRAPHING) {
             const deltaX = canvasX - this.input.lastX;
             const deltaY = canvasY - this.input.lastY;
+
+            if (!this.input.touch.active && !this.input.pinch.active && !this.input.badgeInteraction.targetBadge && (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0)) {
+                this.input.mouse.pendingTapAction = null;
+                this.input.tracing.active = false;
+                this.isDraggingBadge = false;
+
+                const worldRange = this.viewport.maxX - this.viewport.minX;
+                const worldDeltaX = -(deltaX / this.viewport.width) * worldRange;
+                const worldDeltaY = (deltaY / this.viewport.height) * (this.viewport.maxY - this.viewport.minY);
+                const elapsed = Math.max(now - (this.input.mouse.lastMoveTime || now), 1);
+                const worldVelocityX = worldDeltaX / elapsed;
+                const worldVelocityY = worldDeltaY / elapsed;
+                const smoothing = 0.35;
+                this.input.mouse.velocityX = (this.input.mouse.velocityX * (1 - smoothing)) + (worldVelocityX * smoothing);
+                this.input.mouse.velocityY = (this.input.mouse.velocityY * (1 - smoothing)) + (worldVelocityY * smoothing);
+                this.input.mouse.lastMoveTime = now;
+
+                this.input.dragging = true;
+                this.input.viewportPanActive = true;
+                this.applyPanDelta(worldDeltaX, worldDeltaY, { skipViewportRefresh: true });
+                this.input.lastX = canvasX;
+                this.input.lastY = canvasY;
+                this.input.mouse.x = canvasX;
+                this.input.mouse.y = canvasY;
+                return;
+            }
             
             // Badge interaction is now handled immediately in handlePointerStart
             // All badge interactions start in tracing mode right away
@@ -33624,6 +33661,14 @@ class Graphiti {
                     // Recalculation is deferred until pointer release.
                     this.freezeCurrentSignificantMarkersForViewportChange();
                     this.isViewportChanging = true;
+
+                    const elapsed = Math.max(now - (this.input.mouse.lastMoveTime || now), 1);
+                    const worldVelocityX = worldDeltaX / elapsed;
+                    const worldVelocityY = worldDeltaY / elapsed;
+                    const smoothing = this.input.touch.active ? 0 : 0.35;
+                    this.input.mouse.velocityX = (this.input.mouse.velocityX * (1 - smoothing)) + (worldVelocityX * smoothing);
+                    this.input.mouse.velocityY = (this.input.mouse.velocityY * (1 - smoothing)) + (worldVelocityY * smoothing);
+                    this.input.mouse.lastMoveTime = now;
                     
                     // Redraw the entire canvas to ensure proper clearing and avoid ghost artifacts
                     this.draw();
@@ -33737,6 +33782,8 @@ class Graphiti {
         }
 
         const shouldSettleViewport = this.input.viewportPanActive;
+        const mousePanSpeed = Math.sqrt((this.input.mouse.velocityX * this.input.mouse.velocityX) + (this.input.mouse.velocityY * this.input.mouse.velocityY));
+        const shouldStartMouseInertia = shouldSettleViewport && !this.input.touch.active && !this.input.pinch.active && mousePanSpeed > 0.000001;
         
         if (this.input.mouse.pendingTapAction && !this.input.dragging) {
             const pendingAction = this.input.mouse.pendingTapAction;
@@ -34205,8 +34252,11 @@ class Graphiti {
         this.input.badgeInteraction.snapState.snappedPoint = null;
         this.input.badgeInteraction.snapState.snapStartTime = 0;
         
-        if (shouldSettleViewport) {
-            this.input.viewportPanActive = false;
+        this.input.viewportPanActive = false;
+
+        if (shouldStartMouseInertia) {
+            this.startMousePanInertia();
+        } else if (shouldSettleViewport) {
             this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
         }
 
@@ -34637,6 +34687,7 @@ class Graphiti {
         this.input.maxMoveDistance = 0;
         this.input.touch.active = false;
         this.input.pinch.active = false;
+        this.stopMousePanInertia();
 
         if (this.input.mouse.down) {
             this.handlePointerEnd();
@@ -34651,6 +34702,36 @@ class Graphiti {
         if (shouldSettleViewport) {
             this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
         }
+    }
+
+    stopMousePanInertia(shouldSettleViewport = false) {
+        this.mousePanInertia.active = false;
+        this.mousePanInertia.velocityX = 0;
+        this.mousePanInertia.velocityY = 0;
+        if (shouldSettleViewport) {
+            this.input.viewportPanActive = false;
+            this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
+        }
+    }
+
+    startMousePanInertia() {
+        this.mousePanInertia.active = true;
+        this.mousePanInertia.velocityX = this.input.mouse.velocityX;
+        this.mousePanInertia.velocityY = this.input.mouse.velocityY;
+    }
+
+    applyPanDelta(worldDeltaX, worldDeltaY, options = {}) {
+        this.viewport.minX += worldDeltaX;
+        this.viewport.maxX += worldDeltaX;
+        this.viewport.minY += worldDeltaY;
+        this.viewport.maxY += worldDeltaY;
+        this.updateRangeInputs(true);
+        this.freezeCurrentSignificantMarkersForViewportChange();
+        this.isViewportChanging = true;
+        if (!options.skipViewportRefresh) {
+            this.handleViewportChange({ skipCoverageRefresh: true });
+        }
+        this.draw();
     }
     
     handleWheel(e) {
@@ -49573,6 +49654,21 @@ class Graphiti {
             this.updateRangeInputs();
             this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
             this.draw(); // Redraw existing points immediately for smooth panning
+        }
+
+        if (this.mousePanInertia.active) {
+            const worldDeltaX = this.mousePanInertia.velocityX * deltaTime;
+            const worldDeltaY = this.mousePanInertia.velocityY * deltaTime;
+            const speed = Math.sqrt((this.mousePanInertia.velocityX * this.mousePanInertia.velocityX) + (this.mousePanInertia.velocityY * this.mousePanInertia.velocityY));
+
+            if (speed > 0.000002) {
+                this.applyPanDelta(worldDeltaX, worldDeltaY, { skipViewportRefresh: true });
+                const decay = Math.exp(-deltaTime / 180);
+                this.mousePanInertia.velocityX *= decay;
+                this.mousePanInertia.velocityY *= decay;
+            } else {
+                this.stopMousePanInertia(true);
+            }
         }
     }
     

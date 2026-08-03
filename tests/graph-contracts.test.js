@@ -1375,6 +1375,27 @@ async function assertShapeClassification(page) {
             viewportChangeCalls: curveMousePanViewportChangeCalls
         };
 
+        const curveMousePanReleaseMinX = graphiti.viewport.minX;
+        const mouseInertiaActiveAfterRelease = graphiti.mousePanInertia.active;
+        graphiti.handleContinuousInput(16);
+        const mouseInertiaAfterFrameMinX = graphiti.viewport.minX;
+
+        let mouseInertiaSettleViewportChangeCalls = 0;
+        graphiti.handleViewportChange = () => {
+            mouseInertiaSettleViewportChangeCalls++;
+        };
+        graphiti.mousePanInertia.active = true;
+        graphiti.mousePanInertia.velocityX = 0.0000001;
+        graphiti.mousePanInertia.velocityY = 0;
+        graphiti.handleContinuousInput(16);
+        graphiti.handleViewportChange = originalHandleViewportChange;
+        const mouseInertiaSettled = {
+            inactiveAfterStop: graphiti.mousePanInertia.active === false,
+            viewportChangeCalls: mouseInertiaSettleViewportChangeCalls
+        };
+
+        graphiti.stopMousePanInertia();
+
         Object.assign(graphiti.viewport, originalViewport);
         Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
         graphiti.input.persistentBadges = [];
@@ -1489,6 +1510,10 @@ async function assertShapeClassification(page) {
             afterFirstCanvasTap,
             curveTouchTrace,
             curveMouseTrace,
+            curveMousePanReleaseMinX,
+            mouseInertiaActiveAfterRelease,
+            mouseInertiaAfterFrameMinX,
+            mouseInertiaSettled,
             slowMouseTrace,
             afterCanvasPinch,
             afterCanvasWheel,
@@ -1525,9 +1550,12 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.curveMouseTrace.badgesAfterClick, 1, 'mouse click on a curve should add a trace badge');
     assert.strictEqual(sharedLinkDeferredPanelResult.curveMouseTrace.badgesAfterDrag, 0, 'mouse drag starting on a curve should not add a trace badge');
     assert.strictEqual(sharedLinkDeferredPanelResult.curveMouseTrace.viewportMoved, true, 'mouse drag starting on a curve should pan the viewport');
-    assert(sharedLinkDeferredPanelResult.curveMouseTrace.viewportChangeCalls > 0, 'mouse drag starting on a curve should request viewport refresh');
+    assert.strictEqual(sharedLinkDeferredPanelResult.mouseInertiaActiveAfterRelease, true, 'mouse pan should enter a brief inertial glide after release');
+    assert.strictEqual(sharedLinkDeferredPanelResult.mouseInertiaAfterFrameMinX !== sharedLinkDeferredPanelResult.curveMousePanReleaseMinX, true, 'mouse pan inertia should continue moving after release');
+    assert.strictEqual(sharedLinkDeferredPanelResult.mouseInertiaSettled.inactiveAfterStop, true, 'mouse pan inertia should stop when the speed decays away');
+    assert(sharedLinkDeferredPanelResult.mouseInertiaSettled.viewportChangeCalls > 0, 'mouse pan should trigger the expensive viewport refresh once it stops');
     assert.strictEqual(sharedLinkDeferredPanelResult.slowMouseTrace.viewportMoved, true, 'slow mouse drag should begin panning immediately');
-    assert(sharedLinkDeferredPanelResult.slowMouseTrace.viewportChangeCalls > 0, 'slow mouse drag should request viewport refresh');
+    assert.strictEqual(sharedLinkDeferredPanelResult.slowMouseTrace.viewportChangeCalls, 0, 'slow mouse drag should defer expensive viewport refresh until it settles');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.panelOpen, false, 'shared-link canvas pinch should close function panel on narrow screens');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.hamburgerPanelOpen, false, 'shared-link canvas pinch should restore hamburger closed state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.viewportZoomed, true, 'shared-link canvas pinch should still zoom the viewport');
