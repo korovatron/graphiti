@@ -33596,9 +33596,9 @@ class Graphiti {
                     this.input.dragging = true;
                 }
             } else {
-                // Normal panning mode - use threshold to prevent jittery panning
-                // Use no threshold for touch since touch events are stable and precise
-                const panThreshold = this.input.touch.active ? 0 : 2;
+                // Normal panning mode - start immediately on any movement.
+                // Tap detection is handled separately on pointer end.
+                const panThreshold = 0;
                 
                 if (Math.abs(deltaX) > panThreshold || Math.abs(deltaY) > panThreshold) {
                     this.input.mouse.pendingTapAction = null;
