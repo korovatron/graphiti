@@ -354,6 +354,16 @@ class Graphiti {
         this.viewportChangeTimer = null; // Debounce timer for viewport changes
         this.zoomSettleTimer = null; // Debounce timer for wheel/keyboard zoom settle
         this.keyboardZoomPendingSettle = false; // Track +/- key zoom that should settle on key release
+        this.wheelZoomAnimation = {
+            active: false,
+            animationFrameId: null,
+            baseCenterX: 0,
+            baseCenterY: 0,
+            baseXRange: 0,
+            baseYRange: 0,
+            currentFactor: 1,
+            targetFactor: 1
+        };
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -34648,10 +34658,10 @@ class Graphiti {
         
         if (e.deltaY > 0) {
             // Zoom out
-            this.zoomOut({ settleDelayMs: 500, showWorkIndicator: true });
+            this.zoomOut({ settleDelayMs: 500, showWorkIndicator: true, smoothWheelTransition: true });
         } else {
             // Zoom in
-            this.zoomIn({ settleDelayMs: 500, showWorkIndicator: true });
+            this.zoomIn({ settleDelayMs: 500, showWorkIndicator: true, smoothWheelTransition: true });
         }
     }
     
@@ -38058,8 +38068,97 @@ class Graphiti {
             immediate: true
         });
     }
+
+    applyZoomViewport(centerX, centerY, xRange, yRange) {
+        if (xRange <= 0.0001 || yRange <= 0.0001 || xRange >= 100000 || yRange >= 100000) {
+            return false;
+        }
+
+        this.viewport.minX = centerX - xRange / 2;
+        this.viewport.maxX = centerX + xRange / 2;
+        this.viewport.minY = centerY - yRange / 2;
+        this.viewport.maxY = centerY + yRange / 2;
+
+        this.updateViewportScale();
+        this.updateRangeInputs(true);
+        this.freezeCurrentSignificantMarkersForViewportChange();
+        this.isViewportChanging = true;
+        this.draw();
+        return true;
+    }
+
+    startWheelZoomAnimation(zoomFactor, options = {}) {
+        if (this.wheelZoomAnimation.animationFrameId) {
+            cancelAnimationFrame(this.wheelZoomAnimation.animationFrameId);
+            this.wheelZoomAnimation.animationFrameId = null;
+        }
+
+        if (!this.wheelZoomAnimation.active) {
+            this.wheelZoomAnimation.active = true;
+            this.wheelZoomAnimation.baseCenterX = (this.viewport.minX + this.viewport.maxX) / 2;
+            this.wheelZoomAnimation.baseCenterY = (this.viewport.minY + this.viewport.maxY) / 2;
+            this.wheelZoomAnimation.baseXRange = this.viewport.maxX - this.viewport.minX;
+            this.wheelZoomAnimation.baseYRange = this.viewport.maxY - this.viewport.minY;
+            this.wheelZoomAnimation.currentFactor = 1;
+            this.wheelZoomAnimation.targetFactor = 1;
+        }
+
+        const minFactor = Math.max(
+            this.wheelZoomAnimation.baseXRange / 100000,
+            this.wheelZoomAnimation.baseYRange / 100000,
+            Number.EPSILON
+        );
+        const maxFactor = Math.min(
+            this.wheelZoomAnimation.baseXRange / 0.0001,
+            this.wheelZoomAnimation.baseYRange / 0.0001
+        );
+
+        this.wheelZoomAnimation.targetFactor = Math.min(
+            maxFactor,
+            Math.max(minFactor, this.wheelZoomAnimation.targetFactor * zoomFactor)
+        );
+
+        const animateFrame = () => {
+            const animation = this.wheelZoomAnimation;
+            if (!animation.active) {
+                return;
+            }
+
+            const nextFactor = animation.currentFactor + ((animation.targetFactor - animation.currentFactor) * 0.22);
+            animation.currentFactor = Math.abs(animation.targetFactor - nextFactor) < 0.0005
+                ? animation.targetFactor
+                : nextFactor;
+
+            const xRange = animation.baseXRange / animation.currentFactor;
+            const yRange = animation.baseYRange / animation.currentFactor;
+
+            if (!this.applyZoomViewport(animation.baseCenterX, animation.baseCenterY, xRange, yRange)) {
+                animation.active = false;
+                animation.animationFrameId = null;
+                return;
+            }
+
+            if (animation.currentFactor !== animation.targetFactor) {
+                animation.animationFrameId = requestAnimationFrame(animateFrame);
+            } else {
+                animation.active = false;
+                animation.animationFrameId = null;
+            }
+        };
+
+        this.scheduleZoomViewportSettle(options);
+
+        if (!this.wheelZoomAnimation.animationFrameId) {
+            this.wheelZoomAnimation.animationFrameId = requestAnimationFrame(animateFrame);
+        }
+    }
     
     zoomIn(options = {}) {
+        if (options.smoothWheelTransition) {
+            this.startWheelZoomAnimation(1.2, options);
+            return;
+        }
+
         // Zoom in by shrinking the ranges around the center
         const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
         const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
@@ -38071,27 +38170,17 @@ class Graphiti {
         const newXRange = xRange / zoomFactor;
         const newYRange = yRange / zoomFactor;
         
-        // Check reasonable bounds
-        if (newXRange > 0.0001 && newYRange > 0.0001) {
-            this.viewport.minX = centerX - newXRange / 2;
-            this.viewport.maxX = centerX + newXRange / 2;
-            this.viewport.minY = centerY - newYRange / 2;
-            this.viewport.maxY = centerY + newYRange / 2;
-            
-            // Update scale for consistent grid/label spacing
-            this.updateViewportScale();
-            this.updateRangeInputs(true);
-            
-            // Don't recalculate functions during zoom for performance - just redraw existing points
-            // The buffered points provide coverage, and functions recalculate when zooming stops
-            this.freezeCurrentSignificantMarkersForViewportChange();
-            this.isViewportChanging = true;
-            this.draw();
+        if (this.applyZoomViewport(centerX, centerY, newXRange, newYRange)) {
             this.scheduleZoomViewportSettle(options);
         }
     }
     
     zoomOut(options = {}) {
+        if (options.smoothWheelTransition) {
+            this.startWheelZoomAnimation(1 / 1.2, options);
+            return;
+        }
+
         // Zoom out by expanding the ranges around the center
         const centerX = (this.viewport.minX + this.viewport.maxX) / 2;
         const centerY = (this.viewport.minY + this.viewport.maxY) / 2;
@@ -38103,22 +38192,7 @@ class Graphiti {
         const newXRange = xRange * zoomFactor;
         const newYRange = yRange * zoomFactor;
         
-        // Check reasonable bounds
-        if (newXRange < 100000 && newYRange < 100000) {
-            this.viewport.minX = centerX - newXRange / 2;
-            this.viewport.maxX = centerX + newXRange / 2;
-            this.viewport.minY = centerY - newYRange / 2;
-            this.viewport.maxY = centerY + newYRange / 2;
-            
-            // Update scale for consistent grid/label spacing
-            this.updateViewportScale();
-            this.updateRangeInputs(true);
-            
-            // Don't recalculate functions during zoom for performance - just redraw existing points
-            // The buffered points provide coverage, and functions recalculate when zooming stops
-            this.freezeCurrentSignificantMarkersForViewportChange();
-            this.isViewportChanging = true;
-            this.draw();
+        if (this.applyZoomViewport(centerX, centerY, newXRange, newYRange)) {
             this.scheduleZoomViewportSettle(options);
         }
     }

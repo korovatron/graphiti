@@ -1393,10 +1393,17 @@ async function assertShapeClassification(page) {
         graphiti.openMobileMenu();
 
         const originalZoomIn = graphiti.zoomIn.bind(graphiti);
+        const originalZoomOut = graphiti.zoomOut.bind(graphiti);
         let wheelZoomCalls = 0;
+        let wheelZoomOptions = null;
         let wheelPrevented = false;
-        graphiti.zoomIn = () => {
+        graphiti.zoomIn = (options) => {
             wheelZoomCalls++;
+            wheelZoomOptions = options;
+        };
+        graphiti.zoomOut = (options) => {
+            wheelZoomCalls++;
+            wheelZoomOptions = options;
         };
         graphiti.handleWheel({
             deltaY: -1,
@@ -1405,12 +1412,14 @@ async function assertShapeClassification(page) {
             }
         });
         graphiti.zoomIn = originalZoomIn;
+        graphiti.zoomOut = originalZoomOut;
 
         const afterCanvasWheel = {
             panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
             hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null,
             wheelZoomCalls,
-            wheelPrevented
+            wheelPrevented,
+            wheelZoomOptions
         };
 
         graphiti.handleMobileLayout(true);
@@ -1498,6 +1507,7 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.hamburgerPanelOpen, true, 'canvas wheel zoom should leave hamburger in panel-open state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelZoomCalls, 1, 'canvas wheel zoom should still invoke zoom handling');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelPrevented, true, 'canvas wheel zoom should prevent browser default zoom');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasWheel.wheelZoomOptions.smoothWheelTransition, true, 'canvas wheel zoom should opt into the smooth transition path');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterForcedMobileLayout.panelHidden, false, 'forced mobile layout update should keep an open function panel visible');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterForcedMobileLayout.panelOpen, true, 'forced mobile layout update should preserve an open function panel');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterForcedMobileLayout.hamburgerPanelOpen, true, 'forced mobile layout update should preserve hamburger panel-open state');
