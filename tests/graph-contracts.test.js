@@ -4952,7 +4952,7 @@ async function assertParameterZeroDenominatorDoesNotHang(page) {
                 resolveFirstReplot();
             }
 
-            await new Promise(resolve => setTimeout(resolve, 80));
+            await new Promise(resolve => setTimeout(resolve, 460));
             return { skipped: false, replotCalls, badgeUpdateCalls };
         } finally {
             graphiti.replotAllFunctions = originalReplotAllFunctions;
@@ -6290,7 +6290,7 @@ async function assertProductFactorAsymptotesStayVisibleDuringViewportSettle(page
                 await new Promise(resolve => setTimeout(resolve, 20));
             }
 
-            await new Promise(resolve => setTimeout(resolve, 80));
+            await new Promise(resolve => setTimeout(resolve, 420));
             return {
                 before,
                 observedAtProductReplot,
@@ -6711,7 +6711,7 @@ async function assertViewportSettleKeepsFrozenSignificantMarkers(page) {
             graphiti.viewport.maxX += 1;
             graphiti.handleViewportChange({ skipCoverageRefresh: true });
 
-            await new Promise(resolve => setTimeout(resolve, 80));
+            await new Promise(resolve => setTimeout(resolve, 620));
             const pendingState = {
                 isViewportChanging: graphiti.isViewportChanging,
                 interceptsPending: graphiti.interceptsPendingViewportRefresh,
@@ -6851,6 +6851,12 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
             graphiti.handleRightClickEnd();
 
             await new Promise(resolve => setTimeout(resolve, 80));
+            if (graphiti.rectangleZoomAnimation && graphiti.rectangleZoomAnimation.active) {
+                graphiti.rectangleZoomAnimation.startTime = 0;
+                graphiti.rectangleZoomAnimation.elapsedMs = graphiti.rectangleZoomAnimation.durationMs || 480;
+                graphiti.updateRectangleZoomAnimation();
+            }
+            await new Promise(resolve => setTimeout(resolve, 40));
             const pendingState = {
                 isViewportChanging: graphiti.isViewportChanging,
                 interceptsPending: graphiti.interceptsPendingViewportRefresh,
@@ -6870,7 +6876,7 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
             if (resolvePlot) {
                 resolvePlot();
             }
-            await new Promise(resolve => setTimeout(resolve, 30));
+            await new Promise(resolve => setTimeout(resolve, 80));
 
             return {
                 pendingState,

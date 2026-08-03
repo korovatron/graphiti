@@ -369,6 +369,18 @@ class Graphiti {
             velocityX: 0,
             velocityY: 0
         };
+        this.rectangleZoomAnimation = {
+            active: false,
+            animationFrameId: null,
+            fallbackTimerId: null,
+            completionTimerId: null,
+            startTime: 0,
+            durationMs: 0,
+            elapsedMs: 0,
+            lastTickMs: 0,
+            startBounds: null,
+            targetBounds: null
+        };
         
         // Web Worker for intersection calculations
         this.intersectionWorker = null;
@@ -32962,6 +32974,7 @@ class Graphiti {
         }
 
         this.stopMousePanInertia(false);
+        this.stopRectangleZoomAnimation();
 
         // Convert client coordinates to canvas coordinates
         const rect = this.canvas.getBoundingClientRect();
@@ -34404,20 +34417,15 @@ class Graphiti {
                 this.showBadgeTooltip(clampedMessage, boxCenterX, boxCenterY);
             }
             
-            // Update viewport ranges using clamped box centered on the original selection.
-            this.viewport.minX = selectedCenterX - finalXRange / 2;
-            this.viewport.maxX = selectedCenterX + finalXRange / 2;
-            this.viewport.minY = selectedCenterY - finalYRange / 2;
-            this.viewport.maxY = selectedCenterY + finalYRange / 2;
-            
-            // Update scale and range inputs (same as zoom does)
-            this.updateViewportScale();
-            this.updateRangeInputs();
-            
-            // Redraw and recalculate integrals
-            this.draw();
-            this.updateIntegralPairs(); // Recalculate integrals for new viewport
-            this.handleViewportChange({ skipCoverageRefresh: true }); // Debounced recalculation
+            // Animate viewport transition to the selected bounds.
+            this.startRectangleZoomAnimation({
+                minX: selectedCenterX - finalXRange / 2,
+                maxX: selectedCenterX + finalXRange / 2,
+                minY: selectedCenterY - finalYRange / 2,
+                maxY: selectedCenterY + finalYRange / 2
+            }, {
+                durationMs: 480
+            });
             appliedZoom = true;
         }
         
@@ -34445,6 +34453,8 @@ class Graphiti {
             clearTimeout(this.zoomSettleTimer);
             this.zoomSettleTimer = null;
         }
+
+        this.stopRectangleZoomAnimation();
 
         // Set touch flag for tolerance detection
         this.input.touch.active = true;
@@ -34719,6 +34729,111 @@ class Graphiti {
         this.mousePanInertia.active = true;
         this.mousePanInertia.velocityX = this.input.mouse.velocityX;
         this.mousePanInertia.velocityY = this.input.mouse.velocityY;
+    }
+
+    stopRectangleZoomAnimation() {
+        if (this.rectangleZoomAnimation.animationFrameId) {
+            cancelAnimationFrame(this.rectangleZoomAnimation.animationFrameId);
+            this.rectangleZoomAnimation.animationFrameId = null;
+        }
+        if (this.rectangleZoomAnimation.fallbackTimerId) {
+            clearInterval(this.rectangleZoomAnimation.fallbackTimerId);
+            this.rectangleZoomAnimation.fallbackTimerId = null;
+        }
+        if (this.rectangleZoomAnimation.completionTimerId) {
+            clearTimeout(this.rectangleZoomAnimation.completionTimerId);
+            this.rectangleZoomAnimation.completionTimerId = null;
+        }
+        this.rectangleZoomAnimation.active = false;
+        this.rectangleZoomAnimation.startTime = 0;
+        this.rectangleZoomAnimation.durationMs = 0;
+        this.rectangleZoomAnimation.elapsedMs = 0;
+        this.rectangleZoomAnimation.lastTickMs = 0;
+        this.rectangleZoomAnimation.startBounds = null;
+        this.rectangleZoomAnimation.targetBounds = null;
+    }
+
+    startRectangleZoomAnimation(targetBounds, options = {}) {
+        if (!targetBounds) {
+            return;
+        }
+
+        this.stopRectangleZoomAnimation();
+
+        const startBounds = {
+            minX: this.viewport.minX,
+            maxX: this.viewport.maxX,
+            minY: this.viewport.minY,
+            maxY: this.viewport.maxY
+        };
+        const durationMs = options.durationMs ?? 480;
+
+        this.rectangleZoomAnimation.active = true;
+        this.rectangleZoomAnimation.startTime = Date.now();
+        this.rectangleZoomAnimation.durationMs = durationMs;
+        this.rectangleZoomAnimation.elapsedMs = 0;
+        this.rectangleZoomAnimation.lastTickMs = Date.now();
+        this.rectangleZoomAnimation.startBounds = startBounds;
+        this.rectangleZoomAnimation.targetBounds = {
+            minX: targetBounds.minX,
+            maxX: targetBounds.maxX,
+            minY: targetBounds.minY,
+            maxY: targetBounds.maxY
+        };
+
+        this.ensureAnimationLoopRunning();
+        this.rectangleZoomAnimation.fallbackTimerId = setInterval(() => {
+            this.updateRectangleZoomAnimation();
+        }, 16);
+        this.rectangleZoomAnimation.completionTimerId = setTimeout(() => {
+            if (!this.rectangleZoomAnimation.active) {
+                return;
+            }
+            this.rectangleZoomAnimation.elapsedMs = durationMs;
+            this.updateRectangleZoomAnimation();
+        }, durationMs + 120);
+    }
+
+    updateRectangleZoomAnimation() {
+        if (!this.rectangleZoomAnimation.active) {
+            return;
+        }
+
+        const startBounds = this.rectangleZoomAnimation.startBounds;
+        const targetBounds = this.rectangleZoomAnimation.targetBounds;
+        const durationMs = this.rectangleZoomAnimation.durationMs || 480;
+        const now = Date.now();
+        const tickMs = Math.max(16, now - (this.rectangleZoomAnimation.lastTickMs || now));
+        this.rectangleZoomAnimation.elapsedMs += tickMs;
+        this.rectangleZoomAnimation.lastTickMs = now;
+        const progress = Math.min(1, this.rectangleZoomAnimation.elapsedMs / durationMs);
+        // Smootherstep easing has softer acceleration/deceleration than cubic easing.
+        const eased = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
+
+        this.viewport.minX = startBounds.minX + ((targetBounds.minX - startBounds.minX) * eased);
+        this.viewport.maxX = startBounds.maxX + ((targetBounds.maxX - startBounds.maxX) * eased);
+        this.viewport.minY = startBounds.minY + ((targetBounds.minY - startBounds.minY) * eased);
+        this.viewport.maxY = startBounds.maxY + ((targetBounds.maxY - startBounds.maxY) * eased);
+
+        this.updateViewportScale();
+        this.updateRangeInputs(true);
+        this.freezeCurrentSignificantMarkersForViewportChange();
+        this.isViewportChanging = true;
+        this.draw();
+
+        if (progress >= 1) {
+            this.stopRectangleZoomAnimation();
+
+            this.viewport.minX = targetBounds.minX;
+            this.viewport.maxX = targetBounds.maxX;
+            this.viewport.minY = targetBounds.minY;
+            this.viewport.maxY = targetBounds.maxY;
+            this.updateViewportScale();
+            this.updateRangeInputs(true);
+
+            this.updateIntegralPairs();
+            this.handleViewportChange({ skipCoverageRefresh: true, immediate: true });
+        }
     }
 
     applyPanDelta(worldDeltaX, worldDeltaY, options = {}) {
@@ -49601,6 +49716,7 @@ class Graphiti {
     updateGraphingScreen(deltaTime) {
         // Update function graphs if needed
         // Handle real-time function updates, animations, etc.
+        this.updateRectangleZoomAnimation();
         
         this.updateHoleBadge();
 
