@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.77';
+const VERSION = '1.3.78';
 
 class Graphiti {
     constructor() {
@@ -1939,11 +1939,10 @@ class Graphiti {
                 expressions: [
                     'r=1+\\cos\\left(\\theta\\right)',                 // Cardioid
                     'r=2\\cos\\left(3\\theta\\right)',                  // Rose curve
-                    '\\theta=\\frac{\\pi}{4}',                           // Ray at 45 degrees
                     'r=\\frac{1}{\\theta-\\frac{\\pi}{2}}',            // Reciprocal-in-theta asymptotic branch
                     'r=\\frac{1}{\\cos\\left(\\theta\\right)-\\frac{1}{2}}' // Reciprocal polar conic with exact asymptotes
                 ],
-                description: 'Polar Basics Demo',
+                description: 'Polar Basics Demo - cardioid, rose, and asymptotic examples',
                 viewport: { minX: -3, maxX: 3, minY: -3, maxY: 3 }
             },
             'polar-integral': {
@@ -38710,6 +38709,8 @@ class Graphiti {
         
         // Save functions to localStorage after mode switch
         this.saveFunctionsToLocalStorage();
+
+        this.trackGoatCounterEvent('Graphiti polar/cartesian toggle');
     }
     
     updateDemoSetVisibility() {
