@@ -1424,6 +1424,25 @@ async function assertShapeClassification(page) {
 
         Object.assign(graphiti.viewport, originalViewport);
         Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
+        graphiti.input.persistentBadges = [];
+        graphiti.input.badgeIdCounter = 0;
+        graphiti.isViewportChanging = false;
+        graphiti.frozenInterceptBadges = [];
+        graphiti.frozenTurningPointBadges = [];
+        graphiti.interceptsPendingViewportRefresh = false;
+        graphiti.turningPointsPendingViewportRefresh = false;
+        graphiti.draw();
+
+        graphiti.handlePointerStart(curveTapX, curveTapY);
+        graphiti.handlePointerMove(curveTapX + 45, curveTapY);
+        graphiti.input.mouse.lastMoveTime = performance.now() - 250;
+        graphiti.handlePointerEnd();
+        const pausedMouseInertia = graphiti.mousePanInertia.active;
+
+        graphiti.stopMousePanInertia();
+
+        Object.assign(graphiti.viewport, originalViewport);
+        Object.assign(graphiti.cartesianViewport, originalCartesianViewport);
         graphiti.cartesianFunctions = [];
         graphiti.input.persistentBadges = [];
         graphiti.input.pinch.active = false;
@@ -1514,6 +1533,7 @@ async function assertShapeClassification(page) {
             mouseInertiaActiveAfterRelease,
             mouseInertiaAfterFrameMinX,
             mouseInertiaSettled,
+            pausedMouseInertia,
             slowMouseTrace,
             afterCanvasPinch,
             afterCanvasWheel,
@@ -1554,6 +1574,7 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.mouseInertiaAfterFrameMinX !== sharedLinkDeferredPanelResult.curveMousePanReleaseMinX, true, 'mouse pan inertia should continue moving after release');
     assert.strictEqual(sharedLinkDeferredPanelResult.mouseInertiaSettled.inactiveAfterStop, true, 'mouse pan inertia should stop when the speed decays away');
     assert(sharedLinkDeferredPanelResult.mouseInertiaSettled.viewportChangeCalls > 0, 'mouse pan should trigger the expensive viewport refresh once it stops');
+    assert.strictEqual(sharedLinkDeferredPanelResult.pausedMouseInertia, false, 'mouse pan should not restart inertia after a stationary hold');
     assert.strictEqual(sharedLinkDeferredPanelResult.slowMouseTrace.viewportMoved, true, 'slow mouse drag should begin panning immediately');
     assert.strictEqual(sharedLinkDeferredPanelResult.slowMouseTrace.viewportChangeCalls, 0, 'slow mouse drag should defer expensive viewport refresh until it settles');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPinch.panelOpen, false, 'shared-link canvas pinch should close function panel on narrow screens');

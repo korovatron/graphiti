@@ -33783,7 +33783,8 @@ class Graphiti {
 
         const shouldSettleViewport = this.input.viewportPanActive;
         const mousePanSpeed = Math.sqrt((this.input.mouse.velocityX * this.input.mouse.velocityX) + (this.input.mouse.velocityY * this.input.mouse.velocityY));
-        const shouldStartMouseInertia = shouldSettleViewport && !this.input.touch.active && !this.input.pinch.active && mousePanSpeed > 0.000001;
+        const mousePanIdleTime = performance.now() - (this.input.mouse.lastMoveTime || 0);
+        const shouldStartMouseInertia = shouldSettleViewport && !this.input.touch.active && !this.input.pinch.active && mousePanSpeed > 0.000001 && mousePanIdleTime < 120;
         
         if (this.input.mouse.pendingTapAction && !this.input.dragging) {
             const pendingAction = this.input.mouse.pendingTapAction;
