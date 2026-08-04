@@ -7783,6 +7783,117 @@ async function assertShiftedLituusClassifiesAndUsesShiftedRayAsymptote(page) {
     );
 }
 
+async function assertReciprocalTrigLinearOffsetHasNoObliqueAsymptotes(page) {
+    const result = await page.evaluate(async () => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.angleMode = 'radians';
+
+        const scenarios = [
+            {
+                label: 'compact-view',
+                viewport: { minX: -8, maxX: 8, minY: -8, maxY: 8, width: 960, height: 720 }
+            },
+            {
+                label: 'wide-view',
+                viewport: { minX: -120, maxX: 120, minY: -120, maxY: 120, width: 960, height: 720 }
+            }
+        ];
+
+        const expressions = [
+            {
+                key: 'csc-operatorname',
+                expression: 'y=x+\\operatorname{\\mathrm{csc}}\\left(x\\right)'
+            },
+            {
+                key: 'reciprocal-sine-fraction',
+                expression: 'y=x+\\frac{1}{\\sin\\left(x\\right)}'
+            }
+        ];
+
+        const output = [];
+
+        for (const scenario of scenarios) {
+            graphiti.canvas.width = scenario.viewport.width;
+            graphiti.canvas.height = scenario.viewport.height;
+            Object.assign(graphiti.cartesianViewport, scenario.viewport, {
+                centerX: scenario.viewport.width / 2,
+                centerY: scenario.viewport.height / 2,
+                scale: Math.min(
+                    scenario.viewport.width / Math.max(1e-12, scenario.viewport.maxX - scenario.viewport.minX),
+                    scenario.viewport.height / Math.max(1e-12, scenario.viewport.maxY - scenario.viewport.minY)
+                )
+            });
+
+            for (const expressionEntry of expressions) {
+                graphiti.cartesianFunctions = [];
+                graphiti.polarFunctions = [];
+                graphiti.nextFunctionId = 1;
+
+                const func = {
+                    id: graphiti.nextFunctionId++,
+                    expression: expressionEntry.expression,
+                    points: [],
+                    color: '#4A90E2',
+                    enabled: true,
+                    mode: 'cartesian'
+                };
+
+                graphiti.cartesianFunctions.push(func);
+                await graphiti.plotFunction(func);
+
+                const oblique = func.asymptoteData && Array.isArray(func.asymptoteData.oblique)
+                    ? func.asymptoteData.oblique.slice()
+                    : [];
+                const vertical = func.asymptoteData && Array.isArray(func.asymptoteData.vertical)
+                    ? func.asymptoteData.vertical.slice()
+                    : [];
+
+                output.push({
+                    scenario: scenario.label,
+                    key: expressionEntry.key,
+                    oblique,
+                    verticalCount: vertical.length,
+                    debugReason: func.asymptoteData && func.asymptoteData.obliqueDebug
+                        ? func.asymptoteData.obliqueDebug.reason
+                        : null
+                });
+            }
+        }
+
+        return output;
+    });
+
+    const reciprocalEntries = result.filter(item => item.key === 'reciprocal-sine-fraction');
+    const cscEntries = result.filter(item => item.key === 'csc-operatorname');
+
+    for (const item of result) {
+        assert.strictEqual(
+            item.oblique.length,
+            0,
+            `reciprocal-trig linear-offset form should not report oblique asymptotes in ${item.scenario} for ${item.key}: ${JSON.stringify(item)}`
+        );
+        assert(
+            item.verticalCount > 0,
+            `reciprocal-trig linear-offset form should keep vertical asymptote families in ${item.scenario} for ${item.key}: ${JSON.stringify(item)}`
+        );
+    }
+
+    assert.strictEqual(
+        reciprocalEntries.length,
+        cscEntries.length,
+        `expected both reciprocal trig syntaxes to run in each scenario: ${JSON.stringify(result)}`
+    );
+
+    for (let index = 0; index < reciprocalEntries.length; index++) {
+        assert.strictEqual(
+            reciprocalEntries[index].oblique.length,
+            cscEntries[index].oblique.length,
+            `equivalent reciprocal trig syntaxes should agree on oblique asymptotes in ${reciprocalEntries[index].scenario}: ${JSON.stringify({ reciprocal: reciprocalEntries[index], csc: cscEntries[index] })}`
+        );
+    }
+}
+
 (async () => {
     const { server, baseUrl } = await startStaticServer();
     const browser = await chromium.launch();
@@ -7874,6 +7985,7 @@ async function assertShiftedLituusClassifiesAndUsesShiftedRayAsymptote(page) {
         await assertEmptyMathLivePlaceholdersAreRestored(page);
         await assertLegacyDerivativeCacheEntriesDoNotSuppressTurningPoints(page);
         await assertShapeClassification(page);
+        await assertReciprocalTrigLinearOffsetHasNoObliqueAsymptotes(page);
         await assertPolarThetaRangeErrorRecovery(page);
         await assertPolarThetaRangeRestoreUsesSavedMaxUnlessInterrupted(page);
         await assertImplicitPolarAnimationReplotStaysConsistent(page);

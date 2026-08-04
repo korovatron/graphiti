@@ -21604,11 +21604,22 @@ class Graphiti {
         const hasExponentialDecayForm = /\be\s*\^\s*\(\s*-[^)]*x[^)]*\)|\be\s*\^\s*-[a-z0-9_.()*+\-/\s]*x|\bexp\s*\(\s*-[^)]*x[^)]*\)/.test(normalized);
         const hasReciprocalExponentialDecayForm = /\/\s*(?:exp\s*\(\s*[^)]*x[^)]*\)|e\s*\^\s*\(?\s*[^)\s]+\s*\)?)/.test(normalized);
         const hasPrecisionLossDecayTailForm = hasExponentialDecayForm || hasReciprocalExponentialDecayForm;
+        const hasXVariable = /\bx\b/.test(normalized);
+        const hasReciprocalPeriodicTrigWithX =
+            hasXVariable && /\/\s*(?:\(\s*)*(sin|cos|tan|sec|csc|cot)\s*\(/.test(normalized);
+
+        // Reciprocal periodic trig families (for example 1/sin(x), x+1/sin(x), x+sec(x))
+        // have infinitely many poles and do not converge to a single linear residual.
+        if (hasReciprocalPeriodicTrigWithX) {
+            debug.reason = 'reciprocal-periodic-trig';
+            return { lines: [], debug };
+        }
+
         if (!hasReciprocalForm && !hasExponentialDecayForm) {
             debug.reason = 'non-rational-expression';
             return { lines: [], debug };
         }
-        if (!/\bx\b/.test(normalized)) {
+        if (!hasXVariable) {
             debug.reason = 'no-x-variable';
             return { lines: [], debug };
         }
