@@ -51912,6 +51912,7 @@ class Graphiti {
         // Check curve cache
         const cached = this.implicitCurveCache.get(func.id);
         const shouldSkipViewportScaledCache = this.isExplicitImplicitFastPath(func);
+        const isMarchingImplicitMode = typeof func.implicitRenderMode === 'string' && func.implicitRenderMode.startsWith('marching');
         if (cached && 
             cached.pointsHash === pointsHash &&
             cached.color === func.color &&
@@ -51922,7 +51923,10 @@ class Graphiti {
             
             // Check if viewport has changed but curve data hasn't
             if (cached.viewport !== viewportKey) {
-                if (!shouldSkipViewportScaledCache && this.isViewportChanging && cached.viewportBounds) {
+                // Marching implicit curves should be redrawn from world points while panning.
+                // A viewport-sized cached bitmap cannot contain true offscreen geometry, which
+                // can expose an immediate edge gap even for tiny pan deltas.
+                if (!shouldSkipViewportScaledCache && !isMarchingImplicitMode && this.isViewportChanging && cached.viewportBounds) {
                     const topLeft = this.worldToScreen(cached.viewportBounds.minX, cached.viewportBounds.maxY);
                     const bottomRight = this.worldToScreen(cached.viewportBounds.maxX, cached.viewportBounds.minY);
                     const width = bottomRight.x - topLeft.x;
