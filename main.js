@@ -37,7 +37,7 @@ class Graphiti {
         
         // Flag for temporary session mode (when loaded from shared link)
         this.tempSession = false;
-        
+
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
         this.cartesianAngleMode = 'radians'; // Remember user's angle preference for cartesian mode
@@ -140,7 +140,8 @@ class Graphiti {
                 startX: 0,
                 startY: 0,
                 endX: 0,
-                endY: 0
+                endY: 0,
+                enforceSquareCoordinates: false
             },
             // Tap detection for closing hamburger menu
             tap: {
@@ -32383,7 +32384,7 @@ class Graphiti {
             if (e.button === 2) { // Right-click
                 // Prevent context menu and handle rectangular zoom (desktop only, Cartesian only)
                 e.preventDefault();
-                this.handleRightClickStart(e.clientX, e.clientY);
+                this.handleRightClickStart(e.clientX, e.clientY, { enforceSquareCoordinates: e.shiftKey });
             } else {
                 this.handlePointerStart(e.clientX, e.clientY);
             }
@@ -32391,7 +32392,7 @@ class Graphiti {
         });
         this.canvas.addEventListener('mousemove', (e) => {
             if (this.input.zoomRect.active) {
-                this.handleRightClickMove(e.clientX, e.clientY);
+                this.handleRightClickMove(e.clientX, e.clientY, { enforceSquareCoordinates: e.shiftKey });
             } else {
                 this.handlePointerMove(e.clientX, e.clientY);
             }
@@ -32399,7 +32400,7 @@ class Graphiti {
         });
         this.canvas.addEventListener('mouseup', (e) => {
             if (e.button === 2 && this.input.zoomRect.active) {
-                this.handleRightClickEnd();
+                this.handleRightClickEnd({ enforceSquareCoordinates: e.shiftKey });
             } else {
                 this.handlePointerEnd();
             }
@@ -32419,7 +32420,7 @@ class Graphiti {
         // Global mouse events to handle mouse release outside canvas (fixes sticky panning)
         document.addEventListener('mouseup', (e) => {
             if (e.button === 2 && this.input.zoomRect.active) {
-                this.handleRightClickEnd();
+                this.handleRightClickEnd({ enforceSquareCoordinates: e.shiftKey });
             } else {
                 this.handlePointerEnd();
             }
@@ -32428,7 +32429,7 @@ class Graphiti {
         document.addEventListener('mousemove', (e) => {
             // Handle zoom rectangle drag outside canvas
             if (this.input.zoomRect.active) {
-                this.handleRightClickMove(e.clientX, e.clientY);
+                this.handleRightClickMove(e.clientX, e.clientY, { enforceSquareCoordinates: e.shiftKey });
             }
             // Only handle if mouse is down and cursor is outside canvas
             if (this.input.mouse.down) {
@@ -34275,7 +34276,7 @@ class Graphiti {
     }
     
     // Right-click rectangular zoom handlers (desktop only, Cartesian mode only)
-    handleRightClickStart(x, y) {
+    handleRightClickStart(x, y, options = {}) {
         // Only allow in Cartesian mode on desktop devices
         if (this.plotMode !== 'cartesian') {
             return;
@@ -34291,6 +34292,13 @@ class Graphiti {
         this.input.zoomRect.startY = canvasY;
         this.input.zoomRect.endX = canvasX;
         this.input.zoomRect.endY = canvasY;
+        this.input.zoomRect.enforceSquareCoordinates = Boolean(
+            options.enforceSquareCoordinates ?? this.input.keys.has('shift')
+        );
+
+        if (!this.input.zoomRect.enforceSquareCoordinates) {
+            this.showBadgeTooltip('Hold SHIFT while dragging for true circles', canvasX, canvasY);
+        }
         
         // Freeze significant markers for display during zoom drag.
         this.freezeCurrentSignificantMarkersForViewportChange();
@@ -34301,7 +34309,7 @@ class Graphiti {
         this.draw(); // Redraw to show initial rectangle
     }
     
-    handleRightClickMove(x, y) {
+    handleRightClickMove(x, y, options = {}) {
         if (!this.input.zoomRect.active) {
             return;
         }
@@ -34310,19 +34318,62 @@ class Graphiti {
         const rect = this.canvas.getBoundingClientRect();
         const canvasX = x - rect.left;
         const canvasY = y - rect.top;
-        
-        this.input.zoomRect.endX = canvasX;
-        this.input.zoomRect.endY = canvasY;
+
+        const enforceSquareCoordinates = Boolean(
+            options.enforceSquareCoordinates ?? this.input.keys.has('shift')
+        );
+        this.input.zoomRect.enforceSquareCoordinates = enforceSquareCoordinates;
+
+        if (enforceSquareCoordinates) {
+            const startX = this.input.zoomRect.startX;
+            const startY = this.input.zoomRect.startY;
+            const worldUnitsPerPixelX = (this.viewport.maxX - this.viewport.minX) / Math.max(this.viewport.width, 1);
+            const worldUnitsPerPixelY = (this.viewport.maxY - this.viewport.minY) / Math.max(this.viewport.height, 1);
+            const rawDeltaX = canvasX - startX;
+            const rawDeltaY = canvasY - startY;
+            const signX = rawDeltaX < 0 ? -1 : 1;
+            const signY = rawDeltaY < 0 ? -1 : 1;
+            const worldDeltaX = Math.abs(rawDeltaX) * worldUnitsPerPixelX;
+            const worldDeltaY = Math.abs(rawDeltaY) * worldUnitsPerPixelY;
+            const targetAspect = this.viewport.width / Math.max(this.viewport.height, 1); // xRange / yRange for equal screen scale
+
+            let constrainedWorldX = worldDeltaX;
+            let constrainedWorldY = worldDeltaY;
+
+            if (worldDeltaX > 0 || worldDeltaY > 0) {
+                if (worldDeltaY <= 0) {
+                    constrainedWorldY = worldDeltaX / Math.max(targetAspect, Number.EPSILON);
+                } else if (worldDeltaX <= 0) {
+                    constrainedWorldX = worldDeltaY * targetAspect;
+                } else if ((worldDeltaX / worldDeltaY) > targetAspect) {
+                    constrainedWorldY = worldDeltaX / targetAspect;
+                } else {
+                    constrainedWorldX = worldDeltaY * targetAspect;
+                }
+            }
+
+            const constrainedDeltaX = (constrainedWorldX / Math.max(worldUnitsPerPixelX, Number.EPSILON)) * signX;
+            const constrainedDeltaY = (constrainedWorldY / Math.max(worldUnitsPerPixelY, Number.EPSILON)) * signY;
+
+            this.input.zoomRect.endX = startX + constrainedDeltaX;
+            this.input.zoomRect.endY = startY + constrainedDeltaY;
+        } else {
+            this.input.zoomRect.endX = canvasX;
+            this.input.zoomRect.endY = canvasY;
+        }
         
         this.draw(); // Redraw to show updated rectangle
     }
     
-    handleRightClickEnd() {
+    handleRightClickEnd(options = {}) {
         if (!this.input.zoomRect.active) {
             return;
         }
         
         const rect = this.input.zoomRect;
+        const enforceSquareCoordinates = Boolean(
+            options.enforceSquareCoordinates ?? rect.enforceSquareCoordinates ?? this.input.keys.has('shift')
+        );
         
         // Calculate rectangle dimensions
         const width = Math.abs(rect.endX - rect.startX);
@@ -34360,7 +34411,37 @@ class Graphiti {
             let finalYRange = selectedYRange;
             let clampedMessage = null;
 
-            if (selectedXRange < minZoomRange || selectedYRange < minZoomRange) {
+            if (enforceSquareCoordinates) {
+                const targetAspect = this.viewport.width / Math.max(this.viewport.height, 1); // xRange / yRange
+
+                if (selectedYRange <= 0) {
+                    finalXRange = selectedXRange;
+                    finalYRange = selectedXRange / Math.max(targetAspect, Number.EPSILON);
+                } else if (selectedXRange <= 0) {
+                    finalYRange = selectedYRange;
+                    finalXRange = selectedYRange * targetAspect;
+                } else if ((selectedXRange / selectedYRange) > targetAspect) {
+                    finalXRange = selectedXRange;
+                    finalYRange = selectedXRange / targetAspect;
+                } else {
+                    finalYRange = selectedYRange;
+                    finalXRange = selectedYRange * targetAspect;
+                }
+
+                const minScale = Math.max(minZoomRange / Math.max(finalXRange, Number.EPSILON), minZoomRange / Math.max(finalYRange, Number.EPSILON));
+                if (minScale > 1) {
+                    finalXRange *= minScale;
+                    finalYRange *= minScale;
+                    clampedMessage = 'Maximum zoom-in reached';
+                }
+
+                const maxScale = Math.min(maxZoomRange / Math.max(finalXRange, Number.EPSILON), maxZoomRange / Math.max(finalYRange, Number.EPSILON));
+                if (maxScale < 1) {
+                    finalXRange *= maxScale;
+                    finalYRange *= maxScale;
+                    clampedMessage = 'Maximum zoom-out reached';
+                }
+            } else if (selectedXRange < minZoomRange || selectedYRange < minZoomRange) {
                 clampedMessage = 'Maximum zoom-in reached';
                 if (selectedXRange <= selectedYRange) {
                     finalXRange = minZoomRange;
@@ -34427,6 +34508,7 @@ class Graphiti {
         this.input.zoomRect.startX = 0;
         this.input.zoomRect.startY = 0;
         this.input.zoomRect.endX = 0;
+        this.input.zoomRect.enforceSquareCoordinates = false;
         
         if (!appliedZoom) {
             this.isViewportChanging = false;

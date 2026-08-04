@@ -7086,6 +7086,85 @@ async function assertRectangleZoomKeepsFrozenSignificantMarkers(page) {
     assert.strictEqual(result.afterRefresh.turningX, 1, `rectangle zoom fresh turning point should replace frozen marker after refresh: ${JSON.stringify(result)}`);
 }
 
+async function assertShiftRectangleZoomEnforcesSquareCoordinateRanges(page) {
+    const result = await page.evaluate(() => {
+        const graphiti = window.graphiti;
+        graphiti.plotMode = 'cartesian';
+        graphiti.currentState = graphiti.states.GRAPHING;
+
+        graphiti.canvas.width = 960;
+        graphiti.canvas.height = 720;
+        Object.assign(graphiti.cartesianViewport, {
+            minX: -8,
+            maxX: 8,
+            minY: -8,
+            maxY: 8,
+            width: 960,
+            height: 720,
+            centerX: 480,
+            centerY: 360,
+            scale: 60
+        });
+
+        const originalStartRectangleZoomAnimation = graphiti.startRectangleZoomAnimation.bind(graphiti);
+        let unconstrainedTarget = null;
+        let constrainedTarget = null;
+
+        graphiti.startRectangleZoomAnimation = (targetBounds) => {
+            if (!unconstrainedTarget) {
+                unconstrainedTarget = targetBounds;
+            } else {
+                constrainedTarget = targetBounds;
+            }
+        };
+
+        try {
+            graphiti.input.zoomRect.active = true;
+            graphiti.input.zoomRect.startX = 120;
+            graphiti.input.zoomRect.startY = 120;
+            graphiti.input.zoomRect.endX = 420;
+            graphiti.input.zoomRect.endY = 280;
+            graphiti.input.zoomRect.enforceSquareCoordinates = false;
+            graphiti.handleRightClickEnd({ enforceSquareCoordinates: false });
+
+            graphiti.input.zoomRect.active = true;
+            graphiti.input.zoomRect.startX = 120;
+            graphiti.input.zoomRect.startY = 120;
+            graphiti.input.zoomRect.endX = 420;
+            graphiti.input.zoomRect.endY = 280;
+            graphiti.input.zoomRect.enforceSquareCoordinates = true;
+            graphiti.handleRightClickEnd({ enforceSquareCoordinates: true });
+
+            const unconstrainedXRange = unconstrainedTarget ? unconstrainedTarget.maxX - unconstrainedTarget.minX : null;
+            const unconstrainedYRange = unconstrainedTarget ? unconstrainedTarget.maxY - unconstrainedTarget.minY : null;
+            const constrainedXRange = constrainedTarget ? constrainedTarget.maxX - constrainedTarget.minX : null;
+            const constrainedYRange = constrainedTarget ? constrainedTarget.maxY - constrainedTarget.minY : null;
+            const viewportAspect = graphiti.viewport.width / graphiti.viewport.height;
+
+            return {
+                unconstrainedXRange,
+                unconstrainedYRange,
+                constrainedXRange,
+                constrainedYRange,
+                viewportAspect
+            };
+        } finally {
+            graphiti.startRectangleZoomAnimation = originalStartRectangleZoomAnimation;
+            graphiti.input.zoomRect.active = false;
+            graphiti.input.zoomRect.enforceSquareCoordinates = false;
+        }
+    });
+
+    assert(result.unconstrainedXRange !== null && result.unconstrainedYRange !== null,
+        `unconstrained rectangle zoom should produce target bounds: ${JSON.stringify(result)}`);
+    assert(result.constrainedXRange !== null && result.constrainedYRange !== null,
+        `shift rectangle zoom should produce target bounds: ${JSON.stringify(result)}`);
+    assert(Math.abs(result.unconstrainedXRange - result.unconstrainedYRange) > 0.05,
+        `unconstrained rectangle zoom should keep non-square coordinate ranges: ${JSON.stringify(result)}`);
+    assert(Math.abs((result.constrainedXRange / result.constrainedYRange) - result.viewportAspect) <= 1e-9,
+        `shift rectangle zoom should enforce equal screen scale (aspect-matched ranges): ${JSON.stringify(result)}`);
+}
+
 async function assertWheelZoomAnimationCompletionForcesFinalSettle(page) {
     const result = await page.evaluate(async () => {
         const graphiti = window.graphiti;
@@ -8027,6 +8106,7 @@ async function assertReciprocalTrigLinearOffsetHasNoObliqueAsymptotes(page) {
         await assertPendingViewportTasksBlockStaleFlagClear(page);
         await assertInterceptMarkersDoNotUseStaleScreenCacheAfterViewportChange(page);
         await assertRectangleZoomKeepsFrozenSignificantMarkers(page);
+        await assertShiftRectangleZoomEnforcesSquareCoordinateRanges(page);
         await assertWheelZoomAnimationCompletionForcesFinalSettle(page);
         await assertTurningPointBadgesDoNotRelinkToDistantCandidates(page);
         await assertTouchPngExportPreviewFrameAlignsOnFirstOpen(page);
