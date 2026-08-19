@@ -862,22 +862,36 @@
             color: #00b8eb;
         }
 
-        /* Mobile stacking: each tool on its own line */
+        .title-screen p.copyright .tools-row .tool-link:nth-of-type(4) {
+            color: #ffd400; /* Neon yellow */
+        }
+
+        .title-screen p.copyright .tools-row .tool-link:nth-of-type(4):hover {
+            color: #ffe566;
+        }
+
+        .title-screen p.copyright .tools-row .tool-link:nth-of-type(4):active {
+            color: #e6be00;
+        }
+
+        /* Narrow screens: show only the Korovatron link */
         @media (max-width: 700px) {
             .title-screen p.copyright .tool-separator {
                 display: none;
             }
 
             .title-screen p.copyright .tools-label {
-                display: block;
-                margin-top: 2px;
+                display: none;
             }
 
-            .title-screen p.copyright .tool-link {
-                display: block;
-                margin-top: 2px;
+            .title-screen p.copyright .tools-row .tool-link:not(:nth-of-type(4)) {
+                display: none;
             }
 
+            .title-screen p.copyright .tools-row .tool-link:nth-of-type(4) {
+                display: inline-block;
+                margin-top: 2px;
+            }
         }
 
         /* Short landscape screens: allow natural flow to avoid overlap */
@@ -2875,6 +2889,10 @@
                         <span class="tool-separator"> | </span>
                         <a class="tool-link" href="https://www.korovatron.co.uk/vectorama/" target="_blank" rel="noopener noreferrer">
                             <span class="tool-name">Vectorama</span><span class="tool-description"> (Linear Algebra)</span>
+                        </a>
+                        <span class="tool-separator"> | </span>
+                        <a class="tool-link" href="https://www.korovatron.co.uk/komplexiti/" target="_blank" rel="noopener noreferrer">
+                            <span class="tool-name">Komplexiti</span><span class="tool-description"> (Complex Numbers & Argand Diagrams)</span>
                         </a>
                         <span class="tool-separator"> | </span>
                         <a class="tool-link" href="https://www.korovatron.co.uk/" target="_blank" rel="noopener noreferrer">
