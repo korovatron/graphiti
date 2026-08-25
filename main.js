@@ -7806,6 +7806,20 @@ class Graphiti {
                 }
                 points = result.points || result;
                 implicitRenderMode = 'marching-polar-standard';
+
+                // Second pass for the negative-r branch (run independently to avoid spurious crossings)
+                if (this.polarSettings.plotNegativeR && !this.isCalculationCancelled(func.id, calculationId)) {
+                    const negEval = this.buildNegativeRImplicitPointEvaluator(equation);
+                    const negResult = await this.marchingSquaresAsync(equation, immediate, func.id, calculationId, 1.0, negEval);
+                    if (negResult && !this.isCalculationCancelled(func.id, calculationId)) {
+                        const negPoints = negResult.points || negResult;
+                        if (negPoints.length > 0) {
+                            // The positive-r output already ends with a NaN break; just append directly
+                            // to preserve the [start, end, NaN] stride the renderer expects.
+                            points = [...points, ...negPoints];
+                        }
+                    }
+                }
             }
 
             if (this.isCalculationCancelled(func.id, calculationId)) {
@@ -18635,7 +18649,7 @@ class Graphiti {
         }
     }
 
-    async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null, resolutionScale = 1) {
+    async marchingSquaresAsync(equation, immediate = false, functionId = null, calculationId = null, resolutionScale = 1, customEvalPoint = null) {
         // Get visible viewport and calculate extended viewport with buffer
         const visibleViewport = this.viewport;
         const extendedViewport = this.getExtendedViewport(visibleViewport, this.implicitBufferConfig.extensionPercent);
@@ -18691,7 +18705,7 @@ class Graphiti {
         const stepX = viewportWidth / scaledResolution;
         const stepY = viewportHeight / scaledResolution;
         
-        return await this.marchingSquaresAtResolutionAsync(equation, scaledResolution, stepX, stepY, immediate, functionId, calculationId, extendedViewport, visibleViewport);
+        return await this.marchingSquaresAtResolutionAsync(equation, scaledResolution, stepX, stepY, immediate, functionId, calculationId, extendedViewport, visibleViewport, customEvalPoint);
     }
 
     marchingSquaresHighRes(equation) {
@@ -26853,7 +26867,7 @@ class Graphiti {
         return order;
     }
 
-    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null, extendedViewport = null, visibleViewport = null) {
+    async marchingSquaresAtResolutionAsync(equation, resolution, stepX, stepY, immediate = false, functionId = null, calculationId = null, extendedViewport = null, visibleViewport = null, customEvalPoint = null) {
         const startTime = performance.now();
         
         // Use extended viewport if provided, otherwise use current viewport
@@ -26865,7 +26879,7 @@ class Graphiti {
         const verticalAsymptotes = isPolarImplicitEquation
             ? []
             : this.detectVerticalAsymptotes(equation.leftExpression + ' - (' + equation.rightExpression + ')');
-        const evalPoint = this.buildImplicitPointEvaluator(equation);
+        const evalPoint = customEvalPoint || this.buildImplicitPointEvaluator(equation);
         
         // Optimization strategy depends on VISIBLE viewport size (not extended)
         // At wide zoom (>40 units), curves are tiny and alignment-sensitive,
@@ -28502,6 +28516,52 @@ class Graphiti {
                 }
                 return leftValue - rightValue;
             } catch (error) {
+                return null;
+            }
+        };
+    }
+
+    buildNegativeRImplicitPointEvaluator(equation) {
+        let leftExpressionForEval = equation.leftExpression;
+        let rightExpressionForEval = equation.rightExpression;
+        if (this.angleMode === 'degrees') {
+            leftExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(leftExpressionForEval);
+            rightExpressionForEval = this.convertTrigToDegreeModeImplicitCartesian(rightExpressionForEval);
+        }
+
+        const leftCompiled = this.getCompiledExpression(leftExpressionForEval);
+        const rightCompiled = this.getCompiledExpression(rightExpressionForEval);
+        const scope = this.getEvaluationScope({ x: 0, y: 0, r: 0, theta: 0, t: 0, pi: Math.PI, e: Math.E });
+
+        return (x, y) => {
+            scope.x = x;
+            scope.y = y;
+
+            if (!this.isWorldPointWithinPolarThetaRange(x, y)) {
+                return null;
+            }
+
+            const r = Math.hypot(x, y);
+            const thetaRadians = Math.atan2(y, x);
+
+            // Shift angle by pi for the negative-r branch, normalised to (-pi, pi]
+            let negThetaRaw = thetaRadians - Math.PI;
+            if (negThetaRaw <= -Math.PI) negThetaRaw += 2 * Math.PI;
+            const liftedNegThetaRad = this.liftPolarAngleToConfiguredRangeRadians(negThetaRaw);
+            const thetaValue = this.angleMode === 'degrees'
+                ? liftedNegThetaRad * 180 / Math.PI
+                : liftedNegThetaRad;
+
+            scope.r = -r;
+            scope.theta = thetaValue;
+            scope.t = thetaValue;
+
+            try {
+                const leftValue = leftCompiled.evaluate(scope);
+                const rightValue = rightCompiled.evaluate(scope);
+                if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) return null;
+                return leftValue - rightValue;
+            } catch {
                 return null;
             }
         };
