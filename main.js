@@ -28431,6 +28431,12 @@ class Graphiti {
         const minRadians = this.angleMode === 'degrees' ? (thetaMin * Math.PI / 180) : thetaMin;
         const maxRadians = this.angleMode === 'degrees' ? (thetaMax * Math.PI / 180) : thetaMax;
 
+        // If the raw angle already falls within the range, use it directly.
+        // This avoids shifting e.g. +0.5 rad to -5.78 rad for a [-2pi, 2pi] range.
+        if (thetaRadians >= (minRadians - 1e-9) && thetaRadians <= (maxRadians + 1e-9)) {
+            return thetaRadians;
+        }
+
         const normalized = this.normalizeAngleRadians(thetaRadians);
         if (!Number.isFinite(normalized)) {
             return thetaRadians;
