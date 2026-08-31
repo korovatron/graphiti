@@ -1156,11 +1156,16 @@
 
         @media (hover: hover) {
             .function-item .remove-btn:hover {
-                filter: brightness(1.15);
+                background: rgba(180, 60, 60, 0.7);
+                border-color: #b43c3c;
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
             }
         }
         
+        .function-item .remove-btn:active {
+            background: rgba(180, 60, 60, 0.7);
+        }
+
         .function-item .remove-btn:focus,
         .function-item .remove-btn:focus-visible {
             outline: none;
