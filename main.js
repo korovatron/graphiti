@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.90';
+const VERSION = '1.3.91';
 
 class Graphiti {
     constructor() {
@@ -58623,6 +58623,10 @@ class Graphiti {
         expression = expression.replace(/\\phi/g, 'phi');
         expression = expression.replace(/\\mathrm\{e\}/g, 'e');
         expression = expression.replace(/\\exponentialE/g, 'e');
+        // Preserve implicit multiplication when a lone variable is directly adjacent to theta
+        // (e.g. r\theta -> r*\theta), otherwise they merge into a bogus identifier like "rt".
+        expression = expression.replace(/\b([xyrtabc])\\theta/g, '$1*\\theta');
+        expression = expression.replace(/\\theta([xyrtabc])\b/g, '\\theta*$1');
         // Convert theta to 't' for evaluation (math.js doesn't treat 't' as a unit in this context)
         expression = expression.replace(/\\theta/g, 't');
 
