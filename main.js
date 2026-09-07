@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.91';
+const VERSION = '1.3.92';
 
 class Graphiti {
     constructor() {
@@ -2912,10 +2912,9 @@ class Graphiti {
                 const latex = this.restoreEmptyMathLivePlaceholders(mathField.getValue(), mathField);
                 func.expression = latex; // Store LaTeX format
 
-                // Remove derived asymptote/hole info immediately when field is empty.
-                if (!latex || !latex.trim()) {
-                    this.clearFunctionAsymptoteData(func);
-                }
+                // Remove derived asymptote/hole/shape info immediately so stale metadata
+                // from the previous expression can't linger if the new one doesn't recompute it.
+                this.clearFunctionAsymptoteData(func);
                 
                 // Clear expression cache when function expression changes
                 this.clearExpressionCache();
@@ -6192,6 +6191,22 @@ class Graphiti {
                 rawCandidates.push((thetaValues[index] + thetaValues[index + 1]) * 0.5);
             }
         }
+
+        // The interior scan above only compares index >= 1 against its neighbour, so a
+        // singularity sitting exactly at thetaMin/thetaMax (e.g. r=a/theta at theta=0) is
+        // otherwise never examined. Check both range boundaries explicitly.
+        const tryBoundarySingularity = (boundaryTheta, direction) => {
+            if (Number.isFinite(evaluateAt(boundaryTheta))) {
+                return;
+            }
+            const nearValue = evaluateAt(boundaryTheta + (direction * step));
+            if (!Number.isFinite(nearValue) || Math.abs(nearValue) < magnitudeThreshold) {
+                return;
+            }
+            rawCandidates.push(boundaryTheta + (direction * step * 0.5));
+        };
+        tryBoundarySingularity(thetaMin, 1);
+        tryBoundarySingularity(thetaMax, -1);
 
         const validated = [];
         const candidateTolerance = Math.max(step * 2, Math.abs(thetaRange) * 1e-5);
