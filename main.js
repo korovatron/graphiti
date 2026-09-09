@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.92';
+const VERSION = '1.3.93';
 
 class Graphiti {
     constructor() {
@@ -36651,12 +36651,12 @@ class Graphiti {
 
                     let label;
                     if (this.plotMode === 'polar') {
-                        label = this.formatNumber(x);
+                        label = this.formatNumber(x, 'x');
                     } else {
                         const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
                         const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
                         const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
-                        label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
+                        label = useTrigFormatting ? this.formatTrigNumber(x, 'x') : this.formatNumber(x, 'x');
                     }
 
                     if (includeAxisTicks) {
@@ -36683,12 +36683,12 @@ class Graphiti {
 
                     let label;
                     if (this.plotMode === 'polar') {
-                        label = this.formatNumber(y);
+                        label = this.formatNumber(y, 'y');
                     } else {
                         const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
                         const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
                         const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
-                        label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
+                        label = useTrigFormatting ? this.formatTrigNumber(y, 'y') : this.formatNumber(y, 'y');
                     }
 
                     if (includeAxisTicks) {
@@ -50982,12 +50982,12 @@ class Graphiti {
                     // In cartesian mode, use angle formatting only for pure regular trig functions
                     let label;
                     if (this.plotMode === 'polar') {
-                        label = this.formatNumber(x);
+                        label = this.formatNumber(x, 'x');
                     } else {
                         const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
                         const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
                         const useTrigFormatting = hasRegularTrig && !hasInverseTrig;
-                        label = useTrigFormatting ? this.formatTrigNumber(x) : this.formatNumber(x);
+                        label = useTrigFormatting ? this.formatTrigNumber(x, 'x') : this.formatNumber(x, 'x');
                     }
                     
                     const labelY = axisY + 5;
@@ -51023,12 +51023,12 @@ class Graphiti {
                     // In cartesian mode, use angle formatting only for pure inverse trig functions
                     let label;
                     if (this.plotMode === 'polar') {
-                        label = this.formatNumber(y);
+                        label = this.formatNumber(y, 'y');
                     } else {
                         const hasRegularTrig = this.currentModeContainsRegularTrigFunctions();
                         const hasInverseTrig = this.currentModeContainsInverseTrigFunctions();
                         const useTrigFormatting = hasInverseTrig && !hasRegularTrig;
-                        label = useTrigFormatting ? this.formatTrigNumber(y) : this.formatNumber(y);
+                        label = useTrigFormatting ? this.formatTrigNumber(y, 'y') : this.formatNumber(y, 'y');
                     }
                     
                     const labelX = axisX - 5;
@@ -51108,13 +51108,13 @@ class Graphiti {
         return bestSpacing;
     }
     
-    formatNumber(num) {
+    formatNumber(num, axis = null) {
         // Format numbers for axis labels using context-aware precision
         // Use the same intelligent formatting as coordinates for consistency
-        return this.formatCoordinate(num);
+        return this.formatCoordinate(num, axis);
     }
     
-    formatTrigNumber(num) {
+    formatTrigNumber(num, axis = null) {
         // Special formatting for trigonometric values
         if (Math.abs(num) < 0.0001) return '0';
         
@@ -51165,7 +51165,7 @@ class Graphiti {
             
             // If we can't express as a clean fraction, use decimal formatting
             // Don't show awkward values like "0.3π" - just use regular numbers
-            return this.formatNumber(num);
+            return this.formatNumber(num, axis);
         } else {
             // Degrees mode - just show the number with ° symbol for clarity
             if (Math.abs(num) >= 1) {
@@ -51174,7 +51174,7 @@ class Graphiti {
         }
         
         // Fall back to normal formatting
-        return this.formatNumber(num);
+        return this.formatNumber(num, axis);
     }
     
     drawFunction(func) {
