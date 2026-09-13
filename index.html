@@ -1306,7 +1306,8 @@
 
         .shape-info-container,
         .asymptote-info-container,
-        .envelope-info-container {
+        .envelope-info-container,
+        .inverse-info-container {
             display: none;
             flex-direction: column;
             gap: 4px;
@@ -1317,7 +1318,8 @@
         .shape-info-container.visible,
         .asymptote-info-container.visible,
         .envelope-info-container.visible,
-        .holes-info-container.visible {
+        .holes-info-container.visible,
+        .inverse-info-container.visible {
             display: flex;
         }
 
@@ -1333,7 +1335,8 @@
         .shape-info-title,
         .asymptote-info-title,
         .envelope-info-title,
-        .holes-info-title {
+        .holes-info-title,
+        .inverse-info-title {
             display: inline-flex;
             align-self: flex-start;
             font-size: 11px;
@@ -1367,7 +1370,8 @@
             box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16);
         }
 
-        .asymptote-visibility-toggle {
+        .asymptote-visibility-toggle,
+        .inverse-visibility-toggle {
             border-color: #fff;
         }
 

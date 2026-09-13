@@ -1695,7 +1695,9 @@ class Graphiti {
             points: [],
             color: color,
             enabled: true,
-            mode: this.plotMode // Store which mode this function belongs to
+            mode: this.plotMode, // Store which mode this function belongs to
+            showInverse: false,
+            inversePoints: null
         };
         
         this.getCurrentFunctions().push(func);
@@ -2562,6 +2564,12 @@ class Graphiti {
                 </div>
                 <div class="holes-equation-list"></div>
             </div>
+            <div class="inverse-info-container" data-function-id="${func.id}">
+                <div class="metadata-title-row">
+                    <button class="metadata-visibility-toggle inverse-visibility-toggle is-hidden" type="button" aria-pressed="false" aria-label="Show inverse for this function" title="Show inverse"></button>
+                    <div class="inverse-info-title">Inverse</div>
+                </div>
+            </div>
         `;
         
         // Get the MathLive element and set its value safely (avoiding HTML injection issues with < and >)
@@ -2687,6 +2695,7 @@ class Graphiti {
         const removeBtn = funcDiv.querySelector('.remove-btn');
         const asymptoteVisibilityToggle = funcDiv.querySelector('.asymptote-visibility-toggle');
         const envelopeVisibilityToggle = funcDiv.querySelector('.envelope-visibility-toggle');
+        const inverseVisibilityToggle = funcDiv.querySelector('.inverse-visibility-toggle');
         const markKeyboardReopenAllowed = () => {
             this.keyboardDismissedByCanvas = false;
             this.suppressMathFieldFocusUntil = 0;
@@ -3162,6 +3171,17 @@ class Graphiti {
                 event.preventDefault();
                 event.stopPropagation();
                 func.showEnvelopes = func.showEnvelopes === false;
+                this.updateFunctionAsymptoteInfo(func);
+                this.draw();
+            });
+        }
+
+        if (inverseVisibilityToggle) {
+            inverseVisibilityToggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                func.showInverse = func.showInverse !== true;
+                this.updateFunctionInverse(func);
                 this.updateFunctionAsymptoteInfo(func);
                 this.draw();
             });
@@ -4288,6 +4308,7 @@ class Graphiti {
         
         if (!func.expression.trim()) {
             func.points = [];
+            func.inversePoints = null;
             this.clearFunctionAsymptoteData(func);
             if (this.performance.enabled) {
                 this.performance.plotTimes.set(func.id, 0);
@@ -4297,6 +4318,7 @@ class Graphiti {
 
         if (this.hasIncompleteMathLiveInput(func.expression)) {
             func.points = [];
+            func.inversePoints = null;
             this.clearFunctionAsymptoteData(func);
             if (this.performance.enabled) {
                 this.performance.plotTimes.set(func.id, 0);
@@ -4331,7 +4353,13 @@ class Graphiti {
         
         // Detect function type for cartesian mode
         const functionType = this.detectFunctionType(func.expression);
-        
+
+        // Only plain explicit functions support the inverse-relation overlay;
+        // clear stale reflected points immediately for every other type.
+        if (functionType !== 'explicit') {
+            func.inversePoints = null;
+        }
+
         // Clear inequality-related properties if function is no longer an inequality
         if (functionType !== 'explicit-inequality' && functionType !== 'implicit-inequality' && functionType !== 'polar-inequality') {
             delete func.inequality;
@@ -5294,6 +5322,7 @@ class Graphiti {
             // This ensures intercepts and other features work reliably during viewport changes
             func.points = processedPoints;
             func.displayPoints = processedPoints;
+            this.updateFunctionInverse(func);
             
             // Invalidate intersection cache if this is an inequality
             if (functionType === 'explicit-inequality') {
@@ -5304,6 +5333,7 @@ class Graphiti {
             // Silent error for better UX during typing - no alert popup
             func.points = [];
             func.displayPoints = [];
+            func.inversePoints = null;
             this.clearFunctionAsymptoteData(func);
         }
         
@@ -22640,6 +22670,77 @@ class Graphiti {
         this.updateFunctionAsymptoteInfo(func);
     }
 
+    functionSupportsInverseToggle(func) {
+        if (!func || func.mode !== 'cartesian') {
+            return false;
+        }
+
+        const expression = typeof func.expression === 'string' ? func.expression.trim() : '';
+        if (!expression) {
+            return false;
+        }
+
+        if (this.detectFunctionType(expression) !== 'explicit') {
+            return false;
+        }
+
+        // The inverse of y=x (or a bare x) is itself, so the toggle is pointless here.
+        const normalised = this.convertFromLatex(expression).replace(/\s+/g, '').toLowerCase();
+        if (normalised === 'x' || normalised === 'y=x') {
+            return false;
+        }
+
+        return true;
+    }
+
+    // Reflects already-computed curve points across y=x to plot the inverse relation,
+    // avoiding any symbolic (CAS) inversion of the expression.
+    updateFunctionInverse(func) {
+        if (!func) {
+            return;
+        }
+
+        if (!this.functionSupportsInverseToggle(func) || func.showInverse !== true) {
+            func.inversePoints = null;
+            return;
+        }
+
+        const source = Array.isArray(func.points) ? func.points : [];
+        const inverse = new Array(source.length);
+        for (let i = 0; i < source.length; i++) {
+            const point = source[i];
+            inverse[i] = (point && Number.isFinite(point.x) && Number.isFinite(point.y))
+                ? { x: point.y, y: point.x, connected: point.connected !== false }
+                : { x: NaN, y: NaN, connected: false };
+        }
+        func.inversePoints = inverse;
+    }
+
+    syncInverseToggleUI(func, funcItem) {
+        const container = funcItem ? funcItem.querySelector('.inverse-info-container') : null;
+        if (!container) {
+            return;
+        }
+
+        if (!this.functionSupportsInverseToggle(func)) {
+            container.classList.remove('visible');
+            func.showInverse = false;
+            func.inversePoints = null;
+            return;
+        }
+
+        container.classList.add('visible');
+
+        const toggle = container.querySelector('.inverse-visibility-toggle');
+        const isVisible = func.showInverse === true;
+        if (toggle) {
+            toggle.classList.toggle('is-hidden', !isVisible);
+            toggle.setAttribute('aria-pressed', String(isVisible));
+            toggle.setAttribute('aria-label', `${isVisible ? 'Hide' : 'Show'} inverse for this function`);
+            toggle.title = `${isVisible ? 'Hide' : 'Show'} inverse`;
+        }
+    }
+
     updateFunctionAsymptoteInfo(func) {
         if (!func) {
             return;
@@ -22663,6 +22764,10 @@ class Graphiti {
                 const hiddenEnvelopeContainer = hiddenFuncItem.querySelector('.envelope-info-container');
                 if (hiddenEnvelopeContainer) {
                     hiddenEnvelopeContainer.classList.remove('visible');
+                }
+                const hiddenInverseContainer = hiddenFuncItem.querySelector('.inverse-info-container');
+                if (hiddenInverseContainer) {
+                    hiddenInverseContainer.classList.remove('visible');
                 }
             }
             return;
@@ -22701,10 +22806,16 @@ class Graphiti {
             if (errorEnvelopeContainer) {
                 errorEnvelopeContainer.classList.remove('visible');
             }
+            const errorInverseContainer = funcItem.querySelector('.inverse-info-container');
+            if (errorInverseContainer) {
+                errorInverseContainer.classList.remove('visible');
+            }
             return;
         }
 
         this.applyFunctionBadgeStyle(func, funcItem);
+
+        this.syncInverseToggleUI(func, funcItem);
 
         const shapeContainer = funcItem.querySelector('.shape-info-container');
         const shapeValue = shapeContainer ? shapeContainer.querySelector('.shape-info-value') : null;
@@ -50111,6 +50222,7 @@ class Graphiti {
         // Draw coordinate system
         this.drawGrid();
         this.drawAxes();
+        this.drawInverseReferenceLine();
         this.drawAxisLabels();
         
         // Skip expensive compositing in performance mode
@@ -50944,6 +51056,34 @@ class Graphiti {
         
         this.ctx.stroke();
     }
+
+    // Draws y=x as a visual reference whenever an inverse overlay is active.
+    drawInverseReferenceLine() {
+        if (this.plotMode !== 'cartesian') {
+            return;
+        }
+
+        const hasInverseVisible = this.getActiveEnabledFunctions().some(func => func && func.showInverse === true);
+        if (!hasInverseVisible) {
+            return;
+        }
+
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+        const axesColor = isLightMode ? '#000000' : 'rgba(255, 255, 255, 0.72)';
+        const start = this.worldToScreen(this.viewport.minX, this.viewport.minX);
+        const end = this.worldToScreen(this.viewport.maxX, this.viewport.maxX);
+
+        this.ctx.save();
+        this.ctx.strokeStyle = axesColor;
+        this.ctx.lineWidth = 2.2;
+        this.ctx.globalAlpha = 1;
+        this.ctx.setLineDash([this.getLineWidth(8), this.getLineWidth(5)]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(start.x, start.y);
+        this.ctx.lineTo(end.x, end.y);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
     
     drawAxisLabels() {
         const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
@@ -51474,9 +51614,64 @@ class Graphiti {
         // Draw asymptotes after the curve so dashed obliques remain visible.
         this.drawFunctionAsymptotes(func);
         this.drawFunctionHoles(func);
+        this.drawFunctionInverse(func);
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
+    }
+
+    // Draws the reflected (x, y) points already produced by updateFunctionInverse.
+    drawFunctionInverse(func, context = this.ctx) {
+        if (!func || func.showInverse !== true || !context) {
+            return;
+        }
+
+        const points = func.inversePoints;
+        if (!Array.isArray(points) || points.length < 2) {
+            return;
+        }
+
+        context.save();
+        context.strokeStyle = func.color;
+        context.lineWidth = this.getLineWidth(2.5);
+        context.setLineDash([]);
+
+        let pathStarted = false;
+        for (const point of points) {
+            if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+                if (pathStarted) {
+                    context.stroke();
+                    pathStarted = false;
+                }
+                continue;
+            }
+
+            const screen = this.worldToScreen(point.x, point.y);
+            if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                if (pathStarted) {
+                    context.stroke();
+                    pathStarted = false;
+                }
+                continue;
+            }
+
+            if (point.connected === false || !pathStarted) {
+                if (pathStarted) {
+                    context.stroke();
+                }
+                context.beginPath();
+                context.moveTo(screen.x, screen.y);
+                pathStarted = true;
+            } else {
+                context.lineTo(screen.x, screen.y);
+            }
+        }
+
+        if (pathStarted) {
+            context.stroke();
+        }
+
+        context.restore();
     }
 
     drawFunctionEnvelopes(func, context = this.ctx) {
