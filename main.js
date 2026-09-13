@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 
 class Graphiti {
     constructor() {
@@ -37034,7 +37034,7 @@ class Graphiti {
                 }
             }
 
-            if (func.asymptoteData && this.plotMode === 'cartesian') {
+            if (func.asymptoteData && func.showAsymptotes !== false && this.plotMode === 'cartesian') {
                 const asymptoteDash = `${svgNum(getSvgLineWidth(7))} ${svgNum(getSvgLineWidth(4))}`;
                 const asymptoteWidth = getSvgLineWidth(2);
                 const vertical = Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [];
@@ -37087,7 +37087,7 @@ class Graphiti {
                     pushPath(inversePathData, inverseStroke, lineWidth, 'none');
                 }
 
-                if (func.inverseAsymptoteData) {
+                if (func.inverseAsymptoteData && func.showAsymptotes !== false) {
                     const inverseAsymptoteDash = `${svgNum(getSvgLineWidth(7))} ${svgNum(getSvgLineWidth(4))}`;
                     const inverseAsymptoteWidth = getSvgLineWidth(2);
                     const invVertical = Array.isArray(func.inverseAsymptoteData.vertical) ? func.inverseAsymptoteData.vertical : [];
