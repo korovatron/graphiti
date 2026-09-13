@@ -22858,10 +22858,11 @@ class Graphiti {
 
         // Escape points are sometimes pushed twice in a row (identical coordinates), which
         // would otherwise give a zero-length direction vector. Walk past duplicates to find
-        // a neighbour that's actually distinct from the anchor.
+        // a neighbour that's actually distinct from the anchor. `limit` bounds the search in
+        // whichever direction `step` moves (forward for range starts, backward for range ends).
         const findDistinctNeighbour = (anchor, fromIndex, step, limit) => {
             let index = fromIndex;
-            while (index >= 0 && index <= limit) {
+            while (index >= 0 && (step > 0 ? index <= limit : index >= limit)) {
                 const candidate = inversePoints[index];
                 if (candidate.x !== anchor.x || candidate.y !== anchor.y) {
                     return candidate;
