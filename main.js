@@ -22705,6 +22705,7 @@ class Graphiti {
 
         if (!this.functionSupportsInverseToggle(func) || func.showInverse !== true) {
             func.inversePoints = null;
+            func.inverseHoles = null;
             return;
         }
 
@@ -22717,6 +22718,14 @@ class Graphiti {
                 : { x: NaN, y: NaN, connected: false };
         }
         func.inversePoints = inverse;
+
+        // A hole excluded from the original relation stays excluded after reflection,
+        // so swapping its coordinates gives the inverse's own hole.
+        func.inverseHoles = Array.isArray(func.holes)
+            ? func.holes
+                .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
+                .map(hole => ({ x: hole.y, y: hole.x }))
+            : [];
     }
 
     syncInverseToggleUI(func, funcItem) {
@@ -51618,6 +51627,7 @@ class Graphiti {
         this.drawFunctionAsymptotes(func);
         this.drawFunctionHoles(func);
         this.drawFunctionInverse(func);
+        this.drawFunctionInverseHoles(func);
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
         this.ctx.setLineDash([]);
@@ -51844,6 +51854,44 @@ class Graphiti {
         this.ctx.fillStyle = bgColor;
 
         for (const hole of func.holes) {
+            if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
+                continue;
+            }
+
+            if (hole.x < this.viewport.minX || hole.x > this.viewport.maxX || hole.y < this.viewport.minY || hole.y > this.viewport.maxY) {
+                continue;
+            }
+
+            const screen = this.worldToScreen(hole.x, hole.y);
+            if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) {
+                continue;
+            }
+
+            this.ctx.beginPath();
+            this.ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+        }
+
+        this.ctx.restore();
+    }
+
+    drawFunctionInverseHoles(func) {
+        if (!func || func.showInverse !== true || !Array.isArray(func.inverseHoles) || func.inverseHoles.length === 0) {
+            return;
+        }
+
+        const radius = Math.max(this.getLineWidth(5), 5);
+        const lineWidth = this.getLineWidth(3);
+        const bgColor = this.getCanvasBackgroundColor();
+
+        this.ctx.save();
+        this.ctx.setLineDash([]);
+        this.ctx.strokeStyle = this.getInverseOverlayColor(func.color);
+        this.ctx.lineWidth = lineWidth;
+        this.ctx.fillStyle = bgColor;
+
+        for (const hole of func.inverseHoles) {
             if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) {
                 continue;
             }
