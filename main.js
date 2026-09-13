@@ -52403,6 +52403,9 @@ class Graphiti {
         if (!pointsToUse || pointsToUse.length === 0) {
             if (!(isInequality && (func.gridData || func.implicitPolarInequalityFastPath))) {
                 this.drawFunctionAsymptotes(func);
+                this.drawFunctionInverse(func);
+                this.drawFunctionInverseAsymptotes(func);
+                this.drawFunctionInverseHoles(func);
                 return; // Only return if not an inequality with gridData
             }
         }
@@ -52418,6 +52421,9 @@ class Graphiti {
         // If there are no points to draw (boundary outside viewport), we're done after shading
         if (!pointsToUse || pointsToUse.length === 0) {
             this.drawFunctionAsymptotes(func);
+            this.drawFunctionInverse(func);
+            this.drawFunctionInverseAsymptotes(func);
+            this.drawFunctionInverseHoles(func);
             return;
         }
         
@@ -52477,6 +52483,9 @@ class Graphiti {
                     if (Number.isFinite(width) && Number.isFinite(height) && Math.abs(width) > 0.001 && Math.abs(height) > 0.001) {
                         this.ctx.drawImage(cached.canvas, topLeft.x, topLeft.y, width, height);
                         this.drawFunctionHoles(func);
+                        this.drawFunctionInverse(func);
+                        this.drawFunctionInverseAsymptotes(func);
+                        this.drawFunctionInverseHoles(func);
                         return;
                     }
                 }
@@ -52484,6 +52493,9 @@ class Graphiti {
                 // Perfect cache hit - viewport and data match
                 this.ctx.drawImage(cached.canvas, 0, 0);
                 this.drawFunctionHoles(func);
+                this.drawFunctionInverse(func);
+                this.drawFunctionInverseAsymptotes(func);
+                this.drawFunctionInverseHoles(func);
                 return;
             }
         }
@@ -52725,6 +52737,9 @@ class Graphiti {
         // Draw to main canvas
         this.ctx.drawImage(offscreenCanvas, 0, 0);
         this.drawFunctionHoles(func);
+        this.drawFunctionInverse(func);
+        this.drawFunctionInverseAsymptotes(func);
+        this.drawFunctionInverseHoles(func);
     }
     
     groupConnectedPoints(points) {
