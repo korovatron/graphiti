@@ -30339,6 +30339,12 @@ class Graphiti {
             }
         }
 
+        // Handle values that are a surd/pi/e/phi shifted by a rational constant, e.g. sqrt(2) + 1
+        const surdWithOffset = this.formatSurdOrConstantWithOffsetLatex(value);
+        if (surdWithOffset) {
+            return surdWithOffset;
+        }
+
         const fraction = this.decimalToFraction(value, 0.001, 20);
         if (fraction && fraction.denominator > 1) {
             const sign = fraction.numerator < 0 ? '-' : '';
@@ -30348,6 +30354,58 @@ class Graphiti {
         // Round to reasonable precision
         const rounded = Math.round(value * 1000) / 1000;
         return rounded.toString();
+    }
+
+    // Recognise values of the form (surd/pi/e/phi) +/- (integer or simple fraction),
+    // e.g. sqrt(2) + 1, 1 - sqrt(3), pi + 1/2, which arise when an exact irrational
+    // asymptote or coordinate is translated by a rational constant.
+    formatSurdOrConstantWithOffsetLatex(value) {
+        const offsetTolerance = 0.0001;
+        const bases = [
+            { value: Math.sqrt(2), latex: '\\sqrt{2}' },
+            { value: Math.sqrt(3), latex: '\\sqrt{3}' },
+            { value: Math.sqrt(5), latex: '\\sqrt{5}' },
+            { value: Math.sqrt(2) / 2, latex: '\\frac{\\sqrt{2}}{2}' },
+            { value: Math.sqrt(3) / 2, latex: '\\frac{\\sqrt{3}}{2}' },
+            { value: Math.sqrt(3) / 3, latex: '\\frac{\\sqrt{3}}{3}' },
+            { value: 2 * Math.sqrt(3) / 3, latex: '\\frac{2\\sqrt{3}}{3}' },
+            { value: 2 * Math.sqrt(2), latex: '2\\sqrt{2}' },
+            { value: 2 * Math.sqrt(3), latex: '2\\sqrt{3}' },
+            { value: Math.PI, latex: '\\pi' },
+            { value: Math.E, latex: 'e' },
+            { value: (1 + Math.sqrt(5)) / 2, latex: '\\varphi' }
+        ];
+
+        for (const base of bases) {
+            for (const baseSign of [1, -1]) {
+                const signedBaseValue = baseSign * base.value;
+                const offset = value - signedBaseValue;
+                if (Math.abs(offset) < offsetTolerance) {
+                    continue; // exact match, already handled elsewhere
+                }
+
+                const roundedOffset = Math.round(offset);
+                let offsetLatex = null;
+                if (Math.abs(offset - roundedOffset) < offsetTolerance && Math.abs(roundedOffset) <= 50) {
+                    offsetLatex = Math.abs(roundedOffset).toString();
+                } else {
+                    const offsetFraction = this.decimalToFraction(Math.abs(offset), offsetTolerance, 12);
+                    if (offsetFraction && offsetFraction.denominator > 1) {
+                        offsetLatex = `\\frac{${Math.abs(offsetFraction.numerator)}}{${offsetFraction.denominator}}`;
+                    }
+                }
+
+                if (!offsetLatex) {
+                    continue;
+                }
+
+                const baseLatex = baseSign === 1 ? base.latex : `-${base.latex}`;
+                const offsetSign = offset > 0 ? '+' : '-';
+                return `${baseLatex}${offsetSign}${offsetLatex}`;
+            }
+        }
+
+        return null;
     }
     
     // Helper to convert decimal to fraction
