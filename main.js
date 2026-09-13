@@ -22836,13 +22836,34 @@ class Graphiti {
             ranges.push([start, inversePoints.length - 1]);
         }
 
+        // Marching-squares curves aren't stitched into long polylines here (each grid
+        // cell's segment is its own 2-point range), so a raw 2-point range's endpoint is
+        // only a true curve loose end if its coordinate isn't also the shared joint of a
+        // neighbouring cell's segment (occurring in exactly one other 2-point range).
+        // Longer stitched polylines (e.g. sampled explicit/affine curves) are already
+        // genuine continuous subpaths, so their start/end points skip this check entirely.
+        const keyOf = (point) => `${Math.round(point.x * 1e6)}:${Math.round(point.y * 1e6)}`;
+        const twoPointRangeEndpointCounts = new Map();
+        for (const [rangeStart, rangeEnd] of ranges) {
+            if (rangeEnd - rangeStart !== 1) {
+                continue;
+            }
+            for (const index of [rangeStart, rangeEnd]) {
+                const key = keyOf(inversePoints[index]);
+                twoPointRangeEndpointCounts.set(key, (twoPointRangeEndpointCounts.get(key) || 0) + 1);
+            }
+        }
+        const isSharedJoint = (point, rangeLength) =>
+            rangeLength === 2 && (twoPointRangeEndpointCounts.get(keyOf(point)) || 0) > 1;
+
         for (const [rangeStart, rangeEnd] of ranges) {
             if (rangeEnd <= rangeStart) {
                 continue;
             }
+            const rangeLength = rangeEnd - rangeStart + 1;
 
             const first = inversePoints[rangeStart];
-            if (isInsideVisibleViewport(first) && wasOutsideViewportBeforeReflection(first)) {
+            if (!isSharedJoint(first, rangeLength) && isInsideVisibleViewport(first) && wasOutsideViewportBeforeReflection(first)) {
                 const extended = extendToEdge(first, inversePoints[rangeStart + 1]);
                 if (extended) {
                     inversePoints[rangeStart] = extended;
@@ -22850,7 +22871,7 @@ class Graphiti {
             }
 
             const last = inversePoints[rangeEnd];
-            if (isInsideVisibleViewport(last) && wasOutsideViewportBeforeReflection(last)) {
+            if (!isSharedJoint(last, rangeLength) && isInsideVisibleViewport(last) && wasOutsideViewportBeforeReflection(last)) {
                 const extended = extendToEdge(last, inversePoints[rangeEnd - 1]);
                 if (extended) {
                     inversePoints[rangeEnd] = extended;
