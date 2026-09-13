@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.3.99';
+const VERSION = '1.4.0';
 
 class Graphiti {
     constructor() {
@@ -35771,6 +35771,25 @@ class Graphiti {
             return func && func.color ? func.color : '#111111';
         };
 
+        // SVG export always has a white background, so the inverse overlay always
+        // darkens the base colour (matching the app's light-mode behaviour).
+        const inverseCurveColorFor = (func) => {
+            const baseColor = curveColorFor(func);
+            if (typeof baseColor !== 'string') return baseColor;
+
+            let hex = baseColor.trim();
+            if (hex.startsWith('#')) hex = hex.substring(1);
+            if (hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
+            if (hex.length !== 6 || /[^0-9a-fA-F]/.test(hex)) return baseColor;
+
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            const amount = 0.32;
+            const toHex = (value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
+            return `#${toHex(r * (1 - amount))}${toHex(g * (1 - amount))}${toHex(b * (1 - amount))}`;
+        };
+
         const lines = [];
         const labelLines = [];
 
@@ -36879,6 +36898,13 @@ class Graphiti {
         const functions = this.getCurrentFunctions();
         const inequalityCount = this.countEnabledInequalities();
 
+        if (this.plotMode === 'cartesian' && functions.some(func => func && func.enabled && func.showInverse === true)) {
+            const dashArray = `${svgNum(getSvgLineWidth(8))} ${svgNum(getSvgLineWidth(5))}`;
+            const start = this.worldToScreen(this.viewport.minX, this.viewport.minX);
+            const end = this.worldToScreen(this.viewport.maxX, this.viewport.maxX);
+            pushLine(start.x, start.y, end.x, end.y, axisColor, getSvgLineWidth(2.2), dashArray);
+        }
+
         if (inequalityCount >= 2) {
             const intersectionDataUrl = buildMultiInequalityIntersectionDataUrl();
             if (intersectionDataUrl) {
@@ -37051,6 +37077,58 @@ class Graphiti {
                     const screen = this.worldToScreen(hole.x, hole.y);
                     if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;
                     lines.push(`<circle cx="${svgNum(screen.x)}" cy="${svgNum(screen.y)}" r="${svgNum(holeRadius)}" fill="${bgColor}" stroke="${stroke}" stroke-width="${svgNum(holeStrokeWidth)}" vector-effect="non-scaling-stroke" />`);
+                }
+            }
+
+            if (func.showInverse === true && Array.isArray(func.inversePoints) && func.inversePoints.length > 0) {
+                const inverseStroke = inverseCurveColorFor(func);
+                const inversePathData = buildStandardPath(func.inversePoints);
+                if (inversePathData) {
+                    pushPath(inversePathData, inverseStroke, lineWidth, 'none');
+                }
+
+                if (func.inverseAsymptoteData) {
+                    const inverseAsymptoteDash = `${svgNum(getSvgLineWidth(7))} ${svgNum(getSvgLineWidth(4))}`;
+                    const inverseAsymptoteWidth = getSvgLineWidth(2);
+                    const invVertical = Array.isArray(func.inverseAsymptoteData.vertical) ? func.inverseAsymptoteData.vertical : [];
+                    const invHorizontal = Array.isArray(func.inverseAsymptoteData.horizontal) ? func.inverseAsymptoteData.horizontal : [];
+                    const invOblique = Array.isArray(func.inverseAsymptoteData.oblique) ? func.inverseAsymptoteData.oblique : [];
+
+                    for (const x of invVertical) {
+                        if (!Number.isFinite(x) || x < this.viewport.minX || x > this.viewport.maxX) continue;
+                        const screen = this.worldToScreen(x, 0);
+                        pushLine(screen.x, 0, screen.x, height, inverseStroke, inverseAsymptoteWidth, inverseAsymptoteDash);
+                    }
+
+                    for (const y of invHorizontal) {
+                        if (!Number.isFinite(y) || y < this.viewport.minY || y > this.viewport.maxY) continue;
+                        const screen = this.worldToScreen(0, y);
+                        pushLine(0, screen.y, width, screen.y, inverseStroke, inverseAsymptoteWidth, inverseAsymptoteDash);
+                    }
+
+                    for (const line of invOblique) {
+                        if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) continue;
+                        const yLeft = (line.m * this.viewport.minX) + line.b;
+                        const yRight = (line.m * this.viewport.maxX) + line.b;
+                        if (!Number.isFinite(yLeft) || !Number.isFinite(yRight)) continue;
+                        const left = this.worldToScreen(this.viewport.minX, yLeft);
+                        const right = this.worldToScreen(this.viewport.maxX, yRight);
+                        pushLine(left.x, left.y, right.x, right.y, inverseStroke, inverseAsymptoteWidth, inverseAsymptoteDash);
+                    }
+                }
+
+                if (Array.isArray(func.inverseHoles) && func.inverseHoles.length > 0) {
+                    const inverseHoleRadius = Math.max(getSvgLineWidth(4), 4);
+                    const inverseHoleStrokeWidth = getSvgLineWidth(3);
+                    for (const hole of func.inverseHoles) {
+                        if (!hole || !Number.isFinite(hole.x) || !Number.isFinite(hole.y)) continue;
+                        if (hole.x < this.viewport.minX || hole.x > this.viewport.maxX || hole.y < this.viewport.minY || hole.y > this.viewport.maxY) {
+                            continue;
+                        }
+                        const screen = this.worldToScreen(hole.x, hole.y);
+                        if (!Number.isFinite(screen.x) || !Number.isFinite(screen.y)) continue;
+                        lines.push(`<circle cx="${svgNum(screen.x)}" cy="${svgNum(screen.y)}" r="${svgNum(inverseHoleRadius)}" fill="${bgColor}" stroke="${inverseStroke}" stroke-width="${svgNum(inverseHoleStrokeWidth)}" vector-effect="non-scaling-stroke" />`);
+                    }
                 }
             }
         }
