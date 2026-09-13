@@ -51635,7 +51635,7 @@ class Graphiti {
         }
 
         context.save();
-        context.strokeStyle = func.color;
+        context.strokeStyle = this.getInverseOverlayColor(func.color);
         context.lineWidth = this.getLineWidth(2.5);
         context.setLineDash([]);
 
@@ -51675,6 +51675,38 @@ class Graphiti {
         }
 
         context.restore();
+    }
+
+    // Shifts a hex colour toward black (light mode) or white (dark mode) so the inverse
+    // overlay stays recognisably the same colour family but isn't mistaken for the curve itself.
+    getInverseOverlayColor(baseColor) {
+        if (typeof baseColor !== 'string') {
+            return baseColor;
+        }
+
+        let hex = baseColor.trim();
+        if (hex.startsWith('#')) {
+            hex = hex.substring(1);
+        }
+        if (hex.length === 3) {
+            hex = hex.split('').map(ch => ch + ch).join('');
+        }
+        if (hex.length !== 6 || /[^0-9a-fA-F]/.test(hex)) {
+            return baseColor;
+        }
+
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+
+        const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+        const amount = 0.32;
+        const shiftChannel = (value) => isLightMode
+            ? value * (1 - amount)
+            : value + ((255 - value) * amount);
+        const toHex = (value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
+
+        return `#${toHex(shiftChannel(r))}${toHex(shiftChannel(g))}${toHex(shiftChannel(b))}`;
     }
 
     drawFunctionEnvelopes(func, context = this.ctx) {
