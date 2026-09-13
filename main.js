@@ -4556,8 +4556,11 @@ class Graphiti {
             // Buffer is 50% of viewport width on each side, giving smooth panning until you exceed it
             const viewportWidth = this.viewport.maxX - this.viewport.minX;
             const bufferSize = viewportWidth * 0.5;
-            const bufferedMinX = this.viewport.minX - bufferSize;
-            const bufferedMaxX = this.viewport.maxX + bufferSize;
+            // The far ends of this X-domain become Y-coordinates once reflected for the
+            // inverse overlay, so they must also clear the Y-viewport bounds, not just be a
+            // fixed fraction of the (possibly much narrower) X-viewport width.
+            const bufferedMinX = Math.min(this.viewport.minX - bufferSize, this.viewport.minY);
+            const bufferedMaxX = Math.max(this.viewport.maxX + bufferSize, this.viewport.maxY);
             func._viewportCoverageSampleRange = { minX: bufferedMinX, maxX: bufferedMaxX };
             const knownMonomialProxyStructure = func.monomialYExplicitProxy && func.monomialYKnownStructure
                 ? func.monomialYKnownStructure
@@ -4882,7 +4885,12 @@ class Graphiti {
                     0.000030517578125, 0.0000152587890625, 0.00000762939453125,
                     0.000003814697265625, 0.0000019073486328125
                 ];
-                const viewportPad = Math.max((this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
+                // Escaping past just the Y-viewport isn't enough: reflecting for the inverse
+                // overlay swaps this Y-escape into an X-coordinate, so it must also clear the
+                // X-viewport bounds directly, not just a symmetric extension of the Y-range.
+                const escapeMaxY = Math.max(this.viewport.maxY, this.viewport.maxX);
+                const escapeMinY = Math.min(this.viewport.minY, this.viewport.minX);
+                const viewportPad = Math.max(Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
                 let bestPoint = null;
 
                 for (const m of multipliers) {
@@ -4900,7 +4908,7 @@ class Graphiti {
                             bestPoint = { x, y };
                         }
 
-                        if (y > this.viewport.maxY || y < this.viewport.minY) {
+                        if (y > escapeMaxY || y < escapeMinY) {
                             return { x, y, isOutside: true };
                         }
                     } catch (e) {
@@ -4911,7 +4919,7 @@ class Graphiti {
                 if (bestPoint) {
                     return {
                         x: bestPoint.x,
-                        y: bestPoint.y >= 0 ? this.viewport.maxY + viewportPad : this.viewport.minY - viewportPad,
+                        y: bestPoint.y >= 0 ? escapeMaxY + viewportPad : escapeMinY - viewportPad,
                         isOutside: false
                     };
                 }
@@ -15851,8 +15859,10 @@ class Graphiti {
 
             const viewportWidth = this.viewport.maxX - this.viewport.minX;
             const bufferSize = viewportWidth * 0.5;
-            const bufferedMinX = this.viewport.minX - bufferSize;
-            const bufferedMaxX = this.viewport.maxX + bufferSize;
+            // See the equivalent comment in plotFunction: these far ends become Y-coordinates
+            // once reflected for the inverse overlay, so they must also clear the Y-viewport.
+            const bufferedMinX = Math.min(this.viewport.minX - bufferSize, this.viewport.minY);
+            const bufferedMaxX = Math.max(this.viewport.maxX + bufferSize, this.viewport.maxY);
             proxyFunc._viewportCoverageSampleRange = { minX: bufferedMinX, maxX: bufferedMaxX };
             const bufferedRange = Math.max(bufferedMaxX - bufferedMinX, 1e-12);
             const resolution = Math.max(550, Math.min(1100, Math.ceil(this.viewport.width * 1.2)));
@@ -15903,7 +15913,12 @@ class Graphiti {
             };
 
             const getVerticalApproachPoint = (asymptoteX, direction) => {
-                const viewportPad = Math.max((this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
+                // See getAsymptoteApproachPoint's comment: the escape value must clear the
+                // X-viewport bounds directly (not just a symmetric Y-range extension) so it
+                // still clears the visible area once reflected for the inverse overlay.
+                const escapeMaxY = Math.max(this.viewport.maxY, this.viewport.maxX);
+                const escapeMinY = Math.min(this.viewport.minY, this.viewport.minX);
+                const viewportPad = Math.max(Math.max(this.viewport.maxX - this.viewport.minX, this.viewport.maxY - this.viewport.minY) * 0.05, 0.5);
                 const multipliers = [1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125, 0.00390625, 0.001953125, 0.0009765625];
                 let bestPoint = null;
 
@@ -15922,7 +15937,7 @@ class Graphiti {
                         bestPoint = { x, y };
                     }
 
-                    if (y > this.viewport.maxY || y < this.viewport.minY) {
+                    if (y > escapeMaxY || y < escapeMinY) {
                         return { x, y };
                     }
                 }
@@ -15930,7 +15945,7 @@ class Graphiti {
                 if (bestPoint) {
                     return {
                         x: bestPoint.x,
-                        y: bestPoint.y >= 0 ? this.viewport.maxY + viewportPad : this.viewport.minY - viewportPad
+                        y: bestPoint.y >= 0 ? escapeMaxY + viewportPad : escapeMinY - viewportPad
                     };
                 }
 
