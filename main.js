@@ -22719,13 +22719,11 @@ class Graphiti {
                 : { x: NaN, y: NaN, connected: false };
         }
 
-        // Marching-squares curves are traced within an isotropically buffered box built
-        // around the pre-reflection viewport, so a branch can hit that box's edge (and stop)
-        // well outside the visible area in its original orientation. After reflection that
-        // same stop point can land back inside the visible viewport, showing as a false gap.
-        if (typeof func.implicitRenderMode === 'string' && func.implicitRenderMode.startsWith('marching')) {
-            this.extendInversePathsToViewportEdge(inverse);
-        }
+        // A curve is often deliberately sampled/escaped just past the edge of the
+        // pre-reflection viewport (marching-squares buffer box, asymptote escape points,
+        // etc.) so it exits the screen smoothly. In a non-square viewport, reflecting can
+        // land that same point back inside the visible area, showing as a false gap.
+        this.extendInversePathsToViewportEdge(inverse);
 
         func.inversePoints = inverse;
 
@@ -22759,58 +22757,29 @@ class Graphiti {
         func.inverseAsymptoteData = { vertical: invVertical, horizontal: invHorizontal, oblique: invOblique };
     }
 
-    // Detects reflected-curve endpoints that are actually artefacts of the source curve
-    // hitting the edge of its buffered sampling box, and extrapolates them out to the
-    // visible viewport edge so the inverse overlay doesn't show a false gap mid-curve.
+    // Detects reflected-curve endpoints that were only ever meant to be visible via
+    // escaping past the edge of the pre-reflection viewport, and extrapolates them out
+    // to the current visible viewport edge so the inverse overlay shows no false gap.
     extendInversePathsToViewportEdge(inversePoints) {
-        if (!Array.isArray(inversePoints) || inversePoints.length < 3) {
+        if (!Array.isArray(inversePoints) || inversePoints.length < 2) {
             return;
         }
 
         const viewport = this.viewport;
-        const extendedSource = this.getExtendedViewport(viewport, this.implicitBufferConfig.extensionPercent);
-        const tolX = (extendedSource.maxX - extendedSource.minX) * 0.02;
-        const tolY = (extendedSource.maxY - extendedSource.minY) * 0.02;
         const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
-
-        // Marching-squares output is emitted as [start, end, NaN-separator] triples.
-        const segments = [];
-        for (let i = 0; i + 1 < inversePoints.length; i += 3) {
-            const start = inversePoints[i];
-            const end = inversePoints[i + 1];
-            if (isFinitePoint(start) && isFinitePoint(end)) {
-                segments.push({ startIndex: i, endIndex: i + 1 });
-            }
-        }
-        if (segments.length === 0) {
-            return;
-        }
-
-        // A coordinate shared by two segments is an internal joint between cells, never
-        // a loose end, regardless of how close it sits to the sampling box boundary.
-        const keyOf = (point) => `${Math.round(point.x * 1e6)}:${Math.round(point.y * 1e6)}`;
-        const occurrences = new Map();
-        for (const segment of segments) {
-            for (const index of [segment.startIndex, segment.endIndex]) {
-                const key = keyOf(inversePoints[index]);
-                occurrences.set(key, (occurrences.get(key) || 0) + 1);
-            }
-        }
-
-        // An inverse point is (originalY, originalX), so reflecting it back tells us
-        // whether the un-reflected point sat on the edge of its buffered sampling box.
-        const isSourceBoxCutoff = (point) => {
-            const originalX = point.y;
-            const originalY = point.x;
-            return Math.abs(originalX - extendedSource.minX) <= tolX ||
-                Math.abs(originalX - extendedSource.maxX) <= tolX ||
-                Math.abs(originalY - extendedSource.minY) <= tolY ||
-                Math.abs(originalY - extendedSource.maxY) <= tolY;
-        };
-
         const isInsideVisibleViewport = (point) =>
             point.x >= viewport.minX && point.x <= viewport.maxX &&
             point.y >= viewport.minY && point.y <= viewport.maxY;
+
+        // An inverse point is (originalY, originalX); if the un-reflected point sat
+        // outside the visible viewport, it was only ever an off-screen "escape" sample,
+        // not a genuine on-screen curve feature, so it's safe to push further out.
+        const wasOutsideViewportBeforeReflection = (point) => {
+            const originalX = point.y;
+            const originalY = point.x;
+            return originalX < viewport.minX || originalX > viewport.maxX ||
+                originalY < viewport.minY || originalY > viewport.maxY;
+        };
 
         // Extrapolates `anchor` past itself, continuing the neighbour->anchor trend,
         // until it exits the visible viewport, returning the exit point on the edge.
@@ -22840,23 +22809,53 @@ class Graphiti {
             return { x: anchor.x + t * dx, y: anchor.y + t * dy, connected: anchor.connected };
         };
 
-        const tryExtendEndpoint = (pointIndex, neighbourIndex) => {
-            const point = inversePoints[pointIndex];
-            if (occurrences.get(keyOf(point)) !== 1) {
-                return;
+        // Mirror drawFunctionInverse's moveTo/lineTo rules (break on a non-finite point
+        // or an explicit connected === false) to find each subpath's index range.
+        const ranges = [];
+        let start = -1;
+        let pathStarted = false;
+        for (let i = 0; i < inversePoints.length; i++) {
+            const point = inversePoints[i];
+            if (!isFinitePoint(point)) {
+                if (pathStarted && start !== -1) {
+                    ranges.push([start, i - 1]);
+                }
+                pathStarted = false;
+                start = -1;
+                continue;
             }
-            if (!isInsideVisibleViewport(point) || !isSourceBoxCutoff(point)) {
-                return;
+            if (point.connected === false || !pathStarted) {
+                if (pathStarted && start !== -1) {
+                    ranges.push([start, i - 1]);
+                }
+                start = i;
+                pathStarted = true;
             }
-            const extended = extendToEdge(point, inversePoints[neighbourIndex]);
-            if (extended) {
-                inversePoints[pointIndex] = extended;
-            }
-        };
+        }
+        if (pathStarted && start !== -1) {
+            ranges.push([start, inversePoints.length - 1]);
+        }
 
-        for (const segment of segments) {
-            tryExtendEndpoint(segment.startIndex, segment.endIndex);
-            tryExtendEndpoint(segment.endIndex, segment.startIndex);
+        for (const [rangeStart, rangeEnd] of ranges) {
+            if (rangeEnd <= rangeStart) {
+                continue;
+            }
+
+            const first = inversePoints[rangeStart];
+            if (isInsideVisibleViewport(first) && wasOutsideViewportBeforeReflection(first)) {
+                const extended = extendToEdge(first, inversePoints[rangeStart + 1]);
+                if (extended) {
+                    inversePoints[rangeStart] = extended;
+                }
+            }
+
+            const last = inversePoints[rangeEnd];
+            if (isInsideVisibleViewport(last) && wasOutsideViewportBeforeReflection(last)) {
+                const extended = extendToEdge(last, inversePoints[rangeEnd - 1]);
+                if (extended) {
+                    inversePoints[rangeEnd] = extended;
+                }
+            }
         }
     }
 
