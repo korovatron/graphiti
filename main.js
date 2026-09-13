@@ -22706,6 +22706,7 @@ class Graphiti {
         if (!this.functionSupportsInverseToggle(func) || func.showInverse !== true) {
             func.inversePoints = null;
             func.inverseHoles = null;
+            func.inverseAsymptoteData = null;
             return;
         }
 
@@ -22726,6 +22727,27 @@ class Graphiti {
                 .filter(hole => hole && Number.isFinite(hole.x) && Number.isFinite(hole.y))
                 .map(hole => ({ x: hole.y, y: hole.x }))
             : [];
+
+        // Vertical/horizontal asymptotes swap roles under reflection; an oblique
+        // asymptote y=mx+b reflects to y=(1/m)x-(b/m). Curved asymptotes aren't
+        // reflected here as they don't reduce to a simple closed form in general.
+        const asymptoteData = func.asymptoteData;
+        const invVertical = Array.isArray(asymptoteData?.horizontal)
+            ? asymptoteData.horizontal.filter(value => Number.isFinite(value))
+            : [];
+        const invHorizontal = Array.isArray(asymptoteData?.vertical)
+            ? asymptoteData.vertical.filter(value => Number.isFinite(value))
+            : [];
+        const invOblique = [];
+        if (Array.isArray(asymptoteData?.oblique)) {
+            for (const line of asymptoteData.oblique) {
+                if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b) || Math.abs(line.m) < 1e-9) {
+                    continue;
+                }
+                invOblique.push({ m: 1 / line.m, b: -line.b / line.m });
+            }
+        }
+        func.inverseAsymptoteData = { vertical: invVertical, horizontal: invHorizontal, oblique: invOblique };
     }
 
     syncInverseToggleUI(func, funcItem) {
@@ -51627,6 +51649,7 @@ class Graphiti {
         this.drawFunctionAsymptotes(func);
         this.drawFunctionHoles(func);
         this.drawFunctionInverse(func);
+        this.drawFunctionInverseAsymptotes(func);
         this.drawFunctionInverseHoles(func);
         
         // Reset line dash after drawing (so inequalities don't affect other elements)
@@ -51874,6 +51897,73 @@ class Graphiti {
         }
 
         this.ctx.restore();
+    }
+
+    // Draws the inverse's reflected vertical/horizontal/oblique asymptotes,
+    // respecting the same show/hide toggle as the function's own asymptotes.
+    drawFunctionInverseAsymptotes(func, context = this.ctx) {
+        if (!func || !context || func.showInverse !== true || func.showAsymptotes === false) {
+            return;
+        }
+
+        const asymptoteData = func.inverseAsymptoteData;
+        if (!asymptoteData) {
+            return;
+        }
+
+        const vertical = Array.isArray(asymptoteData.vertical) ? asymptoteData.vertical : [];
+        const horizontal = Array.isArray(asymptoteData.horizontal) ? asymptoteData.horizontal : [];
+        const oblique = Array.isArray(asymptoteData.oblique) ? asymptoteData.oblique : [];
+        if (vertical.length === 0 && horizontal.length === 0 && oblique.length === 0) {
+            return;
+        }
+
+        context.save();
+        context.strokeStyle = this.getInverseOverlayColor(func.color);
+        context.lineWidth = this.getLineWidth(2);
+        context.globalAlpha = 0.75;
+        context.setLineDash([this.getLineWidth(7), this.getLineWidth(4)]);
+
+        if (vertical.length > 0) {
+            context.beginPath();
+            for (const x of vertical) {
+                if (!Number.isFinite(x) || x < this.viewport.minX || x > this.viewport.maxX) continue;
+                const screenPos = this.worldToScreen(x, 0);
+                context.moveTo(screenPos.x, 0);
+                context.lineTo(screenPos.x, this.viewport.height);
+            }
+            context.stroke();
+        }
+
+        if (horizontal.length > 0) {
+            context.beginPath();
+            for (const y of horizontal) {
+                if (!Number.isFinite(y) || y < this.viewport.minY || y > this.viewport.maxY) continue;
+                const screenPos = this.worldToScreen(0, y);
+                context.moveTo(0, screenPos.y);
+                context.lineTo(this.viewport.width, screenPos.y);
+            }
+            context.stroke();
+        }
+
+        if (oblique.length > 0) {
+            context.beginPath();
+            for (const line of oblique) {
+                if (!line || !Number.isFinite(line.m) || !Number.isFinite(line.b)) continue;
+
+                const yLeft = (line.m * this.viewport.minX) + line.b;
+                const yRight = (line.m * this.viewport.maxX) + line.b;
+                if (!Number.isFinite(yLeft) || !Number.isFinite(yRight)) continue;
+
+                const left = this.worldToScreen(this.viewport.minX, yLeft);
+                const right = this.worldToScreen(this.viewport.maxX, yRight);
+                context.moveTo(left.x, left.y);
+                context.lineTo(right.x, right.y);
+            }
+            context.stroke();
+        }
+
+        context.restore();
     }
 
     drawFunctionInverseHoles(func) {
