@@ -21409,11 +21409,11 @@ class Graphiti {
         return sum;
     }
 
-    polynomialToExpression(coeffs) {
+    polynomialToExpression(coeffs, formatCoefficient = null) {
         const poly = this.normalizePolynomial(coeffs || [0]);
         const terms = [];
 
-        const formatNumber = (value) => {
+        const defaultFormatNumber = (value) => {
             if (!Number.isFinite(value)) {
                 return null;
             }
@@ -21423,6 +21423,9 @@ class Graphiti {
             }
             return Number(value.toPrecision(14)).toString();
         };
+
+        // Allow callers (e.g. asymptote display) to recognise special constants like pi and e.
+        const formatNumber = formatCoefficient || defaultFormatNumber;
 
         for (let power = poly.length - 1; power >= 0; power--) {
             const coefficient = poly[power] || 0;
@@ -21442,7 +21445,10 @@ class Graphiti {
                 body = coefficientText;
             } else {
                 const variable = power === 1 ? 'x' : 'x^' + power;
-                body = Math.abs(magnitude - 1) <= 1e-12 ? variable : coefficientText + '*' + variable;
+                const needsSeparator = /[a-zA-Z}]$/.test(coefficientText);
+                body = Math.abs(magnitude - 1) <= 1e-12
+                    ? variable
+                    : coefficientText + (needsSeparator ? ' ' : '') + variable;
             }
 
             terms.push({ sign, body });
@@ -23026,7 +23032,12 @@ class Graphiti {
             if (!curve || !Array.isArray(curve.coefficients) || this.getPolynomialDegree(curve.coefficients) <= 1) {
                 continue;
             }
-            equations.push(`y = ${this.polynomialToExpression(curve.coefficients).replace(/\*/g, '')}`);
+            // Recognise special constants (pi, e, surds) in curvilinear asymptote coefficients.
+            const curveExpression = this.polynomialToExpression(
+                curve.coefficients,
+                (value) => this.formatAsymptoteCoefficientLatex(value)
+            );
+            equations.push(`y = ${curveExpression}`);
         }
 
         return equations;
