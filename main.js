@@ -37092,12 +37092,51 @@ class Graphiti {
                 }
             }
 
-            if (func.asymptoteData && func.showAsymptotes !== false && this.plotMode === 'cartesian') {
+            if (func.asymptoteData && func.showAsymptotes !== false) {
                 const asymptoteDash = `${svgNum(getSvgLineWidth(7))} ${svgNum(getSvgLineWidth(4))}`;
                 const asymptoteWidth = getSvgLineWidth(2);
                 const vertical = Array.isArray(func.asymptoteData.vertical) ? func.asymptoteData.vertical : [];
                 const horizontal = Array.isArray(func.asymptoteData.horizontal) ? func.asymptoteData.horizontal : [];
                 const oblique = Array.isArray(func.asymptoteData.oblique) ? func.asymptoteData.oblique : [];
+                const polarRays = this.plotMode === 'polar' && Array.isArray(func.asymptoteData.polarRays)
+                    ? func.asymptoteData.polarRays
+                    : [];
+
+                if (polarRays.length > 0) {
+                    const uniqueAngles = [];
+                    for (const rawTheta of polarRays) {
+                        if (!Number.isFinite(rawTheta)) continue;
+                        const thetaRadians = this.angleMode === 'degrees' ? (rawTheta * Math.PI / 180) : rawTheta;
+                        const normalized = this.normalizeAngleRadians(thetaRadians);
+                        const duplicate = uniqueAngles.some(existing => this.angleDistanceModulo(existing, normalized, Math.PI) <= 1e-5);
+                        if (!duplicate) {
+                            uniqueAngles.push(normalized);
+                        }
+                    }
+
+                    for (const theta of uniqueAngles) {
+                        const nearHorizontalAxis = Math.abs(Math.sin(theta)) <= 1e-6;
+                        const nearVerticalAxis = Math.abs(Math.cos(theta)) <= 1e-6;
+
+                        if (nearHorizontalAxis) {
+                            const axisY = this.worldToScreen(0, 0).y;
+                            pushLine(0, axisY, width, axisY, stroke, asymptoteWidth, asymptoteDash);
+                            continue;
+                        }
+
+                        if (nearVerticalAxis) {
+                            const axisX = this.worldToScreen(0, 0).x;
+                            pushLine(axisX, 0, axisX, height, stroke, asymptoteWidth, asymptoteDash);
+                            continue;
+                        }
+
+                        const segment = this.getPolarAsymptoteViewportSegment(theta);
+                        if (!segment) continue;
+                        const start = this.worldToScreen(segment.start.x, segment.start.y);
+                        const end = this.worldToScreen(segment.end.x, segment.end.y);
+                        pushLine(start.x, start.y, end.x, end.y, stroke, asymptoteWidth, asymptoteDash);
+                    }
+                }
 
                 for (const x of vertical) {
                     if (!Number.isFinite(x)) continue;
