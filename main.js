@@ -2566,7 +2566,7 @@ class Graphiti {
             </div>
             <div class="inverse-info-container" data-function-id="${func.id}">
                 <div class="metadata-title-row">
-                    <button class="metadata-visibility-toggle inverse-visibility-toggle is-hidden" type="button" aria-pressed="false" aria-label="Show inverse for this function" title="Show inverse"></button>
+                    <button class="metadata-visibility-toggle inverse-visibility-toggle is-hidden" type="button" aria-pressed="false" aria-label="Show inverse relation for this function" title="Show inverse relation (reflection in y=x, not necessarily a function)"></button>
                     <div class="inverse-info-title">Inverse</div>
                 </div>
             </div>
@@ -18389,6 +18389,8 @@ class Graphiti {
 
         // Invalidate curve cache when points change.
         this.implicitCurveCache.delete(func.id);
+
+        this.updateFunctionInverse(func);
     }
 
     isCircleEquation(expr) {
@@ -22680,13 +22682,14 @@ class Graphiti {
             return false;
         }
 
-        if (this.detectFunctionType(expression) !== 'explicit') {
+        const functionType = this.detectFunctionType(expression);
+        if (functionType !== 'explicit' && functionType !== 'implicit') {
             return false;
         }
 
-        // The inverse of y=x (or a bare x) is itself, so the toggle is pointless here.
+        // The inverse of y=x (or x=y, or a bare x) is itself, so the toggle is pointless here.
         const normalised = this.convertFromLatex(expression).replace(/\s+/g, '').toLowerCase();
-        if (normalised === 'x' || normalised === 'y=x') {
+        if (normalised === 'x' || normalised === 'y=x' || normalised === 'x=y') {
             return false;
         }
 
@@ -22736,8 +22739,8 @@ class Graphiti {
         if (toggle) {
             toggle.classList.toggle('is-hidden', !isVisible);
             toggle.setAttribute('aria-pressed', String(isVisible));
-            toggle.setAttribute('aria-label', `${isVisible ? 'Hide' : 'Show'} inverse for this function`);
-            toggle.title = `${isVisible ? 'Hide' : 'Show'} inverse`;
+            toggle.setAttribute('aria-label', `${isVisible ? 'Hide' : 'Show'} inverse relation for this function`);
+            toggle.title = `${isVisible ? 'Hide' : 'Show'} inverse relation (reflection in y=x, not necessarily a function)`;
         }
     }
 
