@@ -22856,6 +22856,21 @@ class Graphiti {
         const isSharedJoint = (point, rangeLength) =>
             rangeLength === 2 && (twoPointRangeEndpointCounts.get(keyOf(point)) || 0) > 1;
 
+        // Escape points are sometimes pushed twice in a row (identical coordinates), which
+        // would otherwise give a zero-length direction vector. Walk past duplicates to find
+        // a neighbour that's actually distinct from the anchor.
+        const findDistinctNeighbour = (anchor, fromIndex, step, limit) => {
+            let index = fromIndex;
+            while (index >= 0 && index <= limit) {
+                const candidate = inversePoints[index];
+                if (candidate.x !== anchor.x || candidate.y !== anchor.y) {
+                    return candidate;
+                }
+                index += step;
+            }
+            return null;
+        };
+
         for (const [rangeStart, rangeEnd] of ranges) {
             if (rangeEnd <= rangeStart) {
                 continue;
@@ -22864,7 +22879,8 @@ class Graphiti {
 
             const first = inversePoints[rangeStart];
             if (!isSharedJoint(first, rangeLength) && isInsideVisibleViewport(first) && wasOutsideViewportBeforeReflection(first)) {
-                const extended = extendToEdge(first, inversePoints[rangeStart + 1]);
+                const neighbour = findDistinctNeighbour(first, rangeStart + 1, 1, rangeEnd);
+                const extended = neighbour ? extendToEdge(first, neighbour) : null;
                 if (extended) {
                     inversePoints[rangeStart] = extended;
                 }
@@ -22872,7 +22888,8 @@ class Graphiti {
 
             const last = inversePoints[rangeEnd];
             if (!isSharedJoint(last, rangeLength) && isInsideVisibleViewport(last) && wasOutsideViewportBeforeReflection(last)) {
-                const extended = extendToEdge(last, inversePoints[rangeEnd - 1]);
+                const neighbour = findDistinctNeighbour(last, rangeEnd - 1, -1, rangeStart);
+                const extended = neighbour ? extendToEdge(last, neighbour) : null;
                 if (extended) {
                     inversePoints[rangeEnd] = extended;
                 }
