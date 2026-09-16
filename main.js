@@ -32341,17 +32341,29 @@ class Graphiti {
                     this.resetPolarRange();
                 }
                 
+                // Compute the reset bounds, then restore the current bounds so the
+                // rectangle-zoom animation can transition smoothly to them instead of
+                // snapping instantly (matches the smooth feel of pan/zoom elsewhere).
+                const currentBounds = {
+                    minX: this.viewport.minX,
+                    maxX: this.viewport.maxX,
+                    minY: this.viewport.minY,
+                    maxY: this.viewport.maxY
+                };
                 this.applySmartResetViewport();
-                
-                // Update viewport to ensure bounds are correctly adjusted, then redraw
-                // This matches what happens during resize/orientation change
-                this.updateViewport();
-                
-                // Re-plot all functions with the reset viewport
-                this.replotAllFunctions();
-                
-                // Save the corrected viewport bounds
-                this.saveViewportBounds();
+                const targetBounds = {
+                    minX: this.viewport.minX,
+                    maxX: this.viewport.maxX,
+                    minY: this.viewport.minY,
+                    maxY: this.viewport.maxY
+                };
+                this.viewport.minX = currentBounds.minX;
+                this.viewport.maxX = currentBounds.maxX;
+                this.viewport.minY = currentBounds.minY;
+                this.viewport.maxY = currentBounds.maxY;
+                this.updateViewportScale();
+
+                this.startRectangleZoomAnimation(targetBounds, { durationMs: 500 });
             });
         }
         
