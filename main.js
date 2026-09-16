@@ -487,13 +487,16 @@ class Graphiti {
                                 'asec': false,
                                 'acsc': false,
                                 'acot': false,
-                                // Inverse trig (arc notation) - auto-add parens with a placeholder, like abs/floor/ceil
-                                'arcsin': '\\operatorname{arcsin}\\left(#?\\right)',
-                                'arccos': '\\operatorname{arccos}\\left(#?\\right)',
-                                'arctan': '\\operatorname{arctan}\\left(#?\\right)',
-                                'arcsec': '\\operatorname{arcsec}\\left(#?\\right)',
-                                'arccsc': '\\operatorname{arccsc}\\left(#?\\right)',
-                                'arccot': '\\operatorname{arccot}\\left(#?\\right)',
+                                // Inverse trig (arc notation) - plain symbol, NOT auto-paren:
+                                // 'arcsin' is a strict prefix of 'arcsinh' etc, so auto-adding
+                                // parens here would fire before the 'h' can be typed and trap it
+                                // inside the parens as a bogus argument.
+                                'arcsin': '\\operatorname{arcsin}',
+                                'arccos': '\\operatorname{arccos}',
+                                'arctan': '\\operatorname{arctan}',
+                                'arcsec': '\\operatorname{arcsec}',
+                                'arccsc': '\\operatorname{arccsc}',
+                                'arccot': '\\operatorname{arccot}',
                                 // Disable short a-prefixed inverse hyperbolic shortcuts for
                                 // the same reason as inverse trig.
                                 'asinh': false,
@@ -516,13 +519,14 @@ class Graphiti {
                                 'sech': '\\operatorname{sech}\\left(#?\\right)',
                                 'csch': '\\operatorname{csch}\\left(#?\\right)',
                                 'coth': '\\operatorname{coth}\\left(#?\\right)',
-                                // Regular trig
-                                'sin': '\\sin\\left(#?\\right)',
-                                'cos': '\\cos\\left(#?\\right)',
-                                'tan': '\\tan\\left(#?\\right)',
-                                'sec': '\\operatorname{sec}\\left(#?\\right)',
-                                'csc': '\\operatorname{csc}\\left(#?\\right)',
-                                'cot': '\\operatorname{cot}\\left(#?\\right)',
+                                // Regular trig - plain symbol, NOT auto-paren (see arc-trig note above:
+                                // 'sin' is a strict prefix of 'sinh' etc).
+                                'sin': '\\sin',
+                                'cos': '\\cos',
+                                'tan': '\\tan',
+                                'sec': '\\operatorname{sec}',
+                                'csc': '\\operatorname{csc}',
+                                'cot': '\\operatorname{cot}',
                                 // Logarithms - simple base-10 and natural log
                                 'log': '\\log\\left(#?\\right)',
                                 'ln': '\\ln\\left(#?\\right)',
@@ -2613,13 +2617,14 @@ class Graphiti {
                         'asec': false,
                         'acsc': false,
                         'acot': false,
-                        // Inverse trig (arc notation) - auto-add parens with a placeholder, like abs/floor/ceil
-                        'arcsin': '\\operatorname{arcsin}\\left(#?\\right)',
-                        'arccos': '\\operatorname{arccos}\\left(#?\\right)',
-                        'arctan': '\\operatorname{arctan}\\left(#?\\right)',
-                        'arcsec': '\\operatorname{arcsec}\\left(#?\\right)',
-                        'arccsc': '\\operatorname{arccsc}\\left(#?\\right)',
-                        'arccot': '\\operatorname{arccot}\\left(#?\\right)',
+                        // Inverse trig (arc notation) - plain symbol, NOT auto-paren (see main
+                        // functionShortcuts definition for why: prefix of arcsinh etc).
+                        'arcsin': '\\operatorname{arcsin}',
+                        'arccos': '\\operatorname{arccos}',
+                        'arctan': '\\operatorname{arctan}',
+                        'arcsec': '\\operatorname{arcsec}',
+                        'arccsc': '\\operatorname{arccsc}',
+                        'arccot': '\\operatorname{arccot}',
                         // Disable short a-prefixed inverse hyperbolic shortcuts for
                         // the same reason as inverse trig.
                         'asinh': false,
@@ -2642,13 +2647,13 @@ class Graphiti {
                         'sech': '\\operatorname{sech}\\left(#?\\right)',
                         'csch': '\\operatorname{csch}\\left(#?\\right)',
                         'coth': '\\operatorname{coth}\\left(#?\\right)',
-                        // Regular trig
-                        'sin': '\\sin\\left(#?\\right)',
-                        'cos': '\\cos\\left(#?\\right)',
-                        'tan': '\\tan\\left(#?\\right)',
-                        'sec': '\\operatorname{sec}\\left(#?\\right)',
-                        'csc': '\\operatorname{csc}\\left(#?\\right)',
-                        'cot': '\\operatorname{cot}\\left(#?\\right)',
+                        // Regular trig - plain symbol, NOT auto-paren (prefix of sinh etc).
+                        'sin': '\\sin',
+                        'cos': '\\cos',
+                        'tan': '\\tan',
+                        'sec': '\\operatorname{sec}',
+                        'csc': '\\operatorname{csc}',
+                        'cot': '\\operatorname{cot}',
                         // Logarithms - simple base-10 and natural log
                         'log': '\\log\\left(#?\\right)',
                         'ln': '\\ln\\left(#?\\right)'
