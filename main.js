@@ -4509,7 +4509,7 @@ class Graphiti {
             
             // Handle degree mode preprocessing
             if (this.angleMode === 'degrees') {
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                 if (hasRegularTrigWithX) {
                     processedExpression = this.convertTrigToDegreeMode(processedExpression);
                 }
@@ -20123,7 +20123,7 @@ class Graphiti {
                 }
 
                 if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(evalExpression);
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(evalExpression);
                     if (hasRegularTrigWithX) {
                         evalExpression = this.convertTrigToDegreeMode(evalExpression);
                     }
@@ -30544,7 +30544,7 @@ class Graphiti {
         
         // Handle degree mode
         if (this.angleMode === 'degrees') {
-            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
             if (hasRegularTrigWithX) {
                 processedExpression = this.convertTrigToDegreeMode(processedExpression);
             }
@@ -31005,7 +31005,7 @@ class Graphiti {
         
         // Handle degree mode by preprocessing the expression
         if (this.angleMode === 'degrees') {
-            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
             if (hasRegularTrigWithX) {
                 processedExpression = this.convertTrigToDegreeMode(processedExpression);
             }
@@ -31141,7 +31141,7 @@ class Graphiti {
         
         // Handle degree mode by preprocessing the expression
         if (this.angleMode === 'degrees') {
-            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
             if (hasRegularTrigWithX) {
                 processedExpression = this.convertTrigToDegreeMode(processedExpression);
             }
@@ -31290,7 +31290,7 @@ class Graphiti {
         
         // Handle degree mode by preprocessing the expression
         if (this.angleMode === 'degrees') {
-            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
             if (hasRegularTrigWithX) {
                 processedExpression = this.convertTrigToDegreeMode(processedExpression);
             }
@@ -41865,7 +41865,7 @@ class Graphiti {
             // Handle degree mode by preprocessing the expression
             if (this.angleMode === 'degrees') {
                 // Check if THIS specific expression contains regular trig functions
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                 
                 if (hasRegularTrigWithX) {
                     // Preprocess the expression to wrap trig function arguments with degree conversion
@@ -44011,7 +44011,7 @@ class Graphiti {
                         try {
                             let samplingExpression = this.convertFromLatex(exprForBisection);
                             if (this.angleMode === 'degrees') {
-                                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(samplingExpression.toLowerCase());
+                                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(samplingExpression.toLowerCase());
                                 if (hasRegularTrigWithX) {
                                     samplingExpression = this.convertTrigToDegreeMode(samplingExpression);
                                 }
@@ -44453,6 +44453,13 @@ class Graphiti {
                     }
                 }
                 
+                if (this.angleMode === 'degrees') {
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(expr.toLowerCase());
+                    if (hasRegularTrigWithX) {
+                        expr = this.convertTrigToDegreeMode(expr);
+                    }
+                }
+                
                 const scope = this.getEvaluationScope({ x: 0 });
                 const y = math.evaluate(expr, scope);
                 
@@ -44729,7 +44736,7 @@ class Graphiti {
         
         // Apply degree mode conversion if needed for trig functions
         if (this.angleMode === 'degrees') {
-            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(convertedExpression.toLowerCase());
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(convertedExpression.toLowerCase());
             if (hasRegularTrigWithX) {
                 convertedExpression = this.convertTrigToDegreeMode(convertedExpression);
             }
@@ -45858,7 +45865,7 @@ class Graphiti {
                     try {
                         let processedExpression = func.affineExplicitExpression.toLowerCase();
                         if (this.angleMode === 'degrees') {
-                            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                             if (hasRegularTrigWithX) {
                                 processedExpression = this.convertTrigToDegreeMode(processedExpression);
                             }
@@ -45911,7 +45918,7 @@ class Graphiti {
                         try {
                             let processedExpression = branchExpression.toLowerCase();
                             if (this.angleMode === 'degrees') {
-                                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                                 if (hasRegularTrigWithX) {
                                     processedExpression = this.convertTrigToDegreeMode(processedExpression);
                                 }
@@ -46355,7 +46362,7 @@ class Graphiti {
         const evaluateDerivativeAt = (xValue) => {
             let processedDerivativeExpr = derivativeStr;
             if (this.angleMode === 'degrees') {
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedDerivativeExpr);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedDerivativeExpr);
                 if (hasRegularTrigWithX) {
                     processedDerivativeExpr = this.convertTrigToDegreeMode(processedDerivativeExpr);
                 }
@@ -46368,7 +46375,7 @@ class Graphiti {
         const evaluateSecondDerivativeAt = (xValue) => {
             let processedSecondDerivativeExpr = secondDerivativeStr;
             if (this.angleMode === 'degrees') {
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedSecondDerivativeExpr);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedSecondDerivativeExpr);
                 if (hasRegularTrigWithX) {
                     processedSecondDerivativeExpr = this.convertTrigToDegreeMode(processedSecondDerivativeExpr);
                 }
@@ -46382,7 +46389,7 @@ class Graphiti {
             if (processedExpression) {
                 let processedExprForEval = processedExpression;
                 if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExprForEval);
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExprForEval);
                     if (hasRegularTrigWithX) {
                         processedExprForEval = this.convertTrigToDegreeMode(processedExprForEval);
                     }
@@ -46686,7 +46693,7 @@ class Graphiti {
         try {
             let radicandExpression = func.monomialYRadicandExpression.toLowerCase();
             if (this.angleMode === 'degrees') {
-                const hasTrigRadicand = this.getCachedRegex('regularTrigWithX').test(radicandExpression);
+                const hasTrigRadicand = this.getCachedRegex('regularTrig').test(radicandExpression);
                 if (hasTrigRadicand) {
                     radicandExpression = this.convertTrigToDegreeMode(radicandExpression);
                 }
@@ -46829,12 +46836,12 @@ class Graphiti {
             let radicandExpression = func.monomialYRadicandExpression.toLowerCase();
             let branchExpression = func.monomialYExplicitExpressions[0].toLowerCase();
             if (this.angleMode === 'degrees') {
-                const hasTrigRadicand = this.getCachedRegex('regularTrigWithX').test(radicandExpression);
+                const hasTrigRadicand = this.getCachedRegex('regularTrig').test(radicandExpression);
                 if (hasTrigRadicand) {
                     radicandExpression = this.convertTrigToDegreeMode(radicandExpression);
                 }
 
-                const hasTrigBranch = this.getCachedRegex('regularTrigWithX').test(branchExpression);
+                const hasTrigBranch = this.getCachedRegex('regularTrig').test(branchExpression);
                 if (hasTrigBranch) {
                     branchExpression = this.convertTrigToDegreeMode(branchExpression);
                 }
@@ -47084,7 +47091,7 @@ class Graphiti {
             try {
                 let processedExpression = branchExpression.toLowerCase();
                 if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                     if (hasRegularTrigWithX) {
                         processedExpression = this.convertTrigToDegreeMode(processedExpression);
                     }
@@ -47728,7 +47735,7 @@ class Graphiti {
             // Handle degree mode for trig functions - convert AFTER processing derivatives
             let degreeConversionApplied = false;
             if (this.angleMode === 'degrees') {
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                 if (hasRegularTrigWithX) {
                     processedExpression = this.convertTrigToDegreeMode(processedExpression);
                     degreeConversionApplied = true;
@@ -47888,7 +47895,7 @@ class Graphiti {
             
             try {
                 if (this.angleMode === 'degrees') {
-                    const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+                    const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
                     if (hasRegularTrigWithX) {
                         const processedExpr = this.convertTrigToDegreeMode(processedExpression);
                         const compiled = this.getCompiledExpression(processedExpr);
@@ -48647,7 +48654,7 @@ class Graphiti {
             
             if (this.angleMode === 'degrees') {
                 // Check if this derivative expression contains regular trig functions
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpr);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpr);
                 
                 if (hasRegularTrigWithX) {
                     // Preprocess the expression to wrap trig function arguments with degree conversion
@@ -48733,7 +48740,7 @@ class Graphiti {
             
             if (this.angleMode === 'degrees') {
                 // Check if this derivative expression contains regular trig functions
-                const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpr);
+                const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpr);
                 
                 if (hasRegularTrigWithX) {
                     // Preprocess the expression to wrap trig function arguments with degree conversion
@@ -54757,7 +54764,7 @@ class Graphiti {
         
         // Handle degree mode by preprocessing the expression
         if (this.angleMode === 'degrees') {
-            const hasRegularTrigWithX = this.getCachedRegex('regularTrigWithX').test(processedExpression);
+            const hasRegularTrigWithX = this.getCachedRegex('regularTrig').test(processedExpression);
             if (hasRegularTrigWithX) {
                 processedExpression = this.convertTrigToDegreeMode(processedExpression);
             }
