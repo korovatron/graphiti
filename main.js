@@ -487,13 +487,13 @@ class Graphiti {
                                 'asec': false,
                                 'acsc': false,
                                 'acot': false,
-                                // Inverse trig (arc notation)
-                                'arcsin': '\\operatorname{arcsin}',
-                                'arccos': '\\operatorname{arccos}',
-                                'arctan': '\\operatorname{arctan}',
-                                'arcsec': '\\operatorname{arcsec}',
-                                'arccsc': '\\operatorname{arccsc}',
-                                'arccot': '\\operatorname{arccot}',
+                                // Inverse trig (arc notation) - auto-add parens with a placeholder, like abs/floor/ceil
+                                'arcsin': '\\operatorname{arcsin}\\left(#?\\right)',
+                                'arccos': '\\operatorname{arccos}\\left(#?\\right)',
+                                'arctan': '\\operatorname{arctan}\\left(#?\\right)',
+                                'arcsec': '\\operatorname{arcsec}\\left(#?\\right)',
+                                'arccsc': '\\operatorname{arccsc}\\left(#?\\right)',
+                                'arccot': '\\operatorname{arccot}\\left(#?\\right)',
                                 // Disable short a-prefixed inverse hyperbolic shortcuts for
                                 // the same reason as inverse trig.
                                 'asinh': false,
@@ -503,31 +503,29 @@ class Graphiti {
                                 'acsch': false,
                                 'acoth': false,
                                 // Inverse hyperbolic (arc notation)
-                                'arcsinh': '\\operatorname{arcsinh}',
-                                'arccosh': '\\operatorname{arccosh}',
-                                'arctanh': '\\operatorname{arctanh}',
-                                'arcsech': '\\operatorname{arcsech}',
-                                'arccsch': '\\operatorname{arccsch}',
-                                'arccoth': '\\operatorname{arccoth}',
+                                'arcsinh': '\\operatorname{arcsinh}\\left(#?\\right)',
+                                'arccosh': '\\operatorname{arccosh}\\left(#?\\right)',
+                                'arctanh': '\\operatorname{arctanh}\\left(#?\\right)',
+                                'arcsech': '\\operatorname{arcsech}\\left(#?\\right)',
+                                'arccsch': '\\operatorname{arccsch}\\left(#?\\right)',
+                                'arccoth': '\\operatorname{arccoth}\\left(#?\\right)',
                                 // Hyperbolic
-                                'sinh': '\\sinh',
-                                'cosh': '\\cosh',
-                                'tanh': '\\tanh',
-                                'sech': '\\operatorname{sech}',
-                                'csch': '\\operatorname{csch}',
-                                'coth': '\\operatorname{coth}',
+                                'sinh': '\\sinh\\left(#?\\right)',
+                                'cosh': '\\cosh\\left(#?\\right)',
+                                'tanh': '\\tanh\\left(#?\\right)',
+                                'sech': '\\operatorname{sech}\\left(#?\\right)',
+                                'csch': '\\operatorname{csch}\\left(#?\\right)',
+                                'coth': '\\operatorname{coth}\\left(#?\\right)',
                                 // Regular trig
-                                'sin': '\\sin',
-                                'cos': '\\cos',
-                                'tan': '\\tan',
-                                'sec': '\\operatorname{sec}',
-                                'csc': '\\operatorname{csc}',
-                                'cot': '\\operatorname{cot}',
+                                'sin': '\\sin\\left(#?\\right)',
+                                'cos': '\\cos\\left(#?\\right)',
+                                'tan': '\\tan\\left(#?\\right)',
+                                'sec': '\\operatorname{sec}\\left(#?\\right)',
+                                'csc': '\\operatorname{csc}\\left(#?\\right)',
+                                'cot': '\\operatorname{cot}\\left(#?\\right)',
                                 // Logarithms - simple base-10 and natural log
-                                'log': '\\log',
-                                'log(': '\\log(#0)',
-                                'ln': '\\ln',
-                                'ln(': '\\ln(#0)',
+                                'log': '\\log\\left(#?\\right)',
+                                'ln': '\\ln\\left(#?\\right)',
                                 // Absolute value - matches the virtual keyboard modulus button
                                 'abs': '\\left|#?\\right|',
                                 'mod': '\\left|#?\\right|',
@@ -2615,13 +2613,13 @@ class Graphiti {
                         'asec': false,
                         'acsc': false,
                         'acot': false,
-                        // Inverse trig (arc notation)
-                        'arcsin': '\\operatorname{arcsin}',
-                        'arccos': '\\operatorname{arccos}',
-                        'arctan': '\\operatorname{arctan}',
-                        'arcsec': '\\operatorname{arcsec}',
-                        'arccsc': '\\operatorname{arccsc}',
-                        'arccot': '\\operatorname{arccot}',
+                        // Inverse trig (arc notation) - auto-add parens with a placeholder, like abs/floor/ceil
+                        'arcsin': '\\operatorname{arcsin}\\left(#?\\right)',
+                        'arccos': '\\operatorname{arccos}\\left(#?\\right)',
+                        'arctan': '\\operatorname{arctan}\\left(#?\\right)',
+                        'arcsec': '\\operatorname{arcsec}\\left(#?\\right)',
+                        'arccsc': '\\operatorname{arccsc}\\left(#?\\right)',
+                        'arccot': '\\operatorname{arccot}\\left(#?\\right)',
                         // Disable short a-prefixed inverse hyperbolic shortcuts for
                         // the same reason as inverse trig.
                         'asinh': false,
@@ -2631,31 +2629,29 @@ class Graphiti {
                         'acsch': false,
                         'acoth': false,
                         // Inverse hyperbolic (arc notation)
-                        'arcsinh': '\\operatorname{arcsinh}',
-                        'arccosh': '\\operatorname{arccosh}',
-                        'arctanh': '\\operatorname{arctanh}',
-                        'arcsech': '\\operatorname{arcsech}',
-                        'arccsch': '\\operatorname{arccsch}',
-                        'arccoth': '\\operatorname{arccoth}',
+                        'arcsinh': '\\operatorname{arcsinh}\\left(#?\\right)',
+                        'arccosh': '\\operatorname{arccosh}\\left(#?\\right)',
+                        'arctanh': '\\operatorname{arctanh}\\left(#?\\right)',
+                        'arcsech': '\\operatorname{arcsech}\\left(#?\\right)',
+                        'arccsch': '\\operatorname{arccsch}\\left(#?\\right)',
+                        'arccoth': '\\operatorname{arccoth}\\left(#?\\right)',
                         // Hyperbolic
-                        'sinh': '\\sinh',
-                        'cosh': '\\cosh',
-                        'tanh': '\\tanh',
-                        'sech': '\\operatorname{sech}',
-                        'csch': '\\operatorname{csch}',
-                        'coth': '\\operatorname{coth}',
+                        'sinh': '\\sinh\\left(#?\\right)',
+                        'cosh': '\\cosh\\left(#?\\right)',
+                        'tanh': '\\tanh\\left(#?\\right)',
+                        'sech': '\\operatorname{sech}\\left(#?\\right)',
+                        'csch': '\\operatorname{csch}\\left(#?\\right)',
+                        'coth': '\\operatorname{coth}\\left(#?\\right)',
                         // Regular trig
-                        'sin': '\\sin',
-                        'cos': '\\cos',
-                        'tan': '\\tan',
-                        'sec': '\\operatorname{sec}',
-                        'csc': '\\operatorname{csc}',
-                        'cot': '\\operatorname{cot}',
+                        'sin': '\\sin\\left(#?\\right)',
+                        'cos': '\\cos\\left(#?\\right)',
+                        'tan': '\\tan\\left(#?\\right)',
+                        'sec': '\\operatorname{sec}\\left(#?\\right)',
+                        'csc': '\\operatorname{csc}\\left(#?\\right)',
+                        'cot': '\\operatorname{cot}\\left(#?\\right)',
                         // Logarithms - simple base-10 and natural log
-                        'log': '\\log',
-                        'log(': '\\log(#0)',
-                        'ln': '\\ln',
-                        'ln(': '\\ln(#0)'
+                        'log': '\\log\\left(#?\\right)',
+                        'ln': '\\ln\\left(#?\\right)'
                     };
                 } catch (error) {
                     // Silently handle if mathfield not ready
@@ -59463,10 +59459,44 @@ class Graphiti {
         expression = expression.replace(/([=<>≥≤])\*/g, '$1');
         expression = expression.replace(/\*([=<>≥≤])/g, '$1');
         
-        // Convert log10_ marker to log(x, 10)
-        expression = expression.replace(/log10_\(([^)]+)\)/g, 'log($1, 10)');
+        // Convert log10_ marker to log(x, 10), matching parens with depth-counting
+        // so a redundant nested pair (e.g. log10_((x))) doesn't truncate the argument.
+        expression = this.convertLog10Marker(expression);
         
         return expression;
+    }
+
+    // Depth-counts parens so nested pairs (e.g. log10_((x))) convert correctly,
+    // unlike a simple regex which stops at the first closing paren.
+    convertLog10Marker(expression) {
+        const marker = 'log10_(';
+        let result = '';
+        let index = 0;
+
+        while (index < expression.length) {
+            const markerIndex = expression.indexOf(marker, index);
+            if (markerIndex === -1) {
+                result += expression.slice(index);
+                break;
+            }
+
+            result += expression.slice(index, markerIndex);
+
+            const contentStart = markerIndex + marker.length;
+            let depth = 1;
+            let i = contentStart;
+            while (i < expression.length && depth > 0) {
+                if (expression[i] === '(') depth++;
+                else if (expression[i] === ')') depth--;
+                if (depth > 0) i++;
+            }
+
+            const content = expression.slice(contentStart, i);
+            result += `log(${content}, 10)`;
+            index = i + 1;
+        }
+
+        return result;
     }
 
 
