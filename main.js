@@ -5490,6 +5490,7 @@ class Graphiti {
             
             // Use cached compiled expression for better performance
             const compiledExpression = this.getCompiledExpression(processedExpression);
+            const hasStepDiscontinuityFunction = /(^|[^a-z])(floor|ceil|sign)\s*\(/.test(processedExpression);
             const exactPolarReciprocalConic = this.tryClassifyExactPolarReciprocalConicFromProcessedExpression(processedExpression);
             const exactCartesianAsymptotes =
                 this.tryBuildExactCartesianAsymptotesFromPolarReciprocalExpression(processedExpression) ||
@@ -5611,6 +5612,10 @@ class Graphiti {
                 }
             }
 
+            if (hasStepDiscontinuityFunction) {
+                this.applyPolarStepDiscontinuityBreaks(points, compiledExpression, thetaStep);
+            }
+
             this.refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep);
 
             if (polarRayAsymptotes.length > 0) {
@@ -5672,6 +5677,62 @@ class Graphiti {
             // Silent error for better UX during typing - no alert popup
             func.points = [];
         }
+    }
+
+    // Breaks the polyline where floor/ceil/sign cause r to jump between plateaus,
+    // instead of drawing a spurious radial line connecting the two levels.
+    applyPolarStepDiscontinuityBreaks(points, compiledExpression, thetaStep) {
+        if (!Array.isArray(points) || points.length < 2 || !compiledExpression || !Number.isFinite(thetaStep) || thetaStep === 0) {
+            return points;
+        }
+
+        const isFinitePoint = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y);
+        const result = [];
+
+        for (let index = 0; index < points.length; index++) {
+            const point = points[index];
+
+            if (index === 0 || !isFinitePoint(point)) {
+                result.push(point);
+                continue;
+            }
+
+            const prevPoint = points[index - 1];
+            if (!isFinitePoint(prevPoint) || !Number.isFinite(prevPoint.theta) || !Number.isFinite(point.theta)) {
+                result.push(point);
+                continue;
+            }
+
+            const rPrev = Math.hypot(prevPoint.x, prevPoint.y);
+            const rCurr = Math.hypot(point.x, point.y);
+            const rScale = Math.max(1e-9, Math.abs(rPrev), Math.abs(rCurr));
+            const rDiff = Math.abs(rCurr - rPrev);
+
+            if (rDiff > Math.max(1e-6, rScale * 1e-3)) {
+                const midTheta = (prevPoint.theta + point.theta) / 2;
+                const midPoint = this.evaluatePolarPointAtTheta(compiledExpression, midTheta);
+                const rMid = midPoint ? Math.hypot(midPoint.x, midPoint.y) : null;
+
+                if (Number.isFinite(rMid)) {
+                    const plateauTolerance = Math.max(1e-6, rScale * 1e-4);
+                    const matchesPrev = Math.abs(rMid - rPrev) <= plateauTolerance;
+                    const matchesCurr = Math.abs(rMid - rCurr) <= plateauTolerance;
+
+                    // A genuine step lands the midpoint on one plateau, not smoothly between them
+                    if (matchesPrev !== matchesCurr) {
+                        result.push({ x: prevPoint.x, y: NaN, connected: false, theta: prevPoint.theta });
+                        result.push({ x: point.x, y: point.y, connected: false, theta: point.theta });
+                        continue;
+                    }
+                }
+            }
+
+            result.push(point);
+        }
+
+        points.length = 0;
+        points.push(...result);
+        return points;
     }
 
     refinePolarDomainBoundaryEndpoints(points, compiledExpression, thetaStep) {
