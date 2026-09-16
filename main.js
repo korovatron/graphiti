@@ -528,6 +528,9 @@ class Graphiti {
                                 'log(': '\\log(#0)',
                                 'ln': '\\ln',
                                 'ln(': '\\ln(#0)',
+                                // Absolute value - matches the virtual keyboard modulus button
+                                'abs': '\\left|#?\\right|',
+                                'mod': '\\left|#?\\right|',
                                 // Constants
                                 'phi': '\\phi',
                                 // Derivative function - insert d/dx notation (variable inferred from dx)
