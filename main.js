@@ -46524,10 +46524,12 @@ class Graphiti {
         };
 
         const classifyStationaryRoot = (xValue, secondDerivValue) => {
-            if (Number.isFinite(secondDerivValue) && Math.abs(secondDerivValue) > 1e-10) {
-                return secondDerivValue > 0 ? 'minimum' : 'maximum';
-            }
-
+            // Check the one-sided first-derivative signs (monotonicity change) before
+            // trusting the second derivative's value. At a cusp (e.g. abs() of a root),
+            // the root-finder can land a hair either side of the true x, and the second
+            // derivative itself is discontinuous there, so its sign flips depending on
+            // which side was hit - unreliable. The first-derivative sign change is the
+            // definitional test and works correctly even at cusps.
             const leftFirstSign = getSideDerivativeSign(evaluateDerivativeAt, xValue, -1);
             const rightFirstSign = getSideDerivativeSign(evaluateDerivativeAt, xValue, 1);
             if (leftFirstSign < 0 && rightFirstSign > 0) {
@@ -46535,6 +46537,10 @@ class Graphiti {
             }
             if (leftFirstSign > 0 && rightFirstSign < 0) {
                 return 'maximum';
+            }
+
+            if (Number.isFinite(secondDerivValue) && Math.abs(secondDerivValue) > 1e-10) {
+                return secondDerivValue > 0 ? 'minimum' : 'maximum';
             }
 
             const leftSecondSign = getSideDerivativeSign(evaluateSecondDerivativeAt, xValue, -1);
