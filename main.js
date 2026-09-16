@@ -531,6 +531,9 @@ class Graphiti {
                                 // Absolute value - matches the virtual keyboard modulus button
                                 'abs': '\\left|#?\\right|',
                                 'mod': '\\left|#?\\right|',
+                                // Floor and ceiling - proper bracket notation
+                                'floor': '\\left\\lfloor#?\\right\\rfloor',
+                                'ceil': '\\left\\lceil#?\\right\\rceil',
                                 // Constants
                                 'phi': '\\phi',
                                 // Derivative function - insert d/dx notation (variable inferred from dx)
@@ -59019,8 +59022,11 @@ class Graphiti {
 
         // Preserve implicit multiplication for LaTeX trig commands before backslashes are removed.
         // Example: a\sin\left(x\right) should become a*\sin\left(x\right), not asin(x).
+        // The lookbehinds stop the trailing "r"/"l" of \lfloor and \lceil from being
+        // mistaken for a variable, which would otherwise corrupt those delimiters
+        // (e.g. \left\lfloor\sin(x)\right\rfloor).
         expression = expression.replace(
-            /([a-zA-Z0-9\)])\s*\\(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\b/g,
+            /(?<!\\lfloo)(?<!\\lcei)([a-zA-Z0-9\)])\s*\\(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|sech|csch|coth)\b/g,
             '$1*\\$2'
         );
         
@@ -59235,6 +59241,10 @@ class Graphiti {
         
         // Absolute value: \left|x\right| -> abs(x)
         expression = expression.replace(/\\left\|([^|]+)\\right\|/g, 'abs($1)');
+        
+        // Floor and ceiling: \left\lfloor x\right\rfloor -> floor(x), \left\lceil x\right\rceil -> ceil(x)
+        expression = expression.replace(/\\left\\lfloor([\s\S]+?)\\right\\rfloor/g, 'floor($1)');
+        expression = expression.replace(/\\left\\lceil([\s\S]+?)\\right\\rceil/g, 'ceil($1)');
         
         // Constants
         expression = expression.replace(/\\pi/g, 'pi');
