@@ -2708,6 +2708,14 @@ class Graphiti {
                 return;
             }
 
+            // Touch-capable displays (e.g. an interactive whiteboard driven by a
+            // desktop mouse/keyboard) still report touch support even when the
+            // current interaction is a mouse click, so only auto-show the keyboard
+            // when the most recent pointer interaction on a field was touch/pen.
+            if (this.lastEquationFieldPointerType === 'mouse') {
+                return;
+            }
+
             if (this.keyboardDismissedByCanvas) {
                 return;
             }
@@ -2798,6 +2806,7 @@ class Graphiti {
 
         mathField.addEventListener('touchstart', markKeyboardReopenAllowed, { passive: true });
         mathField.addEventListener('pointerdown', (e) => {
+            this.lastEquationFieldPointerType = e.pointerType || this.lastEquationFieldPointerType;
             if (e.pointerType === 'touch' || e.pointerType === 'pen') {
                 markKeyboardReopenAllowed();
             }
