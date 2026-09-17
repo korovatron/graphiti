@@ -52969,6 +52969,41 @@ class Graphiti {
                         }
                     }
                     
+                    // Also extend backward from the start of the path. The seed
+                    // segment can sit in the middle of a longer curve (e.g. a
+                    // straight boundary line like |x| < 1), so segments preceding
+                    // it must be prepended here too - otherwise they are left as
+                    // disconnected single-segment paths, and canvas restarts the
+                    // dash phase at every subpath, making that portion look solid.
+                    extended = true;
+                    while (extended) {
+                        extended = false;
+                        const firstSeg = path[0];
+                        
+                        for (let j = 0; j < segments.length; j++) {
+                            if (segments[j].used) continue;
+                            
+                            const dx1 = Math.abs(firstSeg.start.x - segments[j].end.x);
+                            const dy1 = Math.abs(firstSeg.start.y - segments[j].end.y);
+                            const dx2 = Math.abs(firstSeg.start.x - segments[j].start.x);
+                            const dy2 = Math.abs(firstSeg.start.y - segments[j].start.y);
+                            
+                            if (dx1 < tolerance && dy1 < tolerance) {
+                                // segments[j] connects backward
+                                path.unshift(segments[j]);
+                                segments[j].used = true;
+                                extended = true;
+                                break;
+                            } else if (dx2 < tolerance && dy2 < tolerance) {
+                                // segments[j] connects backward, so reverse it
+                                path.unshift({ start: segments[j].end, end: segments[j].start, used: true });
+                                segments[j].used = true;
+                                extended = true;
+                                break;
+                            }
+                        }
+                    }
+                    
                     // Draw this continuous path
                     if (path.length > 0) {
                         offscreenCtx.moveTo(path[0].start.x, path[0].start.y);
