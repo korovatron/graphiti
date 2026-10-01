@@ -28586,6 +28586,188 @@ class Graphiti {
         return null;
     }
 
+    // Like extractBivariatePolynomialCoefficients, but division by a bare monomial
+    // in x or y (e.g. '1/x', 'y/x^2') is allowed and produces negative exponents
+    // (a Laurent polynomial) instead of failing. Division by anything else (a
+    // non-monomial such as 'x-2') still fails, so this never touches the existing
+    // denominator-cancellation/hole logic used elsewhere for genuine fractions.
+    extractLaurentBivariatePolynomialCoefficients(node, maxTotalDegree = 8) {
+        if (!node) {
+            return null;
+        }
+
+        if (node.type === 'ParenthesisNode') {
+            return this.extractLaurentBivariatePolynomialCoefficients(node.content, maxTotalDegree);
+        }
+
+        if (node.type === 'ConstantNode' || node.type === 'SymbolNode') {
+            return this.extractBivariatePolynomialCoefficients(node, maxTotalDegree);
+        }
+
+        if (node.type !== 'OperatorNode') {
+            return null;
+        }
+
+        const args = node.args || [];
+        const op = node.op;
+        const maxExponentMagnitude = maxTotalDegree + 8;
+
+        const combine = (left, right, sign = 1) => {
+            if (!left || !right) return null;
+            const result = {};
+            const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+            for (const key of keys) {
+                const value = (left[key] || 0) + ((right[key] || 0) * sign);
+                if (Math.abs(value) > 1e-12) {
+                    result[key] = value;
+                }
+            }
+            return Object.keys(result).length > 0 ? result : { '0,0': 0 };
+        };
+
+        const scale = (poly, factor) => {
+            if (!poly || !Number.isFinite(factor)) return null;
+            const result = {};
+            for (const [key, value] of Object.entries(poly)) {
+                const scaled = value * factor;
+                if (Math.abs(scaled) > 1e-12) {
+                    result[key] = scaled;
+                }
+            }
+            return Object.keys(result).length > 0 ? result : { '0,0': 0 };
+        };
+
+        const multiply = (left, right) => {
+            if (!left || !right) return null;
+            const result = {};
+            for (const [leftKey, leftValue] of Object.entries(left)) {
+                const [lx, ly] = leftKey.split(',').map(Number);
+                for (const [rightKey, rightValue] of Object.entries(right)) {
+                    const [rx, ry] = rightKey.split(',').map(Number);
+                    const px = lx + rx;
+                    const py = ly + ry;
+                    if (Math.abs(px) + Math.abs(py) > maxExponentMagnitude) {
+                        return null;
+                    }
+                    const key = `${px},${py}`;
+                    result[key] = (result[key] || 0) + (leftValue * rightValue);
+                }
+            }
+            for (const key of Object.keys(result)) {
+                if (Math.abs(result[key]) <= 1e-12) {
+                    delete result[key];
+                }
+            }
+            return Object.keys(result).length > 0 ? result : { '0,0': 0 };
+        };
+
+        const shiftByMonomial = (poly, powerX, powerY, scalar) => {
+            if (!poly || !Number.isFinite(scalar) || Math.abs(scalar) < 1e-12) return null;
+            const result = {};
+            for (const [key, value] of Object.entries(poly)) {
+                const [i, j] = key.split(',').map(Number);
+                const shiftedKey = `${i - powerX},${j - powerY}`;
+                result[shiftedKey] = (result[shiftedKey] || 0) + (value / scalar);
+            }
+            return result;
+        };
+
+        if (op === '+' && args.length >= 2) {
+            let result = this.extractLaurentBivariatePolynomialCoefficients(args[0], maxTotalDegree);
+            for (let i = 1; i < args.length; i++) {
+                result = combine(result, this.extractLaurentBivariatePolynomialCoefficients(args[i], maxTotalDegree), 1);
+            }
+            return result;
+        }
+
+        if (op === '-' && args.length === 1) {
+            return scale(this.extractLaurentBivariatePolynomialCoefficients(args[0], maxTotalDegree), -1);
+        }
+
+        if (op === '-' && args.length >= 2) {
+            let result = this.extractLaurentBivariatePolynomialCoefficients(args[0], maxTotalDegree);
+            for (let i = 1; i < args.length; i++) {
+                result = combine(result, this.extractLaurentBivariatePolynomialCoefficients(args[i], maxTotalDegree), -1);
+            }
+            return result;
+        }
+
+        if (op === '*' && args.length >= 2) {
+            let result = this.extractLaurentBivariatePolynomialCoefficients(args[0], maxTotalDegree);
+            for (let i = 1; i < args.length; i++) {
+                result = multiply(result, this.extractLaurentBivariatePolynomialCoefficients(args[i], maxTotalDegree));
+            }
+            return result;
+        }
+
+        if (op === '/' && args.length === 2) {
+            const numerator = this.extractLaurentBivariatePolynomialCoefficients(args[0], maxTotalDegree);
+            if (!numerator) return null;
+
+            const denominator = this.extractBivariatePolynomialCoefficients(args[1], maxTotalDegree);
+            if (!denominator) return null;
+            const denominatorKeys = Object.keys(denominator);
+
+            if (denominatorKeys.length === 1 && denominatorKeys[0] === '0,0') {
+                return scale(numerator, 1 / denominator['0,0']);
+            }
+
+            if (denominatorKeys.length === 1) {
+                const [powerX, powerY] = denominatorKeys[0].split(',').map(Number);
+                if ((powerX > 0 && powerY === 0) || (powerX === 0 && powerY > 0)) {
+                    return shiftByMonomial(numerator, powerX, powerY, denominator[denominatorKeys[0]]);
+                }
+            }
+
+            return null;
+        }
+
+        if (op === '^' && args.length === 2) {
+            const base = this.extractLaurentBivariatePolynomialCoefficients(args[0], maxTotalDegree);
+            if (!base) return null;
+            const exponent = this.extractBoundedNonNegativeIntegerExponent(args[1], maxTotalDegree);
+            if (exponent === null) return null;
+            let result = { '0,0': 1 };
+            for (let i = 0; i < exponent; i++) {
+                result = multiply(result, base);
+                if (!result) return null;
+            }
+            return result;
+        }
+
+        return null;
+    }
+
+    // Shifts a Laurent coefficient map (possibly with negative exponents) up until
+    // every exponent is non-negative - equivalent to multiplying the whole equation
+    // through by the monomial x^a * y^b needed to clear the smallest denominators.
+    clearNegativeExponentsFromLaurentMap(laurentMap) {
+        if (!laurentMap) {
+            return null;
+        }
+
+        let minX = 0;
+        let minY = 0;
+        for (const key of Object.keys(laurentMap)) {
+            const [i, j] = key.split(',').map(Number);
+            if (i < minX) minX = i;
+            if (j < minY) minY = j;
+        }
+
+        if (minX === 0 && minY === 0) {
+            return laurentMap;
+        }
+
+        const result = {};
+        for (const [key, value] of Object.entries(laurentMap)) {
+            if (Math.abs(value) <= 1e-9) continue;
+            const [i, j] = key.split(',').map(Number);
+            result[`${i - minX},${j - minY}`] = value;
+        }
+
+        return Object.keys(result).length > 0 ? result : null;
+    }
+
     // Attempts to recognise an expanded (multiplied-out) implicit polynomial as a
     // product of simpler curves, e.g. 'yx-y^3-x^3+x^2y^2=0' peeled into
     // ['y-x^2', 'x-y^2'] so it can reuse the same per-factor fast paths and shape
@@ -28594,25 +28776,46 @@ class Graphiti {
     // non-negative integer; anything else bails out so marching squares still runs.
     tryFactorExpandedImplicitProduct(parsedNode) {
         const maxTotalDegree = 8;
+        let usedLaurentExtraction = false;
         let currentMap = this.extractBivariatePolynomialCoefficients(parsedNode, maxTotalDegree);
         if (!currentMap) {
-            return null;
+            // Equations like 'y^2-y/x-y+1/x=0' divide some terms by a bare power of
+            // x or y rather than being a clean polynomial. If every division in the
+            // expression is by such a monomial, clear it by shifting exponents -
+            // equivalent to multiplying the whole equation through by that monomial -
+            // without touching the general-purpose denominator-clearing used
+            // elsewhere (which has its own cancellation/hole semantics).
+            const laurentMap = this.extractLaurentBivariatePolynomialCoefficients(parsedNode, maxTotalDegree);
+            currentMap = laurentMap ? this.clearNegativeExponentsFromLaurentMap(laurentMap) : null;
+            if (!currentMap) {
+                return null;
+            }
+            usedLaurentExtraction = true;
         }
 
         let degreeInY = this.bivariatePolynomialDegreeInY(currentMap);
-        if (degreeInY < 3) {
-            // Degree <= 2 in y is already handled by the existing affine/quadratic-in-y
-            // fast paths, so there is nothing for the peeling fallback to add here.
+        // A division-free (clean polynomial) input can be peeled from degree 2 up,
+        // since plain polynomial quadratics-in-y with no holes to worry about are not
+        // otherwise covered by a nicer existing fast path at this degree. Inputs that
+        // needed the Laurent (division-clearing) extraction above are different: degree
+        // 2 there is already handled correctly - including hole detection - by the
+        // existing quadratic-in-y fast path upstream, so only peel those from degree 3
+        // up, where no such fast path exists yet.
+        const minDegreeToPeel = usedLaurentExtraction ? 3 : 2;
+        if (degreeInY < minDegreeToPeel) {
             return null;
         }
 
         const peeledFactorExpressions = [];
         let remainingIterations = degreeInY;
-        while (degreeInY >= 3 && remainingIterations > 0) {
+        while (degreeInY >= 2 && remainingIterations > 0) {
             remainingIterations--;
             const peeled = this.tryPeelMonomialYFactor(currentMap, degreeInY);
             if (!peeled) {
-                return null;
+                // Can't peel any further (e.g. the remaining quotient is an
+                // irreducible quadratic like y^2-x) - keep it as the final factor
+                // instead of discarding everything peeled so far.
+                break;
             }
             peeledFactorExpressions.push(peeled.factorExpression);
             currentMap = peeled.quotientMap;
