@@ -13389,31 +13389,54 @@ class Graphiti {
         collectFactors(parsed);
 
         const isPolarEquation = equation && equation.coordinateSystem === 'polar';
+        const isValidFactorNode = (node) => {
+            if (!node || this.isConstantMathNode(node)) {
+                return false;
+            }
+
+            const expressionText = node.toString();
+            if (isPolarEquation && this.isPolarImplicitExpression(expressionText)) {
+                return true;
+            }
+
+            return !!(
+                this.extractBivariatePolynomialCoefficients(node, 8) ||
+                this.classifyImplicitYExplicitShape({ leftExpression: expressionText, rightExpression: '0' }) ||
+                (!expressionText.includes('/') && this.tryBuildAffineImplicitModel({ leftExpression: expressionText, rightExpression: '0' }))
+            );
+        };
+
         const factorExpressions = factors
-            .filter(node => {
-                if (!node || this.isConstantMathNode(node)) {
-                    return false;
-                }
-
-                const expressionText = node.toString();
-                if (isPolarEquation && this.isPolarImplicitExpression(expressionText)) {
-                    return true;
-                }
-
-                return !!(
-                    this.extractBivariatePolynomialCoefficients(node, 8) ||
-                    this.classifyImplicitYExplicitShape({ leftExpression: expressionText, rightExpression: '0' }) ||
-                    (!expressionText.includes('/') && this.tryBuildAffineImplicitModel({ leftExpression: expressionText, rightExpression: '0' }))
-                );
-            })
+            .filter(isValidFactorNode)
             .map(node => node.toString())
             .filter(expression => expression && expression.trim());
 
-        if (factorExpressions.length < 2 || factorExpressions.length !== factors.filter(node => node && !this.isConstantMathNode(node)).length) {
-            return null;
+        const nonConstantFactorCount = factors.filter(node => node && !this.isConstantMathNode(node)).length;
+        if (factorExpressions.length >= 2 && factorExpressions.length === nonConstantFactorCount) {
+            return factorExpressions;
         }
 
-        return factorExpressions;
+        // Syntactic splitting found no literal '(factor)*(factor)' product - the
+        // equation may still be an expanded/multiplied-out composite curve (e.g.
+        // 'yx-y^3-x^3+x^2y^2=0' is the expansion of '(y-x^2)*(x-y^2)=0'). Attempt
+        // polynomial factor peeling as a fallback so these are still recognised.
+        if (!isPolarEquation && factors.length <= 1) {
+            const peeledFactorExpressions = this.tryFactorExpandedImplicitProduct(parsed);
+            if (Array.isArray(peeledFactorExpressions) && peeledFactorExpressions.length >= 2) {
+                const peeledNodes = peeledFactorExpressions.map(expression => {
+                    try {
+                        return this.cleanMath.parse(expression);
+                    } catch {
+                        return null;
+                    }
+                });
+                if (peeledNodes.every(isValidFactorNode)) {
+                    return peeledFactorExpressions;
+                }
+            }
+        }
+
+        return null;
     }
 
     unwrapMathParentheses(node) {
@@ -28562,7 +28585,265 @@ class Graphiti {
 
         return null;
     }
-    
+
+    // Attempts to recognise an expanded (multiplied-out) implicit polynomial as a
+    // product of simpler curves, e.g. 'yx-y^3-x^3+x^2y^2=0' peeled into
+    // ['y-x^2', 'x-y^2'] so it can reuse the same per-factor fast paths and shape
+    // labels as equations that were already typed in factored form.
+    // Only handles factors of the monomial form (y - k*x^m) with m a small
+    // non-negative integer; anything else bails out so marching squares still runs.
+    tryFactorExpandedImplicitProduct(parsedNode) {
+        const maxTotalDegree = 8;
+        let currentMap = this.extractBivariatePolynomialCoefficients(parsedNode, maxTotalDegree);
+        if (!currentMap) {
+            return null;
+        }
+
+        let degreeInY = this.bivariatePolynomialDegreeInY(currentMap);
+        if (degreeInY < 3) {
+            // Degree <= 2 in y is already handled by the existing affine/quadratic-in-y
+            // fast paths, so there is nothing for the peeling fallback to add here.
+            return null;
+        }
+
+        const peeledFactorExpressions = [];
+        let remainingIterations = degreeInY;
+        while (degreeInY >= 3 && remainingIterations > 0) {
+            remainingIterations--;
+            const peeled = this.tryPeelMonomialYFactor(currentMap, degreeInY);
+            if (!peeled) {
+                return null;
+            }
+            peeledFactorExpressions.push(peeled.factorExpression);
+            currentMap = peeled.quotientMap;
+            degreeInY = this.bivariatePolynomialDegreeInY(currentMap);
+        }
+
+        const finalExpression = this.bivariatePolynomialToExpressionString(currentMap);
+        if (!finalExpression) {
+            return null;
+        }
+        peeledFactorExpressions.push(finalExpression);
+
+        return peeledFactorExpressions.length >= 2 ? peeledFactorExpressions : null;
+    }
+
+    bivariatePolynomialDegreeInY(coeffMap) {
+        let maxJ = -1;
+        for (const [key, value] of Object.entries(coeffMap || {})) {
+            if (Math.abs(value) <= 1e-9) continue;
+            const j = Number(key.split(',')[1]);
+            if (j > maxJ) {
+                maxJ = j;
+            }
+        }
+        return maxJ;
+    }
+
+    // Searches for a root of the form y = k * x^m (m a small non-negative integer)
+    // using a generalised rational-root approach: group terms by the resulting
+    // power of x after substitution, solve the univariate equation in k that each
+    // group implies, then verify the candidate against the full polynomial.
+    tryPeelMonomialYFactor(coeffMap, degreeInY) {
+        const terms = Object.entries(coeffMap)
+            .map(([key, coeff]) => {
+                const [i, j] = key.split(',').map(Number);
+                return { i, j, coeff };
+            })
+            .filter(term => Math.abs(term.coeff) > 1e-9);
+
+        if (terms.length === 0) {
+            return null;
+        }
+
+        const maxAbsCoeff = terms.reduce((max, term) => Math.max(max, Math.abs(term.coeff)), 1);
+        const tolerance = 1e-6 * maxAbsCoeff;
+
+        const verifySubstitution = (k, m) => {
+            const totals = new Map();
+            for (const term of terms) {
+                const power = term.i + term.j * m;
+                totals.set(power, (totals.get(power) || 0) + term.coeff * Math.pow(k, term.j));
+            }
+            for (const value of totals.values()) {
+                if (Math.abs(value) > tolerance) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        const maxMonomialPower = 4;
+        for (let m = 0; m <= maxMonomialPower; m++) {
+            const groups = new Map();
+            for (const term of terms) {
+                const power = term.i + term.j * m;
+                if (!groups.has(power)) {
+                    groups.set(power, []);
+                }
+                groups.get(power).push(term);
+            }
+
+            const kCandidates = new Set();
+            for (const items of groups.values()) {
+                const distinctPowersOfY = [...new Set(items.map(term => term.j))];
+                if (distinctPowersOfY.length < 2) {
+                    continue;
+                }
+                const maxJ = Math.max(...distinctPowersOfY);
+                const polyInK = new Array(maxJ + 1).fill(0);
+                for (const term of items) {
+                    polyInK[term.j] += term.coeff;
+                }
+                if (this.getPolynomialDegree(polyInK) < 1) {
+                    continue;
+                }
+                for (const root of this.findPolynomialRealRoots(polyInK)) {
+                    if (Number.isFinite(root) && Math.abs(root) > 1e-9) {
+                        const snapped = Math.abs(root - Math.round(root)) < 1e-7 ? Math.round(root) : root;
+                        kCandidates.add(snapped);
+                    }
+                }
+            }
+
+            for (const k of kCandidates) {
+                if (!verifySubstitution(k, m)) {
+                    continue;
+                }
+                const quotientMap = this.divideBivariatePolynomialByLinearYFactor(coeffMap, degreeInY, k, m);
+                if (!quotientMap) {
+                    continue;
+                }
+                const factorMap = m === 0
+                    ? { '0,1': 1, '0,0': -k }
+                    : { '0,1': 1, [`${m},0`]: -k };
+                const factorExpression = this.bivariatePolynomialToExpressionString(factorMap);
+                if (!factorExpression) {
+                    continue;
+                }
+                return { factorExpression, quotientMap };
+            }
+        }
+
+        return null;
+    }
+
+    // Synthetic division of a bivariate polynomial (expressed as y-degree n with
+    // x-polynomial coefficients) by the linear-in-y factor (y - k*x^m).
+    divideBivariatePolynomialByLinearYFactor(coeffMap, degreeInY, k, m) {
+        const coeffsByYPower = [];
+        for (let j = 0; j <= degreeInY; j++) {
+            coeffsByYPower[j] = {};
+        }
+        for (const [key, coeff] of Object.entries(coeffMap)) {
+            if (Math.abs(coeff) <= 1e-9) continue;
+            const [i, j] = key.split(',').map(Number);
+            if (j < 0 || j > degreeInY) {
+                return null;
+            }
+            coeffsByYPower[j][i] = (coeffsByYPower[j][i] || 0) + coeff;
+        }
+
+        const shiftAndScale = (dict, shift, scale) => {
+            const result = {};
+            for (const [iKey, value] of Object.entries(dict)) {
+                const shiftedIndex = Number(iKey) + shift;
+                result[shiftedIndex] = (result[shiftedIndex] || 0) + value * scale;
+            }
+            return result;
+        };
+
+        const mergeDicts = (a, b) => {
+            const result = { ...a };
+            for (const [key, value] of Object.entries(b)) {
+                result[key] = (result[key] || 0) + value;
+            }
+            for (const key of Object.keys(result)) {
+                if (Math.abs(result[key]) <= 1e-9) {
+                    delete result[key];
+                }
+            }
+            return result;
+        };
+
+        const quotientByYPower = new Array(degreeInY);
+        quotientByYPower[degreeInY - 1] = { ...coeffsByYPower[degreeInY] };
+        for (let j = degreeInY - 2; j >= 0; j--) {
+            const shifted = shiftAndScale(quotientByYPower[j + 1], m, k);
+            quotientByYPower[j] = mergeDicts(coeffsByYPower[j + 1], shifted);
+        }
+
+        const remainderShifted = shiftAndScale(quotientByYPower[0], m, k);
+        const remainder = mergeDicts(coeffsByYPower[0], remainderShifted);
+        const remainderMagnitude = Object.values(remainder).reduce((sum, value) => sum + Math.abs(value), 0);
+        if (remainderMagnitude > 1e-6) {
+            return null;
+        }
+
+        const quotientMap = {};
+        for (let j = 0; j <= degreeInY - 1; j++) {
+            for (const [iKey, value] of Object.entries(quotientByYPower[j] || {})) {
+                if (Math.abs(value) <= 1e-9) continue;
+                quotientMap[`${iKey},${j}`] = value;
+            }
+        }
+
+        return Object.keys(quotientMap).length > 0 ? quotientMap : null;
+    }
+
+    // Serialises a bivariate polynomial coefficient map back into an expression
+    // string that math.js (and the rest of the implicit-equation pipeline) can parse.
+    bivariatePolynomialToExpressionString(coeffMap) {
+        const entries = Object.entries(coeffMap || {})
+            .map(([key, coeff]) => {
+                const [i, j] = key.split(',').map(Number);
+                return { i, j, coeff };
+            })
+            .filter(term => Math.abs(term.coeff) > 1e-9);
+
+        if (entries.length === 0) {
+            return null;
+        }
+
+        entries.sort((a, b) => (b.j - a.j) || (b.i - a.i));
+
+        const formatMagnitude = (value) => {
+            const rounded = Math.round(value * 1e9) / 1e9;
+            return String(rounded);
+        };
+
+        const parts = entries.map(term => {
+            const magnitude = Math.abs(term.coeff);
+            const sign = term.coeff < 0 ? '-' : '+';
+
+            const varFactors = [];
+            if (term.i === 1) {
+                varFactors.push('x');
+            } else if (term.i > 0) {
+                varFactors.push(`x^${term.i}`);
+            } else if (term.i < 0) {
+                varFactors.push(`x^(${term.i})`);
+            }
+            if (term.j === 1) {
+                varFactors.push('y');
+            } else if (term.j > 1) {
+                varFactors.push(`y^${term.j}`);
+            }
+
+            const varText = varFactors.join('*');
+            const magnitudeText = (varText && Math.abs(magnitude - 1) < 1e-9) ? '' : formatMagnitude(magnitude);
+            const termText = magnitudeText && varText ? `${magnitudeText}*${varText}` : (magnitudeText || varText || '1');
+            return { sign, termText };
+        });
+
+        return parts.reduce((result, part, index) => {
+            if (index === 0) {
+                return (part.sign === '-' ? '-' : '') + part.termText;
+            }
+            return `${result} ${part.sign} ${part.termText}`;
+        }, '');
+    }
+
     processImplicitExpression(expression) {
         let processedExpression = expression.toLowerCase();
         
