@@ -231,6 +231,18 @@ module.exports = [
         }
     },
     {
+        name: 'line plus monomial-y reciprocal branch splits into fast-tracked components',
+        expression: '(y-1)*(y^2-1/x)=0',
+        viewport: defaultViewport,
+        expected: {
+            renderMode: 'product-factors',
+            verticalAsymptotes: [0],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: [],
+            holes: []
+        }
+    },
+    {
         name: 'cancelled implicit cubic keeps true asymptotes and removable hole',
         expression: '((x-4)/(x-1))*y^3-((x+2)/(x-1))=0',
         viewport: defaultViewport,

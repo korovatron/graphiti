@@ -13389,6 +13389,23 @@ class Graphiti {
         collectFactors(parsed);
 
         const isPolarEquation = equation && equation.coordinateSystem === 'polar';
+
+        // A factor containing a bare-monomial division (e.g. 'y^2-1/x') is only
+        // accepted as a valid split component when the FULL product is degree >=3
+        // in y overall. At degree <=2 the whole equation is already handled better
+        // by the existing quadratic-in-y fast path, which includes cross-factor
+        // hole detection (e.g. '(y-1)*(y-1/x)=0') that per-factor splitting here
+        // cannot replicate - splitting that case would silently drop the hole.
+        let allowLaurentFactorValidation = false;
+        if (!isPolarEquation) {
+            const cleanMap = this.extractBivariatePolynomialCoefficients(parsed, 8);
+            const combinedMap = cleanMap ||
+                this.clearNegativeExponentsFromLaurentMap(this.extractLaurentBivariatePolynomialCoefficients(parsed, 8));
+            if (combinedMap) {
+                allowLaurentFactorValidation = this.bivariatePolynomialDegreeInY(combinedMap) >= 3;
+            }
+        }
+
         const isValidFactorNode = (node) => {
             if (!node || this.isConstantMathNode(node)) {
                 return false;
@@ -13401,6 +13418,7 @@ class Graphiti {
 
             return !!(
                 this.extractBivariatePolynomialCoefficients(node, 8) ||
+                (allowLaurentFactorValidation && this.extractLaurentBivariatePolynomialCoefficients(node, 8)) ||
                 this.classifyImplicitYExplicitShape({ leftExpression: expressionText, rightExpression: '0' }) ||
                 (!expressionText.includes('/') && this.tryBuildAffineImplicitModel({ leftExpression: expressionText, rightExpression: '0' }))
             );
