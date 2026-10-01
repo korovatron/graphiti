@@ -220,6 +220,17 @@ module.exports = [
         }
     },
     {
+        name: 'expanded line plus reciprocal branch has asymptotes and hole',
+        expression: 'y^2-y/x-y+1/x=0',
+        viewport: defaultViewport,
+        expected: {
+            verticalAsymptotes: [0],
+            horizontalAsymptotes: [0],
+            obliqueAsymptotes: [],
+            holes: [{ x: 0, y: 1 }]
+        }
+    },
+    {
         name: 'cancelled implicit cubic keeps true asymptotes and removable hole',
         expression: '((x-4)/(x-1))*y^3-((x+2)/(x-1))=0',
         viewport: defaultViewport,
