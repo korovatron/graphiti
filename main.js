@@ -38966,16 +38966,19 @@ class Graphiti {
                 this.addFunction('');
             }
             
-            // Apply viewport
+            // Apply viewport. Even when the shared state omits a viewport (e.g. a
+            // minimal external deep link that only sets a function/mode), still fit
+            // the current default viewport to the canvas aspect ratio so circles/etc.
+            // aren't squashed by an unadjusted default scale.
             if (state.viewport) {
                 this.viewport.minX = state.viewport.minX;
                 this.viewport.maxX = state.viewport.maxX;
                 this.viewport.minY = state.viewport.minY;
                 this.viewport.maxY = state.viewport.maxY;
                 this.viewport.scale = state.viewport.scale;
-                this.fitViewportBoundsToCanvasAspect();
-                this.updateRangeInputs();
             }
+            this.fitViewportBoundsToCanvasAspect();
+            this.updateRangeInputs();
             
             // Restore persistent badges (traces, tangents, normals, integrals)
             if (state.badges && Array.isArray(state.badges)) {
