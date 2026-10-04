@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.4.53';
+const VERSION = '1.4.54';
 
 class Graphiti {
     constructor() {
@@ -37,6 +37,13 @@ class Graphiti {
         
         // Flag for temporary session mode (when loaded from shared link)
         this.tempSession = false;
+
+        // Tracks the last URL hash (e.g. "#v=...") that was successfully applied via a
+        // shared-link state, so resume handlers (visibilitychange/focus/pageshow) can detect
+        // a hash that changed while the app was suspended, without relying on 'hashchange'
+        // firing (iOS often resumes a backgrounded tab/PWA instance for a new deep link
+        // without dispatching a navigation event at all).
+        this.lastAppliedSharedHash = null;
 
         // Angle mode for trigonometric functions
         this.angleMode = 'radians'; // 'degrees' or 'radians'
@@ -33259,30 +33266,42 @@ class Graphiti {
             } else {
                 // Page is visible again
                 console.log('Page visible - resuming normal operations');
-                this.handleAppResume();
+                this.checkForUpdatedSharedStateOnResume().then((appliedNewSharedState) => {
+                    if (!appliedNewSharedState) {
+                        this.handleAppResume();
+                    }
+                });
             }
         });
         
         // PWA-specific resume handling (for iOS/Android standalone mode)
         // These events fire when PWA is brought back from background
         window.addEventListener('focus', () => {
-            if (this.currentState === this.states.GRAPHING && document.visibilityState === 'visible') {
-                console.log('Window focus - checking if resume needed');
+            console.log('Window focus - checking if resume needed');
+            this.checkForUpdatedSharedStateOnResume().then((appliedNewSharedState) => {
+                if (appliedNewSharedState || this.currentState !== this.states.GRAPHING || document.visibilityState !== 'visible') {
+                    return;
+                }
                 // Check if significant time has passed (PWA was suspended)
                 const now = performance.now();
                 if (this.lastFrameTime && (now - this.lastFrameTime) > 5000) {
                     console.log('PWA resume detected - resetting state');
                     this.handleAppResume();
                 }
-            }
+            });
         });
         
         // iOS-specific pageshow event (fires when PWA is restored from bfcache)
         window.addEventListener('pageshow', (event) => {
-            if (event.persisted && this.currentState === this.states.GRAPHING) {
-                console.log('Page restored from bfcache - resetting state');
-                this.handleAppResume();
-            }
+            this.checkForUpdatedSharedStateOnResume().then((appliedNewSharedState) => {
+                if (appliedNewSharedState) {
+                    return;
+                }
+                if (event.persisted && this.currentState === this.states.GRAPHING) {
+                    console.log('Page restored from bfcache - resetting state');
+                    this.handleAppResume();
+                }
+            });
         });
         
         // Mouse Events
@@ -38796,10 +38815,32 @@ class Graphiti {
         });
     }
 
+    // On iOS, returning to Graphiti after it was backgrounded (whether a Safari tab or a
+    // Home Screen PWA instance) can resume the exact same suspended page for a new shared
+    // link without ever dispatching 'hashchange' (or any navigation event at all in some
+    // cases). Resume-related listeners call this to pick up a hash that changed while
+    // suspended; it's a no-op whenever the hash is unchanged or isn't a shared-link hash.
+    async checkForUpdatedSharedStateOnResume() {
+        const hash = window.location.hash;
+        if (!hash || !hash.startsWith('#v=') || hash === this.lastAppliedSharedHash) {
+            return false;
+        }
+
+        const sharedState = this.decodeGraphState(hash.slice(3));
+        if (!sharedState) {
+            return false;
+        }
+
+        console.log('Detected updated shared-link hash on app resume - applying new graph');
+        await this.applySharedStateFromUrl(sharedState);
+        return true;
+    }
+
     async applySharedStateFromUrl(state) {
         // Skip title screen and load shared state
         this.tempSession = true;
         this.hasInitialized = true;
+        this.lastAppliedSharedHash = window.location.hash;
         this.suppressAppResumeUntil = performance.now() + 4000;
         this.deferInitialFunctionPanelOpen = this.shouldShowGraphBuildOverlayForFunctions(state.functions || []);
         this.changeState(this.states.GRAPHING);
@@ -39197,7 +39238,11 @@ class Graphiti {
     }
     
     clearFunctionPanel() {
-        const functionList = document.getElementById('function-list');
+        // NOTE: the function rows live in #functions-container, not #function-list
+        // (no element with that id exists). Using the wrong id silently no-ops this
+        // method, leaving stale function rows in the DOM whenever shared state is
+        // reapplied (e.g. opening a new shared link while one is already loaded).
+        const functionList = document.getElementById('functions-container');
         if (functionList) {
             functionList.innerHTML = '';
         }
