@@ -33,7 +33,7 @@ const firebaseConfig = {
 
 const HINT_KEY = 'graphiti_cloud_hint';
 const LINK_KEY = 'graphiti_cloud_link';
-const MAX_GRAPHS = 50;
+const MAX_GRAPHS = 100;
 const NAME_MAX = 80;
 const LIST_CACHE_MS = 2 * 60 * 1000;
 const NETWORK_TIMEOUT_MS = 15000;
