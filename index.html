@@ -802,6 +802,27 @@
         .title-screen .title-guide-link:hover {
             color: #B7DCFF;
         }
+
+        .title-screen .title-guide-links {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            margin-top: 4px;
+            margin-bottom: 10px;
+        }
+
+        .title-screen .title-guide-links .title-guide-link {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .title-screen .title-guide-separator {
+            margin: 0 8px;
+            color: #FFFFFF;
+            opacity: 0.6;
+        }
         
         .title-screen .button-container {
             display: flex;
@@ -3143,7 +3164,11 @@
                 </svg>
                 
                 <button id="title-start-button" class="title-button">Launch</button>
-                <a class="title-guide-link" href="guide.html">Graphiti guide</a>
+                <div class="title-guide-links">
+                    <a class="title-guide-link" href="guide.html">Graphiti guide</a>
+                    <span class="title-guide-separator" aria-hidden="true">|</span>
+                    <a class="title-guide-link" href="privacy.html">Privacy policy</a>
+                </div>
                 
                 <p class="copyright">
                     © 2026 Neil Kendall
