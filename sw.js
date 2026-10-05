@@ -1,9 +1,10 @@
-const CACHE_NAME = 'graphiti-v1.5.1';
+const CACHE_NAME = 'graphiti-v1.5.2';
 const NETWORK_ONLY_HOST_SUFFIXES = ['googleapis.com', 'firebaseio.com', 'firebaseapp.com', 'google.com'];
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './guide.html',
+    './privacy.html',
     './a-level-maths-graphing-calculator.html',
     './automatic-asymptote-detection.html',
     './curve-identifier-graphing-calculator.html',
