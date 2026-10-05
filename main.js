@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.4.54';
+const VERSION = '1.5.1';
 
 class Graphiti {
     constructor() {
@@ -32334,6 +32334,13 @@ class Graphiti {
             // Normal startup - show title screen
             this.tempSession = false;
             this.changeState(this.states.TITLE);
+
+            // A cloud graph opened from a shared-link session is applied after a clean restart
+            const pendingCloudState = this.takePendingCloudState();
+            if (pendingCloudState) {
+                await this.startGraphing();
+                await this.loadCloudGraph(pendingCloudState);
+            }
         }
         
         // Capture the actual initial viewport state after setup
@@ -33032,6 +33039,31 @@ class Graphiti {
             shareImageButton.addEventListener('click', () => {
                 this.toggleExportOverlay(true);
             });
+        }
+
+        // Cloud saves button (the Firebase-backed module is only loaded on demand)
+        const cloudButton = document.getElementById('cloud-button');
+        if (cloudButton) {
+            cloudButton.addEventListener('click', () => {
+                this.openCloudDialog();
+            });
+
+            // Show the signed-in dot immediately and verify the session in the background.
+            let cloudHint = null;
+            try {
+                cloudHint = localStorage.getItem('graphiti_cloud_hint');
+            } catch (error) {
+                cloudHint = null;
+            }
+            if (cloudHint === '1') {
+                cloudButton.classList.add('cloud-signed-in');
+                const warmCloudModule = () => this.loadCloudModule().catch(() => {});
+                if (typeof requestIdleCallback === 'function') {
+                    requestIdleCallback(warmCloudModule, { timeout: 5000 });
+                } else {
+                    setTimeout(warmCloudModule, 3000);
+                }
+            }
         }
         
         // Share menu controls
@@ -35891,6 +35923,10 @@ class Graphiti {
                 const exportOverlay = document.getElementById('export-overlay');
                 if (exportOverlay && exportOverlay.classList.contains('show')) {
                     this.toggleExportOverlay(false);
+                    break;
+                }
+
+                if (typeof this.closeCloudOverlay === 'function' && this.closeCloudOverlay()) {
                     break;
                 }
 
@@ -39160,6 +39196,84 @@ class Graphiti {
             console.log('Shared state applied successfully');
         } catch (error) {
             console.error('Failed to apply shared state:', error);
+        }
+    }
+
+    loadCloudModule() {
+        if (!this.cloudModulePromise) {
+            this.cloudModulePromise = import('./cloud-save.js')
+                .then((module) => {
+                    module.init(this);
+                    return module;
+                })
+                .catch((error) => {
+                    this.cloudModulePromise = null;
+                    throw error;
+                });
+        }
+        return this.cloudModulePromise;
+    }
+
+    async openCloudDialog() {
+        try {
+            const module = await this.loadCloudModule();
+            await module.open();
+        } catch (error) {
+            console.error('Cloud dialog unavailable:', error);
+            const button = document.getElementById('cloud-button');
+            if (button) {
+                const rect = button.getBoundingClientRect();
+                this.showShareTooltip('Cloud saves need an internet connection', rect.left + rect.width / 2, rect.top);
+            }
+        }
+    }
+
+    // Replaces the local graph for the saved graph's mode (switching mode if needed).
+    // Unlike a shared link this is not a temporary session: the loaded graph becomes the autosaved one.
+    async loadCloudGraph(state) {
+        const targetMode = state.mode === 'polar' ? 'polar' : 'cartesian';
+
+        if (this.tempSession) {
+            // Only part of the local data is in memory during a shared-link session, so
+            // restart cleanly and apply the cloud graph once the normal startup has finished.
+            try {
+                sessionStorage.setItem('graphiti_pending_cloud_state', JSON.stringify(state));
+            } catch (error) {
+                alert('Could not open the saved graph. Please leave the shared session first.');
+                return;
+            }
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+            window.location.reload();
+            return;
+        }
+
+        const showBuildOverlay = await this.showGraphBuildOverlayForFunctions(state.functions || []);
+        try {
+            if (targetMode !== this.plotMode) {
+                await this.togglePlotMode();
+            }
+            await this.applySharedState({ ...state, mode: targetMode });
+        } finally {
+            if (showBuildOverlay) {
+                this.hideGraphBuildOverlay();
+            }
+        }
+
+        this.saveFunctionsToLocalStorage();
+        this.saveViewportBounds();
+    }
+
+    takePendingCloudState() {
+        try {
+            const raw = sessionStorage.getItem('graphiti_pending_cloud_state');
+            if (!raw) {
+                return null;
+            }
+            sessionStorage.removeItem('graphiti_pending_cloud_state');
+            const state = JSON.parse(raw);
+            return state && state.v === 1 && Array.isArray(state.functions) ? state : null;
+        } catch (error) {
+            return null;
         }
     }
 

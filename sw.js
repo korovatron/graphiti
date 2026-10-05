@@ -1,4 +1,5 @@
-const CACHE_NAME = 'graphiti-v1.4.54';
+const CACHE_NAME = 'graphiti-v1.5.1';
+const NETWORK_ONLY_HOST_SUFFIXES = ['googleapis.com', 'firebaseio.com', 'firebaseapp.com', 'google.com'];
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -13,6 +14,7 @@ const ASSETS_TO_CACHE = [
     './inequality-graphing-calculator.html',
     './interactive-tangents-normals-graphing-calculator.html',
     './main.js',
+    './cloud-save.js',
     'https://unpkg.com/mathlive',
     'https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js',
@@ -87,6 +89,13 @@ self.addEventListener('activate', (event) => {
 // Fetch event - cache first with network fallback and timeout
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') {
+        return;
+    }
+
+    // Firebase/Google auth and database traffic must always hit the network
+    // (long-lived Firestore streams and auth responses must never be cached or timed out).
+    const hostname = new URL(event.request.url).hostname;
+    if (NETWORK_ONLY_HOST_SUFFIXES.some((suffix) => hostname === suffix || hostname.endsWith('.' + suffix))) {
         return;
     }
 
