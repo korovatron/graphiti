@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.5.8';
+const VERSION = '1.5.9';
 
 class Graphiti {
     constructor() {
@@ -661,7 +661,7 @@ class Graphiti {
                                     { latex: 'x', variants: ['y', 'r', '\\theta', 't', 'a', 'b', 'c'], class: 'variable-key' },
                                     { latex: '\\theta', label: 'θ', class: 'variable-key' },
                                     { 
-                                        insert: '\frac{d}{dx}\left(#?\right)', 
+                                        insert: '\\frac{d}{dx}\\left(#?\\right)', 
                                         label: 'd/dx', 
                                         class: 'small derivative-key'
                                     },
