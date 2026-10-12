@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.5.12';
+const VERSION = '1.5.13';
 
 class Graphiti {
     constructor() {
@@ -60277,6 +60277,19 @@ class Graphiti {
                 // sooner, without needing a real rotation.
                 void document.documentElement.offsetHeight;
 
+                // window.screen.width/height and --safe-area-top are reported
+                // in true physical points, but window.innerHeight (and the
+                // --actual-vh CSS var we set from it) operate in whatever
+                // CSS-pixel space the current page zoom uses. Those normally
+                // coincide (scale 1), but measurements from an iPhone 18 Pro
+                // Max showed visualViewport.scale sitting at ~0.85 even in a
+                // freshly-launched standalone PWA with user-scalable=no, which
+                // silently broke every comparison below (the "shortfall"
+                // came out negative, so the fix never fired - deterministically,
+                // not intermittently). Divide the physical-point values by the
+                // current scale so everything is compared in the same units.
+                const scale = (window.visualViewport && window.visualViewport.scale) || 1;
+
                 // Compare actual viewport with expected screen height. This
                 // is only used to *detect* whether the shortfall bug is
                 // present on this pass - the actual correction amount always
@@ -60284,13 +60297,13 @@ class Graphiti {
                 // never from a guessed/hard-coded pixel amount, so this stays
                 // correct regardless of notch/Dynamic Island size on any
                 // current or future iPhone/iPad model.
-                const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
+                const screenPortraitHeight = Math.max(window.screen.height, window.screen.width) / scale;
                 const difference = screenPortraitHeight - viewportHeight;
 
                 if (difference > 2) {
                     const computedStyle = getComputedStyle(document.documentElement);
                     const safeTop = computedStyle.getPropertyValue('--safe-area-top');
-                    const safeTopPx = parseInt(safeTop) || 0;
+                    const safeTopPx = (parseInt(safeTop) || 0) / scale;
 
                     if (safeTopPx > 0) {
                         // Trust the real measured inset. No upper cap here -
@@ -60299,13 +60312,13 @@ class Graphiti {
                         // fix on any device/OS combo where the real shortfall
                         // is larger.
                         viewportHeight = viewportHeight + safeTopPx;
-                    } else if (difference <= 180) {
+                    } else if (difference <= 180 / scale) {
                         // Safe-area isn't resolved yet (common on cold
                         // launch) - fall back to the known screen height as a
                         // best guess until a later retry picks up the real
-                        // inset. The 180px sanity cap only applies to this
-                        // guess, to avoid misfiring during unrelated large
-                        // viewport shrinks (e.g. on-screen keyboard open).
+                        // inset. The 180px (scaled) sanity cap only applies
+                        // to this guess, to avoid misfiring during unrelated
+                        // large viewport shrinks (e.g. on-screen keyboard open).
                         viewportHeight = screenPortraitHeight;
                     }
                 }

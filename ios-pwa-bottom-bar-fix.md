@@ -329,6 +329,68 @@ built on and we currently have no real telemetry from new hardware models.
 
 ---
 
+## Confirmed root cause on iPhone 18 Pro Max: a `visualViewport.scale` unit mismatch
+
+Real on-device diagnostics (captured via a temporary debug overlay - see
+below) gave the actual numbers instead of guesses, and they showed the fix
+above still wasn't enough:
+
+```
+Buggy (bar visible):  innerHeight=1052  screen=440x956  safeTop=62  scale=0.85
+After rotate (fixed):  innerHeight=1125  screen=440x956  safeTop=62  scale=0.85
+```
+
+`window.visualViewport.scale` was `0.85` in **both** states, on a
+freshly-launched standalone PWA with `user-scalable=no` - something no
+previously tested device ever exhibited. That one fact breaks the fix's core
+assumption: `window.screen.width/height` and `--safe-area-top` are reported in
+true physical points, while `window.innerHeight` (and therefore
+`--actual-vh`) are reported in whatever CSS-pixel space the current page zoom
+uses. Those two normally coincide (scale `1`), so comparing them directly
+"just worked" on every older device - but on this device they don't coincide,
+so `screenPortraitHeight - viewportHeight` came out **negative**
+(`956 - 1052 = -96`), meaning the shortfall-detection branch never even ran.
+That is why the bug became deterministic (every launch) rather than
+intermittent: the correction logic wasn't skipped by a bad threshold, it was
+mathematically guaranteed never to fire on this device at all, regardless of
+any cap.
+
+Doing the arithmetic in the correct (scaled) units confirms the real/expected
+height exactly: `956 / 0.85 = 1124.7 ≈ 1125`, matching the measured
+post-rotation value, and the shortfall `1125 - 1052 = 73 ≈ 62 / 0.85`, i.e.
+it is still exactly the same classic safe-area-top subtraction bug, just
+expressed in CSS pixels inflated by the inverse of the zoom scale.
+
+### The fix
+
+Divide every physical-point measurement (`screenPortraitHeight`, `safeTopPx`,
+and the `180px` sanity cap) by `window.visualViewport.scale` (falling back to
+`1` when `visualViewport` is unavailable) before comparing or adding them to
+`innerHeight`. On every device where `scale` is `1` (all previously tested
+hardware) this is a no-op and behaves exactly as before; on a device/session
+where the PWA is running at a different zoom, it now compares apples to
+apples.
+
+### The temporary diagnostics overlay
+
+To get the real numbers above without guessing or risking a change on live
+users' devices, a temporary, opt-in diagnostics overlay was added:
+
+- A small, near-invisible (`opacity: 0.12`) dot button sits at the bottom of
+  the function panel, below the normal icon row. Tapping it shows a
+  full-screen overlay with `innerHeight`/`outerHeight`, `screen.*`,
+  `visualViewport.height`/`scale`, `devicePixelRatio`, orientation, the
+  resolved `--safe-area-top`/`--safe-area-bottom`, and the current
+  `--actual-vh`, refreshing every 300ms so a rotation can be watched live.
+  A Copy button copies the text for pasting elsewhere.
+- It does nothing unless that exact dot is tapped, so it has no effect on
+  normal users.
+- Both the markup (in `index.html`) and the code (`initTempViewportDiagnostics()`
+  in `main.js`) are wrapped in `TEMP-DEBUG-IOS-VIEWPORT` comments so they can
+  be found and removed in one pass once this investigation is closed out.
+
+---
+
 ## Relevant git commits in Graphiti (oldest to newest)
 
 | Commit    | Description |
