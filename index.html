@@ -3714,6 +3714,14 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- TEMP-DEBUG-IOS-VIEWPORT: remove this block after the iOS bottom-bar
+                     investigation is done. Small, low-contrast tap target so it doesn't
+                     draw attention from normal users. -->
+                <div style="text-align: right; margin-top: 4px;">
+                    <button id="viewport-diag-trigger" type="button" style="width: 18px; height: 18px; padding: 0; min-width: 0; background: transparent; border: none; opacity: 0.12; cursor: pointer; color: #fff;" aria-label="Viewport diagnostics" title="">&middot;</button>
+                </div>
+                <!-- /TEMP-DEBUG-IOS-VIEWPORT -->
             </div>
         </div>
     </div>
@@ -4086,6 +4094,22 @@
         </div>
         <div class="perf-hint">Ctrl+Alt+P to hide</div>
     </div>
+
+    <!-- TEMP-DEBUG-IOS-VIEWPORT: remove this whole overlay block once the iOS
+         bottom-bar investigation is finished. It is only shown when the small
+         near-invisible dot button near the bottom of the function panel is
+         tapped, so it has no effect on normal app usage. -->
+    <div id="viewport-diag-overlay" style="display: none; position: fixed; inset: 0; z-index: 99999; background: rgba(0, 0, 0, 0.9); color: #7CFC98; font: 12px/1.5 Menlo, Consolas, monospace; padding: 16px; box-sizing: border-box; overflow: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <strong style="color: #fff;">Viewport Diagnostics (temp)</strong>
+            <div>
+                <button id="viewport-diag-copy" type="button" style="margin-right: 8px; padding: 6px 10px; background: #2A3F5A; color: #fff; border: 1px solid #555; border-radius: 4px;">Copy</button>
+                <button id="viewport-diag-close" type="button" style="padding: 6px 10px; background: #2A3F5A; color: #fff; border: 1px solid #555; border-radius: 4px;">Close</button>
+            </div>
+        </div>
+        <pre id="viewport-diag-text" style="white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+    </div>
+    <!-- /TEMP-DEBUG-IOS-VIEWPORT -->
     
     <!-- Service Worker Registration -->
     <script>

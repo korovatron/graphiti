@@ -1,12 +1,16 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.5.10';
+const VERSION = '1.5.11';
 
 class Graphiti {
     constructor() {
         // Fix iOS PWA 9-pixel viewport bug
         this.fixIOSViewportBug();
+
+        // TEMP-DEBUG-IOS-VIEWPORT: remove this call along with
+        // initTempViewportDiagnostics() once the bottom-bar investigation is done.
+        this.initTempViewportDiagnostics();
         
         // Configure MathLive virtual keyboard globally
         this.configureMathLive();
@@ -60372,6 +60376,92 @@ class Graphiti {
             }
         });
     }
+
+    // ===== TEMP-DEBUG-IOS-VIEWPORT =====
+    // Temporary diagnostics for the intermittent/deterministic iOS PWA bottom-bar
+    // investigation. Tap the small near-invisible dot under the bottom row of the
+    // function panel to show live viewport/safe-area numbers, with a Copy button
+    // to paste them back for analysis. Remove this whole method, its call site in
+    // the constructor, and the matching markup in index.html once done.
+    initTempViewportDiagnostics() {
+        const trigger = document.getElementById('viewport-diag-trigger');
+        const overlay = document.getElementById('viewport-diag-overlay');
+        const textEl = document.getElementById('viewport-diag-text');
+        const closeBtn = document.getElementById('viewport-diag-close');
+        const copyBtn = document.getElementById('viewport-diag-copy');
+        if (!trigger || !overlay || !textEl) return;
+
+        let refreshTimer = null;
+
+        const collect = () => {
+            const computedStyle = getComputedStyle(document.documentElement);
+            const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+                          window.matchMedia('(display-mode: fullscreen)').matches ||
+                          window.navigator.standalone === true;
+            const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const appContainer = document.getElementById('app-container');
+
+            return [
+                `time: ${new Date().toLocaleTimeString()}`,
+                `userAgent: ${navigator.userAgent}`,
+                `isIOS: ${isIOS}  isPWA: ${isPWA}  navigator.standalone: ${window.navigator.standalone}`,
+                `display-mode standalone: ${window.matchMedia('(display-mode: standalone)').matches}`,
+                `display-mode fullscreen: ${window.matchMedia('(display-mode: fullscreen)').matches}`,
+                `orientation: ${screen.orientation ? screen.orientation.type : (window.orientation ?? 'n/a')}`,
+                `devicePixelRatio: ${window.devicePixelRatio}`,
+                `innerWidth x innerHeight: ${window.innerWidth} x ${window.innerHeight}`,
+                `outerWidth x outerHeight: ${window.outerWidth} x ${window.outerHeight}`,
+                `screen.width x screen.height: ${screen.width} x ${screen.height}`,
+                `screen.availWidth x availHeight: ${screen.availWidth} x ${screen.availHeight}`,
+                `visualViewport.height: ${window.visualViewport ? window.visualViewport.height : 'n/a'}`,
+                `visualViewport.scale: ${window.visualViewport ? window.visualViewport.scale : 'n/a'}`,
+                `--safe-area-top (raw): "${computedStyle.getPropertyValue('--safe-area-top')}"`,
+                `--safe-area-bottom (raw): "${computedStyle.getPropertyValue('--safe-area-bottom')}"`,
+                `--actual-vh (current): "${computedStyle.getPropertyValue('--actual-vh')}"`,
+                `document.documentElement.clientHeight: ${document.documentElement.clientHeight}`,
+                `#app-container bounding height: ${appContainer ? appContainer.getBoundingClientRect().height : 'n/a'}`
+            ].join('\n');
+        };
+
+        const refresh = () => {
+            textEl.textContent = collect();
+        };
+
+        const open = () => {
+            refresh();
+            overlay.style.display = 'block';
+            if (refreshTimer) clearInterval(refreshTimer);
+            // Keep refreshing while open so a rotation can be watched live
+            // without needing to close and reopen the overlay.
+            refreshTimer = setInterval(refresh, 300);
+        };
+
+        const close = () => {
+            overlay.style.display = 'none';
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        };
+
+        trigger.addEventListener('click', open);
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+                const text = textEl.textContent;
+                const done = () => {
+                    const original = copyBtn.textContent;
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => { copyBtn.textContent = original; }, 1200);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done).catch(() => {});
+                }
+            });
+        }
+    }
+    // ===== /TEMP-DEBUG-IOS-VIEWPORT =====
 
     // Helper functions for MathLive range inputs
     getRangeValue(element) {
