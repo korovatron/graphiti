@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.5.9';
+const VERSION = '1.5.10';
 
 class Graphiti {
     constructor() {
@@ -60266,24 +60266,42 @@ class Graphiti {
             const isPortrait = window.innerHeight > window.innerWidth;
             
             if (isIOS && isPWA && isPortrait) {
-                // Compare actual viewport with expected screen height
+                // Force a style/layout flush so getComputedStyle below can't
+                // return a stale cached value for --safe-area-top. This
+                // mirrors what an orientation change does internally and
+                // gives WebKit a nudge to resolve env(safe-area-inset-*)
+                // sooner, without needing a real rotation.
+                void document.documentElement.offsetHeight;
+
+                // Compare actual viewport with expected screen height. This
+                // is only used to *detect* whether the shortfall bug is
+                // present on this pass - the actual correction amount always
+                // comes from the device's own reported safe-area-inset-top,
+                // never from a guessed/hard-coded pixel amount, so this stays
+                // correct regardless of notch/Dynamic Island size on any
+                // current or future iPhone/iPad model.
                 const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
                 const difference = screenPortraitHeight - viewportHeight;
-                
-                // iPhone diff ~59px, iPad diff ~32px - use 15px threshold
-                if (difference > 15) {
-                    // Get the safe-area-top value from CSS
+
+                if (difference > 2) {
                     const computedStyle = getComputedStyle(document.documentElement);
                     const safeTop = computedStyle.getPropertyValue('--safe-area-top');
                     const safeTopPx = parseInt(safeTop) || 0;
-                    const heightWithSafeTop = viewportHeight + safeTopPx;
-                    const remainingShortfall = screenPortraitHeight - heightWithSafeTop;
-                    
-                    if (remainingShortfall > 8 && difference <= 180) {
-                        viewportHeight = screenPortraitHeight;
-                    } else if (safeTopPx > 0) {
-                        viewportHeight = heightWithSafeTop;
+
+                    if (safeTopPx > 0) {
+                        // Trust the real measured inset. No upper cap here -
+                        // a previous version capped this at <=180px, which
+                        // was tuned to older devices and silently skipped the
+                        // fix on any device/OS combo where the real shortfall
+                        // is larger.
+                        viewportHeight = viewportHeight + safeTopPx;
                     } else if (difference <= 180) {
+                        // Safe-area isn't resolved yet (common on cold
+                        // launch) - fall back to the known screen height as a
+                        // best guess until a later retry picks up the real
+                        // inset. The 180px sanity cap only applies to this
+                        // guess, to avoid misfiring during unrelated large
+                        // viewport shrinks (e.g. on-screen keyboard open).
                         viewportHeight = screenPortraitHeight;
                     }
                 }

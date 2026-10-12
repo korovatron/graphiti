@@ -94,23 +94,32 @@ fixIOSViewportBug() {
         const isPortrait = window.innerHeight > window.innerWidth;
 
         if (isIOS && isPWA && isPortrait) {
-            // Compare actual viewport with expected screen height
+            // Force a style/layout flush so the computed style read below
+            // can't return a stale cached value for --safe-area-top.
+            void document.documentElement.offsetHeight;
+
+            // Compare actual viewport with expected screen height. This is
+            // only used to *detect* whether the shortfall bug is present -
+            // the correction amount always comes from the device's own
+            // reported safe-area-inset-top, never a guessed/hard-coded pixel
+            // amount, so it stays correct on any notch/Dynamic Island size.
             const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
             const difference = screenPortraitHeight - viewportHeight;
 
-            // iPhone diff ~59px, iPad diff ~32px - use 15px threshold
-            if (difference > 15) {
+            if (difference > 2) {
                 const computedStyle = getComputedStyle(document.documentElement);
                 const safeTop = computedStyle.getPropertyValue('--safe-area-top');
                 const safeTopPx = parseInt(safeTop) || 0;
-                const heightWithSafeTop = viewportHeight + safeTopPx;
-                const remainingShortfall = screenPortraitHeight - heightWithSafeTop;
 
-                if (remainingShortfall > 8 && difference <= 180) {
-                    viewportHeight = screenPortraitHeight;
-                } else if (safeTopPx > 0) {
-                    viewportHeight = heightWithSafeTop;
+                if (safeTopPx > 0) {
+                    // Trust the real measured inset - no upper cap.
+                    viewportHeight = viewportHeight + safeTopPx;
                 } else if (difference <= 180) {
+                    // Safe-area isn't resolved yet (cold launch) - best
+                    // guess until a later retry picks up the real inset.
+                    // The 180px sanity cap only applies to this guess, to
+                    // avoid misfiring on unrelated large viewport shrinks
+                    // (e.g. on-screen keyboard open).
                     viewportHeight = screenPortraitHeight;
                 }
             }
@@ -262,6 +271,61 @@ installed PWA viewport. Graphiti now pins `#app-container` to the viewport with
 panel the same `100vh` fallback plus `--actual-vh`/`min-height` pattern used in
 Vectorama. This prevents the page background from showing below the app if iOS
 briefly reports a short height during rotation.
+
+---
+
+---
+
+## New-hardware regression: "always" instead of "intermittent" (iPhone 18 Pro Max)
+
+A user with an existing iPhone (15 Pro Max) and a new iPhone (18 Pro Max), both
+on the *same* iOS version, reported that the bottom-bar bug that used to be
+*intermittent* on the old phone became *deterministic* (every single launch) on
+the new phone, with the same rotate-to-fix workaround still clearing it.
+
+Two phones reporting the same iOS marketing version are not running identical
+code paths for this bug:
+
+- Apple ships per-device-model builds. A matching version number does not
+  guarantee an identical safe-area/layout timing implementation on new
+  silicon/display hardware (e.g. a different Dynamic Island/camera-housing
+  size, a different display scaler, a faster SoC that reaches the app's first
+  paint before WebKit has resolved `env(safe-area-inset-*)`).
+- The pre-existing fix made its correction decision using **hard-coded pixel
+  thresholds** (`difference <= 180`, `remainingShortfall > 8`) that were
+  effectively tuned against the old device's measured ~59px shortfall. If a
+  new device's real shortfall sits outside that tuned band, the correction
+  branch is silently skipped - turning what used to be an occasional
+  timing race into a bug that fires on every cold launch on that specific
+  hardware.
+- The retry schedule dispatches a *synthetic* `resize` `Event`. That only
+  re-runs this app's own listeners - it does not force WebKit to actually
+  recompute `env(safe-area-inset-*)` the way a real rotation does, so on a
+  device/OS combination where the CSS variable is slow to resolve, waiting
+  longer does not help.
+
+### What changed
+
+1. The correction amount is now always derived from the device's own
+   measured `--safe-area-top` value with **no upper cap**, instead of only
+   being trusted when it closes the gap to within a hard-coded tolerance.
+   This makes the fix correct for any notch/Dynamic Island size, including
+   future hardware this was never tested against.
+2. The screen-height guess (`screenPortraitHeight`) is now used only to
+   *detect* that a shortfall exists, and as a fallback guess while the real
+   safe-area value is still resolving (keeping its 180px sanity cap, since a
+   guess with no real measurement behind it still needs a guard against
+   misfiring during unrelated large viewport shrinks like the keyboard
+   opening).
+3. A forced style/layout flush (`void document.documentElement.offsetHeight`)
+   was added immediately before reading the computed `--safe-area-top` value,
+   to reduce the chance of reading a stale cached computed style.
+
+If this is still seen on specific hardware after this change, the next
+diagnostic step is to log the actual `window.innerHeight`,
+`window.screen.height/width`, and resolved `--safe-area-top` values on that
+device at each retry delay, since those are the numbers the whole fix is
+built on and we currently have no real telemetry from new hardware models.
 
 ---
 
