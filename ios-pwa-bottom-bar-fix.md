@@ -98,28 +98,38 @@ fixIOSViewportBug() {
             // can't return a stale cached value for --safe-area-top.
             void document.documentElement.offsetHeight;
 
+            // screen.width/height and --safe-area-top are reported in true
+            // physical points, but innerHeight (and --actual-vh) operate in
+            // whatever CSS-pixel zoom space the page is currently running at.
+            // These normally coincide (scale 1), but some devices/sessions run
+            // the standalone PWA at a visualViewport.scale other than 1 even
+            // with user-scalable=no - dividing by scale brings everything
+            // into the same units. This is a no-op (divide by 1) everywhere
+            // else. See "Confirmed root cause on iPhone 18 Pro Max" below.
+            const scale = (window.visualViewport && window.visualViewport.scale) || 1;
+
             // Compare actual viewport with expected screen height. This is
             // only used to *detect* whether the shortfall bug is present -
             // the correction amount always comes from the device's own
             // reported safe-area-inset-top, never a guessed/hard-coded pixel
             // amount, so it stays correct on any notch/Dynamic Island size.
-            const screenPortraitHeight = Math.max(window.screen.height, window.screen.width);
+            const screenPortraitHeight = Math.max(window.screen.height, window.screen.width) / scale;
             const difference = screenPortraitHeight - viewportHeight;
 
             if (difference > 2) {
                 const computedStyle = getComputedStyle(document.documentElement);
                 const safeTop = computedStyle.getPropertyValue('--safe-area-top');
-                const safeTopPx = parseInt(safeTop) || 0;
+                const safeTopPx = (parseInt(safeTop) || 0) / scale;
 
                 if (safeTopPx > 0) {
                     // Trust the real measured inset - no upper cap.
                     viewportHeight = viewportHeight + safeTopPx;
-                } else if (difference <= 180) {
+                } else if (difference <= 180 / scale) {
                     // Safe-area isn't resolved yet (cold launch) - best
                     // guess until a later retry picks up the real inset.
-                    // The 180px sanity cap only applies to this guess, to
-                    // avoid misfiring on unrelated large viewport shrinks
-                    // (e.g. on-screen keyboard open).
+                    // The 180px (scaled) sanity cap only applies to this
+                    // guess, to avoid misfiring on unrelated large viewport
+                    // shrinks (e.g. on-screen keyboard open).
                     viewportHeight = screenPortraitHeight;
                 }
             }
@@ -231,6 +241,17 @@ fixIOSViewportBug() {
    ```
     `black-translucent` is important - it tells iOS to draw behind the status bar
    and notch, which is what causes the safe-area behaviour in the first place.
+
+8. **Always divide `window.screen.width/height` and the measured
+   `--safe-area-top` by `window.visualViewport.scale` before comparing or
+   adding them to `innerHeight`.** `screen.*` and the safe-area inset are
+   reported in true physical points, while `innerHeight` operates in whatever
+   CSS-pixel zoom space the page is currently running at. These normally
+   coincide (`scale` is `1`), so skipping this was invisible on every device
+   tested until an iPhone 18 Pro Max ran the standalone PWA at
+   `visualViewport.scale ≈ 0.85` (even with `user-scalable=no`), which made
+   every comparison silently fail. See "Confirmed root cause on iPhone 18 Pro
+   Max" below.
 
 ---
 
@@ -400,3 +421,7 @@ users' devices, a temporary, opt-in diagnostics overlay was added:
 | `9dec2be` | Comprehensive rewrite ported from Mandelscope - portrait-mode safe-area-top compensation, staggered timeouts up to 1200ms, `visualViewport` listener |
 | `bb2210f` | Added `(display-mode: fullscreen)` to PWA detection (iOS can use either) |
 | `6839bf3` | Switched root app height back to `window.innerHeight`; removed `visualViewport.height` from `--actual-vh` after iPhone Safari/PWA share-sheet testing |
+| `b7c319f` | Removed the hard-coded `<=180px` cap on the safe-area-top correction; added a forced layout flush before reading `--safe-area-top` |
+| `bc14d18` | Added the temporary, opt-in on-device viewport diagnostics overlay (`TEMP-DEBUG-IOS-VIEWPORT`) |
+| `71aa5d3` | Nudged the diagnostics overlay's Copy/Close buttons down ~100px so they clear the status bar/notch |
+| `d8619ea` | Found and fixed the real root cause on iPhone 18 Pro Max: divide `screenPortraitHeight`/`safeTopPx`/the sanity cap by `visualViewport.scale` before comparing/adding to `innerHeight` |
