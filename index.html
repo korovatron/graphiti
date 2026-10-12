@@ -3715,13 +3715,13 @@
                     </div>
                 </div>
 
-                <!-- TEMP-DEBUG-IOS-VIEWPORT: remove this block after the iOS bottom-bar
-                     investigation is done. Small, low-contrast tap target so it doesn't
-                     draw attention from normal users. -->
-                <div style="text-align: right; margin-top: 4px;">
-                    <button id="viewport-diag-trigger" type="button" style="width: 18px; height: 18px; padding: 0; min-width: 0; background: transparent; border: none; opacity: 0.12; cursor: pointer; color: #fff;" aria-label="Viewport diagnostics" title="">&middot;</button>
-                </div>
-                <!-- /TEMP-DEBUG-IOS-VIEWPORT -->
+                <!-- TEMP-DEBUG-IOS-VIEWPORT: trigger button removed (2026-10) so it can't
+                     be accidentally tapped by users. The diagnostics overlay markup and
+                     wiring in main.js (initTempViewportDiagnostics()) are left in place -
+                     to re-enable, add back a button with id="viewport-diag-trigger"
+                     anywhere in the page, e.g.:
+                     <button id="viewport-diag-trigger" type="button" style="width: 18px; height: 18px; padding: 0; min-width: 0; background: transparent; border: none; opacity: 0.12; cursor: pointer; color: #fff;" aria-label="Viewport diagnostics" title="">&middot;</button> -->
+
             </div>
         </div>
     </div>
