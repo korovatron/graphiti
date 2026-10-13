@@ -1232,12 +1232,15 @@ async function assertShapeClassification(page) {
         graphiti.handleTouchStart({ touches: [{ clientX: tapX, clientY: tapY }] });
         graphiti.handleTouchMove({ touches: [{ clientX: tapX + 40, clientY: tapY }] });
         graphiti.handleTouchEnd({ touches: [] });
+        const touchInertiaActiveAfterRelease = graphiti.mousePanInertia.active;
+        graphiti.stopMousePanInertia(true);
         graphiti.handleViewportChange = originalHandleViewportChange;
 
         const afterCanvasPan = {
             panelOpen: functionPanel ? functionPanel.classList.contains('mobile-open') : null,
             hamburgerPanelOpen: hamburgerMenu ? hamburgerMenu.classList.contains('panel-open') : null,
             viewportMoved: graphiti.viewport.minX !== initialMinX,
+            touchInertiaActiveAfterRelease,
             viewportChangeCalls: panViewportChangeCalls
         };
 
@@ -1333,6 +1336,7 @@ async function assertShapeClassification(page) {
         graphiti.handleTouchStart({ touches: [{ clientX: curveTapX, clientY: curveTapY }] });
         graphiti.handleTouchMove({ touches: [{ clientX: curveTapX + 45, clientY: curveTapY }] });
         graphiti.handleTouchEnd({ touches: [] });
+        graphiti.stopMousePanInertia(true);
         graphiti.handleViewportChange = originalHandleViewportChange;
 
         const curveTouchTrace = {
@@ -1563,6 +1567,7 @@ async function assertShapeClassification(page) {
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.panelOpen, false, 'shared-link first canvas pan should close function panel');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.hamburgerPanelOpen, false, 'shared-link first canvas pan should restore hamburger closed state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.viewportMoved, true, 'shared-link first canvas pan should still move the viewport');
+    assert.strictEqual(sharedLinkDeferredPanelResult.afterCanvasPan.touchInertiaActiveAfterRelease, true, 'touch pan should enter a brief inertial glide after release');
     assert(sharedLinkDeferredPanelResult.afterCanvasPan.viewportChangeCalls > 0, 'shared-link first canvas pan should still request viewport refresh');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.panelOpen, false, 'shared-link first canvas tap should close function panel even after stale touch movement state');
     assert.strictEqual(sharedLinkDeferredPanelResult.afterFirstCanvasTap.hamburgerPanelOpen, false, 'shared-link first canvas tap should restore hamburger closed state');

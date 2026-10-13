@@ -1,7 +1,7 @@
 // Graphiti - Mathematical Function Explorer
 // Main application logic with animation loop and state management
 
-const VERSION = '1.5.14';
+const VERSION = '1.5.15';
 
 class Graphiti {
     constructor() {
@@ -34633,7 +34633,7 @@ class Graphiti {
                     const elapsed = Math.max(now - (this.input.mouse.lastMoveTime || now), 1);
                     const worldVelocityX = worldDeltaX / elapsed;
                     const worldVelocityY = worldDeltaY / elapsed;
-                    const smoothing = this.input.touch.active ? 0 : 0.35;
+                    const smoothing = 0.35;
                     this.input.mouse.velocityX = (this.input.mouse.velocityX * (1 - smoothing)) + (worldVelocityX * smoothing);
                     this.input.mouse.velocityY = (this.input.mouse.velocityY * (1 - smoothing)) + (worldVelocityY * smoothing);
                     this.input.mouse.lastMoveTime = now;
@@ -34752,7 +34752,7 @@ class Graphiti {
         const shouldSettleViewport = this.input.viewportPanActive;
         const mousePanSpeed = Math.sqrt((this.input.mouse.velocityX * this.input.mouse.velocityX) + (this.input.mouse.velocityY * this.input.mouse.velocityY));
         const mousePanIdleTime = performance.now() - (this.input.mouse.lastMoveTime || 0);
-        const shouldStartMouseInertia = shouldSettleViewport && !this.input.touch.active && !this.input.pinch.active && mousePanSpeed > 0.000001 && mousePanIdleTime < 120;
+        const shouldStartMouseInertia = shouldSettleViewport && !this.input.pinch.active && mousePanSpeed > 0.000001 && mousePanIdleTime < 120;
         
         if (this.input.mouse.pendingTapAction && !this.input.dragging) {
             const pendingAction = this.input.mouse.pendingTapAction;
